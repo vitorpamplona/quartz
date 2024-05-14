@@ -35,9 +35,7 @@ class NIP90ContentDiscoveryRequestEvent(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
-    @Transient private var cachedMetadata: AppMetadata? = null
-
+) : Event(id, pubKey, createdAt, KIND, tags, content, sig) {
     companion object {
         const val KIND = 5300
 
@@ -48,12 +46,10 @@ class NIP90ContentDiscoveryRequestEvent(
             onReady: (NIP90ContentDiscoveryRequestEvent) -> Unit,
         ) {
             val content = ""
-
-            // val clientTag = arrayOf("client", "Amethyst")
-
             val tags = mutableListOf<Array<String>>()
             tags.add(arrayOf("p", addressedDVM))
             tags.add(arrayOf("alt", "NIP90 Content Discovery request"))
+            tags.add(arrayOf("client", "Amethyst"))
             signer.sign(createdAt, KIND, tags.toTypedArray(), content, onReady)
         }
     }
