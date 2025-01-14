@@ -20,7 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.tags.geohash
 
-fun geohashMipMap(geohash: String): Array<Array<String>> =
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
+
+fun geohashMipMap(geohash: String): TagArray =
     geohash.indices
         .asSequence()
         .map { arrayOf("g", geohash.substring(0, it + 1)) }
