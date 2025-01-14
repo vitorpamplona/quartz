@@ -18,32 +18,30 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relays
+package com.vitorpamplona.quartz.nip01Core.relays.filters
 
-import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.fasterxml.jackson.databind.node.ObjectNode
 
-class Filter(
-    val ids: List<String>? = null,
-    val authors: List<String>? = null,
-    val kinds: List<Int>? = null,
-    val tags: Map<String, List<String>>? = null,
-    val since: Long? = null,
-    val until: Long? = null,
-    val limit: Int? = null,
-    val search: String? = null,
-) {
-    fun toJson() = FilterSerializer.toJson(ids, authors, kinds, tags, since, until, limit, search)
+class FilterDeserializer {
+    companion object {
+        fun fromJson(jsonObject: ObjectNode): Filter {
+            val tags = mutableListOf<String>()
+            jsonObject.fieldNames().forEach {
+                if (it.startsWith("#")) {
+                    tags.add(it.substring(1))
+                }
+            }
 
-    fun match(event: Event) = FilterMatcher.match(event, ids, authors, kinds, tags, since, until)
-
-    fun copy(
-        ids: List<String>? = this.ids,
-        authors: List<String>? = this.authors,
-        kinds: List<Int>? = this.kinds,
-        tags: Map<String, List<String>>? = this.tags,
-        since: Long? = this.since,
-        until: Long? = this.until,
-        limit: Int? = this.limit,
-        search: String? = this.search,
-    ) = Filter(ids, authors, kinds, tags, since, until, limit, search)
+            return Filter(
+                ids = jsonObject.get("ids").map { it.asText() },
+                authors = jsonObject.get("authors").map { it.asText() },
+                kinds = jsonObject.get("kinds").map { it.asInt() },
+                tags = tags.associateWith { jsonObject.get(it).map { it.asText() } },
+                since = jsonObject.get("since").asLong(),
+                until = jsonObject.get("until").asLong(),
+                limit = jsonObject.get("limit").asInt(),
+                search = jsonObject.get("search").asText(),
+            )
+        }
+    }
 }
