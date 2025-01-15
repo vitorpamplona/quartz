@@ -23,8 +23,19 @@ package com.vitorpamplona.quartz.nip01Core.core
 class TagArrayBuilder {
     val tagList = mutableListOf<Array<String>>()
 
-    fun add(tag: Array<String>) {
+    fun add(tag: Array<String>): TagArrayBuilder {
         tagList.add(tag)
+        return this
+    }
+
+    fun addAll(tag: List<Array<String>>): TagArrayBuilder {
+        tagList.addAll(tag)
+        return this
+    }
+
+    fun addAll(tag: Array<Array<String>>): TagArrayBuilder {
+        tagList.addAll(tag)
+        return this
     }
 
     fun build() = tagList.toTypedArray()
