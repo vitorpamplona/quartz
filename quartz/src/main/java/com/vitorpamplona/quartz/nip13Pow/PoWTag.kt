@@ -33,7 +33,7 @@ class PoWTag(
     fun toTagArray() = assemble(nonce, commitment)
 
     companion object {
-        val TAG_NAME = "nonce"
+        const val TAG_NAME = "nonce"
 
         @JvmStatic
         fun parse(tags: Array<String>): PoWTag {
