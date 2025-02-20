@@ -24,6 +24,8 @@ import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry.getInstrumentation
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.hints.HintIndexer
 import com.vitorpamplona.quartz.utils.RandomInstance
 import org.junit.Rule
@@ -35,20 +37,22 @@ import java.nio.charset.Charset
 class HintIndexerBenchmark {
     @get:Rule val benchmarkRule = BenchmarkRule()
 
-    val keys =
-        mutableListOf<ByteArray>().apply {
-            for (seed in 0..1_000_000) {
-                add(RandomInstance.bytes(32))
+    companion object {
+        val keys =
+            mutableListOf<HexKey>().apply {
+                for (seed in 0..1_000_000) {
+                    add(RandomInstance.bytes(32).toHexKey())
+                }
             }
-        }
 
-    val relays =
-        getInstrumentation()
-            .context.assets
-            .open("relayDB.txt")
-            .readBytes()
-            .toString(Charset.forName("utf-8"))
-            .split("\n")
+        val relays =
+            getInstrumentation()
+                .context.assets
+                .open("relayDB.txt")
+                .readBytes()
+                .toString(Charset.forName("utf-8"))
+                .split("\n")
+    }
 
     @Test
     fun relayUriHashcode() {
@@ -63,14 +67,14 @@ class HintIndexerBenchmark {
 
         keys.forEach { key ->
             (0..5).map {
-                indexer.index(key, relays.random())
+                indexer.addKey(key, relays.random())
             }
         }
 
         val key = keys.random()
 
         benchmarkRule.measureRepeated {
-            indexer.get(key)
+            indexer.getKey(key)
         }
     }
 
@@ -80,7 +84,7 @@ class HintIndexerBenchmark {
             val indexer = HintIndexer()
             keys.forEach { key ->
                 (0..5).map {
-                    indexer.index(key, relays.random())
+                    indexer.addKey(key, relays.random())
                 }
             }
         }
