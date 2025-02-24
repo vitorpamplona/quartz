@@ -28,3 +28,7 @@ typealias HexKey = String
 fun ByteArray.toHexKey(): HexKey = Hex.encode(this)
 
 fun HexKey.hexToByteArray(): ByteArray = Hex.decode(this)
+
+const val PUBKEY_LENGTH = 64
+
+const val EVENT_ID_LENGTH = 64

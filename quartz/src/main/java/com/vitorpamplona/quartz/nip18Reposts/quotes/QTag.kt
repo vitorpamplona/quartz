@@ -20,6 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip18Reposts.quotes
 
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
+
 interface QTag {
     fun toTagArray(): Array<String>
 
@@ -35,6 +38,18 @@ interface QTag {
             } else {
                 QAddressableTag.parse(tag)
             }
+        }
+
+        @JvmStatic
+        fun parseEventAsHint(tag: Array<String>): EventIdHint? {
+            if (tag.size < 3 || tag[0] != TAG_NAME || tag[1].length != 64 || tag[2].isEmpty()) return null
+            return EventIdHint(tag[1], tag[2])
+        }
+
+        @JvmStatic
+        fun parseAddressAsHint(tag: Array<String>): AddressHint? {
+            if (tag.size < 3 || tag[0] != TAG_NAME || tag[1].length == 64 || !tag[1].contains(':') || tag[2].isEmpty()) return null
+            return AddressHint(tag[1], tag[2])
         }
     }
 }
