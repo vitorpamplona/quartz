@@ -23,15 +23,17 @@ package com.vitorpamplona.quartz.benchmark
 import androidx.benchmark.junit4.BenchmarkRule
 import androidx.benchmark.junit4.measureRepeated
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.vitorpamplona.quartz.CryptoUtils
-import com.vitorpamplona.quartz.nip01Core.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip04Dm.crypto.Encryption
+import com.vitorpamplona.quartz.nip04Dm.crypto.Nip04
+import com.vitorpamplona.quartz.nip44Encryption.Nip44v2
 import junit.framework.TestCase.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class CryptoBenchmark {
+class SharedKeyBenchmark {
     @get:Rule val benchmarkRule = BenchmarkRule()
 
     @Test
@@ -40,7 +42,7 @@ class CryptoBenchmark {
         val keyPair2 = KeyPair()
 
         benchmarkRule.measureRepeated {
-            assertNotNull(CryptoUtils.getSharedSecretNIP04(keyPair1.privKey!!, keyPair2.pubKey))
+            assertNotNull(Nip04.getSharedSecret(keyPair1.privKey!!, keyPair2.pubKey))
         }
     }
 
@@ -48,9 +50,10 @@ class CryptoBenchmark {
     fun getSharedKeyNip44() {
         val keyPair1 = KeyPair()
         val keyPair2 = KeyPair()
+        val nip44v2 = Nip44v2()
 
         benchmarkRule.measureRepeated {
-            assertNotNull(CryptoUtils.nip44.v1.getSharedSecret(keyPair1.privKey!!, keyPair2.pubKey))
+            assertNotNull(nip44v2.getConversationKey(keyPair1.privKey!!, keyPair2.pubKey))
         }
     }
 
@@ -58,9 +61,10 @@ class CryptoBenchmark {
     fun computeSharedKeyNip04() {
         val keyPair1 = KeyPair()
         val keyPair2 = KeyPair()
+        val nip04 = Encryption()
 
         benchmarkRule.measureRepeated {
-            assertNotNull(CryptoUtils.computeSharedSecretNIP04(keyPair1.privKey!!, keyPair2.pubKey))
+            assertNotNull(nip04.computeSharedSecret(keyPair1.privKey!!, keyPair2.pubKey))
         }
     }
 
@@ -68,40 +72,10 @@ class CryptoBenchmark {
     fun computeSharedKeyNip44() {
         val keyPair1 = KeyPair()
         val keyPair2 = KeyPair()
+        val nip44v2 = Nip44v2()
 
         benchmarkRule.measureRepeated {
-            assertNotNull(CryptoUtils.nip44.v1.computeSharedSecret(keyPair1.privKey!!, keyPair2.pubKey))
-        }
-    }
-
-    @Test
-    fun random() {
-        benchmarkRule.measureRepeated { assertNotNull(CryptoUtils.random(1000)) }
-    }
-
-    @Test
-    fun sha256() {
-        val keyPair = KeyPair()
-
-        benchmarkRule.measureRepeated { assertNotNull(CryptoUtils.sha256(keyPair.pubKey)) }
-    }
-
-    @Test
-    fun sign() {
-        val keyPair = KeyPair()
-        val msg = CryptoUtils.sha256(CryptoUtils.random(1000))
-
-        benchmarkRule.measureRepeated { assertNotNull(CryptoUtils.sign(msg, keyPair.privKey!!)) }
-    }
-
-    @Test
-    fun verify() {
-        val keyPair = KeyPair()
-        val msg = CryptoUtils.sha256(CryptoUtils.random(1000))
-        val signature = CryptoUtils.sign(msg, keyPair.privKey!!)
-
-        benchmarkRule.measureRepeated {
-            assertNotNull(CryptoUtils.verifySignature(signature, msg, keyPair.pubKey))
+            assertNotNull(nip44v2.computeConversationKey(keyPair1.privKey!!, keyPair2.pubKey))
         }
     }
 }
