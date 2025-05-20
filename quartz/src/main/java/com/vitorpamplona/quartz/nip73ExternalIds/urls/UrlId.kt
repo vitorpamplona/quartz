@@ -18,21 +18,43 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip73ExternalIds
+package com.vitorpamplona.quartz.nip73ExternalIds.urls
 
-class GeohashId(
-    val geohash: String,
+import com.vitorpamplona.quartz.nip73ExternalIds.ExternalId
+import com.vitorpamplona.quartz.utils.ensure
+import com.vitorpamplona.quartz.utils.toStringNoFragment
+import org.czeal.rfc3986.URIReference
+
+class UrlId(
+    val url: String,
     val hint: String? = null,
 ) : ExternalId {
-    override fun toScope() = toScope(geohash)
+    override fun toScope() = toScope(url)
 
-    override fun toKind() = toKind(geohash)
+    override fun toKind() = toKind(url)
 
     override fun hint() = hint
 
     companion object {
-        fun toScope(geohash: String) = "geo:" + geohash.lowercase()
+        const val KIND = "web"
+        const val PREFIX1 = "https://"
+        const val PREFIX2 = "http://"
 
-        fun toKind(geohash: String) = "geo"
+        fun toScope(url: String) = URIReference.parse(url).normalize().toStringNoFragment()
+
+        fun toKind(url: String) = KIND
+
+        fun match(
+            encoded: String,
+            value: String,
+        ): Boolean {
+            ensure(encoded.startsWith(PREFIX1) || encoded.startsWith(PREFIX2)) { return false }
+            return encoded == value
+        }
+
+        fun parse(encoded: String): String? {
+            ensure(encoded.startsWith(PREFIX1) || encoded.startsWith(PREFIX2)) { return null }
+            return encoded
+        }
     }
 }

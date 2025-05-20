@@ -18,24 +18,40 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip73ExternalIds
+package com.vitorpamplona.quartz.nip73ExternalIds.podcasts
 
-import com.vitorpamplona.quartz.utils.toStringNoFragment
-import org.czeal.rfc3986.URIReference
+import com.vitorpamplona.quartz.nip73ExternalIds.ExternalId
+import com.vitorpamplona.quartz.utils.ensure
 
-class UrlId(
-    val url: String,
+class PodcastEpisodeId(
+    val guid: String,
     val hint: String? = null,
 ) : ExternalId {
-    override fun toScope() = toScope(url)
+    override fun toScope() = toScope(guid)
 
-    override fun toKind() = toKind(url)
+    override fun toKind() = toKind(guid)
 
     override fun hint() = hint
 
     companion object {
-        fun toScope(url: String) = URIReference.parse(url).normalize().toStringNoFragment()
+        const val KIND = "podcast:item:guid:guid"
+        const val PREFIX_COLON = "podcast:item:guid:"
 
-        fun toKind(url: String) = "web"
+        fun toScope(guid: String) = PREFIX_COLON + guid
+
+        fun toKind(guid: String) = KIND
+
+        fun match(
+            encoded: String,
+            value: String,
+        ): Boolean {
+            ensure(encoded.startsWith(PREFIX_COLON)) { return false }
+            return encoded.indexOf(value, PREFIX_COLON.length) > 0
+        }
+
+        fun parse(encoded: String): String? {
+            ensure(encoded.startsWith(PREFIX_COLON)) { return null }
+            return encoded.substring(PREFIX_COLON.length)
+        }
     }
 }
