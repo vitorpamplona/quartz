@@ -18,15 +18,12 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay
+package com.vitorpamplona.quartz.nip01Core.relay.client.pool
 
-enum class RelayState {
-    // Websocket connected
-    CONNECTED,
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 
-    // Websocket disconnecting
-    DISCONNECTING,
-
-    // Websocket disconnected
-    DISCONNECTED,
+class PoolSubscription(
+    var filters: List<RelayBasedFilter> = emptyList(),
+) {
+    fun toFilter(relay: NormalizedRelayUrl) = filters.mapNotNull { it.toFilter(relay) }
 }

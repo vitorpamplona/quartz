@@ -18,20 +18,35 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay
+package com.vitorpamplona.quartz.nip17Dm.settings.tags
 
-import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.utils.ensure
 
-interface SubscriptionCollection {
-    fun isActive(subscriptionId: String): Boolean
+class RelayTag {
+    companion object {
+        const val TAG_NAME = "relay"
 
-    fun getFilters(subscriptionId: String): List<Filter>
+        @JvmStatic
+        fun match(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
-    fun allSubscriptions(): List<Subscription>
+        @JvmStatic
+        fun notMatch(tag: Array<String>) = tag.has(0) && tag[0] == TAG_NAME
 
-    fun match(
-        subscriptionId: String,
-        event: Event,
-    ): Boolean
+        @JvmStatic
+        fun parse(tag: Array<String>): NormalizedRelayUrl? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotEmpty()) { return null }
+
+            val relay = RelayUrlNormalizer.normalizeOrNull(tag[1]) ?: return null
+
+            return relay
+        }
+
+        @JvmStatic
+        fun assemble(relay: NormalizedRelayUrl) = arrayOf(TAG_NAME, relay.url)
+    }
 }

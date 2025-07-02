@@ -18,12 +18,14 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay
+package com.vitorpamplona.quartz.nip72ModCommunities.follow
 
-import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import java.util.UUID
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.tags.addressables.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.addressables.Address
 
-class Subscription(
-    val id: String = UUID.randomUUID().toString().substring(0, 4),
-    val filters: List<Filter>,
-)
+fun TagArrayBuilder<CommunityListEvent>.followCommunity(
+    address: Address,
+    relayUrl: NormalizedRelayUrl,
+) = addUnique(ATag.assemble(address, relayUrl))
