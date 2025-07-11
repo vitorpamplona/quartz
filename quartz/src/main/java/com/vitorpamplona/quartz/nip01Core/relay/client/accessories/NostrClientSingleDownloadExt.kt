@@ -18,35 +18,49 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay.client.acessories
+package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
-import android.util.Log
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.IRelayClientListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.newSubId
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-class RelayAuthenticator(
-    val client: NostrClient,
-    val authenticate: (challenge: String, relay: IRelayClient) -> Unit,
+fun NostrClient.downloadFirstEvent(
+    subscriptionId: String = newSubId(),
+    filters: Map<NormalizedRelayUrl, List<Filter>>,
+    onResponse: (Event) -> Unit,
 ) {
-    private val clientListener =
+    val listener =
         object : IRelayClientListener {
-            override fun onAuth(
+            override fun onEvent(
                 relay: IRelayClient,
-                challenge: String,
+                subId: String,
+                event: Event,
+                arrivalTime: Long,
+                afterEOSE: Boolean,
             ) {
-                authenticate(challenge, relay)
+                if (subId == subscriptionId) {
+                    unsubscribe(this)
+                    close(subscriptionId)
+
+                    onResponse(event)
+                }
             }
         }
 
-    init {
-        Log.d("${this.javaClass.simpleName}", "Init, Subscribe")
-        client.subscribe(clientListener)
-    }
+    subscribe(listener)
 
-    fun destroy() {
-        // makes sure to run
-        Log.d("${this.javaClass.simpleName}", "Destroy, Unsubscribe")
-        client.unsubscribe(clientListener)
+    sendRequest(subscriptionId, filters)
+
+    GlobalScope.launch(Dispatchers.IO) {
+        delay(30000)
+        unsubscribe(listener)
     }
 }

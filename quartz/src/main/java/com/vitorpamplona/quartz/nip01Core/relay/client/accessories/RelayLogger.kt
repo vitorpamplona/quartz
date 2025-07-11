@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay.client.acessories
+package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import android.util.Log
 import com.vitorpamplona.quartz.nip01Core.core.Event
@@ -27,14 +27,15 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.IRelayClientLis
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 
 /**
- * Listens to NostrClient's onEvent messages for caching purposes.
+ * Listens to NostrClient's onNotify messages from the relay
  */
-class EventCollector(
+class RelayLogger(
     val client: NostrClient,
-    val onEvent: (event: Event, relay: IRelayClient) -> Unit,
+    val notify: (message: String, relay: IRelayClient) -> Unit,
 ) {
     private val clientListener =
         object : IRelayClientListener {
+            /** A new message was received */
             override fun onEvent(
                 relay: IRelayClient,
                 subId: String,
@@ -42,7 +43,15 @@ class EventCollector(
                 arrivalTime: Long,
                 afterEOSE: Boolean,
             ) {
-                onEvent(event, relay)
+                Log.d("Relay", "Relay onEVENT ${relay.url} ($subId - $afterEOSE) ${event.toJson()}")
+            }
+
+            override fun onSend(
+                relay: IRelayClient,
+                msg: String,
+                success: Boolean,
+            ) {
+                Log.d("Relay", "Relay send ${relay.url} (${msg.length} chars) $msg")
             }
         }
 

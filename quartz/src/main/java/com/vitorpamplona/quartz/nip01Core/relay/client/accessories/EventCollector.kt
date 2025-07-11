@@ -18,10 +18,10 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay.client.acessories
+package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import android.util.Log
-import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.IRelayClientListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
@@ -29,21 +29,20 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 /**
  * Listens to NostrClient's onEvent messages for caching purposes.
  */
-class RelayInsertConfirmationCollector(
+class EventCollector(
     val client: NostrClient,
-    val onRelayReceived: (eventId: HexKey, relay: IRelayClient) -> Unit,
+    val onEvent: (event: Event, relay: IRelayClient) -> Unit,
 ) {
     private val clientListener =
         object : IRelayClientListener {
-            override fun onSendResponse(
+            override fun onEvent(
                 relay: IRelayClient,
-                eventId: String,
-                success: Boolean,
-                message: String,
+                subId: String,
+                event: Event,
+                arrivalTime: Long,
+                afterEOSE: Boolean,
             ) {
-                if (success) {
-                    onRelayReceived(eventId, relay)
-                }
+                onEvent(event, relay)
             }
         }
 
