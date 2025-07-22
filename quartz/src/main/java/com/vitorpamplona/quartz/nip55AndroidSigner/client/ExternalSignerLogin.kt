@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.api.PubKeyResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.requests.LoginRequest
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.responses.LoginResponse
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
 
 object ExternalSignerLogin {
@@ -34,5 +35,8 @@ object ExternalSignerLogin {
         return intent
     }
 
-    fun parseResult(data: Intent): SignerResult<PubKeyResult> = LoginResponse.parse(data)
+    fun parseResult(data: Intent): SignerResult<PubKeyResult> {
+        val result = IntentResult.fromIntent(data)
+        return LoginResponse.parse(result)
+    }
 }
