@@ -58,8 +58,8 @@ class IndexerRelayListEvent(
     suspend fun decryptRelays(signer: NostrSigner): List<NormalizedRelayUrl> = publicRelays() + (decryptPrivateRelays(signer) ?: emptyList())
 
     companion object {
-        const val KIND = 10087
-        const val ALT = "Broadcasting relays from this author"
+        const val KIND = 10086
+        const val ALT = "Indexer relays from this author"
         val TAGS = arrayOf(AltTag.assemble(ALT))
 
         fun createAddress(pubKey: HexKey): Address = Address(KIND, pubKey, "")
