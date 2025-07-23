@@ -66,7 +66,7 @@ class BroadcastRelayListEvent(
 
         fun createAddressATag(pubKey: HexKey): ATag = ATag(KIND, pubKey, "", null)
 
-        fun createAddressTag(pubKey: HexKey): String = Address.Companion.assemble(KIND, pubKey, "")
+        fun createAddressTag(pubKey: HexKey): String = Address.assemble(KIND, pubKey, "")
 
         suspend fun updateRelayList(
             earlierVersion: BroadcastRelayListEvent,
@@ -75,8 +75,9 @@ class BroadcastRelayListEvent(
             createdAt: Long = TimeUtils.now(),
         ): BroadcastRelayListEvent {
             val newRelayList = relays.map { RelayTag.assemble(it) }
+            println("AABBCC 1 ${earlierVersion.content}")
             val privateTags = earlierVersion.privateTags(signer) ?: throw SignerExceptions.UnauthorizedDecryptionException()
-
+            println("AABBCC 2 ${privateTags.size}")
             val publicTags = earlierVersion.tags.remove(RelayTag::match)
             val newPrivateTags = privateTags.remove(RelayTag::notMatch).plus(newRelayList)
 
