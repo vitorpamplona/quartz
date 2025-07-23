@@ -41,5 +41,5 @@ data class RoomId(
         }
     }
 
-    fun toTagArray() = RoomIdTag.assemble(id, relayUrl)
+    fun toTagArray() = RoomIdTag.assemble(this)
 }
