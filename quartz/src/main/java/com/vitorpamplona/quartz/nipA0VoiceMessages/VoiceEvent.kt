@@ -39,6 +39,14 @@ class VoiceEvent(
         const val ALT_DESCRIPTION = "Voice message"
 
         fun build(
+            url: String,
+            mimeType: String?,
+            hash: String,
+            duration: Int,
+            waveform: List<Int>,
+        ) = build(AudioMeta(url, mimeType, hash, duration, waveform))
+
+        fun build(
             voiceMessage: AudioMeta,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<VoiceEvent>.() -> Unit = {},
