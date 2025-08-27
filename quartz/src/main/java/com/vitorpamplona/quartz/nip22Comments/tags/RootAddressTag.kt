@@ -68,6 +68,15 @@ class RootAddressTag(
         }
 
         @JvmStatic
+        fun parseAddress(tag: Array<String>): Address? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotEmpty()) { return null }
+
+            return Address.parse(tag[1])
+        }
+
+        @JvmStatic
         fun parseValidAddress(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
