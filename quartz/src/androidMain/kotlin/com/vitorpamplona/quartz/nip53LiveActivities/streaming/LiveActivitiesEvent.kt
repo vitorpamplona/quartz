@@ -24,13 +24,10 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.any
-import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
-import com.vitorpamplona.quartz.nip01Core.tags.addressables.ATag
-import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
-import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
@@ -38,6 +35,8 @@ import com.vitorpamplona.quartz.nip31Alts.AltTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.CurrentParticipantsTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.EndsTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.ParticipantTag
+import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.PinnedEventTag
+import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.RecordingTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.RelayListTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.StartsTag
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.tags.StatusTag
@@ -55,15 +54,26 @@ class LiveActivitiesEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider,
-    AddressHintProvider,
     PubKeyHintProvider {
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        val pinnedEvents = pinned()
+        if (pinnedEvents.isEmpty()) return emptyList()
 
-    override fun linkedEventIds() = tags.mapNotNull(ETag::parseId) + tags.mapNotNull(QTag::parseEventId)
+        val relays = allRelayUrls()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(QTag::parseAddressAsHint)
+        return if (relays.isNotEmpty()) {
+            pinnedEvents
+                .map { eventId ->
+                    relays.map { relay ->
+                        EventIdHint(eventId, relay)
+                    }
+                }.flatten()
+        } else {
+            emptyList()
+        }
+    }
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId) + tags.mapNotNull(QTag::parseAddressId)
+    override fun linkedEventIds() = tags.mapNotNull(PinnedEventTag::parse)
 
     override fun pubKeyHints() = tags.mapNotNull(ParticipantTag::parseAsHint)
 
@@ -76,6 +86,8 @@ class LiveActivitiesEvent(
     fun image() = tags.firstNotNullOfOrNull(ImageTag::parse)
 
     fun streaming() = tags.firstNotNullOfOrNull(StreamingTag::parse)
+
+    fun recording() = tags.firstNotNullOfOrNull(RecordingTag::parse)
 
     fun starts() = tags.firstNotNullOfOrNull(StartsTag::parse)
 
@@ -93,7 +105,7 @@ class LiveActivitiesEvent(
 
     fun participants() = tags.mapNotNull(ParticipantTag::parse)
 
-    fun relays() = tags.mapNotNull(RelayListTag::parse)
+    fun relays() = tags.mapNotNull(RelayListTag::parse).flatten()
 
     fun allRelayUrls() = tags.mapNotNull(RelayListTag::parse).flatten()
 
@@ -102,6 +114,8 @@ class LiveActivitiesEvent(
     fun host() = tags.firstNotNullOfOrNull(ParticipantTag::parseHost)
 
     fun hosts() = tags.mapNotNull(ParticipantTag::parseHost)
+
+    fun pinned() = tags.mapNotNull(PinnedEventTag::parse)
 
     fun checkStatus(eventStatus: StatusTag.STATUS?): StatusTag.STATUS? =
         if (eventStatus == StatusTag.STATUS.LIVE && createdAt < TimeUtils.eightHoursAgo()) {
