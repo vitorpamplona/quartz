@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.jackson.EventSerializer
 
 class MessageSerializer : StdSerializer<Message>(Message::class.java) {
     val eventSerializer = EventSerializer()
+    val countSerializer = CountResultSerializer()
 
     override fun serialize(
         msg: Message,
@@ -65,6 +66,10 @@ class MessageSerializer : StdSerializer<Message>(Message::class.java) {
             is ClosedMessage -> {
                 gen.writeString(msg.subId)
                 gen.writeString(msg.message)
+            }
+
+            is CountMessage -> {
+                countSerializer.serialize(msg.result, gen, provider)
             }
 
             else -> null
