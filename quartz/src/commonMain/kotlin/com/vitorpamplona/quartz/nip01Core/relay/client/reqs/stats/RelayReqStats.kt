@@ -18,40 +18,50 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
+package com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.IRelayClientListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.utils.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
-class RelayAuthenticator(
+/**
+ * Listens to NostrClient's onNotify messages from the relay
+ */
+class RelayReqStats(
     val client: INostrClient,
-    val scope: CoroutineScope,
-    val authenticate: suspend (challenge: String, relay: IRelayClient) -> Unit,
 ) {
+    private val stats = ReqStatsRepository()
+
     private val clientListener =
         object : IRelayClientListener {
-            override fun onAuth(
+            override fun onIncomingMessage(
                 relay: IRelayClient,
-                challenge: String,
+                msgStr: String,
+                msg: Message,
             ) {
-                scope.launch {
-                    authenticate(challenge, relay)
+                super.onIncomingMessage(relay, msgStr, msg)
+                if (msg is EventMessage) {
+                    stats.add(msg.subId, msg.event.kind)
                 }
             }
         }
 
+    fun printStats() =
+        stats.printCounter { subId, kind, counter ->
+            Log.d("RelaySubStats", "$subId, kind $kind: $counter")
+        }
+
     init {
-        Log.d("RelayAuthenticator", "Init, Subscribe")
+        Log.d("RelaySubStats", "Init, Subscribe")
         client.subscribe(clientListener)
     }
 
     fun destroy() {
         // makes sure to run
-        Log.d("RelayAuthenticator", "Destroy, Unsubscribe")
+        Log.d("RelaySubStats", "Destroy, Unsubscribe")
         client.unsubscribe(clientListener)
     }
 }
