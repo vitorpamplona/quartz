@@ -45,12 +45,17 @@ class Sha256Hasher {
         bufferSize: Int = 8192,
     ): ByteArray {
         val buffer = ByteArray(bufferSize)
-        var bytesRead: Int
+        try {
+            var bytesRead: Int
 
-        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-            digest.update(buffer, 0, bytesRead)
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+
+            return digest.digest()
+        } finally {
+            // Always reset digest to prevent contaminating the pool on exceptions
+            digest.reset()
         }
-
-        return digest.digest().also { digest.reset() }
     }
 }
