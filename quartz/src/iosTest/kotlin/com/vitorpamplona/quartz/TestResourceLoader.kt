@@ -32,11 +32,11 @@ import platform.darwin.NSObjectMeta
 actual class TestResourceLoader {
     @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
     actual fun loadString(file: String): String {
-        val bundle = NSBundle.Companion.bundleForClass(BundleMarker)
+        val bundle = NSBundle.bundleForClass(BundleMarker)
         val path =
             bundle.pathForResource(file, ofType = null)
                 ?: throw IllegalArgumentException("Resource not found: $file")
-        return NSString.Companion.stringWithContentsOfFile(path, encoding = NSUTF8StringEncoding, error = null)!!
+        return NSString.stringWithContentsOfFile(path, encoding = NSUTF8StringEncoding, error = null)!!
     }
 
     private class BundleMarker : NSObject() {
