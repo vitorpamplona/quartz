@@ -30,7 +30,6 @@ import kotlinx.serialization.json.addJsonArray
 import kotlinx.serialization.json.buildJsonArray
 
 actual object EventHasherSerializer {
-
     fun makeJsonObjectForId(
         pubKey: HexKey,
         createdAt: Long,
@@ -38,30 +37,30 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): JsonArray {
-        val arrayBuilder = buildJsonArray {
-            add(0)
-            add(pubKey)
-            add(createdAt)
-            add(kind)
-            addJsonArray {
-                tags.fastForEach { tag ->
-                    //add(JsonArray(content = tag.map { JsonPrimitive(it) }))
-                    addJsonArray { tag.fastForEach { add(it) } }
+        val arrayBuilder =
+            buildJsonArray {
+                add(0)
+                add(pubKey)
+                add(createdAt)
+                add(kind)
+                addJsonArray {
+                    tags.fastForEach { tag ->
+                        // add(JsonArray(content = tag.map { JsonPrimitive(it) }))
+                        addJsonArray { tag.fastForEach { add(it) } }
+                    }
                 }
+                add(content)
             }
-            add(content)
-        }
         return arrayBuilder
     }
+
     actual fun makeJsonForId(
         pubKey: HexKey,
         createdAt: Long,
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): String {
-        return makeJsonObjectForId(pubKey, createdAt, kind, tags,content).toString()
-    }
+    ): String = makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString()
 
     actual fun fastMakeJsonForId(
         pubKey: HexKey,
@@ -71,7 +70,7 @@ actual object EventHasherSerializer {
         content: String,
     ): ByteArray {
         // Also use makeJsonObjectForId(...) above. May change this if needed(for performance).
-        return makeJsonObjectForId(pubKey, createdAt, kind, tags,content).toString().encodeToByteArray()
+        return makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray()
     }
 
     actual fun makeJsonForIdHashAndCheck(
@@ -82,7 +81,6 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): Boolean {
-
         // Also use makeJsonObjectForId(...) above. May change byteArray encode method if needed.
         val eventIdHash = sha256(makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray())
         return Hex.isEqual(id, eventIdHash)

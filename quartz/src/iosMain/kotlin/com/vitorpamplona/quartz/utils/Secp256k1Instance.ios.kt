@@ -23,17 +23,12 @@ package com.vitorpamplona.quartz.utils
 import fr.acinq.secp256k1.Secp256k1
 
 actual object Secp256k1Instance {
-
     private val h02 = Hex.decode("02")
     private val secp256k1Ref = Secp256k1.get()
 
-    actual fun compressedPubKeyFor(privKey: ByteArray): ByteArray {
-        return secp256k1Ref.pubKeyCompress(secp256k1Ref.pubkeyCreate(privKey))
-    }
+    actual fun compressedPubKeyFor(privKey: ByteArray): ByteArray = secp256k1Ref.pubKeyCompress(secp256k1Ref.pubkeyCreate(privKey))
 
-    actual fun isPrivateKeyValid(il: ByteArray): Boolean {
-        return secp256k1Ref.secKeyVerify(il)
-    }
+    actual fun isPrivateKeyValid(il: ByteArray): Boolean = secp256k1Ref.secKeyVerify(il)
 
     actual fun signSchnorr(
         data: ByteArray,
