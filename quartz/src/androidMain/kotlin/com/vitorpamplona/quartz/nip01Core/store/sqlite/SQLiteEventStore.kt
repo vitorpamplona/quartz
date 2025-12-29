@@ -30,30 +30,32 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isEphemeral
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
-import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventIndexesModule.IndexingStrategy
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class SQLiteEventStore(
     val context: Context,
     val dbName: String? = "events.db",
     val relayUrl: String? = null,
-    val tagIndexStrategy: IndexingStrategy = IndexingStrategy(),
+    val tagIndexStrategy: IndexingStrategy = DefaultIndexingStrategy(),
 ) : SQLiteOpenHelper(context, dbName, null, DATABASE_VERSION) {
     companion object {
         const val DATABASE_VERSION = 2
     }
 
     val seedModule = SeedModule()
+
     val fullTextSearchModule = FullTextSearchModule()
-    val eventIndexModule = EventIndexesModule(fullTextSearchModule, seedModule, tagIndexStrategy)
+    val eventIndexModule = EventIndexesModule(fullTextSearchModule, seedModule::hasher, tagIndexStrategy)
 
     val replaceableModule = ReplaceableModule()
     val addressableModule = AddressableModule()
     val ephemeralModule = EphemeralModule()
 
-    val deletionModule = DeletionRequestModule()
+    val deletionModule = DeletionRequestModule(seedModule::hasher)
     val expirationModule = ExpirationModule()
-    val rightToVanishModule = RightToVanishModule()
+    val rightToVanishModule = RightToVanishModule(seedModule::hasher)
 
     val modules =
         listOf(
@@ -112,12 +114,28 @@ class SQLiteEventStore(
         modules.reversed().forEach { it.deleteAll(db) }
     }
 
+    suspend fun vacuum() {
+        // 1. ANALYZE: Collects statistics about tables and indices
+        // to help the query planner optimize queries.
+        withContext(Dispatchers.IO) {
+            writableDatabase.execSQL("VACUUM")
+        }
+    }
+
+    suspend fun analyse() {
+        // 2. VACUUM: Rebuilds the database file, reclaiming unused space
+        // and reducing fragmentation.
+        withContext(Dispatchers.IO) {
+            writableDatabase.execSQL("ANALYZE")
+        }
+    }
+
     private fun innerInsertEvent(
         event: Event,
         db: SQLiteDatabase,
     ) {
         val headerId = eventIndexModule.insert(event, db)
-        deletionModule.insert(event, headerId, db)
+        deletionModule.insert(event, db)
         expirationModule.insert(event, headerId, db)
         fullTextSearchModule.insert(event, headerId, db)
         rightToVanishModule.insert(event, relayUrl, headerId, db)
