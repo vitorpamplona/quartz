@@ -23,6 +23,9 @@ package com.vitorpamplona.quartz.nip01Core.store.sqlite
 import com.vitorpamplona.quartz.nip01Core.core.Tag
 
 interface IndexingStrategy {
+    val indexTagQueriesWithoutKinds: Boolean
+    val useAndIndexIdOnOrderBy: Boolean
+
     fun shouldIndex(
         kind: Int,
         tag: Tag,
@@ -32,7 +35,10 @@ interface IndexingStrategy {
 /**
  * By default, we index all tags that have a single letter name and some value
  */
-class DefaultIndexingStrategy : IndexingStrategy {
+class DefaultIndexingStrategy(
+    override val indexTagQueriesWithoutKinds: Boolean = false,
+    override val useAndIndexIdOnOrderBy: Boolean = false,
+) : IndexingStrategy {
     override fun shouldIndex(
         kind: Int,
         tag: Tag,
