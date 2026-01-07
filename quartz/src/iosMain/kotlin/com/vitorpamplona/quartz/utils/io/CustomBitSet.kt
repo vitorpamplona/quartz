@@ -19,12 +19,10 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.vitorpamplona.quartz.utils.io
+// Credits: skolson, from https://github.com/skolson/KmpIO
 
 import kotlin.math.max
 
-/**
- * Most of the functionality of a java.util.BitSet
- */
 class CustomBitSet(
     val numberOfBits: Int,
 ) {
@@ -50,47 +48,14 @@ class CustomBitSet(
                 (BITS_PER_WORD - numberOfLeadingZeros(words[wordsInUse - 1]))
         }
 
-    /**
-     * Initializes a new bit set containing all the bits in the given byte
-     * buffer between its position and limit.
-     *
-     * <p>The byte buffer is not modified by this method, and no
-     * reference to the buffer is retained by the bit set.
-     *
-     * @param bytes a byte array containing a little-endian representation
-     *        of a sequence of bits, to be
-     *        used as the initial bits of the new bit set
-     */
     constructor(bytes: ByteArray, bitsCount: Int = bytes.size * 8) : this(bitsCount) {
         transformBuffer(ByteBuffer(bytes))
     }
 
-    /**
-     * Initializes a new bit set containing all the bits in the given byte
-     * buffer between its position and limit.
-     *
-     * <p>The byte buffer is not modified by this method, and no
-     * reference to the buffer is retained by the bit set.
-     *
-     * @param buffer a byte buffer containing a little-endian representation
-     *        of a sequence of bits between its position and limit, to be
-     *        used as the initial bits of the new bit set
-     */
-    constructor(buffer: ByteBuffer, bitsCount: Int = buffer.remaining * 8) : this(bitsCount) {
-        transformBuffer(buffer)
-    }
-
-    /**
-     * Initializes a new bit set containing all the bits in the given byte
-     * buffer between its position and limit.
-     *
-     * <p>The byte buffer content is not modified by this method, but the position ill be set to limit.
-     * Bitmask is treated as LittleEndian for the bytes containing the mask.
-     *
-     * @param buffer a byte buffer containing a little-endian representation
-     *        of a sequence of bits between its position and limit, to be
-     *        used as the initial bits of the new bit set
-     */
+//    constructor(buffer: ByteBuffer, bitsCount: Int = buffer.remaining * 8) : this(bitsCount) {
+//        transformBuffer(buffer)
+//    }
+//
     private fun transformBuffer(buffer: ByteBuffer) {
         words = LongArray((buffer.remaining + 7) / 8) { 0 }
         var i = 0
@@ -132,13 +97,6 @@ class CustomBitSet(
         return bytes
     }
 
-    /**
-     * Sets the bit at the specified index to the complement of its
-     * current value.
-     *
-     * @param bitIndex the index of the bit to flip
-     * @throws IndexOutOfBoundsException if the specified index is negative
-     */
     fun flip(bitIndex: Int) {
         if (bitIndex < 0) throw IndexOutOfBoundsException("bitIndex < 0: $bitIndex")
         val wordIndex = wordIndex(bitIndex)
@@ -147,18 +105,6 @@ class CustomBitSet(
         checkInvariants()
     }
 
-    /**
-     * Sets each bit from the specified `fromIndex` (inclusive) to the
-     * specified `toIndex` (exclusive) to the complement of its current
-     * value.
-     *
-     * @param fromIndex index of the first bit to flip
-     * @param toIndex index after the last bit to flip
-     * @throws IndexOutOfBoundsException if `fromIndex` is negative,
-     * or `toIndex` is negative, or `fromIndex` is
-     * larger than `toIndex`
-     * @since 1.4
-     */
     fun flip(
         fromIndex: Int,
         toIndex: Int,
@@ -218,12 +164,6 @@ class CustomBitSet(
         checkInvariants()
     }
 
-    /**
-     * find all set bits at or after startIndex. For each bit, invoke the lambda passing the index
-     * of the set bit. The lamda can return true to continue, or false to stop iterating.
-     *
-     * @return number of bits set
-     */
     fun iterateSetBits(
         startIndex: Int = 0,
         onSetBit: (Int) -> Boolean,
@@ -251,12 +191,6 @@ class CustomBitSet(
         }
     }
 
-    /**
-     * find all set bits at or after startIndex. For each bit, invoke the lambda passing the index
-     * of the set bit. The lamda can return true to continue, or false to stop iterating.
-     *
-     * @return number of bits set
-     */
     fun iterateClearBits(
         startIndex: Int = 0,
         onClearedBit: (Int) -> Boolean,
@@ -284,12 +218,6 @@ class CustomBitSet(
         }
     }
 
-    /**
-     * Sets the bit specified by the index to `false`.
-     *
-     * @param bitIndex the index of the bit to be cleared
-     * @throws IndexOutOfBoundsException if the specified index is negative
-     */
     fun clear(bitIndex: Int) {
         if (bitIndex < 0) throw IndexOutOfBoundsException("bitIndex < 0: $bitIndex")
         val wordIndex = wordIndex(bitIndex)
@@ -298,9 +226,6 @@ class CustomBitSet(
         checkInvariants()
     }
 
-    /**
-     * Sets all of the bits in this CustomBitSet to `false`.
-     */
     fun clear() {
         for (i in 0..words.size) words[i] = 0
     }
@@ -345,13 +270,6 @@ class CustomBitSet(
         return text
     }
 
-    /**
-     * Returns the number of bits of space actually in use by this
-     * `BitSet` to represent bit values.
-     * The maximum element in the set is the size - 1st element.
-     *
-     * @return the number of bits currently in this bit set
-     */
     fun size(): Int = words.size * BITS_PER_WORD
 
     companion object {
