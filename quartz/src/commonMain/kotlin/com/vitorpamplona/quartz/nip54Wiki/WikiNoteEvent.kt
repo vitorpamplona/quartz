@@ -131,9 +131,7 @@ class WikiNoteEvent(
     fun image() = tags.firstOrNull { it.size > 1 && it[0] == "image" }?.get(1)
 
     override fun publishedAt(): Long? {
-        val publishedAt = tags.firstNotNullOfOrNull(PublishedAtTag::parse)
-
-        if (publishedAt == null) return null
+        val publishedAt = tags.firstNotNullOfOrNull(PublishedAtTag::parse) ?: return null
 
         // removes posts in the future.
         return if (publishedAt <= createdAt) {
