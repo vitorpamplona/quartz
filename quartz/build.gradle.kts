@@ -250,7 +250,7 @@ kotlin {
         iosMain {
             dependsOn(commonMain.get())
             dependencies {
-                implementation("io.github.charlietap:cachemap:0.2.4")
+                implementation(libs.charlietap.cachemap)
             }
         }
 
