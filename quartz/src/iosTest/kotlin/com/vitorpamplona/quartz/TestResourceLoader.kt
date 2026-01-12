@@ -20,26 +20,18 @@
  */
 package com.vitorpamplona.quartz
 
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import platform.Foundation.NSBundle
+import kotlinx.cinterop.toKString
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
-import platform.darwin.NSObject
-import platform.darwin.NSObjectMeta
+import platform.posix.getenv
 
 actual class TestResourceLoader {
-    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+    @OptIn(ExperimentalForeignApi::class)
     actual fun loadString(file: String): String {
-        val bundle = NSBundle.bundleForClass(BundleMarker)
-        val path =
-            bundle.pathForResource(file, ofType = null)
-                ?: throw IllegalArgumentException("Resource not found: $file")
-        return NSString.stringWithContentsOfFile(path, encoding = NSUTF8StringEncoding, error = null)!!
-    }
-
-    private class BundleMarker : NSObject() {
-        companion object : NSObjectMeta()
+        val resourceDir = getenv("TEST_RESOURCES_ROOT")?.toKString()
+        val filePath = "$resourceDir/$file"
+        return NSString.stringWithContentsOfFile(filePath, encoding = NSUTF8StringEncoding, error = null) as String
     }
 }

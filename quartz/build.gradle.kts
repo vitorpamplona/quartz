@@ -1,11 +1,17 @@
+@file:OptIn(ExperimentalSpmForKmpFeature::class)
+
 import com.vanniktech.maven.publish.KotlinMultiplatform
+import io.github.frankois944.spmForKmp.swiftPackageConfig
+import io.github.frankois944.spmForKmp.utils.ExperimentalSpmForKmpFeature
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.serialization)
     alias(libs.plugins.vanniktech.mavenPublish)
+    id("io.github.frankois944.spmForKmp") version "1.4.0"
 }
 
 android {
@@ -74,6 +80,27 @@ kotlin {
     // https://developer.android.com/kotlin/multiplatform/migrate
     val xcfName = "quartz-kmpKit"
 
+    listOf(
+        iosArm64(),
+        iosX64(),
+        iosSimulatorArm64()
+    ).forEach { target ->
+        target.swiftPackageConfig(cinteropName = "swiftbridge") {
+            minIos = "17"
+            minMacos = "14"
+            dependency {
+                remotePackageVersion(
+                    url = uri("https://github.com/swift-standards/swift-rfc-3986.git"),
+                    packageName = "swift-rfc-3986",
+                    products = {
+                        add("RFC 3986")
+                    },
+                    version = "0.1.0"
+                )
+            }
+        }
+    }
+
 
     iosX64 {
         binaries.framework {
@@ -91,6 +118,18 @@ kotlin {
         binaries.framework {
             baseName = xcfName
         }
+    }
+    //This makes sure that the resource file directory is visible for iOS tests.
+    val rootDir = "${rootProject.rootDir.path}/quartz/src/iosTest/resources"
+
+    tasks.withType<Test>().configureEach {
+        environment("TEST_RESOURCES_ROOT", rootDir)
+    }
+
+    tasks.withType<KotlinNativeTest>().configureEach {
+        environment("TEST_RESOURCES_ROOT", rootDir)
+        // This is necessary to have the variable propagated on iOS
+        environment("SIMCTL_CHILD_TEST_RESOURCES_ROOT", rootDir)
     }
 
     // Source set declarations.
@@ -211,7 +250,7 @@ kotlin {
         iosMain {
             dependsOn(commonMain.get())
             dependencies {
-
+                implementation("io.github.charlietap:cachemap:0.2.4")
             }
         }
 
