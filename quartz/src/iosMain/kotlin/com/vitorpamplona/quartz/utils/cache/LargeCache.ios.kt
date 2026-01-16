@@ -31,33 +31,21 @@ import kotlin.collections.set
 actual class LargeCache<K, V> : ICacheOperations<K, V> {
     private val concurrentMap = cacheMapOf<K, V>()
 
-    actual fun keys(): Set<K> {
-        return concurrentMap.keys
-    }
+    actual fun keys(): Set<K> = concurrentMap.keys
 
-    actual fun values(): Iterable<V> {
-        return concurrentMap.values
-    }
+    actual fun values(): Iterable<V> = concurrentMap.values
 
-    actual fun get(key: K): V? {
-        return concurrentMap[key]
-    }
+    actual fun get(key: K): V? = concurrentMap[key]
 
-    actual fun remove(key: K): V? {
-        return concurrentMap.remove(key)
-    }
+    actual fun remove(key: K): V? = concurrentMap.remove(key)
 
-    actual fun isEmpty(): Boolean {
-        return concurrentMap.isEmpty()
-    }
+    actual fun isEmpty(): Boolean = concurrentMap.isEmpty()
 
     actual fun clear() {
         concurrentMap.clear()
     }
 
-    actual fun containsKey(key: K): Boolean {
-        return concurrentMap.containsKey(key)
-    }
+    actual fun containsKey(key: K): Boolean = concurrentMap.containsKey(key)
 
     actual fun put(
         key: K,
@@ -84,8 +72,8 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
     actual fun createIfAbsent(
         key: K,
         builder: (K) -> V,
-    ): Boolean {
-        return runBlocking {
+    ): Boolean =
+        runBlocking {
             val value = concurrentMap.get(key)
             if (value != null) {
                 false
@@ -95,49 +83,34 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
                 concurrentMap[key] == null
             }
         }
-    }
 
-    actual override fun size(): Int {
-        return concurrentMap.size
-    }
+    actual override fun size(): Int = concurrentMap.size
 
     actual override fun forEach(consumer: ICacheBiConsumer<K, V>) {
         concurrentMap.forEach { consumer.accept(it.key, it.value) }
     }
 
-    actual override fun filter(consumer: CacheCollectors.BiFilter<K, V>): List<V> {
-        return concurrentMap
+    actual override fun filter(consumer: CacheCollectors.BiFilter<K, V>): List<V> =
+        concurrentMap
             .filter { consumer.filter(it.key, it.value) }
             .values
             .toList()
-    }
 
-    actual override fun filterIntoSet(consumer: CacheCollectors.BiFilter<K, V>): Set<V> {
-        return concurrentMap
+    actual override fun filterIntoSet(consumer: CacheCollectors.BiFilter<K, V>): Set<V> =
+        concurrentMap
             .filter { consumer.filter(it.key, it.value) }
             .values
             .toSet()
-    }
 
-    actual override fun <R> map(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): List<R> {
-        return concurrentMap.map { consumer.map(it.key, it.value) }
-    }
+    actual override fun <R> map(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): List<R> = concurrentMap.map { consumer.map(it.key, it.value) }
 
-    actual override fun <R> mapNotNull(consumer: CacheCollectors.BiMapper<K, V, R?>): List<R> {
-        return concurrentMap.mapNotNull { consumer.map(it.key, it.value) }
-    }
+    actual override fun <R> mapNotNull(consumer: CacheCollectors.BiMapper<K, V, R?>): List<R> = concurrentMap.mapNotNull { consumer.map(it.key, it.value) }
 
-    actual override fun <R> mapNotNullIntoSet(consumer: CacheCollectors.BiMapper<K, V, R?>): Set<R> {
-        return mapNotNull(consumer).toSet()
-    }
+    actual override fun <R> mapNotNullIntoSet(consumer: CacheCollectors.BiMapper<K, V, R?>): Set<R> = mapNotNull(consumer).toSet()
 
-    actual override fun <R> mapFlatten(consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>): List<R> {
-        return concurrentMap.flatMap { consumer.map(it.key, it.value) as Iterable<R> }
-    }
+    actual override fun <R> mapFlatten(consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>): List<R> = concurrentMap.flatMap { consumer.map(it.key, it.value) as Iterable<R> }
 
-    actual override fun <R> mapFlattenIntoSet(consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>): Set<R> {
-        return mapFlatten(consumer).toSet()
-    }
+    actual override fun <R> mapFlattenIntoSet(consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>): Set<R> = mapFlatten(consumer).toSet()
 
     actual override fun maxOrNullOf(
         filter: CacheCollectors.BiFilter<K, V>,
@@ -157,36 +130,22 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
 //        return concurrentMap.map { consumer.map(it.key, it.value) }.sum()
     }
 
-    actual override fun sumOfLong(consumer: CacheCollectors.BiSumOfLong<K, V>): Long {
-        return concurrentMap.sumOfLong(consumer)
-    }
+    actual override fun sumOfLong(consumer: CacheCollectors.BiSumOfLong<K, V>): Long = concurrentMap.sumOfLong(consumer)
 
-    actual override fun <R> groupBy(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, List<V>> {
-        return concurrentMap.groupBy(consumer)
-    }
+    actual override fun <R> groupBy(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, List<V>> = concurrentMap.groupBy(consumer)
 
-    actual override fun <R> countByGroup(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, Int> {
-        return  concurrentMap.countByGroup(consumer)
-    }
+    actual override fun <R> countByGroup(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, Int> = concurrentMap.countByGroup(consumer)
 
     actual override fun <R> sumByGroup(
         groupMap: CacheCollectors.BiNotNullMapper<K, V, R>,
         sumOf: CacheCollectors.BiNotNullMapper<K, V, Long>,
-    ): Map<R, Long> {
-        return concurrentMap.sumByGroup(groupMap, sumOf)
-    }
+    ): Map<R, Long> = concurrentMap.sumByGroup(groupMap, sumOf)
 
-    actual override fun count(consumer: CacheCollectors.BiFilter<K, V>): Int {
-        return concurrentMap.count { consumer.filter(it.key, it.value) }
-    }
+    actual override fun count(consumer: CacheCollectors.BiFilter<K, V>): Int = concurrentMap.count { consumer.filter(it.key, it.value) }
 
-    actual override fun <T, U> associate(transform: (K, V) -> Pair<T, U>): Map<T, U> {
-        return concurrentMap.associate(transform)
-    }
+    actual override fun <T, U> associate(transform: (K, V) -> Pair<T, U>): Map<T, U> = concurrentMap.associate(transform)
 
-    actual override fun <U> associateWith(transform: (K, V) -> U?): Map<K, U?> {
-        return concurrentMap.associateWith(transform)
-    }
+    actual override fun <U> associateWith(transform: (K, V) -> U?): Map<K, U?> = concurrentMap.associateWith(transform)
 
     actual override fun filter(
         from: K,
@@ -201,9 +160,7 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
         from: K,
         to: K,
         consumer: CacheCollectors.BiFilter<K, V>,
-    ): Set<V> {
-        return filter(from, to, consumer).toSet()
-    }
+    ): Set<V> = filter(from, to, consumer).toSet()
 
     actual override fun <R> map(
         from: K,
@@ -218,33 +175,25 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
         from: K,
         to: K,
         consumer: CacheCollectors.BiMapper<K, V, R?>,
-    ): List<R> {
-        return concurrentMap.subMapAlt(from, to).mapNotNull { consumer.map(it.key, it.value) }
-    }
+    ): List<R> = concurrentMap.subMapAlt(from, to).mapNotNull { consumer.map(it.key, it.value) }
 
     actual override fun <R> mapNotNullIntoSet(
         from: K,
         to: K,
         consumer: CacheCollectors.BiMapper<K, V, R?>,
-    ): Set<R> {
-        return mapNotNull(from, to, consumer).toSet()
-    }
+    ): Set<R> = mapNotNull(from, to, consumer).toSet()
 
     actual override fun <R> mapFlatten(
         from: K,
         to: K,
         consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>,
-    ): List<R> {
-        return concurrentMap.subMapAlt(from, to).flatMap { consumer.map(it.key, it.value) as Iterable<R> }
-    }
+    ): List<R> = concurrentMap.subMapAlt(from, to).flatMap { consumer.map(it.key, it.value) as Iterable<R> }
 
     actual override fun <R> mapFlattenIntoSet(
         from: K,
         to: K,
         consumer: CacheCollectors.BiMapper<K, V, Collection<R>?>,
-    ): Set<R> {
-        return mapFlatten(from, to, consumer).toSet()
-    }
+    ): Set<R> = mapFlatten(from, to, consumer).toSet()
 
     actual override fun maxOrNullOf(
         from: K,
@@ -260,66 +209,50 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
         from: K,
         to: K,
         consumer: CacheCollectors.BiSumOf<K, V>,
-    ): Int {
-        return concurrentMap.subMapAlt(from, to).sumOf(consumer)
-    }
+    ): Int = concurrentMap.subMapAlt(from, to).sumOf(consumer)
 
     actual override fun sumOfLong(
         from: K,
         to: K,
         consumer: CacheCollectors.BiSumOfLong<K, V>,
-    ): Long {
-        return concurrentMap.subMapAlt(from, to).sumOfLong(consumer)
-    }
+    ): Long = concurrentMap.subMapAlt(from, to).sumOfLong(consumer)
 
     actual override fun <R> groupBy(
         from: K,
         to: K,
         consumer: CacheCollectors.BiNotNullMapper<K, V, R>,
-    ): Map<R, List<V>> {
-        return concurrentMap.subMapAlt(from, to).groupBy(consumer)
-    }
+    ): Map<R, List<V>> = concurrentMap.subMapAlt(from, to).groupBy(consumer)
 
     actual override fun <R> countByGroup(
         from: K,
         to: K,
         consumer: CacheCollectors.BiNotNullMapper<K, V, R>,
-    ): Map<R, Int> {
-        return concurrentMap.subMapAlt(from, to).countByGroup(consumer)
-    }
+    ): Map<R, Int> = concurrentMap.subMapAlt(from, to).countByGroup(consumer)
 
     actual override fun <R> sumByGroup(
         from: K,
         to: K,
         groupMap: CacheCollectors.BiNotNullMapper<K, V, R>,
         sumOf: CacheCollectors.BiNotNullMapper<K, V, Long>,
-    ): Map<R, Long> {
-        return concurrentMap.subMapAlt(from, to).sumByGroup(groupMap, sumOf)
-    }
+    ): Map<R, Long> = concurrentMap.subMapAlt(from, to).sumByGroup(groupMap, sumOf)
 
     actual override fun count(
         from: K,
         to: K,
         consumer: CacheCollectors.BiFilter<K, V>,
-    ): Int {
-        return concurrentMap.subMapAlt(from, to).count { consumer.filter(it.key, it.value) }
-    }
+    ): Int = concurrentMap.subMapAlt(from, to).count { consumer.filter(it.key, it.value) }
 
     actual override fun <T, U> associate(
         from: K,
         to: K,
         transform: (K, V) -> Pair<T, U>,
-    ): Map<T, U> {
-        return concurrentMap.subMapAlt(from, to).associate(transform)
-    }
+    ): Map<T, U> = concurrentMap.subMapAlt(from, to).associate(transform)
 
     actual override fun <U> associateWith(
         from: K,
         to: K,
         transform: (K, V) -> U?,
-    ): Map<K, U?> {
-        return concurrentMap.subMapAlt(from, to).associateWith(transform)
-    }
+    ): Map<K, U?> = concurrentMap.subMapAlt(from, to).associateWith(transform)
 
     actual override fun joinToString(
         separator: CharSequence,
@@ -354,23 +287,32 @@ actual class LargeCache<K, V> : ICacheOperations<K, V> {
 
 // Different subMap implementations below. Investigating their performance for now.
 
-fun <K, V> CacheMap<K, V>.subMapSlow(from: K, to: K, toInclusive: Boolean = true): Map<K, V> {
+fun <K, V> CacheMap<K, V>.subMapSlow(
+    from: K,
+    to: K,
+    toInclusive: Boolean = true,
+): Map<K, V> {
     val transientList = toList()
-    val transientSubList = transientList.subList(
-        fromIndex = transientList.indexOf(Pair(from, getValue(from))),
-        toIndex = transientList.indexOf(Pair(to, getValue(to))),
-    )
+    val transientSubList =
+        transientList.subList(
+            fromIndex = transientList.indexOf(Pair(from, getValue(from))),
+            toIndex = transientList.indexOf(Pair(to, getValue(to))),
+        )
     val completeSubList = transientSubList + Pair(to, getValue(to))
 
     return if (toInclusive) completeSubList.toMap() else transientSubList.toMap()
 }
 
-fun <K, V> CacheMap<K, V>.subMapAlt(from: K, to: K, toInclusive: Boolean = true): Map<K, V> {
+fun <K, V> CacheMap<K, V>.subMapAlt(
+    from: K,
+    to: K,
+    toInclusive: Boolean = true,
+): Map<K, V> {
     val resultMap = hashMapOf<K, V>()
     val keySet = keys
     val fromIndex = keySet.indexOf(from)
     val toIndex = keySet.indexOf(to)
-    for (index in fromIndex..toIndex){
+    for (index in fromIndex..toIndex) {
         val correspondingEntry = entries.elementAt(index)
         resultMap[correspondingEntry.key] = correspondingEntry.value
     }
@@ -388,45 +330,39 @@ fun <K, V> Map<K, V>.maxOrNullOf(
     filter: CacheCollectors.BiFilter<K, V>,
     comparator: Comparator<V>,
 ): V? {
-    var _maxK: K? = null
-    var _maxV: V? = null
+    var maxK: K? = null
+    var maxV: V? = null
 
-    val maxK: K? = _maxK
-    val maxV: V? = _maxV
+    val finalMaxK: K? = maxK
+    val finalMaxV: V? = maxV
 
     forEach {
         if (filter.filter(it.key, it.value)) {
-            if (_maxK == null || (_maxV != null && comparator.compare(it.value, _maxV) > 0)) {
-                _maxK = it.key
-                _maxV = it.value
+            if (maxK == null || (maxV != null && comparator.compare(it.value, maxV) > 0)) {
+                maxK = it.key
+                maxV = it.value
             }
         }
     }
 
-    return maxV
+    return finalMaxV
 }
 
-fun <K,V> Map<K, V>.sumOf(
-    consumer: CacheCollectors.BiSumOf<K, V>,
-): Int {
+fun <K, V> Map<K, V>.sumOf(consumer: CacheCollectors.BiSumOf<K, V>): Int {
     var sum = 0
     val totalSum = sum
     forEach { sum += consumer.map(it.key, it.value) }
     return totalSum
 }
 
-fun <K,V> Map<K, V>.sumOfLong(
-    consumer: CacheCollectors.BiSumOfLong<K, V>,
-): Long {
+fun <K, V> Map<K, V>.sumOfLong(consumer: CacheCollectors.BiSumOfLong<K, V>): Long {
     var sum = 0L
     val totalSum = sum
     forEach { sum += consumer.map(it.key, it.value) }
     return totalSum
 }
 
-fun <K, V, R> Map<K, V>.groupBy(
-    consumer: CacheCollectors.BiNotNullMapper<K, V, R>
-): Map<R, List<V>> {
+fun <K, V, R> Map<K, V>.groupBy(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, List<V>> {
     val results = HashMap<R, ArrayList<V>>()
     forEach {
         val group = consumer.map(it.key, it.value)
@@ -443,9 +379,7 @@ fun <K, V, R> Map<K, V>.groupBy(
     return results
 }
 
-fun <K, V, R> Map<K, V>.countByGroup(
-    consumer: CacheCollectors.BiNotNullMapper<K, V, R>
-): Map<R, Int> {
+fun <K, V, R> Map<K, V>.countByGroup(consumer: CacheCollectors.BiNotNullMapper<K, V, R>): Map<R, Int> {
     val results = HashMap<R, Int>()
     forEach {
         val group = consumer.map(it.key, it.value)
@@ -478,7 +412,7 @@ fun <K, V, R> Map<K, V>.sumByGroup(
     return results
 }
 
-fun <K, V,T, U> Map<K, V>.associate(transform: (K, V) -> Pair<T, U>): Map<T, U> {
+fun <K, V, T, U> Map<K, V>.associate(transform: (K, V) -> Pair<T, U>): Map<T, U> {
     val results: LinkedHashMap<T, U> = LinkedHashMap(size)
     forEach {
         val pair = transform(it.key, it.value)

@@ -26,7 +26,7 @@ abstract class Buffer<Element, Array> internal constructor(
     pos: Int,
     lim: Int,
     cap: Int,
-    var order: ByteOrder = ByteOrder.LittleEndian
+    var order: ByteOrder = ByteOrder.LittleEndian,
 ) {
     enum class ByteOrder { LittleEndian, BigEndian }
 
@@ -44,10 +44,11 @@ abstract class Buffer<Element, Array> internal constructor(
          * If the preconditions on <tt>newPosition</tt> do not hold
          */
         set(newPosition) {
-            if (newPosition > limit || newPosition < 0)
+            if (newPosition !in 0..limit) {
                 throw IllegalArgumentException("Position $newPosition exceeds limit:$limit")
+            }
             field = newPosition
-            if (mark > position) mark = noMark
+            if (mark > position) mark = NO_MARK
         }
 
     var limit = lim
@@ -66,8 +67,9 @@ abstract class Buffer<Element, Array> internal constructor(
          * If the preconditions on <tt>newLimit</tt> do not hold
          */
         set(newLimit) {
-            if (newLimit > capacity || newLimit < 0)
+            if (newLimit !in 0..capacity) {
                 throw IllegalArgumentException("limit $newLimit exceeds capacity $capacity")
+            }
             field = newLimit
             if (position > limit) position = limit
             if (mark > limit) mark = -1
@@ -76,8 +78,9 @@ abstract class Buffer<Element, Array> internal constructor(
         internal set
     var mark = markPosition
         set(value) {
-            if (mark < -1 || mark > position)
+            if (mark < -1 || mark > position) {
                 throw IllegalArgumentException("Mark $mark out of range of 0 to $position")
+            }
             field = value
         }
 
@@ -111,28 +114,33 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     abstract var byte: Element
 
-    /**
-     * The following functions are all usable by subclasses to encode/decode basic types
-     * in and Endian-aware fashion. In all cases an exception is thrown if remaining() < length
-     * to be read/written. Position will be incremented by the appropriate length for both gets
-     * and sets.
-     *
-     * For some reason, the ByteArray in Kotlin Native is the only implementation that provides
-     * similar function, but assumes all is Little Endian. Since these are not available in the
-     * common stdlib, they are not used even for little endian.
-     */
+    // The following functions are all usable by subclasses to encode/decode basic types
+    // in and Endian-aware fashion. In all cases an exception is thrown if remaining() < length
+    // to be read/written. Position will be incremented by the appropriate length for both gets
+    // and sets.
+    //
+    // For some reason, the ByteArray in Kotlin Native is the only implementation that provides
+    // similar function, but assumes all is Little Endian. Since these are not available in the
+    // common stdlib, they are not used even for little endian.
 
     /**
      * Read or write a two-byte Char at the current position. Position will increment by 2.
      */
     var char: Char
         get() {
-            val c = when (order) {
-                ByteOrder.LittleEndian -> ((getElementAsInt(position + 1) shl 8) or
-                        getElementAsInt(position)).toChar()
-                ByteOrder.BigEndian -> ((getElementAsInt(position) shl 8) or
-                        getElementAsInt(position + 1)).toChar()
-            }
+            val c =
+                when (order) {
+                    ByteOrder.LittleEndian ->
+                        (
+                            (getElementAsInt(position + 1) shl 8) or
+                                getElementAsInt(position)
+                        ).toChar()
+                    ByteOrder.BigEndian ->
+                        (
+                            (getElementAsInt(position) shl 8) or
+                                getElementAsInt(position + 1)
+                        ).toChar()
+                }
             position += 2
             return c
         }
@@ -145,10 +153,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var short: Short
         get() {
-            if (remaining < shortLength)
-                throw IllegalArgumentException("Short requires $shortLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < SHORT_LENGTH) {
+                throw IllegalArgumentException("Short requires $SHORT_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getShortValue(position)
-            position += shortLength
+            position += SHORT_LENGTH
             return s
         }
         set(value) {
@@ -160,10 +169,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var ushort: UShort
         get() {
-            if (remaining < shortLength)
-                throw IllegalArgumentException("UShort requires $shortLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < SHORT_LENGTH) {
+                throw IllegalArgumentException("UShort requires $SHORT_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getUShortValue(position)
-            position += shortLength
+            position += SHORT_LENGTH
             return s
         }
         set(value) {
@@ -175,10 +185,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var int: Int
         get() {
-            if (remaining < intLength)
-                throw IllegalArgumentException("Int requires $intLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < INT_LENGTH) {
+                throw IllegalArgumentException("Int requires $INT_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getIntValue(position)
-            position += intLength
+            position += INT_LENGTH
             return s
         }
         set(value) {
@@ -190,10 +201,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var uint: UInt
         get() {
-            if (remaining < intLength)
-                throw IllegalArgumentException("UInt requires $intLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < INT_LENGTH) {
+                throw IllegalArgumentException("UInt requires $INT_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getUIntValue(position)
-            position += intLength
+            position += INT_LENGTH
             return s
         }
         set(value) {
@@ -205,10 +217,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var long: Long
         get() {
-            if (remaining < longLength)
-                throw IllegalArgumentException("Long requires $longLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < LONG_LENGTH) {
+                throw IllegalArgumentException("Long requires $LONG_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getLongValue(position)
-            position += longLength
+            position += LONG_LENGTH
             return s
         }
         set(value) {
@@ -220,10 +233,11 @@ abstract class Buffer<Element, Array> internal constructor(
      */
     var ulong: ULong
         get() {
-            if (remaining < longLength)
-                throw IllegalArgumentException("ULong requires $longLength bytes. Position: $position, remaining:$remaining")
+            if (remaining < LONG_LENGTH) {
+                throw IllegalArgumentException("ULong requires $LONG_LENGTH bytes. Position: $position, remaining:$remaining")
+            }
             val s = getULongValue(position)
-            position += longLength
+            position += LONG_LENGTH
             return s
         }
         set(value) {
@@ -250,8 +264,9 @@ abstract class Buffer<Element, Array> internal constructor(
         limit = lim
         position = pos
         if (mark >= 0) {
-            if (mark > pos)
+            if (mark > pos) {
                 throw IllegalArgumentException("mark > position: ($mark > $pos)")
+            }
             this.mark = mark
         }
     }
@@ -278,7 +293,7 @@ abstract class Buffer<Element, Array> internal constructor(
     open fun clear() {
         position = 0
         limit = capacity
-        mark = noMark
+        mark = NO_MARK
     }
 
     /**
@@ -313,16 +328,14 @@ abstract class Buffer<Element, Array> internal constructor(
     open fun flip(): Buffer<Element, Array> {
         limit = position
         position = 0
-        mark = noMark
+        mark = NO_MARK
         return this
     }
 
     /**
      * given the specified index into the backing array, return the current Element. Do not change position
      */
-    fun get(index: Int): Element {
-        return getElementAt(index)
-    }
+    fun get(index: Int): Element = getElementAt(index)
 
     /**
      * This is used by many of the accessor properties of the various types. It must return
@@ -346,25 +359,41 @@ abstract class Buffer<Element, Array> internal constructor(
      * given the specified index into the backing array, return the current Element. Do not change position
      */
     abstract fun getElementAt(index: Int): Element
-    abstract fun setElementAt(index: Int, element: Element)
+
+    abstract fun setElementAt(
+        index: Int,
+        element: Element,
+    )
+
     abstract fun getElementAsInt(index: Int): Int
+
     abstract fun getElementAsUInt(index: Int): UInt
+
     abstract fun getElementAsLong(index: Int): Long
+
     abstract fun getElementAsULong(index: Int): ULong
 
     /**
      * Convenience method Sets the limit at position + length, then sets the position
      */
-    fun positionLimit(position: Int, length: Int) {
-        if (length < 0 || position < 0 || position + length > capacity)
+    fun positionLimit(
+        position: Int,
+        length: Int,
+    ) {
+        if (length < 0 || position < 0 || position + length > capacity) {
             throw IllegalArgumentException("Position: $position + length: $length = ${position + length} must be between 0 and $capacity")
+        }
         limit = position + length
         this.position = position
     }
 
-    fun positionLimit(position: Short, length: Short) {
-        if (length < 0 || position < 0 || position + length > capacity)
+    fun positionLimit(
+        position: Short,
+        length: Short,
+    ) {
+        if (length < 0 || position < 0 || position + length > capacity) {
             throw IllegalArgumentException("Position: $position + length: $length = ${position + length} must be between 0 and $capacity")
+        }
         limit = position + length
         this.position = position.toInt()
     }
@@ -399,7 +428,7 @@ abstract class Buffer<Element, Array> internal constructor(
     }
 
     fun resetMark() {
-        mark = noMark
+        mark = NO_MARK
     }
 
     /**
@@ -431,6 +460,7 @@ abstract class Buffer<Element, Array> internal constructor(
     abstract fun slice(length: Int = remaining): ByteBufferBase<Element, Array>
 
     // -- Package-private methods for bounds checking, etc. --
+
     /**
      * Checks the current position against the limit, throwing a [ ] if it is not smaller than the limit, and then
      * increments the position.
@@ -468,8 +498,9 @@ abstract class Buffer<Element, Array> internal constructor(
      * @throws IllegalStateException if increased position will exceed limit
      */
     fun nextPutIndex(length: Int): Int {
-        if (limit - position < length || position < 0)
+        if (limit - position < length || position < 0) {
             throw IllegalStateException("Limit:$limit minus position:$position less than $length")
+        }
         val p = position
         position += length
         return p
@@ -480,16 +511,23 @@ abstract class Buffer<Element, Array> internal constructor(
      * or is smaller than zero.
      */
     fun checkIndex(i: Int): Int { // package-private
-        if (i < 0 || i >= limit) throw IndexOutOfBoundsException(
-            "index=$i out of bounds (limit=$limit)"
-        )
+        if (i < 0 || i >= limit) {
+            throw IndexOutOfBoundsException(
+                "index=$i out of bounds (limit=$limit)",
+            )
+        }
         return i
     }
 
-    fun checkIndex(i: Int, nb: Int): Int { // package-private
-        if (i < 0 || nb > limit - i) throw IndexOutOfBoundsException(
-            "index=$i out of bounds (limit=$limit, nb=$nb)"
-        )
+    fun checkIndex(
+        i: Int,
+        nb: Int,
+    ): Int { // package-private
+        if (i < 0 || nb > limit - i) {
+            throw IndexOutOfBoundsException(
+                "index=$i out of bounds (limit=$limit, nb=$nb)",
+            )
+        }
         return i
     }
 
@@ -498,7 +536,7 @@ abstract class Buffer<Element, Array> internal constructor(
     }
 
     fun truncate() { // package-private
-        mark = noMark
+        mark = NO_MARK
         position = 0
         limit = 0
         capacity = 0
@@ -508,89 +546,101 @@ abstract class Buffer<Element, Array> internal constructor(
         mark = -1
     }
 
-    private fun getShortValue(index: Int): Short {
-        return when (order) {
+    private fun getShortValue(index: Int): Short =
+        when (order) {
             ByteOrder.LittleEndian -> ((getElementAsInt(index + 1) shl 8) or getElementAsInt(index)).toShort()
             ByteOrder.BigEndian -> ((getElementAsInt(index) shl 8) or getElementAsInt(index + 1)).toShort()
         }
-    }
 
-    fun getUShortValue(index: Int): UShort {
-        return when (order) {
-            ByteOrder.LittleEndian -> ((getElementAsUInt(index + 1) shl 8) or
-                    getElementAsUInt(index)).toUShort()
-            ByteOrder.BigEndian -> ((getElementAsUInt(index) shl 8) or
-                    getElementAsUInt(index + 1)).toUShort()
+    fun getUShortValue(index: Int): UShort =
+        when (order) {
+            ByteOrder.LittleEndian ->
+                (
+                    (getElementAsUInt(index + 1) shl 8) or
+                        getElementAsUInt(index)
+                ).toUShort()
+            ByteOrder.BigEndian ->
+                (
+                    (getElementAsUInt(index) shl 8) or
+                        getElementAsUInt(index + 1)
+                ).toUShort()
         }
-    }
 
-    private fun getIntValue(index: Int): Int {
-        return when (order) {
-            ByteOrder.LittleEndian -> (getElementAsInt(index + 3) shl 24) or
+    private fun getIntValue(index: Int): Int =
+        when (order) {
+            ByteOrder.LittleEndian ->
+                (getElementAsInt(index + 3) shl 24) or
                     (getElementAsInt(index + 2) shl 16) or
                     (getElementAsInt(index + 1) shl 8) or
                     getElementAsInt(index)
-            ByteOrder.BigEndian -> (getElementAsInt(index) shl 24) or
+            ByteOrder.BigEndian ->
+                (getElementAsInt(index) shl 24) or
                     (getElementAsInt(index + 1) shl 16) or
                     (getElementAsInt(index + 2) shl 8) or
                     getElementAsInt(index + 3)
         }
-    }
 
-    private fun getUIntValue(index: Int): UInt {
-        return when (order) {
-            ByteOrder.LittleEndian -> (getElementAsUInt(index + 3) shl 24) or
+    private fun getUIntValue(index: Int): UInt =
+        when (order) {
+            ByteOrder.LittleEndian ->
+                (getElementAsUInt(index + 3) shl 24) or
                     (getElementAsUInt(index + 2) shl 16) or
                     (getElementAsUInt(index + 1) shl 8) or
                     getElementAsUInt(index)
-            ByteOrder.BigEndian -> (getElementAsUInt(index) shl 24) or
+            ByteOrder.BigEndian ->
+                (getElementAsUInt(index) shl 24) or
                     (getElementAsUInt(index + 1) shl 16) or
                     (getElementAsUInt(index + 2) shl 8) or
                     getElementAsUInt(index + 3)
         }
-    }
 
-    fun getLongValue(index: Int): Long {
-        return when (order) {
-            ByteOrder.LittleEndian -> ((getElementAsLong(index + 7) shl 56)
+    fun getLongValue(index: Int): Long =
+        when (order) {
+            ByteOrder.LittleEndian -> (
+                (getElementAsLong(index + 7) shl 56)
                     or (getElementAsLong(index + 6) shl 48)
                     or (getElementAsLong(index + 5) shl 40)
                     or (getElementAsLong(index + 4) shl 32)
                     or (getElementAsLong(index + 3) shl 24)
                     or (getElementAsLong(index + 2) shl 16)
                     or (getElementAsLong(index + 1) shl 8)
-                    or getElementAsLong(index))
-            ByteOrder.BigEndian -> ((getElementAsLong(index) shl 56)
+                    or getElementAsLong(index)
+            )
+            ByteOrder.BigEndian -> (
+                (getElementAsLong(index) shl 56)
                     or (getElementAsLong(index + 1) shl 48)
                     or (getElementAsLong(index + 2) shl 40)
                     or (getElementAsLong(index + 3) shl 32)
                     or (getElementAsLong(index + 4) shl 24)
                     or (getElementAsLong(index + 5) shl 16)
                     or (getElementAsLong(index + 6) shl 8)
-                    or getElementAsLong(index + 7))
+                    or getElementAsLong(index + 7)
+            )
         }
-    }
 
-    private fun getULongValue(index: Int): ULong {
-        return when (order) {
-            ByteOrder.LittleEndian -> ((getElementAsULong(index + 7) shl 56)
+    private fun getULongValue(index: Int): ULong =
+        when (order) {
+            ByteOrder.LittleEndian -> (
+                (getElementAsULong(index + 7) shl 56)
                     or (getElementAsULong(index + 6) shl 48)
                     or (getElementAsULong(index + 5) shl 40)
                     or (getElementAsULong(index + 4) shl 32)
                     or (getElementAsULong(index + 3) shl 24)
                     or (getElementAsULong(index + 2) shl 16)
                     or (getElementAsULong(index + 1) shl 8)
-                    or getElementAsULong(index))
-            ByteOrder.BigEndian -> ((getElementAsULong(index) shl 56)
+                    or getElementAsULong(index)
+            )
+            ByteOrder.BigEndian -> (
+                (getElementAsULong(index) shl 56)
                     or (getElementAsULong(index + 1) shl 48)
                     or (getElementAsULong(index + 2) shl 40)
                     or (getElementAsULong(index + 3) shl 32)
                     or (getElementAsULong(index + 4) shl 24)
                     or (getElementAsULong(index + 5) shl 16)
                     or (getElementAsULong(index + 6) shl 8)
-                    or getElementAsULong(index + 7))
+                    or getElementAsULong(index + 7)
+            )
         }
-    }
 
     /**
      * Helper for property accessors that care about endian encoding.
@@ -600,23 +650,35 @@ abstract class Buffer<Element, Array> internal constructor(
      *
      */
     abstract fun putEndian(bytes: Array)
+
     abstract fun shortToArray(short: Short): Array
+
     abstract fun ushortToArray(ushort: UShort): Array
+
     abstract fun intToArray(int: Int): Array
+
     abstract fun uintToArray(int: UInt): Array
+
     abstract fun longToArray(long: Long): Array
+
     abstract fun ulongToArray(uLong: ULong): Array
 
     companion object {
-        protected const val noMark = -1
-        protected const val shortLength = 2
-        protected const val intLength = 4
-        protected const val longLength = 8
+        protected const val NO_MARK = -1
+        protected const val SHORT_LENGTH = 2
+        protected const val INT_LENGTH = 4
+        protected const val LONG_LENGTH = 8
 
-        fun checkBounds(off: Int, len: Int, size: Int) { // package-private
-            if (off or len or off + len or size - (off + len) < 0) throw IndexOutOfBoundsException(
-                "off=$off, len=$len out of bounds (size=$size)"
-            )
+        fun checkBounds(
+            off: Int,
+            len: Int,
+            size: Int,
+        ) { // package-private
+            if (off or len or off + len or size - (off + len) < 0) {
+                throw IndexOutOfBoundsException(
+                    "off=$off, len=$len out of bounds (size=$size)",
+                )
+            }
         }
     }
 }

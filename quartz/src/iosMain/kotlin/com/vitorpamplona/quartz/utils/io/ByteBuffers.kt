@@ -31,20 +31,17 @@ import kotlin.math.min
 abstract class ByteBufferBase<Element, Array> constructor(
     capacity: Int,
     order: ByteOrder = ByteOrder.LittleEndian,
-    override val isReadOnly: Boolean = false
-) :Buffer<Element, Array>(-1, 0, capacity, capacity, order),
+    override val isReadOnly: Boolean = false,
+) : Buffer<Element, Array>(-1, 0, capacity, capacity, order),
     Comparable<ByteBufferBase<Element, Array>> {
-
     abstract var buf: Array
         protected set
 
     private var offset = 0
     val contentBytes get() = buf
 
-    /**
-     * The following properties offer simple encode/decode operations as indicated by the ByteOrder
-     * currently in effect. Properties are defined for many basic types
-     */
+    // The following properties offer simple encode/decode operations as indicated by the ByteOrder
+    // currently in effect. Properties are defined for many basic types
 
     /**
      * This property offers byte-level read/write. get returns the byte at the current position,
@@ -131,7 +128,10 @@ abstract class ByteBufferBase<Element, Array> constructor(
         return 0
     }
 
-    abstract fun compareElement(element: Element, other: Element): Int
+    abstract fun compareElement(
+        element: Element,
+        other: Element,
+    ): Int
 
     /**
      * The contents of the current buffer are replaced with the contents of the source.  Position,
@@ -157,7 +157,7 @@ abstract class ByteBufferBase<Element, Array> constructor(
         destination: Array,
         destinationOffset: Int = 0,
         startIndex: Int = 0,
-        endIndex: Int
+        endIndex: Int,
     )
 
     /**
@@ -175,11 +175,12 @@ abstract class ByteBufferBase<Element, Array> constructor(
     fun fillArray(
         destination: Array,
         destinationOffset: Int = 0,
-        length: Int
+        length: Int,
     ) {
         checkBounds(destinationOffset, length, length)
-        if (length > remaining)
+        if (length > remaining) {
             throw IllegalStateException("Copying length:$length is more than remaining:$remaining")
+        }
         copyInto(destination, destinationOffset, position, position + length)
         position += length
     }
@@ -198,11 +199,13 @@ abstract class ByteBufferBase<Element, Array> constructor(
      * The positions of both buffers are then incremented by <i>n</i>.
      */
     open fun put(source: ByteBufferBase<Element, Array>) {
-        if (source == this)
+        if (source == this) {
             throw IllegalArgumentException("Cannot copy ByteBuffer to itself")
+        }
         val sourceBytes = source.remaining
-        if (sourceBytes > remaining)
+        if (sourceBytes > remaining) {
             throw IllegalArgumentException("Remaining source bytes:$sourceBytes exceeds destination remaining:$remaining")
+        }
 
         source.fillArray(buf, position, sourceBytes)
         position += sourceBytes
@@ -212,8 +215,9 @@ abstract class ByteBufferBase<Element, Array> constructor(
      * The following are all private functions
      */
     private fun checkPosition(forLength: Int = 1) {
-        if (position + forLength > limit)
+        if (position + forLength > limit) {
             throw IllegalStateException()
+        }
     }
 }
 
@@ -230,10 +234,8 @@ class ByteBuffer(
     capacity: Int,
     order: ByteOrder = ByteOrder.LittleEndian,
     isReadOnly: Boolean = false,
-    override var buf: ByteArray = ByteArray(capacity)
-): ByteBufferBase<Byte, ByteArray>(capacity, order, isReadOnly)
-{
-
+    override var buf: ByteArray = ByteArray(capacity),
+) : ByteBufferBase<Byte, ByteArray>(capacity, order, isReadOnly) {
     /**
      * Construct a ByteBuffer from an existing ByteArray
      * @param bytes becomes the buffer content (not a copy). capacity is set to the ByteArray size, position is set to
@@ -241,18 +243,19 @@ class ByteBuffer(
      * @param order defaults to little endian encoding of numeric types
      */
     constructor(bytes: ByteArray, order: ByteOrder = ByteOrder.LittleEndian) :
-            this(bytes.size, order, false, bytes)
+        this(bytes.size, order, false, bytes)
 
     override fun flip(): ByteBuffer {
         super.flip()
         return this
     }
 
-    override fun getElementAt(index: Int): Byte {
-        return buf[index]
-    }
+    override fun getElementAt(index: Int): Byte = buf[index]
 
-    override fun setElementAt(index: Int, element: Byte) {
+    override fun setElementAt(
+        index: Int,
+        element: Byte,
+    ) {
         buf[index] = element
     }
 
@@ -262,9 +265,7 @@ class ByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return INt will not have it's high order bits set.
      */
-    override fun getElementAsInt(index: Int): Int {
-        return buf toPosInt index
-    }
+    override fun getElementAsInt(index: Int): Int = buf toPosInt index
 
     /**
      * gets one byte at the current position without changing the position, and return a UInt.
@@ -272,9 +273,7 @@ class ByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return UINt will not have it's high order bits set.
      */
-    override fun getElementAsUInt(index: Int): UInt {
-        return buf toPosUInt index
-    }
+    override fun getElementAsUInt(index: Int): UInt = buf toPosUInt index
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -282,9 +281,7 @@ class ByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return Long will not have it's high order bits set.
      */
-    override fun getElementAsLong(index: Int): Long {
-        return buf toPosLong index
-    }
+    override fun getElementAsLong(index: Int): Long = buf toPosLong index
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -292,9 +289,7 @@ class ByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return ULong will not have it's high order bits set.
      */
-    override fun getElementAsULong(index: Int): ULong {
-        return buf toPosULong index
-    }
+    override fun getElementAsULong(index: Int): ULong = buf toPosULong index
 
     override fun getBytes(length: Int): ByteArray {
         val l = min(remaining, length)
@@ -323,40 +318,36 @@ class ByteBuffer(
         put(bytes)
     }
 
-    override fun shortToArray(short: Short): ByteArray {
-        return byteArrayOf(
+    override fun shortToArray(short: Short): ByteArray =
+        byteArrayOf(
             (short.toInt() shr 8).toByte(),
-            short.toByte()
+            short.toByte(),
         )
-    }
 
-    override fun ushortToArray(ushort: UShort): ByteArray {
-        return byteArrayOf(
+    override fun ushortToArray(ushort: UShort): ByteArray =
+        byteArrayOf(
             (ushort.toUInt() shr 8).toByte(),
-            ushort.toByte()
+            ushort.toByte(),
         )
-    }
 
-    override fun intToArray(int: Int): ByteArray {
-        return byteArrayOf(
+    override fun intToArray(int: Int): ByteArray =
+        byteArrayOf(
             (int shr 24 and 0xff).toByte(),
             (int shr 16 and 0xff).toByte(),
             (int shr 8 and 0xff).toByte(),
-            (int and 0xff).toByte()
+            (int and 0xff).toByte(),
         )
-    }
 
-    override fun uintToArray(int: UInt): ByteArray {
-        return byteArrayOf(
+    override fun uintToArray(int: UInt): ByteArray =
+        byteArrayOf(
             (int shr 24 and 0xffu).toByte(),
             (int shr 16 and 0xffu).toByte(),
             (int shr 8 and 0xffu).toByte(),
-            (int and 0xffu).toByte()
+            (int and 0xffu).toByte(),
         )
-    }
 
-    override fun longToArray(long: Long): ByteArray {
-        return byteArrayOf(
+    override fun longToArray(long: Long): ByteArray =
+        byteArrayOf(
             (long shr 56 and 0xff).toByte(),
             (long shr 48 and 0xff).toByte(),
             (long shr 40 and 0xff).toByte(),
@@ -364,12 +355,11 @@ class ByteBuffer(
             (long shr 24 and 0xff).toByte(),
             (long shr 16 and 0xff).toByte(),
             (long shr 8 and 0xff).toByte(),
-            (long and 0xff).toByte()
+            (long and 0xff).toByte(),
         )
-    }
 
-    override fun ulongToArray(uLong: ULong): ByteArray {
-        return byteArrayOf(
+    override fun ulongToArray(uLong: ULong): ByteArray =
+        byteArrayOf(
             (uLong shr 56 and 0xffu).toByte(),
             (uLong shr 48 and 0xffu).toByte(),
             (uLong shr 40 and 0xffu).toByte(),
@@ -377,9 +367,8 @@ class ByteBuffer(
             (uLong shr 24 and 0xffu).toByte(),
             (uLong shr 16 and 0xffu).toByte(),
             (uLong shr 8 and 0xffu).toByte(),
-            (uLong and 0xffu).toByte()
+            (uLong and 0xffu).toByte(),
         )
-    }
 
     /**
      * Similar to [ByteArray] copyInto
@@ -393,14 +382,15 @@ class ByteBuffer(
         destination: ByteArray,
         destinationOffset: Int,
         startIndex: Int,
-        endIndex: Int
+        endIndex: Int,
     ) {
         buf.copyInto(destination, destinationOffset, startIndex, endIndex)
     }
 
-    override fun compareElement(element: Byte, other: Byte): Int {
-        return element.compareTo(other)
-    }
+    override fun compareElement(
+        element: Byte,
+        other: Byte,
+    ): Int = element.compareTo(other)
 
     /**
      * Increase size of buffer. Capacity and content are increased. Position is unchanged. if limit
@@ -436,7 +426,7 @@ class ByteBuffer(
             buf,
             position,
             appendBuffer.position,
-            appendBuffer.remaining
+            appendBuffer.remaining,
         )
         capacity = newLimit
         limit = newLimit
@@ -446,7 +436,7 @@ class ByteBuffer(
     fun get(
         destination: ByteArray,
         destinationOffset: Int = 0,
-        size: Int = destination.size
+        size: Int = destination.size,
     ) {
         super.fillArray(destination, destinationOffset, size)
     }
@@ -462,10 +452,15 @@ class ByteBuffer(
      * @return this
      * @throws IllegalArgumentException on bounds violation
      */
-    fun putBytes(source: ByteArray, sourceOffset: Int = 0, length: Int = source.size) {
+    fun putBytes(
+        source: ByteArray,
+        sourceOffset: Int = 0,
+        length: Int = source.size,
+    ) {
         checkBounds(sourceOffset, length, length)
-        if (length > remaining)
+        if (length > remaining) {
             throw IllegalArgumentException("Length:$length exceeds remaining:$remaining")
+        }
         source.copyInto(buf, position, sourceOffset, length)
         position += length
     }
@@ -495,14 +490,14 @@ class ByteBuffer(
         return uBuf
     }
 
-    override fun toString(): String {
-        return buildString {
+    override fun toString(): String =
+        buildString {
             append("Position: $position, limit: $limit, remaining: $remaining. Content: 0x")
             for (i in position until limit) {
                 append("${contentBytes[i].toString(16).padStart(2, '0')} ")
             }
         }
-    }
+
     /**
      * Tells whether or not this buffer is equal to another object.
      *
@@ -567,11 +562,10 @@ class UByteBuffer(
     capacity: Int,
     order: ByteOrder = ByteOrder.LittleEndian,
     isReadOnly: Boolean = false,
-    override var buf: UByteArray = UByteArray(capacity)
-): ByteBufferBase<UByte, UByteArray>(capacity, order, isReadOnly) {
-
+    override var buf: UByteArray = UByteArray(capacity),
+) : ByteBufferBase<UByte, UByteArray>(capacity, order, isReadOnly) {
     constructor(bytes: UByteArray, order: ByteOrder = ByteOrder.LittleEndian) :
-            this(bytes.size, order, false, bytes)
+        this(bytes.size, order, false, bytes)
 
     /**
      * Similar to [ByteArray] copyInto
@@ -585,14 +579,15 @@ class UByteBuffer(
         destination: UByteArray,
         destinationOffset: Int,
         startIndex: Int,
-        endIndex: Int
+        endIndex: Int,
     ) {
         buf.copyInto(destination, destinationOffset, startIndex, endIndex)
     }
 
-    override fun compareElement(element: UByte, other: UByte): Int {
-        return element.compareTo(other)
-    }
+    override fun compareElement(
+        element: UByte,
+        other: UByte,
+    ): Int = element.compareTo(other)
 
     /**
      * Increase size of buffer. Capacity and content are increased. Position is unchanged. if limit
@@ -628,7 +623,7 @@ class UByteBuffer(
             buf,
             position,
             appendBuffer.position,
-            appendBuffer.remaining
+            appendBuffer.remaining,
         )
         capacity = newLimit
         limit = newLimit
@@ -640,9 +635,7 @@ class UByteBuffer(
         return this
     }
 
-    override fun getElementAt(index: Int): UByte {
-        return buf[index]
-    }
+    override fun getElementAt(index: Int): UByte = buf[index]
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -650,9 +643,7 @@ class UByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return Int will not have it's high order bits set.
      */
-    override fun getElementAsInt(index: Int): Int {
-        return buf toPosInt index
-    }
+    override fun getElementAsInt(index: Int): Int = buf toPosInt index
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -660,9 +651,7 @@ class UByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return UInt will not have it's high order bits set.
      */
-    override fun getElementAsUInt(index: Int): UInt {
-        return buf toPosUInt index
-    }
+    override fun getElementAsUInt(index: Int): UInt = buf toPosUInt index
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -670,9 +659,7 @@ class UByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return Long will not have it's high order bits set.
      */
-    override fun getElementAsLong(index: Int): Long {
-        return buf toPosLong index
-    }
+    override fun getElementAsLong(index: Int): Long = buf toPosLong index
 
     /**
      * gets one byte at the current position without changing the position. The byte is treated as
@@ -680,14 +667,12 @@ class UByteBuffer(
      * @param index indicates which element in the current array to retrieve
      * @return ULong will not have it's high order bits set.
      */
-    override fun getElementAsULong(index: Int): ULong {
-        return buf toPosULong index
-    }
+    override fun getElementAsULong(index: Int): ULong = buf toPosULong index
 
     fun get(
         destination: UByteArray,
         destinationOffset: Int = 0,
-        size: Int = destination.size
+        size: Int = destination.size,
     ) {
         super.fillArray(destination, destinationOffset, size)
     }
@@ -723,10 +708,15 @@ class UByteBuffer(
      * @return this
      * @throws IllegalArgumentException on bounds violation
      */
-    fun putBytes(source: UByteArray, sourceOffset: Int = 0, length: Int = source.size) {
+    fun putBytes(
+        source: UByteArray,
+        sourceOffset: Int = 0,
+        length: Int = source.size,
+    ) {
         checkBounds(sourceOffset, length, length)
-        if (length > remaining)
+        if (length > remaining) {
             throw IllegalArgumentException("Length:$length exceeds remaining:$remaining")
+        }
         for (i in sourceOffset until sourceOffset + length) {
             byte = source[i]
         }
@@ -739,7 +729,10 @@ class UByteBuffer(
         put(bytes)
     }
 
-    override fun setElementAt(index: Int, element: UByte) {
+    override fun setElementAt(
+        index: Int,
+        element: UByte,
+    ) {
         buf[index] = element
     }
 
@@ -754,40 +747,36 @@ class UByteBuffer(
         return UByteBuffer(bytes, this.order)
     }
 
-    override fun shortToArray(short: Short): UByteArray {
-        return ubyteArrayOf(
+    override fun shortToArray(short: Short): UByteArray =
+        ubyteArrayOf(
             (short.toInt() shr 8).toUByte(),
-            short.toUByte()
+            short.toUByte(),
         )
-    }
 
-    override fun ushortToArray(ushort: UShort): UByteArray {
-        return ubyteArrayOf(
+    override fun ushortToArray(ushort: UShort): UByteArray =
+        ubyteArrayOf(
             (ushort.toUInt() shr 8).toUByte(),
-            ushort.toUByte()
+            ushort.toUByte(),
         )
-    }
 
-    override fun intToArray(int: Int): UByteArray {
-        return ubyteArrayOf(
+    override fun intToArray(int: Int): UByteArray =
+        ubyteArrayOf(
             (int shr 24 and 0xff).toUByte(),
             (int shr 16 and 0xff).toUByte(),
             (int shr 8 and 0xff).toUByte(),
-            (int and 0xff).toUByte()
+            (int and 0xff).toUByte(),
         )
-    }
 
-    override fun uintToArray(int: UInt): UByteArray {
-        return ubyteArrayOf(
+    override fun uintToArray(int: UInt): UByteArray =
+        ubyteArrayOf(
             (int shr 24 and 0xffu).toUByte(),
             (int shr 16 and 0xffu).toUByte(),
             (int shr 8 and 0xffu).toUByte(),
-            (int and 0xffu).toUByte()
+            (int and 0xffu).toUByte(),
         )
-    }
 
-    override fun longToArray(long: Long): UByteArray {
-        return ubyteArrayOf(
+    override fun longToArray(long: Long): UByteArray =
+        ubyteArrayOf(
             (long shr 56 and 0xff).toUByte(),
             (long shr 48 and 0xff).toUByte(),
             (long shr 40 and 0xff).toUByte(),
@@ -795,12 +784,11 @@ class UByteBuffer(
             (long shr 24 and 0xff).toUByte(),
             (long shr 16 and 0xff).toUByte(),
             (long shr 8 and 0xff).toUByte(),
-            (long and 0xff).toUByte()
+            (long and 0xff).toUByte(),
         )
-    }
 
-    override fun ulongToArray(uLong: ULong): UByteArray {
-        return ubyteArrayOf(
+    override fun ulongToArray(uLong: ULong): UByteArray =
+        ubyteArrayOf(
             (uLong shr 56 and 0xffu).toUByte(),
             (uLong shr 48 and 0xffu).toUByte(),
             (uLong shr 40 and 0xffu).toUByte(),
@@ -808,9 +796,8 @@ class UByteBuffer(
             (uLong shr 24 and 0xffu).toUByte(),
             (uLong shr 16 and 0xffu).toUByte(),
             (uLong shr 8 and 0xffu).toUByte(),
-            (uLong and 0xffu).toUByte()
+            (uLong and 0xffu).toUByte(),
         )
-    }
 
     /**
      * Convert from a [UByteBuffer] to a [ByteBuffer], retaining the same capacity, position, limit
@@ -822,14 +809,13 @@ class UByteBuffer(
         return uBuf
     }
 
-    override fun toString(): String {
-        return buildString {
+    override fun toString(): String =
+        buildString {
             append("Position: $position, limit: $limit, remaining: $remaining. Content: 0x")
             for (i in position until limit) {
                 append("${contentBytes[i].toString(16).padStart(2, '0')} ")
             }
         }
-    }
 
     /**
      * Tells whether or not this buffer is equal to another object.
