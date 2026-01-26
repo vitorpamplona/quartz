@@ -20,6 +20,12 @@
  */
 package com.vitorpamplona.quartz.utils
 
+import kotlinx.cinterop.ExperimentalForeignApi
+import swiftbridge.UrlDetector
+
+@OptIn(ExperimentalForeignApi::class)
 actual fun fastFindURLs(text: String): List<String> {
-    TODO("Not yet implemented")
+    val detectorInstance = UrlDetector()
+    return detectorInstance.findURLsWithText(text) as List<String>
+//    TODO("Not yet implemented")
 }
