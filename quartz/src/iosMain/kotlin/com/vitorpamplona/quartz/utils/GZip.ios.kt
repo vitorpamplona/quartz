@@ -20,12 +20,29 @@
  */
 package com.vitorpamplona.quartz.utils
 
+import com.ditchoom.buffer.PlatformBuffer
+import com.ditchoom.buffer.ReadBuffer
+import com.ditchoom.buffer.compression.CompressionAlgorithm
+import com.ditchoom.buffer.compression.getOrThrow
+import com.ditchoom.buffer.toByteArray
+import com.ditchoom.buffer.toReadBuffer
+import com.ditchoom.buffer.wrap
+import com.ditchoom.buffer.compression.compress as compressData
+import com.ditchoom.buffer.compression.decompress as decompressData
+
 actual object GZip {
     actual fun compress(content: String): ByteArray {
-        TODO("Not yet implemented")
+        val contentBuffer = content.toReadBuffer()
+        val compressedContent = compressData(contentBuffer, algorithm = CompressionAlgorithm.Gzip).getOrThrow().toByteArray()
+        return compressedContent
+
     }
 
     actual fun decompress(content: ByteArray): String {
-        TODO("Not yet implemented")
+        val contentBuffer = PlatformBuffer.wrap(content)
+        val decompressedContentBuffer = decompressData(contentBuffer, algorithm = CompressionAlgorithm.Gzip)
+            .getOrThrow()
+        val content = decompressedContentBuffer.toByteArray().decodeToString()
+        return content
     }
 }

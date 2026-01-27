@@ -252,6 +252,7 @@ kotlin {
             dependencies {
                 implementation(libs.charlietap.cachemap)
                 implementation(libs.net.thauvin.erik.urlencoder.lib)
+                implementation(libs.com.ditchoom.buffer.compression)
             }
         }
 
