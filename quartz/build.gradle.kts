@@ -251,6 +251,7 @@ kotlin {
             dependsOn(commonMain.get())
             dependencies {
                 implementation(libs.charlietap.cachemap)
+                implementation(libs.net.thauvin.erik.urlencoder.lib)
             }
         }
 

@@ -20,12 +20,10 @@
  */
 package com.vitorpamplona.quartz.utils
 
-actual object UrlEncoder {
-    actual fun encode(value: String): String {
-        TODO("Not yet implemented")
-    }
+import net.thauvin.erik.urlencoder.UrlEncoderUtil
 
-    actual fun decode(value: String): String {
-        TODO("Not yet implemented")
-    }
+actual object UrlEncoder {
+    actual fun encode(value: String): String = UrlEncoderUtil.encode(value)
+
+    actual fun decode(value: String): String = UrlEncoderUtil.decode(value)
 }
