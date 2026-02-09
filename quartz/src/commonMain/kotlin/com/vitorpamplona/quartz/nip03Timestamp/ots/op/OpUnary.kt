@@ -39,10 +39,22 @@ abstract class OpUnary : Op() {
             tag: Byte,
         ): Op? =
             when (tag) {
-                OpSHA1.TAG -> OpSHA1()
-                OpSHA256.TAG -> OpSHA256()
-                OpRIPEMD160.TAG -> OpRIPEMD160()
-                OpKECCAK256.TAG -> OpKECCAK256()
+                OpSHA1.TAG -> {
+                    OpSHA1()
+                }
+
+                OpSHA256.TAG -> {
+                    OpSHA256()
+                }
+
+                OpRIPEMD160.TAG -> {
+                    OpRIPEMD160()
+                }
+
+                OpKECCAK256.TAG -> {
+                    OpKECCAK256()
+                }
+
                 else -> {
                     Log.e("OpenTimestamp", "Unknown operation tag: $tag")
 
