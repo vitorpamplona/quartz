@@ -18,23 +18,31 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.crypto
+package com.vitorpamplona.quartz.nip88Polls.poll.tags
 
-import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.utils.ensure
 
-class DeterministicSigner(
-    val key: KeyPair,
-    val pubKey: HexKey = key.pubKey.toHexKey(),
-) {
-    fun <T : Event> sign(
-        createdAt: Long,
-        kind: Int,
-        tags: Array<Array<String>>,
-        content: String,
-    ): T = EventAssembler.hashAndSign(pubKey, createdAt, kind, tags, content, key.privKey!!, nonce = null)
+class RelayTag {
+    companion object {
+        const val TAG_NAME = "relay"
 
-    fun <T : Event> sign(ev: EventTemplate<T>): T = sign(ev.createdAt, ev.kind, ev.tags, ev.content)
+        fun match(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+
+        fun notMatch(tag: Array<String>) = !(tag.has(0) && tag[0] == TAG_NAME)
+
+        fun parse(tag: Array<String>): NormalizedRelayUrl? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotEmpty()) { return null }
+
+            return RelayUrlNormalizer.normalizeOrNull(tag[1])
+        }
+
+        fun assemble(relay: NormalizedRelayUrl) = arrayOf(TAG_NAME, relay.url)
+
+        fun assemble(relays: List<NormalizedRelayUrl>) = relays.map { assemble(it) }
+    }
 }
