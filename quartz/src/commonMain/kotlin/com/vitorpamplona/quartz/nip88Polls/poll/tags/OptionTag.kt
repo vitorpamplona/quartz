@@ -18,25 +18,37 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.crypto
+package com.vitorpamplona.quartz.nip88Polls.poll.tags
 
-import com.vitorpamplona.quartz.utils.RandomInstance
-import com.vitorpamplona.quartz.utils.Secp256k1Instance
+import androidx.compose.runtime.Stable
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.utils.ensure
 
-object Nip01 {
-    fun privKeyCreate() = RandomInstance.bytes(32)
+@Stable
+class OptionTag(
+    val code: String,
+    val label: String,
+) {
+    companion object {
+        const val TAG_NAME = "option"
 
-    fun pubKeyCreate(privKey: ByteArray) = Secp256k1Instance.compressedPubKeyFor(privKey).copyOfRange(1, 33)
+        fun isTag(tag: Array<String>) = tag.has(2) && tag[0] == TAG_NAME && tag[1].isNotEmpty() && tag[2].isNotEmpty()
 
-    fun sign(
-        data: ByteArray,
-        privKey: ByteArray,
-        nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1Instance.signSchnorr(data, privKey, nonce)
+        fun parse(tag: Array<String>): OptionTag? {
+            ensure(tag.has(2)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotEmpty()) { return null }
+            ensure(tag[2].isNotEmpty()) { return null }
+            return OptionTag(tag[1], tag[2])
+        }
 
-    fun verify(
-        signature: ByteArray,
-        hash: ByteArray,
-        pubKey: ByteArray,
-    ): Boolean = Secp256k1Instance.verifySchnorr(signature, hash, pubKey)
+        fun assemble(
+            code: String,
+            label: String,
+        ) = arrayOf(TAG_NAME, code, label)
+
+        fun assemble(option: OptionTag) = assemble(option.code, option.label)
+
+        fun assemble(labels: List<OptionTag>) = labels.map { opt -> assemble(opt) }
+    }
 }
