@@ -21,6 +21,11 @@
 package com.vitorpamplona.quartz.nip64Chess.accept
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip64Chess.accept.tags.ChallengeEventTag
+import com.vitorpamplona.quartz.nip64Chess.accept.tags.toOpponentTag
+import com.vitorpamplona.quartz.nip64Chess.challenge.LiveChessGameChallengeEvent
 
-fun TagArrayBuilder<LiveChessGameAcceptEvent>.challengeEvent(challengeEventId: String) = add(ChallengeEventTag.assemble(challengeEventId))
+fun TagArrayBuilder<LiveChessGameAcceptEvent>.challenge(challengeHint: EventHintBundle<LiveChessGameChallengeEvent>) = addUnique(ChallengeEventTag.assemble(challengeHint))
+
+fun TagArrayBuilder<LiveChessGameAcceptEvent>.challenger(challengeHint: EventHintBundle<LiveChessGameChallengeEvent>) = add(challengeHint.toOpponentTag().toTagArray())
