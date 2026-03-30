@@ -41,7 +41,7 @@ class PlatformLinkTag(
             }
 
         fun parse(tag: Tag): PlatformLinkTag? {
-            if (match(tag)) return PlatformLinkTag(tag[1], tag[2], tag.getOrNull(3))
+            if (match(tag)) return PlatformLinkTag(tag[0], tag[1], tag.getOrNull(2))
             return null
         }
 
