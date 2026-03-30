@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip31Alts.alt
+import com.vitorpamplona.quartz.nip90Dvms.tags.inputText
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -40,12 +41,15 @@ class NIP90OpReturnRequestEvent(
     companion object {
         const val KIND = 5901
         const val ALT = "NIP90 OP_RETURN Creation request"
+        const val MAX_OP_RETURN_BYTES = 80
 
         fun build(
+            text: String,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<NIP90OpReturnRequestEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, "", createdAt) {
             alt(ALT)
+            inputText(text)
             initializer()
         }
     }
