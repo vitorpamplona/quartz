@@ -20,47 +20,35 @@
  */
 package com.vitorpamplona.quartz.utils
 
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+expect object Secp256k1Instance {
+    fun compressedPubKeyFor(privKey: ByteArray): ByteArray
 
-object Secp256k1Instance {
-    private val h02 = Hex.decode("02")
-
-    fun compressedPubKeyFor(privKey: ByteArray) = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(privKey))
-
-    fun isPrivateKeyValid(il: ByteArray): Boolean = Secp256k1.secKeyVerify(il)
+    fun isPrivateKeyValid(il: ByteArray): Boolean
 
     fun signSchnorr(
         data: ByteArray,
         privKey: ByteArray,
         nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1.signSchnorr(data, privKey, nonce)
+    ): ByteArray
 
     fun signSchnorr(
         data: ByteArray,
         privKey: ByteArray,
-    ): ByteArray = Secp256k1.signSchnorr(data, privKey, null)
-
-    /** Fast signing with pre-computed compressed public key (skips G multiplication). */
-    fun signSchnorrWithPubKey(
-        data: ByteArray,
-        privKey: ByteArray,
-        compressedPubKey: ByteArray,
-        nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1.signSchnorrWithPubKey(data, privKey, compressedPubKey, nonce)
+    ): ByteArray
 
     fun verifySchnorr(
         signature: ByteArray,
         hash: ByteArray,
         pubKey: ByteArray,
-    ): Boolean = Secp256k1.verifySchnorr(signature, hash, pubKey)
+    ): Boolean
 
     fun privateKeyAdd(
         first: ByteArray,
         second: ByteArray,
-    ): ByteArray = Secp256k1.privKeyTweakAdd(first, second)
+    ): ByteArray
 
     fun pubKeyTweakMulCompact(
         pubKey: ByteArray,
         privateKey: ByteArray,
-    ): ByteArray = Secp256k1.ecdhXOnly(pubKey, privateKey)
+    ): ByteArray
 }
