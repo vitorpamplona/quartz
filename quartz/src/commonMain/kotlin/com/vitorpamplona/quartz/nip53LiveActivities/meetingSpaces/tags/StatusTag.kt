@@ -27,6 +27,8 @@ class StatusTag {
     enum class STATUS(
         val code: String,
     ) {
+        /** Scheduled in the future — host hasn't started the room yet. Pairs with a `["starts", <unix>]` tag. */
+        PLANNED("planned"),
         OPEN("open"),
         PRIVATE("private"),
         CLOSED("closed"),
@@ -37,9 +39,10 @@ class StatusTag {
         companion object {
             fun parse(code: String): STATUS? =
                 when (code) {
-                    STATUS.OPEN.code -> STATUS.OPEN
-                    STATUS.PRIVATE.code -> STATUS.PRIVATE
-                    STATUS.CLOSED.code -> STATUS.CLOSED
+                    PLANNED.code -> PLANNED
+                    OPEN.code -> OPEN
+                    PRIVATE.code -> PRIVATE
+                    CLOSED.code -> CLOSED
                     else -> null
                 }
         }
