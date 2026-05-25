@@ -24,6 +24,11 @@ import androidx.compose.runtime.Immutable
 
 /**
  * Represents an unencoded cashu proof.
+ *
+ * [witness] is the NUT-11 unlock witness (a JSON string `{"signatures":[…]}`)
+ * required when spending a P2PK-locked proof. Always null on freshly minted
+ * unlocked proofs; populated by the wallet right before submitting a swap that
+ * spends locked proofs.
  */
 @Immutable
 data class CashuProof(
@@ -31,4 +36,5 @@ data class CashuProof(
     val amount: Long,
     val secret: String,
     val c: String,
+    val witness: String? = null,
 )
