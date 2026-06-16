@@ -23,13 +23,19 @@ package com.vitorpamplona.quartz.experimental.fitness.workout.tags
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
-/** How the workout was recorded. Known values: [GPS], [MANUAL]; other clients also publish `healthkit` and `runstr`. */
+/**
+ * How the workout was recorded. Known values: [GPS], [MANUAL], [HEALTH_CONNECT];
+ * other clients also publish `healthkit` and `runstr`.
+ */
 class SourceTag {
     companion object {
         const val TAG_NAME = "source"
 
         const val GPS = "gps"
         const val MANUAL = "manual"
+
+        /** Imported from Android Health Connect (Samsung Health, Google Fit, Fitbit, Garmin, …). */
+        const val HEALTH_CONNECT = "health_connect"
 
         fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
