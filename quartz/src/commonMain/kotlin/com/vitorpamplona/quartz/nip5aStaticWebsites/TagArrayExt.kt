@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.ServerTag
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.SourceTag
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.TitleTag
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.XTag
 
 fun TagArray.sitePaths() = mapNotNull(PathTag::parse)
 
@@ -36,3 +37,5 @@ fun TagArray.siteTitle() = firstNotNullOfOrNull(TitleTag::parse)
 fun TagArray.siteDescription() = firstNotNullOfOrNull(DescriptionTag::parse)
 
 fun TagArray.siteSource() = firstNotNullOfOrNull(SourceTag::parse)
+
+fun TagArray.siteAggregateHash() = firstNotNullOfOrNull(XTag::parse)
