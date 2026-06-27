@@ -23,13 +23,13 @@ package com.vitorpamplona.quartz.podcasts
 import androidx.compose.runtime.Immutable
 
 /**
- * Spec-neutral audio reference for a podcast episode, used by the shared
- * [PodcastEpisode] abstraction so a UI can play episodes regardless of which
- * podcast NIP produced them.
+ * Spec-neutral media reference (a URL plus optional MIME type) for a podcast episode, used by the
+ * shared [PodcastEpisode] abstraction so a UI can play episodes regardless of which podcast NIP
+ * produced them. Despite the name it covers both audio and video sources.
  *
- * Both NIP-F4 (`kind:54`) and the Podcasting-2.0 draft (`kind:30054`) carry audio
- * in identical `["audio", "<url>", "<optional_media_type>"]` tags; each event maps
- * its own tag class into this holder.
+ * Both NIP-F4 (`kind:54`) and the Podcasting-2.0 draft (`kind:30054`) carry audio in identical
+ * `["audio", "<url>", "<optional_media_type>"]` tags; the Podcasting-2.0 draft uses the same shape
+ * for its `video` tag. Each event maps its own tag class into this holder.
  */
 @Immutable
 class PodcastAudio(
