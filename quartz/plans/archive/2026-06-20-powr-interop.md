@@ -1,5 +1,8 @@
 # POWR interop: rendering kind-1301 strength workouts
 
+> **Status:** shipped — POWR dialect parsing/rendering landed (`WorkoutTypeTag`, `ExerciseSetTag`, `ExerciseGroup`, `ExerciseTemplateEvent`, `WorkoutSessionTimeTags`) in `experimental/fitness/workout/` with tests.
+> _Audited 2026-06-30._
+
 Research date: 2026-06-20. Source: POWR app (`DocNR/POWR`), spec at
 `docs/technical/nostr/exercise_nip.md` (the NIP-101e "Workout Events" draft:
 kinds 33401 exercise template, 33402 workout template, 1301 workout record).
