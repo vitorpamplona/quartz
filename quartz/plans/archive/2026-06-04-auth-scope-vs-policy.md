@@ -1,5 +1,8 @@
 # Auth identity is connection scope, not policy state
 
+> **Status:** shipped — `AuthScopedPolicy` is gone, `onAuthenticated` returns `Boolean`, and `onConnect`/policies read an injected connection scope exactly as the target model prescribes.
+> _Audited 2026-06-30._
+
 **Date:** 2026-06-04
 **Module:** `quartz` — `nip01Core/relay/server`
 **Status:** Proposed (review before implementing)
