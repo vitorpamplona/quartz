@@ -1,5 +1,8 @@
 # RUNSTR interop: Quartz events + Amethyst fitness screens
 
+> **Status:** shipped — `experimental/fitness/workout/` implements `WorkoutRecordEvent` (kind 1301) plus the RUNSTR-dialect tag classes and fixture tests called for here.
+> _Audited 2026-06-30._
+
 Research date: 2026-06-11. Source: `RUNSTR-LLC/RUNSTR` @ `main`
 (commit `398cdffab452c9e482b3ecf3e5b956b3c0fe1b7b`), its `docs/KIND_1301_SPEC.md`,
 `docs/ARCHITECTURE.md`, and the companion `RUNSTR-LLC/runstr-fitness-skill`

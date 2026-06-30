@@ -8,6 +8,9 @@ origin: docs/brainstorms/2026-06-03-nip46-bunker-double-resume-brainstorm.md
 
 # fix(quartz): NIP-46 bunker double-resume + retry id-reuse races
 
+> **Status:** shipped — `RemoteSignerManager` uses the Channel-per-request `pending` map and a retry test (`RemoteSignerManagerRetryTest`); the front-matter already marks it `completed`.
+> _Audited 2026-06-30._
+
 ## Revision Note (2026-06-03, post-review)
 
 Three reviews (simplicity / architecture / pattern-recognition) converged on

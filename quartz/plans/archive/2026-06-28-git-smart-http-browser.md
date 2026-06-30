@@ -1,5 +1,8 @@
 # Git smart-HTTP browser for NIP-34 repositories
 
+> **Status:** shipped — the full git smart-HTTP v2 client (`PktLine`, `Packfile`, `GitDelta`, `GitSmartHttpTransport`, `GitHttpClient`) ships in `nip34Git/git/` (jvmAndroid) with protocol/packfile/commit tests.
+> _Audited 2026-06-30._
+
 Date: 2026-06-28
 Module: `quartz` (protocol client) + `amethyst` (UI)
 

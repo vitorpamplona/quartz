@@ -1,5 +1,8 @@
 # NIP-5A static-site resolver + napplet (NIP-5D) alignment
 
+> **Status:** shipped — the resolver landed under `nip5aStaticWebsites/resolver/` (`StaticSiteResolver`, `StaticSitePathLookup`) with security tests; remaining items are open upstream alignment questions, not Quartz code work.
+> _Audited 2026-06-30._
+
 Date: 2026-06-19
 Status: resolver landed (quartz commonMain); alignment questions open
 
