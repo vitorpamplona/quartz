@@ -35,10 +35,18 @@ data class BlossomUploadResult(
     val type: String? = null,
     // upload time
     val uploaded: Long? = null,
+    // (BUD-05) The sha256 hash of the *original* blob, before server-side
+    // optimization. Only returned by the `/media` endpoint when the server
+    // transforms the file (so sha256 != ox).
+    val ox: HexKey? = null,
     // magnet link
     val magnet: String? = null,
     // info hash
     val infohash: String? = null,
     // ipfs link
     val ipfs: String? = null,
+    // (BUD-08) Optional NIP-94 file-metadata tags describing this blob, so a
+    // client gets standardized metadata (dimensions, blurhash, alt, …) without
+    // a separate request. Each entry is a NIP-94 tag: [name, value, …].
+    val nip94: List<List<String>>? = null,
 )
