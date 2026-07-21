@@ -20,12 +20,12 @@
  */
 package com.vitorpamplona.quartz.buzz.forum
 
+import com.vitorpamplona.quartz.buzz.threading.buzzThread
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
-import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 
 /** The `h` channel tag (NIP-29) scoping a Buzz forum event to its channel UUID. */
@@ -38,19 +38,11 @@ fun <T : Event> TagArrayBuilder<T>.forumMentions(mentions: List<HexKey>) = menti
 fun <T : Event> TagArrayBuilder<T>.forumVoteTarget(targetEventId: HexKey) = addUnique(ETag.assemble(targetEventId, null, null))
 
 /**
- * NIP-10 thread e-tags for a forum comment, matching `thread_tags` in `builders.rs`:
- * - direct reply (`root == parent`): one `["e", root, "", "reply"]`
- * - nested reply (`root != parent`): `["e", root, "", "root"]` + `["e", parent, "", "reply"]`
- *
- * The empty relay slot is emitted verbatim so the marker stays at index 3, matching the
- * reference wire form.
+ * NIP-10 thread e-tags for a forum comment. Buzz threads streams and forum comments
+ * identically (`thread_tags` in `builders.rs`), so this delegates to the shared
+ * [buzzThread] verb.
  */
 fun <T : Event> TagArrayBuilder<T>.forumThread(
     rootEventId: HexKey,
     parentEventId: HexKey,
-) = if (rootEventId == parentEventId) {
-    add(arrayOf(MarkedETag.TAG_NAME, rootEventId, "", MarkedETag.MARKER.REPLY.code))
-} else {
-    add(arrayOf(MarkedETag.TAG_NAME, rootEventId, "", MarkedETag.MARKER.ROOT.code))
-    add(arrayOf(MarkedETag.TAG_NAME, parentEventId, "", MarkedETag.MARKER.REPLY.code))
-}
+) = buzzThread(rootEventId, parentEventId)
