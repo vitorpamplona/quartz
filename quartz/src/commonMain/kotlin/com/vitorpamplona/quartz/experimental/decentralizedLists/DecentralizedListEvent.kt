@@ -42,3 +42,10 @@ interface DecentralizedListEvent : IEvent {
  * carry the item itself in `p` / `e` / `t` / `a` tags.
  */
 interface DecentralizedListItem : DecentralizedListEvent
+
+/**
+ * The addressable kinds (39998, 39999): the only ones the Tapestry extensions — the `b`
+ * inherit-from tag, the `json` payload — are defined on, since those point at and resolve
+ * through `kind:pubkey:d` coordinates.
+ */
+interface AddressableDecentralizedListEvent : DecentralizedListEvent
