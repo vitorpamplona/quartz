@@ -32,7 +32,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class ContactCardPetNameTest {
+class UserAssertionPetNameTest {
     val signer = NostrSignerInternal(KeyPair())
     val targetUser = "e88a691e98d9987c964521dff60025f60700378a4879180dcbbb4a5027850411"
 

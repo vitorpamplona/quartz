@@ -39,7 +39,7 @@ import kotlin.test.assertTrue
  * their rooms) never matches it — so a zap on a group message would be invisible exactly where it was
  * meant to be seen. Reactions already copy the tag (`ReactionAction`); this pins the same rule for zaps.
  */
-class LnZapRequestGroupTagTest {
+class ZapRequestGroupTagTest {
     private val signer =
         DeterministicSigner(
             "nsec10g0wheggqn9dawlc0yuv6adnat6n09anr7eyykevw2dm8xa5fffs0wsdsr".nsecToKeyPair(),

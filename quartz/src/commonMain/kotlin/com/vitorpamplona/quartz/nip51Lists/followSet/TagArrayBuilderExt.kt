@@ -18,18 +18,22 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.hashtagList
+package com.vitorpamplona.quartz.nip51Lists.followSet
 
-import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
-import com.vitorpamplona.quartz.nip01Core.diff.EventDiff
-import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip51Lists.muteList.tags.UserTag
+import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
+import com.vitorpamplona.quartz.nip51Lists.tags.ImageTag
+import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
+import com.vitorpamplona.quartz.nip51Lists.tags.TitleTag
 
-/** Changes to the followed hashtags: public ones, and the private ones as a whole. */
-@Immutable
-class HashtagListDiff(
-    val hashtags: ListDiff<String>,
-    val privateItems: ContentChange,
-) : EventDiff {
-    override fun removesData() = privateItems.publicRemovalsAreLoss(hashtags.hasRemovals()) || privateItems.isRemoval()
-}
+@Deprecated("NIP-51 has deprecated name. Use title instead", ReplaceWith("title()"))
+fun TagArrayBuilder<FollowSetEvent>.name(name: String) = addUnique(NameTag.assemble(name))
+
+fun TagArrayBuilder<FollowSetEvent>.title(name: String) = addUnique(TitleTag.assemble(name))
+
+fun TagArrayBuilder<FollowSetEvent>.description(desc: String) = addUnique(DescriptionTag.assemble(desc))
+
+fun TagArrayBuilder<FollowSetEvent>.image(url: String) = addUnique(ImageTag.assemble(url))
+
+fun TagArrayBuilder<FollowSetEvent>.peoples(peoples: List<UserTag>) = addAll(peoples.map { it.toTagArray() })

@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.hashtagList
+package com.vitorpamplona.quartz.nip51Lists.interestList
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
@@ -49,10 +49,10 @@ class InterestListEvent(
     content: String,
     sig: HexKey,
 ) : PrivateTagArrayEvent(id, pubKey, createdAt, KIND, tags, content, sig),
-    DiffableEvent<HashtagListDiff> {
-    override fun diffFrom(older: Event): HashtagListDiff? {
+    DiffableEvent<InterestListDiff> {
+    override fun diffFrom(older: Event): InterestListDiff? {
         if (older !is InterestListEvent || older.pubKey != pubKey || older.dTag() != dTag()) return null
-        return HashtagListDiff(
+        return InterestListDiff(
             ListDiff.of(older.publicHashtags(), publicHashtags(), { it.lowercase() }),
             privateItemsChangeFrom(older),
         )
@@ -216,9 +216,3 @@ class InterestListEvent(
         }
     }
 }
-
-@Deprecated(
-    "Renamed to InterestListEvent. NIP-51 names kind 10015 the interests list.",
-    ReplaceWith("InterestListEvent", "com.vitorpamplona.quartz.nip51Lists.hashtagList.InterestListEvent"),
-)
-typealias HashtagListEvent = InterestListEvent

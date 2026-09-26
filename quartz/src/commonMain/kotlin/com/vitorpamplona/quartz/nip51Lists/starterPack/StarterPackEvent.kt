@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.followList
+package com.vitorpamplona.quartz.nip51Lists.starterPack
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
@@ -184,9 +184,3 @@ class StarterPackEvent(
         }
     }
 }
-
-@Deprecated(
-    "Renamed to StarterPackEvent. Kind 39089 is a NIP-51 starter pack. The NIP-02 follow list is kind 3 (ContactListEvent).",
-    ReplaceWith("StarterPackEvent", "com.vitorpamplona.quartz.nip51Lists.followList.StarterPackEvent"),
-)
-typealias FollowListEvent = StarterPackEvent

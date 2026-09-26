@@ -26,7 +26,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class LnZapReceiptValidatorTest {
+class ZapReceiptValidatorTest {
     // Mainnet 100,000 sat invoice (= 100_000_000 msats). From LnInvoiceUtilTest.
     private val invoice100kSats =
         "lnbc1m1pjt9u0qsp553q90pj5mafzv20w45eqavned9tgwhl4q99n9s5ppcw24nzw3zeqpp5002kd3ktym67du86kj665fgaev7ka8ys7j5yz5fg686lr5e2gfkshp5dkk27nnuax05az3pk2r6ytxtvwn5j4xzsq9ajprhc7crjkmgvr3qxqyjw5qcqpjrzjqtzxvfsuxe4l92pf97tt4rcgpy2xalkmlwexh899wqxf83l8nwv4xzh0gvqq89qqqqqqqqlgqqqqq0gqvs9qxpqysgqx5mz04wd7kqu5zhhel9enr036hjrp4gga0nz084p2asjl36a0zmrk6mhqa249zsgqref2rlvhffm73u7rxgr47gden6rugup4ksvpzsqvds4pz"
@@ -80,99 +80,99 @@ class LnZapReceiptValidatorTest {
 
     @Test
     fun `valid receipt passes all checks`() {
-        val result = LnZapReceiptValidator.validate(receipt(), providerPubkey, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(receipt(), providerPubkey, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `missing zap request fails with MISSING_ZAP_REQUEST`() {
         val r = receipt(description = null)
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISSING_ZAP_REQUEST, invalid.reason)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISSING_ZAP_REQUEST, invalid.reason)
     }
 
     @Test
     fun `wrong signer fails with MISMATCHED_NOSTR_PUBKEY`() {
         val attackerPubkey = "1".repeat(64)
-        val result = LnZapReceiptValidator.validate(receipt(signerPubkey = attackerPubkey), providerPubkey, lnurlOfRecipient)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISMATCHED_NOSTR_PUBKEY, invalid.reason)
+        val result = ZapReceiptValidator.validate(receipt(signerPubkey = attackerPubkey), providerPubkey, lnurlOfRecipient)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISMATCHED_NOSTR_PUBKEY, invalid.reason)
     }
 
     @Test
     fun `null expected pubkey skips the check`() {
         val attackerPubkey = "1".repeat(64)
-        val result = LnZapReceiptValidator.validate(receipt(signerPubkey = attackerPubkey), null, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(receipt(signerPubkey = attackerPubkey), null, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `missing bolt11 fails with MISSING_OR_BAD_BOLT11`() {
-        val result = LnZapReceiptValidator.validate(receipt(bolt11 = null), providerPubkey, lnurlOfRecipient)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISSING_OR_BAD_BOLT11, invalid.reason)
+        val result = ZapReceiptValidator.validate(receipt(bolt11 = null), providerPubkey, lnurlOfRecipient)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISSING_OR_BAD_BOLT11, invalid.reason)
     }
 
     @Test
     fun `mismatched amount fails with MISMATCHED_AMOUNT`() {
         // bolt11 is 100,000,000 msats; request claims 50,000,000.
         val r = receipt(description = zapRequestJson(amountMillisats = 50_000_000L))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISMATCHED_AMOUNT, invalid.reason)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISMATCHED_AMOUNT, invalid.reason)
     }
 
     @Test
     fun `missing amount tag is accepted when not strict`() {
         val r = receipt(description = zapRequestJson(amountMillisats = null))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient, strictAmount = false)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient, strictAmount = false)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `missing amount tag fails when strict`() {
         val r = receipt(description = zapRequestJson(amountMillisats = null))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient, strictAmount = true)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISMATCHED_AMOUNT, invalid.reason)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient, strictAmount = true)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISMATCHED_AMOUNT, invalid.reason)
     }
 
     @Test
     fun `mismatched lnurl fails with MISMATCHED_LNURL`() {
         val r = receipt(description = zapRequestJson(lnurl = "other@example.org"))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        val invalid = assertIs<LnZapReceiptValidator.Result.Invalid>(result)
-        assertEquals(LnZapReceiptValidator.Result.Reason.MISMATCHED_LNURL, invalid.reason)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        val invalid = assertIs<ZapReceiptValidator.Result.Invalid>(result)
+        assertEquals(ZapReceiptValidator.Result.Reason.MISMATCHED_LNURL, invalid.reason)
     }
 
     @Test
     fun `missing lnurl tag is accepted`() {
         val r = receipt(description = zapRequestJson(lnurl = null))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `lnurl tag in URL form matches lud16 expectation`() {
         val r = receipt(description = zapRequestJson(lnurl = lnurlUrl))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `lnurl tag in bech32 form matches lud16 expectation`() {
         val bech32 = LnurlForm.urlToBech32(lnurlUrl)
         val r = receipt(description = zapRequestJson(lnurl = bech32))
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 
     @Test
     fun `pubkey check is case-insensitive`() {
         val r = receipt(signerPubkey = providerPubkey.uppercase())
-        val result = LnZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
-        assertEquals(LnZapReceiptValidator.Result.Valid, result)
+        val result = ZapReceiptValidator.validate(r, providerPubkey, lnurlOfRecipient)
+        assertEquals(ZapReceiptValidator.Result.Valid, result)
     }
 }
 

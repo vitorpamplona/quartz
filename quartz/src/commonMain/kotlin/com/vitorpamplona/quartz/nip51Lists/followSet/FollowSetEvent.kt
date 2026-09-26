@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.peopleList
+package com.vitorpamplona.quartz.nip51Lists.followSet
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
@@ -415,9 +415,3 @@ class FollowSetEvent(
             )
     }
 }
-
-@Deprecated(
-    "Renamed to FollowSetEvent. NIP-51 names kind 30000 follow sets.",
-    ReplaceWith("FollowSetEvent", "com.vitorpamplona.quartz.nip51Lists.peopleList.FollowSetEvent"),
-)
-typealias PeopleListEvent = FollowSetEvent

@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.labeledBookmarkList
+package com.vitorpamplona.quartz.nip51Lists.bookmarkSet
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
@@ -335,9 +335,3 @@ class BookmarkSetEvent(
         }
     }
 }
-
-@Deprecated(
-    "Renamed to BookmarkSetEvent. NIP-51 names kind 30003 bookmark sets.",
-    ReplaceWith("BookmarkSetEvent", "com.vitorpamplona.quartz.nip51Lists.labeledBookmarkList.BookmarkSetEvent"),
-)
-typealias LabeledBookmarkListEvent = BookmarkSetEvent

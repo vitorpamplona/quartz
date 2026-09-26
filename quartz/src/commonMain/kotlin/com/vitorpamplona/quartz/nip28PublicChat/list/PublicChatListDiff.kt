@@ -18,22 +18,25 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.labeledBookmarkList
+package com.vitorpamplona.quartz.nip28PublicChat.list
 
-import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.BookmarkIdTag
-import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
-import com.vitorpamplona.quartz.nip51Lists.tags.ImageTag
-import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
-import com.vitorpamplona.quartz.nip51Lists.tags.TitleTag
+import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
+import com.vitorpamplona.quartz.nip01Core.diff.EventDiff
+import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
+import com.vitorpamplona.quartz.nip28PublicChat.list.tags.ChannelTag
 
-@Deprecated("NIP-51 has deprecated name. Use title instead", ReplaceWith("title()"))
-fun TagArrayBuilder<BookmarkSetEvent>.name(name: String) = addUnique(NameTag.assemble(name))
+/** Changes to the joined public chats: public channels as parsed tags, private ones as a whole. */
+@Immutable
+class PublicChatListDiff(
+    val channels: ListDiff<ChannelTag>,
+    val privateItems: ContentChange,
+) : EventDiff {
+    override fun removesData() = privateItems.publicRemovalsAreLoss(channels.hasRemovals()) || privateItems.isRemoval()
+}
 
-fun TagArrayBuilder<BookmarkSetEvent>.title(title: String) = addUnique(TitleTag.assemble(title))
-
-fun TagArrayBuilder<BookmarkSetEvent>.bookmarks(bookmarks: List<BookmarkIdTag>) = addAll(bookmarks.map { it.toTagArray() })
-
-fun TagArrayBuilder<BookmarkSetEvent>.description(listDescription: String) = addUnique(DescriptionTag.assemble(listDescription))
-
-fun TagArrayBuilder<BookmarkSetEvent>.image(url: String) = addUnique(ImageTag.assemble(url))
+@Deprecated(
+    "Renamed to PublicChatListDiff. Follows the ChannelListEvent to PublicChatListEvent rename (NIP-51 public chats list).",
+    ReplaceWith("PublicChatListDiff", "com.vitorpamplona.quartz.nip28PublicChat.list.PublicChatListDiff"),
+)
+typealias ChannelListDiff = PublicChatListDiff

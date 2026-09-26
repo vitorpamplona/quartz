@@ -37,7 +37,7 @@ import kotlin.test.assertTrue
  * (encrypted `anon`) requests use throwaway keys — tagging anything derived
  * from them is either useless or, for the decrypted sender, a doxxing risk.
  */
-class LnZapRequestAnonTagTest {
+class ZapRequestAnonTagTest {
     private val signer =
         NostrSignerInternal(
             "nsec10g0wheggqn9dawlc0yuv6adnat6n09anr7eyykevw2dm8xa5fffs0wsdsr".nsecToKeyPair(),

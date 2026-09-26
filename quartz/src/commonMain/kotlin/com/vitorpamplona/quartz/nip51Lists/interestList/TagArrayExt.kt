@@ -18,13 +18,11 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip51Lists.followList
+package com.vitorpamplona.quartz.nip51Lists.interestList
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
-import com.vitorpamplona.quartz.nip51Lists.muteList.tags.UserTag
+import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 
-fun TagArray.follows() = mapNotNull(UserTag::parse)
+fun TagArray.hashtagList() = mapNotNull(HashtagTag::parse)
 
-fun TagArray.followIds() = mapNotNull(UserTag::parseKey)
-
-fun TagArray.followIdSet() = mapNotNullTo(mutableSetOf(), UserTag::parseKey)
+fun TagArray.hashtagSet() = mapNotNullTo(mutableSetOf(), HashtagTag::parse)

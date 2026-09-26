@@ -18,19 +18,18 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip28PublicChat.list
+package com.vitorpamplona.quartz.nip51Lists.interestList
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.EventDiff
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
-import com.vitorpamplona.quartz.nip28PublicChat.list.tags.ChannelTag
 
-/** Changes to the joined public chats: public channels as parsed tags, private ones as a whole. */
+/** Changes to the followed hashtags: public ones, and the private ones as a whole. */
 @Immutable
-class ChannelListDiff(
-    val channels: ListDiff<ChannelTag>,
+class InterestListDiff(
+    val hashtags: ListDiff<String>,
     val privateItems: ContentChange,
 ) : EventDiff {
-    override fun removesData() = privateItems.publicRemovalsAreLoss(channels.hasRemovals()) || privateItems.isRemoval()
+    override fun removesData() = privateItems.publicRemovalsAreLoss(hashtags.hasRemovals()) || privateItems.isRemoval()
 }

@@ -45,7 +45,7 @@ import com.vitorpamplona.quartz.utils.BigDecimal
  * check on the receipt's signer pubkey is non-negotiable when an
  * `expectedNostrPubkey` is provided.
  */
-object LnZapReceiptValidator {
+object ZapReceiptValidator {
     sealed class Result {
         data object Valid : Result()
 
@@ -153,3 +153,9 @@ object LnZapReceiptValidator {
             ?.get(1)
             ?.takeIf { it.isNotBlank() }
 }
+
+@Deprecated(
+    "Renamed to ZapReceiptValidator. Validates NIP-57 zap receipts (ZapReceiptEvent).",
+    ReplaceWith("ZapReceiptValidator", "com.vitorpamplona.quartz.nip57Zaps.validate.ZapReceiptValidator"),
+)
+typealias LnZapReceiptValidator = ZapReceiptValidator

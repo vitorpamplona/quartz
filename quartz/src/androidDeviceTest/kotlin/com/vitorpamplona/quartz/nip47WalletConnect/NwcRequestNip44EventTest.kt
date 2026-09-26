@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
@@ -28,11 +29,13 @@ import com.vitorpamplona.quartz.nip47WalletConnect.events.NwcRequestEvent
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetBalanceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetInfoMethod
 import kotlinx.coroutines.test.runTest
+import org.junit.runner.RunWith
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class LnZapPaymentRequestNip44EventTest {
+@RunWith(AndroidJUnit4::class)
+class NwcRequestNip44EventTest {
     @Test
     fun testCreateRequestWithNip44() =
         runTest {
@@ -42,9 +45,9 @@ class LnZapPaymentRequestNip44EventTest {
             val walletServicePubkey: HexKey =
                 walletKeyPair.pubKey.toHexKey()
 
-            val request = GetBalanceMethod.Companion.create()
+            val request = GetBalanceMethod.create()
             val event =
-                NwcRequestEvent.Companion.createRequest(
+                NwcRequestEvent.createRequest(
                     request = request,
                     walletServicePubkey = walletServicePubkey,
                     signer = clientSigner,
@@ -66,9 +69,9 @@ class LnZapPaymentRequestNip44EventTest {
             val walletServicePubkey: HexKey =
                 walletKeyPair.pubKey.toHexKey()
 
-            val request = GetInfoMethod.Companion.create()
+            val request = GetInfoMethod.create()
             val event =
-                NwcRequestEvent.Companion.createRequest(
+                NwcRequestEvent.createRequest(
                     request = request,
                     walletServicePubkey = walletServicePubkey,
                     signer = clientSigner,

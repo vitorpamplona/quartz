@@ -34,7 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
-class LnZapPrivateEvent(
+class PrivateZapEvent(
     id: HexKey,
     pubKey: HexKey,
     createdAt: Long,
@@ -66,13 +66,19 @@ class LnZapPrivateEvent(
             tags: Array<Array<String>> = emptyArray(),
             content: String = "",
             createdAt: Long = TimeUtils.now(),
-        ): LnZapPrivateEvent = signer.sign(createdAt, KIND, tags, content)
+        ): PrivateZapEvent = signer.sign(createdAt, KIND, tags, content)
 
         fun create(
             signer: NostrSignerSync,
             tags: Array<Array<String>> = emptyArray(),
             content: String = "",
             createdAt: Long = TimeUtils.now(),
-        ): LnZapPrivateEvent = signer.sign(createdAt, KIND, tags, content)
+        ): PrivateZapEvent = signer.sign(createdAt, KIND, tags, content)
     }
 }
+
+@Deprecated(
+    "Renamed to PrivateZapEvent. Follows the NIP-57 zap naming (ZapRequestEvent, ZapReceiptEvent).",
+    ReplaceWith("PrivateZapEvent", "com.vitorpamplona.quartz.nip57Zaps.PrivateZapEvent"),
+)
+typealias LnZapPrivateEvent = PrivateZapEvent
