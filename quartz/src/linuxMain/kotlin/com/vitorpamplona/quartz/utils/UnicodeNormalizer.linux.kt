@@ -20,11 +20,9 @@
  */
 package com.vitorpamplona.quartz.utils
 
+import com.vitorpamplona.quartz.utils.unicode.NfkcNormalizer
+
+// Linux native has no platform normalizer (no ICU), so it uses Quartz's pure-Kotlin one.
 actual class UnicodeNormalizer {
-    actual fun normalizeNFKC(input: String): String {
-        // NFKC normalization on Linux native without ICU
-        // For most Nostr use cases (NIP-05, etc.) ASCII-safe content works without normalization.
-        // Full NFKC support would require linking against ICU or a pure-Kotlin normalizer.
-        return input
-    }
+    actual fun normalizeNFKC(input: String): String = NfkcNormalizer.normalize(input)
 }
