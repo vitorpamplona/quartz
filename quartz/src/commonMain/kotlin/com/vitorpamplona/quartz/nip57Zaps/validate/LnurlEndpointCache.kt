@@ -21,8 +21,8 @@
 package com.vitorpamplona.quartz.nip57Zaps.validate
 
 import com.vitorpamplona.quartz.utils.cache.ConcurrentLruCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 import kotlinx.coroutines.CompletableDeferred
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Process-wide cache of LNURL-pay endpoint metadata, keyed by the canonical
@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap
  * recipient's LNURL provider's `nostrPubkey` to validate the signer (NIP-57
  * Appendix F). Without a cache, we'd re-fetch the same lnurlp endpoint for
  * every zap from every popular author. Outbound zaps populate the cache as a
- * side effect when [com.vitorpamplona.amethyst.service.lnurl.LightningAddressResolver]
+ * side effect when Amethyst's `LightningInvoiceResolver`
  * fetches the recipient's metadata.
  *
  * Keys are URLs (not lud16 forms) so callers can convert lud16 / bech32 LNURL
@@ -50,7 +50,7 @@ object LnurlEndpointCache {
     // what counts as "the same address", which is why they live together: a
     // flight map that keyed URLs differently would silently stop deduplicating
     // the moment this object's canonicalisation changed, and nothing would fail.
-    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<LnurlEndpointInfo?>>()
+    private val inFlight = ConcurrentMap<String, CompletableDeferred<LnurlEndpointInfo?>>()
 
     fun get(url: String): LnurlEndpointInfo? = cache.get(LnurlForm.normalizeUrl(url))
 
