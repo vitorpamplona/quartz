@@ -22,7 +22,7 @@ package com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.utils.Hex
+import com.vitorpamplona.quartz.nip01Core.core.isValid
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
@@ -37,7 +37,7 @@ class EditTag {
         fun parse(tag: Array<String>): HexKey? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].length == 64 && Hex.isHex(tag[1])) { return null }
+            ensure(tag[1].isValid()) { return null }
             return tag[1]
         }
 
