@@ -28,7 +28,7 @@ package com.vitorpamplona.quartz.utils.secp256k1
  * (Kotlin/Native has its own threading model; for the secp256k1 use case,
  * scratch buffers don't need thread isolation since coroutines are cooperative.)
  */
-internal expect class ScratchLocal<T>(
+internal expect class ScratchLocal<T : Any>(
     initializer: () -> T,
 ) {
     fun get(): T
