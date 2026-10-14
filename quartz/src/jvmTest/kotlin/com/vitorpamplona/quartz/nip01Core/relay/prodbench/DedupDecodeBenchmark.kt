@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import kotlin.test.Test

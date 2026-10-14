@@ -20,9 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.geode.KtorRelay
-import com.vitorpamplona.geode.RelayEngine
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -51,12 +51,12 @@ import kotlin.test.Test
 class GiantReqStreamTest {
     @Test
     fun giantReqStreamsFastAndComplete() {
-        val engine = RelayEngine(url = "ws://127.0.0.1:7771/".normalizeRelayUrl())
+        val engine = InMemoryRelay(url = "ws://127.0.0.1:7771/".normalizeRelayUrl())
         runBlocking {
             val events = (1..20_000).map { SyntheticEvents.fakeEvent(idSeed = it, kind = 1, createdAt = it.toLong(), content = "x".repeat(200)) }
             events.chunked(2000).forEach { engine.store.batchInsert(it) }
         }
-        val server = KtorRelay(engine, port = 0).start()
+        val server = TestWebSocketRelay(engine, port = 0).start()
         val http = OkHttpClient.Builder().build()
         try {
             val count = AtomicLong(0)

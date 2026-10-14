@@ -1,0 +1,48 @@
+name: Release
+
+# Publishes every Quartz artifact to Maven Central when a vX.Y.Z tag is
+# pushed. The version comes from gradle/libs.versions.toml (`quartz`); bump it
+# in the same commit you tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Check the tag matches the catalog version
+        run: |
+          VERSION=$(sed -n 's/^quartz = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match quartz = \"$VERSION\" in gradle/libs.versions.toml"
+            exit 1
+          fi
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishAllPublicationsToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true

@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay
 
-import com.vitorpamplona.geode.InProcessRelays
+import com.vitorpamplona.quartz.testing.relay.InProcessRelays
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.count
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage

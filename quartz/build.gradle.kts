@@ -218,13 +218,9 @@ kotlin {
                     implementation(libs.kotlin.test)
                     implementation(libs.kotlinx.coroutines.test)
 
-                    // In-process Nostr relay (geode) so JVM/Android host
-                    // tests don't need network access or a Rust toolchain.
-                    // testFixtures (RelayClientTest base, fixtures,
-                    // collectUntilEose) are wired below at the top-level
-                    // `dependencies` block — the KMP source-set DSL
-                    // doesn't expose the `testFixtures(...)` consumer.
-                    implementation(project(":geode"))
+                    // JUnit's @After for the in-process relay fixtures
+                    // (quartz/testing/relay: InMemoryRelay, RelayClientTest).
+                    implementation(libs.junit)
                 }
             }
 
@@ -247,6 +243,12 @@ kotlin {
 
                 // SQLite bundled driver for JVM tests
                 implementation(libs.androidx.sqlite.bundled.jvm)
+
+                // Ktor server for the few tests that need a real ws:// relay
+                // (TestWebSocketRelay). Test-only, never published.
+                implementation(libs.ktor.server.core)
+                implementation(libs.ktor.server.cio)
+                implementation(libs.ktor.server.websockets)
             }
         }
 
@@ -379,15 +381,6 @@ kotlin {
     }
 }
 
-// testFixtures(...) consumer lives outside the KMP source-set DSL —
-// the KMP source-set `dependencies { }` block uses
-// `KotlinDependencyHandler`, which does not expose the
-// `testFixtures(...)` projection. The standard Gradle dependency
-// configuration name (`jvmAndroidTestImplementation`) does work here.
-dependencies {
-    "jvmAndroidTestImplementation"(testFixtures(project(":geode")))
-}
-
 // iOS purity gate. Jackson and OkHttp are JVM-only and must never appear
 // in source sets that compile for iOS / native / common targets. The KMP
 // build would eventually fail with an "unresolved reference" if these
@@ -414,9 +407,9 @@ mavenPublishing {
     coordinates(
         groupId = "com.vitorpamplona.quartz",
         artifactId = "quartz",
-        // Library version tracks the app version in gradle/libs.versions.toml,
-        // bumped in lockstep with each release.
-        version = libs.versions.app.get(),
+        // Released from github.com/vitorpamplona/quartz; the version lives in
+        // gradle/libs.versions.toml (`quartz`).
+        version = libs.versions.quartz.get(),
     )
 
     // Configure publishing to Maven Central
@@ -429,11 +422,11 @@ mavenPublishing {
         name = "Quartz: Nostr Library for Kotlin Multiplatform"
         description = "Nostr library ported to Kotlin/Multiplatform for JVM, Android, iOS & Linux"
         inceptionYear = "2025"
-        url = "https://github.com/vitorpamplona/amethyst/"
+        url = "https://github.com/vitorpamplona/quartz/"
         licenses {
             license {
                 name = "MIT License"
-                url = "https://github.com/vitorpamplona/amethyst/blob/main/LICENSE"
+                url = "https://github.com/vitorpamplona/quartz/blob/main/LICENSE"
             }
         }
         developers {
@@ -445,8 +438,8 @@ mavenPublishing {
             }
         }
         scm {
-            url = "https://github.com/vitorpamplona/amethyst/"
-            connection = "https://github.com/vitorpamplona/amethyst/.git"
+            url = "https://github.com/vitorpamplona/quartz/"
+            connection = "https://github.com/vitorpamplona/quartz.git"
         }
     }
 }

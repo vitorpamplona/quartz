@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.EventCollector

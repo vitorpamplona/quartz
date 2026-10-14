@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.marmot
 
-import com.vitorpamplona.geode.InProcessRelays
+import com.vitorpamplona.quartz.testing.relay.InProcessRelays
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageFetcher
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair

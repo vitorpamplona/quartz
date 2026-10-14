@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.paging
 
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
-import com.vitorpamplona.geode.testing.RelayClientTest
-import com.vitorpamplona.geode.testing.collectUntilEose
-import com.vitorpamplona.geode.testing.preload
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.RelayClientTest
+import com.vitorpamplona.quartz.testing.relay.collectUntilEose
+import com.vitorpamplona.quartz.testing.relay.preload
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import kotlinx.coroutines.runBlocking

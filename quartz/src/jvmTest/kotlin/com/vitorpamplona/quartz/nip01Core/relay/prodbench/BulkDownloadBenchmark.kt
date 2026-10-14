@@ -20,9 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.geode.KtorRelay
-import com.vitorpamplona.geode.RelayEngine
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropySyncException
@@ -221,7 +221,7 @@ class BulkDownloadBenchmark {
         val placeholderA = "ws://127.0.0.1:7771/".normalizeRelayUrl()
         val placeholderB = "ws://127.0.0.1:7772/".normalizeRelayUrl()
 
-        val engine = RelayEngine(url = placeholderA)
+        val engine = InMemoryRelay(url = placeholderA)
         val seedNanos =
             runBlocking {
                 val events =
@@ -243,14 +243,14 @@ class BulkDownloadBenchmark {
         // Same store, second engine that clamps every REQ to PAGE_LIMIT — forces
         // fetchAllPages into realistic until-cursor pagination.
         val pagedEngine =
-            RelayEngine(
+            InMemoryRelay(
                 url = placeholderB,
                 store = engine.store,
                 policyBuilder = { LimitsPolicy(RelayLimits(defaultLimit = PAGE_LIMIT, maxLimit = PAGE_LIMIT)) },
             )
 
-        val openServer = KtorRelay(engine, port = 0).start()
-        val pagedServer = KtorRelay(pagedEngine, port = 0).start()
+        val openServer = TestWebSocketRelay(engine, port = 0).start()
+        val pagedServer = TestWebSocketRelay(pagedEngine, port = 0).start()
         try {
             val openUrl = openServer.url.normalizeRelayUrl()
             val pagedUrl = pagedServer.url.normalizeRelayUrl()

@@ -20,9 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay
 
-import com.vitorpamplona.geode.InProcessRelays
-import com.vitorpamplona.geode.fixtures.SyntheticEvents
-import com.vitorpamplona.geode.testing.preload
+import com.vitorpamplona.quartz.testing.relay.InProcessRelays
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.preload
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySync
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter

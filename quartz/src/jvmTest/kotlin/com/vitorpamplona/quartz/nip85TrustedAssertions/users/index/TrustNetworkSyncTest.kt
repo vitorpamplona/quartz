@@ -20,8 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip85TrustedAssertions.users.index
 
-import com.vitorpamplona.geode.KtorRelay
-import com.vitorpamplona.geode.RelayEngine
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
@@ -75,9 +75,9 @@ class TrustNetworkSyncTest {
             val subjects = List(300) { hex() }
             val batch = subjects.mapIndexed { i, s -> card(s, 1 + i % 90, batchTime) }
 
-            val engine = RelayEngine(url = "ws://127.0.0.1:7773/".normalizeRelayUrl())
+            val engine = InMemoryRelay(url = "ws://127.0.0.1:7773/".normalizeRelayUrl())
             engine.store.batchInsert(batch.take(200))
-            val server = KtorRelay(engine, port = 0).start()
+            val server = TestWebSocketRelay(engine, port = 0).start()
             val client = NostrClient(BasicOkHttpWebSocket.Builder { OkHttpClient() })
             val relay = server.url.normalizeRelayUrl()
 

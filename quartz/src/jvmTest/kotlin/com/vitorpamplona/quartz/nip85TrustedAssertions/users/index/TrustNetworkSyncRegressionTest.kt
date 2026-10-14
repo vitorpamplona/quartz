@@ -20,8 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip85TrustedAssertions.users.index
 
-import com.vitorpamplona.geode.KtorRelay
-import com.vitorpamplona.geode.RelayEngine
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
@@ -66,16 +66,16 @@ class TrustNetworkSyncRegressionTest {
         events: List<Event>,
         // A relay's max_limit: every REQ page is cut to this many events.
         pageCap: Int? = null,
-        block: suspend (RelayEngine, NostrClient, NormalizedRelayUrl) -> T,
+        block: suspend (InMemoryRelay, NostrClient, NormalizedRelayUrl) -> T,
     ): T {
         val engine =
             if (pageCap == null) {
-                RelayEngine(url = "ws://127.0.0.1:7790/".normalizeRelayUrl())
+                InMemoryRelay(url = "ws://127.0.0.1:7790/".normalizeRelayUrl())
             } else {
-                RelayEngine(url = "ws://127.0.0.1:7790/".normalizeRelayUrl(), policyBuilder = { LimitsPolicy(RelayLimits(defaultLimit = pageCap, maxLimit = pageCap)) })
+                InMemoryRelay(url = "ws://127.0.0.1:7790/".normalizeRelayUrl(), policyBuilder = { LimitsPolicy(RelayLimits(defaultLimit = pageCap, maxLimit = pageCap)) })
             }
         engine.store.batchInsert(events)
-        val server = KtorRelay(engine, port = 0).start()
+        val server = TestWebSocketRelay(engine, port = 0).start()
         val client = NostrClient(BasicOkHttpWebSocket.Builder { OkHttpClient() })
         try {
             return block(engine, client, server.url.normalizeRelayUrl())
