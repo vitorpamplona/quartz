@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip01Core.store.sqlite
 
 import androidx.sqlite.SQLiteException
+import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip23LongContent.LongFormContentEvent
@@ -28,9 +30,63 @@ import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 
 class AddressableTest : BaseDBTest() {
     val signer = NostrSignerSync()
+
+    // A kind in the addressable range that no Quartz module registers, so it parses as a plain
+    // Event: what an app sees for any kind whose artifact it did not add.
+    private val unregisteredKind = 30998
+
+    private fun unregistered(
+        dTag: String?,
+        createdAt: Long,
+        content: String,
+    ): Event {
+        val tags = if (dTag != null) arrayOf(arrayOf("d", dTag)) else emptyArray()
+        return signer.sign<Event>(createdAt, unregisteredKind, tags, content).also {
+            assertFalse(it is AddressableEvent, "kind $unregisteredKind must stay unregistered for this test")
+        }
+    }
+
+    @Test
+    fun testReplacingAddressablesWithoutTheirClass() =
+        forEachDB { db ->
+            val time = TimeUtils.now()
+            val version1 = unregistered("my-list", time, "version 1")
+            val version2 = unregistered("my-list", time + 1, "version 2")
+            val otherList = unregistered("other-list", time, "other")
+
+            val addressableQuery = Filter(kinds = listOf(unregisteredKind), authors = listOf(version1.pubKey), tags = mapOf("d" to listOf("my-list")))
+
+            db.insert(version1)
+            db.insert(otherList)
+            db.insert(version2)
+
+            db.assertQuery(null, Filter(ids = listOf(version1.id)))
+            db.assertQuery(version2, addressableQuery)
+            db.assertQuery(otherList, Filter(ids = listOf(otherList.id)))
+
+            // An older version arriving late loses to the stored one.
+            assertFailsWith<SQLiteException> { db.insert(version1) }
+            db.assertQuery(version2, addressableQuery)
+        }
+
+    @Test
+    fun testAddressableWithoutDTagWithoutItsClass() =
+        forEachDB { db ->
+            // NIP-01: a missing d tag is the empty d tag, so these are two versions of one address.
+            val time = TimeUtils.now()
+            val version1 = unregistered(null, time, "version 1")
+            val version2 = unregistered("", time + 1, "version 2")
+
+            db.insert(version1)
+            db.insert(version2)
+
+            db.assertQuery(null, Filter(ids = listOf(version1.id)))
+            db.assertQuery(version2, Filter(ids = listOf(version2.id)))
+        }
 
     @Test
     fun testReplacingAddressables() =

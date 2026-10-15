@@ -25,7 +25,9 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.store.owner
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 
 class EventIndexesModule(
     val hasher: (db: SQLiteConnection) -> TagNameValueHasher,
@@ -219,7 +221,10 @@ class EventIndexesModule(
             stmt.bindText(5, OptimizedJsonMapper.toJson(event.tags))
             stmt.bindText(6, event.content)
             stmt.bindText(7, event.sig)
-            if (event is AddressableEvent) {
+            // By kind as well as by class: a kind whose class is not on the classpath parses as
+            // a plain Event and still has to replace its older versions (the unique index and
+            // the trigger in AddressableModule key on d_tag).
+            if (event is AddressableEvent || event.kind.isAddressable()) {
                 val dTag = event.dTag()
                 stmt.bindText(8, dTag)
                 stmt.bindLong(9, eventOwnerHash)

@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip01Core.store.fs
 
-import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -68,7 +68,7 @@ internal class FsSlots(
                 layout.replaceableSlot(event.kind, event.pubKey)
             }
 
-            event is AddressableEvent && event.kind.isAddressable() -> {
+            event.kind.isAddressable() -> {
                 layout.addressableSlot(event.kind, event.pubKey, event.dTag())
             }
 

@@ -24,12 +24,14 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
 import com.vitorpamplona.quartz.nip01Core.core.supersedes
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore
 import com.vitorpamplona.quartz.nip01Core.store.ObservableEventStore.StoreChange
 import com.vitorpamplona.quartz.nip01Core.store.owner
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip40Expiration.isExpirationBefore
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
@@ -332,6 +334,8 @@ class EventStoreProjection<T : Event>(
             when {
                 event is AddressableEvent -> event.address()
                 event.kind.isReplaceable() -> Address(event.kind, event.pubKey, "")
+                // A kind whose class is not on the classpath parses as a plain Event.
+                event.kind.isAddressable() -> Address(event.kind, event.pubKey, event.dTag())
                 else -> null
             }
 

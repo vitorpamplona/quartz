@@ -25,7 +25,6 @@ import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteException
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.vitorpamplona.negentropy.storage.IStorage
-import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
@@ -38,6 +37,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions
@@ -390,11 +390,9 @@ class SQLiteEventStore(
         event: Event,
         db: SQLiteConnection,
     ): IdAndTime? {
-        // The addressable branch requires the parsed class to carry a
-        // d-tag, mirroring the header insert: events without one store
-        // d_tag NULL, and the trigger's `d_tag = NEW.d_tag` never
-        // matches NULL — so nothing gets displaced.
-        val addressable = event.kind.isAddressable() && event is AddressableEvent
+        // Addressable by kind, whether or not the event parsed as an
+        // [AddressableEvent]: the d-tag comes from the tags, as in the header insert.
+        val addressable = event.kind.isAddressable()
         val sql =
             when {
                 event.kind.isReplaceable() ->
@@ -418,7 +416,7 @@ class SQLiteEventStore(
             var i = 1
             stmt.bindLong(i++, event.kind.toLong())
             stmt.bindText(i++, event.pubKey)
-            if (addressable) stmt.bindText(i++, (event as AddressableEvent).dTag())
+            if (addressable) stmt.bindText(i++, event.dTag())
             stmt.bindLong(i++, event.createdAt)
             stmt.bindLong(i++, event.createdAt)
             stmt.bindText(i, event.id)
@@ -625,7 +623,7 @@ class SQLiteEventStore(
         event: Event,
         db: SQLiteConnection,
     ): Boolean {
-        val addressable = event.kind.isAddressable() && event is AddressableEvent
+        val addressable = event.kind.isAddressable()
         val sql =
             when {
                 event.kind.isReplaceable() ->
@@ -652,7 +650,7 @@ class SQLiteEventStore(
                 var i = 1
                 stmt.bindLong(i++, event.kind.toLong())
                 stmt.bindText(i++, event.pubKey)
-                if (addressable) stmt.bindText(i++, (event as AddressableEvent).dTag())
+                if (addressable) stmt.bindText(i++, event.dTag())
                 stmt.bindLong(i++, event.createdAt)
                 stmt.bindLong(i++, event.createdAt)
                 stmt.bindText(i, event.id)

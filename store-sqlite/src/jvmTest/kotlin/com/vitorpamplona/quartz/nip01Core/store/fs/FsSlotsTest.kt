@@ -57,6 +57,35 @@ class FsSlotsTest {
     }
 
     // ------------------------------------------------------------------
+    // Addressable kinds with no class on the classpath (plain Event)
+    // ------------------------------------------------------------------
+
+    private fun unregisteredAddressable(
+        dTag: String,
+        createdAt: Long,
+    ) = signer.sign<Event>(
+        createdAt = createdAt,
+        kind = 30998,
+        tags = arrayOf(arrayOf("d", dTag)),
+        content = "at $createdAt",
+    )
+
+    @Test
+    fun `newer addressable evicts older even without its class`() =
+        runBlocking {
+            val v1 = unregisteredAddressable("list", 100)
+            val v2 = unregisteredAddressable("list", 200)
+            val other = unregisteredAddressable("other", 100)
+            store.insert(v1)
+            store.insert(other)
+            store.insert(v2)
+
+            val got = store.query<Event>(Filter(authors = listOf(signer.pubKey), kinds = listOf(30998)))
+            assertEquals(setOf(v2.id, other.id), got.map { it.id }.toSet())
+            assertFalse(store.hasCanonical(v1.id), "older canonical should be removed")
+        }
+
+    // ------------------------------------------------------------------
     // Replaceable (kind 0, 3, 10000-19999)
     // ------------------------------------------------------------------
 

@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip01Core.store.fs
 
-import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
@@ -33,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.DefaultIndexingStrategy
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.IndexingStrategy
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.TagNameValueHasher
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -199,7 +199,7 @@ open class FsEventStore(
         val ownerPubKey = indexer.ownerPubKey(event)
         val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
         if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return true
-        if (event is AddressableEvent && event.kind.isAddressable()) {
+        if (event.kind.isAddressable()) {
             val cutoff = tombstones.addrTombstoneCutoff(event.kind, event.pubKey, event.dTag())
             if (cutoff != null && event.createdAt <= cutoff) return true
         }
