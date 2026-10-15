@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip53LiveActivities.meetingSpaces.tags.EndpointUrlTag
 import com.vitorpamplona.quartz.nip53LiveActivities.meetingSpaces.tags.RelayListTag
@@ -54,6 +56,10 @@ class MeetingSpaceEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider,
     SearchableEvent {
+    // endpoint() is the `streaming` tag -- the same role
+    // LiveActivitiesEvent.streaming() fills above.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, room(), summary(), content, website = endpoint())
+
     override fun indexableContent() = listOfNotNull(room(), summary(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

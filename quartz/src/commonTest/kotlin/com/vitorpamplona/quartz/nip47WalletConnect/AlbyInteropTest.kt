@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CreateConnectionMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CreateConnectionSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetBalanceSuccessResponse
@@ -35,7 +34,6 @@ import com.vitorpamplona.quartz.nip47WalletConnect.rpc.MakeHoldInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.MakeHoldInvoiceSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.MakeInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.MakeInvoiceSuccessResponse
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Notification
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcErrorCode
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcErrorResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcMethod
@@ -47,8 +45,6 @@ import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayKeysendMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PaymentReceivedNotification
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PaymentSentNotification
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Response
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SettleHoldInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SignMessageMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SignMessageSuccessResponse
@@ -70,7 +66,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyPayInvoiceSuccess() {
         val json = """{"result_type":"pay_invoice","result":{"preimage":"6565656565656565656565656565656565656565656565656565656565656565","fees_paid":1}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceSuccessResponse>(response)
         assertEquals("6565656565656565656565656565656565656565656565656565656565656565", response.result?.preimage)
         assertEquals(1L, response.result?.fees_paid)
@@ -79,7 +75,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyPayInvoiceInsufficientBalance() {
         val json = """{"result_type":"pay_invoice","error":{"code":"INSUFFICIENT_BALANCE","message":"insufficient funds available to send"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.INSUFFICIENT_BALANCE, response.error?.code)
         assertEquals("insufficient funds available to send", response.error?.message)
@@ -88,7 +84,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyPayInvoiceBadRequest() {
         val json = """{"result_type":"pay_invoice","error":{"code":"BAD_REQUEST","message":"Failed to decode bolt11 invoice: bolt11 too short"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.BAD_REQUEST, response.error?.code)
     }
@@ -98,7 +94,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyGetBalanceResponse() {
         val json = """{"result_type":"get_balance","result":{"balance":21000000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBalanceSuccessResponse>(response)
         assertEquals(21000000L, response.result?.balance)
     }
@@ -109,7 +105,7 @@ class AlbyInteropTest {
     fun testAlbyGetInfoFullResponse() {
         val json =
             """{"result_type":"get_info","result":{"alias":"AlbyHub","color":"#3399ff","pubkey":"02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc","network":"mainnet","block_height":800000,"block_hash":"00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72f2e4b10","methods":["pay_invoice","pay_keysend","get_balance","get_budget","get_info","make_invoice","lookup_invoice","list_transactions","sign_message"],"notifications":["payment_received","payment_sent"],"lud16":"satoshi@getalby.com"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         val result = response.result
         assertNotNull(result)
@@ -129,7 +125,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyGetBudgetWithRenewal() {
         val json = """{"result_type":"get_budget","result":{"used_budget":50000,"total_budget":100000,"renews_at":1700000000,"renewal_period":"monthly"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBudgetSuccessResponse>(response)
         val result = response.result
         assertNotNull(result)
@@ -142,7 +138,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyGetBudgetUnlimited() {
         val json = """{"result_type":"get_budget","result":{"used_budget":0,"total_budget":0,"renewal_period":"never"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBudgetSuccessResponse>(response)
         assertEquals(0L, response.result?.used_budget)
         assertEquals(0L, response.result?.total_budget)
@@ -156,7 +152,7 @@ class AlbyInteropTest {
     fun testAlbyMakeInvoiceResponse() {
         val json =
             """{"result_type":"make_invoice","result":{"type":"incoming","state":"PENDING","invoice":"lnbc10n1pj3xyz...","description":"Test invoice","payment_hash":"abc123def456","amount":1000,"fees_paid":0,"created_at":1693876497,"expires_at":1694876497}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<MakeInvoiceSuccessResponse>(response)
         val txn = response.result
         assertNotNull(txn)
@@ -175,7 +171,7 @@ class AlbyInteropTest {
     fun testAlbyLookupInvoiceSettled() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"SETTLED","invoice":"lnbc50n1...","preimage":"preimage123","payment_hash":"hash456","amount":5000,"fees_paid":0,"created_at":1693876497,"settled_at":1694876500}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val txn = response.result
         assertNotNull(txn)
@@ -188,7 +184,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyLookupInvoiceNotFound() {
         val json = """{"result_type":"lookup_invoice","error":{"code":"NOT_FOUND","message":"transaction not found"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.NOT_FOUND, response.error?.code)
     }
@@ -199,7 +195,7 @@ class AlbyInteropTest {
     fun testAlbyListTransactionsWithTotalCount() {
         val json =
             """{"result_type":"list_transactions","result":{"transactions":[{"type":"incoming","state":"SETTLED","invoice":"lnbc1...","payment_hash":"h1","amount":1000,"fees_paid":0,"created_at":1693876497,"settled_at":1694876500},{"type":"outgoing","state":"SETTLED","invoice":"lnbc2...","payment_hash":"h2","amount":2000,"fees_paid":10,"created_at":1693876400,"settled_at":1694876400}],"total_count":100}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ListTransactionsSuccessResponse>(response)
         assertEquals(2, response.result?.transactions?.size)
         assertEquals(100L, response.result?.total_count)
@@ -218,7 +214,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbySignMessageResponse() {
         val json = """{"result_type":"sign_message","result":{"message":"Hello Nostr","signature":"3045022100..."}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<SignMessageSuccessResponse>(response)
         assertEquals("Hello Nostr", response.result?.message)
         assertEquals("3045022100...", response.result?.signature)
@@ -229,7 +225,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyCreateConnectionResponse() {
         val json = """{"result_type":"create_connection","result":{"wallet_pubkey":"02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<CreateConnectionSuccessResponse>(response)
         assertEquals("02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc", response.result?.wallet_pubkey)
     }
@@ -240,7 +236,7 @@ class AlbyInteropTest {
     fun testAlbyPaymentReceivedNotification() {
         val json =
             """{"notification_type":"payment_received","notification":{"type":"incoming","state":"SETTLED","invoice":"lnbc50n1...","preimage":"pre123","payment_hash":"hash123","amount":5000,"fees_paid":0,"created_at":1693876497,"settled_at":1694876500}}"""
-        val notification = OptimizedJsonMapper.fromJsonTo<Notification>(json)
+        val notification = Nip47Json.fromJsonToNotification(json)
         assertIs<PaymentReceivedNotification>(notification)
         val txn = notification.notification
         assertNotNull(txn)
@@ -253,7 +249,7 @@ class AlbyInteropTest {
     fun testAlbyPaymentSentNotification() {
         val json =
             """{"notification_type":"payment_sent","notification":{"type":"outgoing","state":"SETTLED","invoice":"lnbc100n1...","preimage":"pre456","payment_hash":"hash456","amount":10000,"fees_paid":10,"created_at":1693876497,"settled_at":1694876500}}"""
-        val notification = OptimizedJsonMapper.fromJsonTo<Notification>(json)
+        val notification = Nip47Json.fromJsonToNotification(json)
         assertIs<PaymentSentNotification>(notification)
         val txn = notification.notification
         assertNotNull(txn)
@@ -267,7 +263,7 @@ class AlbyInteropTest {
     fun testAlbyHoldInvoiceAcceptedNotification() {
         val json =
             """{"notification_type":"hold_invoice_accepted","notification":{"type":"incoming","invoice":"lnbc200n1...","payment_hash":"hash789","amount":20000,"created_at":1693876497,"expires_at":1694876497,"settle_deadline":800000}}"""
-        val notification = OptimizedJsonMapper.fromJsonTo<Notification>(json)
+        val notification = Nip47Json.fromJsonToNotification(json)
         assertIs<HoldInvoiceAcceptedNotification>(notification)
         val data = notification.notification
         assertNotNull(data)
@@ -281,7 +277,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyRestricted() {
         val json = """{"result_type":"pay_invoice","error":{"code":"RESTRICTED","message":"This app does not have the pay_invoice scope"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.RESTRICTED, response.error?.code)
     }
@@ -289,7 +285,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyExpiredConnection() {
         val json = """{"result_type":"get_balance","error":{"code":"EXPIRED","message":"This app has expired"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.EXPIRED, response.error?.code)
     }
@@ -297,7 +293,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyQuotaExceeded() {
         val json = """{"result_type":"pay_invoice","error":{"code":"QUOTA_EXCEEDED","message":"Exceeded budget limit"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.QUOTA_EXCEEDED, response.error?.code)
     }
@@ -307,7 +303,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyPayInvoiceRequestFormat() {
         val json = """{"method":"pay_invoice","params":{"invoice":"lnbc10u1pj3xyz..."}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayInvoiceMethod>(request)
         assertEquals("lnbc10u1pj3xyz...", request.params?.invoice)
     }
@@ -315,14 +311,14 @@ class AlbyInteropTest {
     @Test
     fun testAlbyGetBudgetRequestFormat() {
         val json = """{"method":"get_budget","params":{}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<GetBudgetMethod>(request)
     }
 
     @Test
     fun testAlbySignMessageRequestFormat() {
         val json = """{"method":"sign_message","params":{"message":"Hello from Amethyst"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<SignMessageMethod>(request)
         assertEquals("Hello from Amethyst", request.params?.message)
     }
@@ -331,7 +327,7 @@ class AlbyInteropTest {
     fun testAlbyCreateConnectionRequestFormat() {
         val json =
             """{"method":"create_connection","params":{"pubkey":"02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc","name":"Amethyst","request_methods":["pay_invoice","get_balance","get_info","make_invoice","lookup_invoice","list_transactions"],"notification_types":["payment_received","payment_sent"],"max_amount":100000,"budget_renewal":"monthly","isolated":false}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<CreateConnectionMethod>(request)
         assertEquals("02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc", request.params?.pubkey)
         assertEquals("Amethyst", request.params?.name)
@@ -348,7 +344,7 @@ class AlbyInteropTest {
     fun testAlbyRealBolt11PayInvoiceRequest() {
         val json =
             """{"method":"pay_invoice","params":{"invoice":"lntbs1230n1pnkqautdqyw3jsnp4q09a0z84kg4a2m38zjllw43h953fx5zvqe8qxfgw694ymkq26u8zcpp5yvnh6hsnlnj4xnuh2trzlnunx732dv8ta2wjr75pdfxf6p2vlyassp5hyeg97a3ft5u769kjwsn7p0e85h79pzz8kladmnqhpcypz2uawjs9qyysgqcqpcxq8zals8sq9yeg2pa9eywkgj50cyzxd5elatujuc0c0wh6j9nat5mn34pgk8u9ufpgs99tw9ldlfk42cqlkr48au3lmuh09269prg4qkggh4a8cyqpfl0y6j","metadata":{"a":123}}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayInvoiceMethod>(request)
         assertNotNull(request.params?.invoice)
         assertNotNull(request.params?.metadata)
@@ -358,7 +354,7 @@ class AlbyInteropTest {
     fun testAlbyPayKeysendWithTlvRecords() {
         val json =
             """{"method":"pay_keysend","params":{"amount":123000,"pubkey":"123pubkey2","preimage":"018465013e2337234a7e5530a21c4a8cf70d84231f4a8ff0b1e2cce3cb2bd03b","tlv_records":[{"type":5482373484,"value":"fajsn341414fq"}]}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayKeysendMethod>(request)
         assertEquals(123000L, request.params?.amount)
         assertEquals("123pubkey2", request.params?.pubkey)
@@ -385,7 +381,7 @@ class AlbyInteropTest {
     fun testAlbyMakeInvoiceWithNestedMetadata() {
         val json =
             """{"method":"make_invoice","params":{"amount":1000,"description":"Hello, world","expiry":3600,"metadata":{"a":1,"b":"2","c":{"d":3,"e":[{"f":"g"},{"h":"i"}]}}}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<MakeInvoiceMethod>(request)
         assertEquals(1000L, request.params?.amount)
         assertEquals("Hello, world", request.params?.description)
@@ -397,7 +393,7 @@ class AlbyInteropTest {
     fun testAlbyMakeHoldInvoiceWithPaymentHash() {
         val json =
             """{"method":"make_hold_invoice","params":{"amount":1000,"description":"Hello, world","payment_hash":"1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef","expiry":3600}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<MakeHoldInvoiceMethod>(request)
         assertEquals(1000L, request.params?.amount)
         assertEquals("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", request.params?.payment_hash)
@@ -408,7 +404,7 @@ class AlbyInteropTest {
     fun testAlbySettleHoldInvoiceWithPreimage() {
         val json =
             """{"method":"settle_hold_invoice","params":{"preimage":"1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<SettleHoldInvoiceMethod>(request)
         assertEquals("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", request.params?.preimage)
     }
@@ -416,7 +412,7 @@ class AlbyInteropTest {
     @Test
     fun testAlbyListTransactionsWithUnpaidFilters() {
         val json = """{"method":"list_transactions","params":{"from":0,"until":0,"limit":10,"offset":0,"unpaid_outgoing":true}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<ListTransactionsMethod>(request)
         assertEquals(10, request.params?.limit)
         assertEquals(true, request.params?.unpaid_outgoing)
@@ -426,7 +422,7 @@ class AlbyInteropTest {
     fun testAlbyCreateConnectionIsolated() {
         val json =
             """{"method":"create_connection","params":{"pubkey":"02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc","name":"Test 123","request_methods":["get_info","pay_invoice"],"notification_types":["payment_received"],"max_amount":100000000,"budget_renewal":"monthly","isolated":true}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<CreateConnectionMethod>(request)
         assertEquals("Test 123", request.params?.name)
         assertEquals(true, request.params?.isolated)
@@ -442,7 +438,7 @@ class AlbyInteropTest {
     fun testAlbyMakeHoldInvoiceWithSettleDeadline() {
         val json =
             """{"result_type":"make_hold_invoice","result":{"type":"incoming","state":"PENDING","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"expires_at":2000,"settle_deadline":144}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<MakeHoldInvoiceSuccessResponse>(response)
         val txn = response.result
         assertNotNull(txn)
@@ -460,7 +456,7 @@ class AlbyInteropTest {
     fun testJsSdkLowercaseSettledState() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash123","amount":1000,"settled_at":1694876497}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         assertEquals("settled", response.result?.state)
         assertTrue(NwcTransactionState.isSettled(response.result?.state))
@@ -470,7 +466,7 @@ class AlbyInteropTest {
     fun testJsSdkLowercasePendingState() {
         val json =
             """{"result_type":"make_invoice","result":{"type":"incoming","state":"pending","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<MakeInvoiceSuccessResponse>(response)
         assertEquals("pending", response.result?.state)
         assertTrue(NwcTransactionState.isPending(response.result?.state))
@@ -480,7 +476,7 @@ class AlbyInteropTest {
     fun testJsSdkLowercaseStatesInListTransactions() {
         val json =
             """{"result_type":"list_transactions","result":{"transactions":[{"type":"incoming","state":"settled","amount":1000,"created_at":1000},{"type":"outgoing","state":"failed","amount":2000,"created_at":2000},{"type":"incoming","state":"accepted","amount":3000,"created_at":3000}],"total_count":3}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ListTransactionsSuccessResponse>(response)
         val txns = response.result?.transactions
         assertNotNull(txns)
@@ -494,7 +490,7 @@ class AlbyInteropTest {
     fun testJsSdkLowercaseStatesInNotification() {
         val json =
             """{"notification_type":"payment_received","notification":{"type":"incoming","state":"settled","invoice":"lnbc...","amount":5000,"created_at":1000,"settled_at":2000}}"""
-        val notification = OptimizedJsonMapper.fromJsonTo<Notification>(json)
+        val notification = Nip47Json.fromJsonToNotification(json)
         assertIs<PaymentReceivedNotification>(notification)
         assertTrue(NwcTransactionState.isSettled(notification.notification?.state))
     }
@@ -503,7 +499,7 @@ class AlbyInteropTest {
     fun testJsSdkEmptyGetBudgetResponse() {
         // JS SDK allows get_budget to return empty object when no budget is set
         val json = """{"result_type":"get_budget","result":{}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBudgetSuccessResponse>(response)
         assertNull(response.result?.used_budget)
         assertNull(response.result?.total_budget)
@@ -515,7 +511,7 @@ class AlbyInteropTest {
     fun testJsSdkGetBudgetWithAllRenewalPeriods() {
         for (period in listOf("daily", "weekly", "monthly", "yearly", "never")) {
             val json = """{"result_type":"get_budget","result":{"used_budget":0,"total_budget":100000,"renewal_period":"$period"}}"""
-            val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+            val response = Nip47Json.fromJsonToResponse(json)
             assertIs<GetBudgetSuccessResponse>(response)
             assertEquals(period, response.result?.renewal_period)
         }
@@ -526,7 +522,7 @@ class AlbyInteropTest {
         // JS SDK supports structured metadata with comment, payer_data, nostr fields
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000,"metadata":{"comment":"Thanks!","payer_data":{"name":"Alice","pubkey":"abc123"},"nostr":{"pubkey":"npub1...","tags":[["p","def456"]]}}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         assertNotNull(response.result?.metadata)
     }
@@ -535,7 +531,7 @@ class AlbyInteropTest {
     fun testMetadataParserComment() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000,"metadata":{"comment":"Great post!"}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNotNull(parsed)
@@ -548,7 +544,7 @@ class AlbyInteropTest {
     fun testMetadataParserPayerData() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000,"metadata":{"payer_data":{"name":"Alice","email":"alice@example.com","pubkey":"abc123"}}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNotNull(parsed)
@@ -564,7 +560,7 @@ class AlbyInteropTest {
         val recipientHex = "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":21000,"created_at":1000,"settled_at":2000,"metadata":{"nostr":{"pubkey":"$senderHex","tags":[["p","$recipientHex"],["amount","21000"]]}}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNotNull(parsed)
@@ -576,7 +572,7 @@ class AlbyInteropTest {
     fun testMetadataParserRecipientData() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"outgoing","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000,"metadata":{"recipient_data":{"identifier":"alice@getalby.com"}}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNotNull(parsed)
@@ -587,7 +583,7 @@ class AlbyInteropTest {
     fun testMetadataParserNullForSimpleMetadata() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000,"metadata":{"a":123}}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNull(parsed)
@@ -597,7 +593,7 @@ class AlbyInteropTest {
     fun testMetadataParserNullMetadata() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settled_at":2000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         val parsed = response.result?.parsedMetadata()
         assertNull(parsed)
@@ -608,7 +604,7 @@ class AlbyInteropTest {
         // JS SDK advertises all 13 single methods + notifications
         val json =
             """{"result_type":"get_info","result":{"alias":"TestNode","methods":["get_info","get_balance","get_budget","make_invoice","pay_invoice","pay_keysend","lookup_invoice","list_transactions","sign_message","create_connection","make_hold_invoice","settle_hold_invoice","cancel_hold_invoice"],"notifications":["payment_received","payment_sent","hold_invoice_accepted"]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         assertEquals(13, response.result?.methods?.size)
         assertEquals(3, response.result?.notifications?.size)

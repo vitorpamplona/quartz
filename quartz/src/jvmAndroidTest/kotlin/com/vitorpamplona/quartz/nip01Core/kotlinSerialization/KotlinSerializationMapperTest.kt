@@ -37,8 +37,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.EventCmd
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
 import com.vitorpamplona.quartz.nip51Lists.starterPack.StarterPackEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import kotlin.test.Test
@@ -670,70 +668,6 @@ class KotlinSerializationMapperTest {
         val jacksonDeserialized = JacksonMapper.fromJsonToCommand(kotlinJson)
         assertTrue(jacksonDeserialized is CloseCmd)
         assertEquals("sub1", (jacksonDeserialized).subId)
-    }
-
-    // =========================================================================
-    // BunkerRequest Tests
-    // =========================================================================
-
-    @Test
-    fun serializeBunkerRequest_matchesJackson() {
-        val req = BunkerRequest("id1", "connect", arrayOf("pubkey", "secret"))
-        val jacksonJson = JacksonMapper.toJson(req)
-        val kotlinJson = KotlinSerializationMapper.toJson(req)
-        assertEquals(jacksonJson, kotlinJson)
-    }
-
-    @Test
-    fun deserializeBunkerRequest() {
-        val json = """{"id":"id1","method":"ping","params":[]}"""
-        val deserialized = KotlinSerializationMapper.fromJsonTo<BunkerRequest>(json)
-        assertEquals("id1", deserialized.id)
-        assertEquals("ping", deserialized.method)
-    }
-
-    @Test
-    fun crossDeserializationBunkerRequest() {
-        val req = BunkerRequest("id1", "sign_event", arrayOf("{\"created_at\":1234,\"kind\":1,\"tags\":[],\"content\":\"This is an unsigned event.\"}"))
-        val jacksonJson = JacksonMapper.toJson(req)
-        val kotlinDeserialized = KotlinSerializationMapper.fromJsonTo<BunkerRequest>(jacksonJson)
-        assertEquals(req.id, kotlinDeserialized.id)
-        assertEquals(req.method, kotlinDeserialized.method)
-        assertContentEquals(req.params, kotlinDeserialized.params)
-
-        val kotlinJson = KotlinSerializationMapper.toJson(req)
-        val jacksonDeserialized = JacksonMapper.fromJsonTo<BunkerRequest>(kotlinJson)
-        assertEquals(req.id, jacksonDeserialized.id)
-        assertEquals(req.method, jacksonDeserialized.method)
-        assertContentEquals(req.params, jacksonDeserialized.params)
-    }
-
-    // =========================================================================
-    // BunkerResponse Tests
-    // =========================================================================
-
-    @Test
-    fun serializeBunkerResponse_matchesJackson() {
-        val resp = BunkerResponse("id1", "ok", null)
-        val jacksonJson = JacksonMapper.toJson(resp)
-        val kotlinJson = KotlinSerializationMapper.toJson(resp)
-        assertEquals(jacksonJson, kotlinJson)
-    }
-
-    @Test
-    fun serializeBunkerResponseWithError_matchesJackson() {
-        val resp = BunkerResponse("id1", null, "something went wrong")
-        val jacksonJson = JacksonMapper.toJson(resp)
-        val kotlinJson = KotlinSerializationMapper.toJson(resp)
-        assertEquals(jacksonJson, kotlinJson)
-    }
-
-    @Test
-    fun deserializeBunkerResponse() {
-        val json = """{"id":"id1","result":"pong"}"""
-        val deserialized = KotlinSerializationMapper.fromJsonTo<BunkerResponse>(json)
-        assertEquals("id1", deserialized.id)
-        assertNotNull(deserialized.result)
     }
 
     // =========================================================================

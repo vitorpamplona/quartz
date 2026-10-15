@@ -20,12 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect.rpc
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
-
 // RESPONSE OBJECTS
 abstract class Response(
     val resultType: String,
-) : OptimizedSerializable
+)
 
 /**
  * NIP-47 responses that carry a human-readable error message. Lets UI

@@ -23,7 +23,7 @@
 # No Jackson keeps. Every wire format Quartz speaks is now handled by a
 # hand-written serializer that names its fields as string literals: the
 # StdSerializer/StdDeserializer pairs registered on JacksonMapper (Event, Filter,
-# Message, Command, Rumor, EventTemplate, TagArray, the NIP-46 Bunker messages),
+# Message, Command, Rumor, EventTemplate, TagArray), NIP-46's BunkerJson,
 # JsonMapperNip55 (IntentResult, Permission), and the kotlinx serializers that
 # NIP-47 and CLINK route through on every target. None of it reads a Kotlin
 # constructor parameter name at runtime, so none of it has to survive R8.
@@ -36,4 +36,11 @@
     <fields>;
     public static **[] values();
     public static ** valueOf(java.lang.String);
+}
+
+# EventFactory finds each module's EventKindProvider object by class name
+# (utils/EventFactory.jvmAndroid.kt) and reads its INSTANCE field, so a module's
+# typed event classes are registered just by depending on it. Keep the names.
+-keep class * implements com.vitorpamplona.quartz.utils.EventKindProvider {
+    public static ** INSTANCE;
 }

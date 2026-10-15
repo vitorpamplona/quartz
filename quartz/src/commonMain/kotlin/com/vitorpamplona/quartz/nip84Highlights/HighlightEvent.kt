@@ -48,6 +48,8 @@ import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip22Comments.tags.ReplyIdentifierTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip73ExternalIds.ExternalId
 import com.vitorpamplona.quartz.nip84Highlights.tags.CommentTag
@@ -69,6 +71,8 @@ class HighlightEvent(
     AddressHintProvider,
     PubKeyHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, emptyList(), listOf(comment(), searchableContext()), content)
+
     override fun indexableContent() = listOfNotNull(comment(), searchableContext(), content).joinToString("\n")
 
     // The read path: hands over the same fields indexableContent() joins, without

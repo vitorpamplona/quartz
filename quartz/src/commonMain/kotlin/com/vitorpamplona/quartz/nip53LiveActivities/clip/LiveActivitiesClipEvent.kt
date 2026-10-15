@@ -37,6 +37,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.references.ReferenceTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.LiveActivitiesEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -66,6 +68,8 @@ class LiveActivitiesClipEvent(
     AddressHintProvider,
     PubKeyHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), null, content)
+
     override fun indexableContent() = listOfNotNull(title(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

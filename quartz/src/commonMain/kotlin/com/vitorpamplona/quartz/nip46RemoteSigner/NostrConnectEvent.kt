@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip46RemoteSigner
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
@@ -54,7 +53,7 @@ class NostrConnectEvent(
         if (!canDecrypt(signer)) throw SignerExceptions.UnauthorizedDecryptionException()
 
         val retVal = signer.decrypt(content, talkingWith(signer.pubKey))
-        return OptimizedJsonMapper.fromJsonTo<BunkerMessage>(retVal)
+        return BunkerJson.fromJsonToMessage(retVal)
     }
 
     /** The signer or client this message is addressed to (`p`). */
@@ -90,7 +89,7 @@ class NostrConnectEvent(
                     ),
                 content =
                     signer.nip44Encrypt(
-                        plaintext = OptimizedJsonMapper.toJson(message),
+                        plaintext = BunkerJson.toJson(message),
                         toPublicKey = remoteKey,
                     ),
             )

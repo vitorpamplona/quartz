@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
-import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetInfoSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.ListTransactionsSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcErrorResponse
@@ -42,7 +41,7 @@ import kotlin.test.assertTrue
  * settled payment's preimage.
  */
 class Nip47MalformedInputTest {
-    private fun parse(json: String): Response = KotlinSerializationMapper.fromJsonTo<Response>(json)
+    private fun parse(json: String): Response = Nip47Json.fromJsonToResponse(json)
 
     @Test
     fun unknownResultTypeKeepsItsResultInsteadOfFailing() {

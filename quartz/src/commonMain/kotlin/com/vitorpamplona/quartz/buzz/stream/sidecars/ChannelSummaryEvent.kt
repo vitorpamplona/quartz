@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -49,6 +51,8 @@ class ChannelSummaryEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = summary()?.let { SearchFieldExtractor.tiers(this, listOf(it.name), listOf(it.about, it.topic, it.purpose), null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
+
     override fun indexableContent() = summary()?.let { listOfNotNull(it.name, it.about, it.topic, it.purpose).joinToString("\n") } ?: ""
 
     // The read path. The parse happens once; fields are handed over in indexableContent() order.

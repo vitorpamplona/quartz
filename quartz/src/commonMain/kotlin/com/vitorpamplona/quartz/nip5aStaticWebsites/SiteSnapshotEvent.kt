@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.AppTag
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.OriginSiteTag
@@ -65,6 +67,8 @@ class SiteSnapshotEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null, website = source())
+
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

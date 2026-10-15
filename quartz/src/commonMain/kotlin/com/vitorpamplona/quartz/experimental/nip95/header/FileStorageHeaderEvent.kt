@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.events.eTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.toETag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.BlurhashTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.DimensionTag
@@ -61,6 +63,10 @@ class FileStorageHeaderEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider,
     SearchableEvent {
+    // kind 1065 now indexes its caption (`content`) too, exactly as
+    // kind 1063 does, so it splits the same way.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, summary(), content)
+
     // The summary tag and the caption [build] writes into `content`, as kind 1063 indexes them.
     // The file payload is base64 binary stored in a separate FileStorageEvent and is
     // intentionally never indexed.

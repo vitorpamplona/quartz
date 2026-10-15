@@ -43,14 +43,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.FilterSerializer
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplateDeserializer
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplateSerializer
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
-import com.vitorpamplona.quartz.nip46RemoteSigner.jackson.BunkerMessageDeserializer
-import com.vitorpamplona.quartz.nip46RemoteSigner.jackson.BunkerRequestDeserializer
-import com.vitorpamplona.quartz.nip46RemoteSigner.jackson.BunkerRequestSerializer
-import com.vitorpamplona.quartz.nip46RemoteSigner.jackson.BunkerResponseDeserializer
-import com.vitorpamplona.quartz.nip46RemoteSigner.jackson.BunkerResponseSerializer
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.jackson.RumorDeserializer
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.jackson.RumorSerializer
@@ -90,13 +82,7 @@ class JacksonMapper {
                         .addSerializer(EventTemplate::class.java, EventTemplateSerializer())
                         // nip 59
                         .addSerializer(Rumor::class.java, RumorSerializer())
-                        .addDeserializer(Rumor::class.java, RumorDeserializer())
-                        // nip 46
-                        .addDeserializer(BunkerMessage::class.java, BunkerMessageDeserializer())
-                        .addSerializer(BunkerRequest::class.java, BunkerRequestSerializer())
-                        .addDeserializer(BunkerRequest::class.java, BunkerRequestDeserializer())
-                        .addSerializer(BunkerResponse::class.java, BunkerResponseSerializer())
-                        .addDeserializer(BunkerResponse::class.java, BunkerResponseDeserializer()),
+                        .addDeserializer(Rumor::class.java, RumorDeserializer()),
                 )
 
         /**
@@ -167,9 +153,6 @@ class JacksonMapper {
                 TagArray::class,
                 EventTemplate::class,
                 Rumor::class,
-                BunkerMessage::class,
-                BunkerRequest::class,
-                BunkerResponse::class,
             )
 
         @PublishedApi
@@ -196,10 +179,6 @@ class JacksonMapper {
          * so a release build writes `{"a":…}` onto the wire while the debug build looks
          * perfect.
          *
-         * [BunkerRequest] and [BunkerResponse] are named instead of their [BunkerMessage]
-         * parent on purpose: the parent has no serializer of its own, so a third subclass
-         * should fail here rather than quietly bean-serialize.
-         *
          * Two OptimizedSerializables are deliberately absent, and both would throw if
          * they ever arrived here: CLINK's SatRange, which is only ever written as a
          * field of an Offer/Debit/Manage message by that message's kotlinx serializer,
@@ -213,9 +192,7 @@ class JacksonMapper {
                     value is Message ||
                     value is Command ||
                     value is EventTemplate<*> ||
-                    value is Rumor ||
-                    value is BunkerRequest ||
-                    value is BunkerResponse
+                    value is Rumor
 
             if (!hasSerializer) {
                 throw IllegalArgumentException(
@@ -232,12 +209,11 @@ class JacksonMapper {
          * are built from Class objects. A TypeReference reads its type argument back
          * off the anonymous subclass's generic superclass, which R8 in full mode does
          * not keep, and it throws "TypeReference constructed without actual type
-         * information" on device. This path reaches it through the NIP-46 bunker
-         * (NostrConnectEvent, RemoteSignerManager, NostrConnectLoginUseCase), which
-         * needs a remote signer to exercise and so survived the first device run.
+         * information" on device. (NIP-46's BunkerJson reads through the same
+         * Class-based path, for the same reason.)
          *
          * Erasure costs nothing here: [checkRegistered] has already limited T to the
-         * ten registered classes, and each one is answered by a StdDeserializer
+         * registered classes, and each one is answered by a StdDeserializer
          * registered against that exact Class. Jackson never has to infer a type
          * argument, so there is none to lose.
          */

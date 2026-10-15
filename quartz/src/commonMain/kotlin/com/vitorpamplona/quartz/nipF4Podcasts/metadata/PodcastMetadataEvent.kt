@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.tags.AuthorTag
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.tags.DescriptionTag
@@ -65,6 +67,8 @@ class PodcastMetadataEvent(
     override fun pubKeyHints(): List<PubKeyHint> = emptyList()
 
     override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(AuthorTag::parseKey)
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(description()), null, websites = websites())
 
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 

@@ -20,19 +20,17 @@
  */
 package com.vitorpamplona.quartz.experimental.clink.common
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
-
 /** Inclusive sats range returned with "Invalid Amount" errors so the payer can correct and retry. */
 class SatRange(
     var min: Long? = null,
     var max: Long? = null,
-) : OptimizedSerializable
+)
 
 /** Timing detail attached to GFY "Expired Request" (code 3) errors. */
 class GfyDelta(
     var max_delta_ms: Long? = null,
     var actual_delta_ms: Long? = null,
-) : OptimizedSerializable
+)
 
 /**
  * Shared "GFY" failure codes used by Debits (21002) and Manage (21003).

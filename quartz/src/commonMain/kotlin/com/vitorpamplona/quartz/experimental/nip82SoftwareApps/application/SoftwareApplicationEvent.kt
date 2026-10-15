@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -57,6 +59,8 @@ class SoftwareApplicationEvent(
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = appLinkAddressIds()
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(name()), listOf(summary()), content, websites = listOf(url(), repository()))
 
     override fun indexableContent() = listOfNotNull(name(), summary(), content).joinToString("\n")
 

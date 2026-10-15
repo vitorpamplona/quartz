@@ -20,10 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip29RelayGroups
 
-import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
-import com.vitorpamplona.quartz.testing.relay.RelayClientTest
-import com.vitorpamplona.quartz.testing.relay.collectUntilEose
-import com.vitorpamplona.quartz.testing.relay.preload
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip22Comments.CommentEvent
@@ -36,6 +32,10 @@ import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.nip7DThreads.ThreadEvent
 import com.vitorpamplona.quartz.nip88Polls.poll.PollEvent
 import com.vitorpamplona.quartz.nipC7Chats.ChatEvent
+import com.vitorpamplona.quartz.testing.relay.RelayClientTest
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.collectUntilEose
+import com.vitorpamplona.quartz.testing.relay.preload
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

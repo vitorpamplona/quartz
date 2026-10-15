@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.core.any
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.BlurhashTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.DimensionTag
@@ -55,6 +57,8 @@ class FileMetadataEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, summary(), content)
+
     override fun indexableContent() = listOfNotNull(summary(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

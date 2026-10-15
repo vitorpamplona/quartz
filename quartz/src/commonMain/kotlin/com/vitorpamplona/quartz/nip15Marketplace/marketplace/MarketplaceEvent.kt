@@ -31,6 +31,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip15Marketplace.Nip15ParseFailed
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -68,6 +70,8 @@ class MarketplaceEvent(
      * 30019 (offers, orders); with neither there is nothing to show as a marketplace.
      */
     fun isWellFormed() = marketplaceData()?.let { it.name != null || merchants().isNotEmpty() } == true
+
+    override fun indexableFields(): IndexableFields = marketplaceData()?.let { SearchFieldExtractor.tiers(this, it.name, it.about, null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = marketplaceData()?.let { listOfNotNull(it.name, it.about).joinToString("\n") } ?: ""
 

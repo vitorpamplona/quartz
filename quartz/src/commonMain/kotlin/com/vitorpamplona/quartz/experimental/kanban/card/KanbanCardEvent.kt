@@ -42,6 +42,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.TitleTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -113,6 +115,8 @@ class KanbanCardEvent(
 
     /** The tracked card's `d` (`refs/card`). */
     fun trackedCardDTag() = tags.trackedCardDTag()
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null)
 
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 

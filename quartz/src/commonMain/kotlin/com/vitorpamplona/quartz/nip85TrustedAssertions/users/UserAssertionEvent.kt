@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.emojis
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
@@ -52,6 +54,24 @@ class UserAssertionEvent(
     sig: HexKey,
 ) : PrivateTagArrayEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 30382 -- a contact card's petname is a trust provider's
+    // NAME for a person, the direct analogue of kind 0's `name`, and
+    // its summary is the description beside it. The encrypted half of
+    // the card stays out, as it always has: petName()/summary() read
+    // the public tag array only, and build() puts both in the NIP-44
+    // content, so a card authored by this library has NO public text
+    // beyond its topics.
+    //
+    // topics() is deliberately absent: it is `TopicTag`, which is the
+    // `t` tag under another name (same predicate, same array), so the
+    // tiers() funnel already carries every topic in the hashtag role.
+    // Passing them again would index the same words twice -- which is
+    // what the fallback below was doing, since indexableContent()
+    // concatenates the topics INTO the body while the funnel added
+    // them as hashtags. Whether that role is tokenized or kept as
+    // keywords is the backend's call, per IndexableFields.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, petName(), summary(), null)
+
     // Only the public petname and summary tags are indexed; the rest of the
     // card lives in NIP-44 encrypted content and is intentionally never
     // indexed. (petName()/summary() read the public tag array, so a petname

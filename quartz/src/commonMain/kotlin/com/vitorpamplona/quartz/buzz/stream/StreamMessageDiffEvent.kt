@@ -26,6 +26,9 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip29RelayGroups.GroupChatTimelineContent
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -46,7 +49,11 @@ class StreamMessageDiffEvent(
     content: String,
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
-    SearchableEvent {
+    SearchableEvent,
+    GroupChatTimelineContent {
+    // kind 40008 -- the body is a unified diff; only the summary is indexed.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, description(), null)
+
     // The body is a unified diff (code, not prose); only the human summary is indexed.
     override fun indexableContent() = description() ?: ""
 

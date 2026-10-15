@@ -46,6 +46,8 @@ import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip88Polls.poll.tags.OptionTag
 import com.vitorpamplona.quartz.nip88Polls.poll.tags.PollType
@@ -65,6 +67,12 @@ class PollEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kinds 1068/6969 -- the question is the body, the option labels
+    // are short answer-like values a searcher matches whole, so they
+    // sit in the secondary tier UNJOINED instead of being appended to
+    // the body the way indexableContent() has to.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, emptyList(), options().map { it.label }, content)
+
     override fun indexableContent() =
         buildString {
             append(content)

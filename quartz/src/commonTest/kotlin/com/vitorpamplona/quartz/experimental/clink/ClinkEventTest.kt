@@ -20,16 +20,12 @@
  */
 package com.vitorpamplona.quartz.experimental.clink
 
-import com.vitorpamplona.quartz.experimental.clink.debits.DebitResponse
 import com.vitorpamplona.quartz.experimental.clink.manage.ManageOffer
 import com.vitorpamplona.quartz.experimental.clink.manage.ManageRequest
-import com.vitorpamplona.quartz.experimental.clink.manage.ManageResponse
 import com.vitorpamplona.quartz.experimental.clink.manage.OfferFields
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferEvent
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferRequest
-import com.vitorpamplona.quartz.experimental.clink.offers.OfferResponse
 import com.vitorpamplona.quartz.experimental.clink.tags.ClinkVersionTag
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import kotlin.test.Test
@@ -114,7 +110,7 @@ class ClinkEventTest {
     @Test
     fun offerRequestJsonRoundTrip() {
         val request = OfferRequest(offer = "abc", amount_sats = 1500, description = "coffee")
-        val parsed = OptimizedJsonMapper.fromJsonTo<OfferRequest>(OptimizedJsonMapper.toJson(request))
+        val parsed = ClinkJson.fromJsonToOfferRequest(ClinkJson.toJson(request))
 
         assertEquals("abc", parsed.offer)
         assertEquals(1500, parsed.amount_sats)
@@ -123,7 +119,7 @@ class ClinkEventTest {
 
     @Test
     fun offerResponseInvoiceParses() {
-        val parsed = OptimizedJsonMapper.fromJsonTo<OfferResponse>("""{"bolt11":"lnbc1..."}""")
+        val parsed = ClinkJson.fromJsonToOfferResponse("""{"bolt11":"lnbc1..."}""")
         assertTrue(parsed.isSuccess())
         assertEquals("lnbc1...", parsed.bolt11)
     }
@@ -131,7 +127,7 @@ class ClinkEventTest {
     @Test
     fun offerResponseInvalidAmountParsesRange() {
         val parsed =
-            OptimizedJsonMapper.fromJsonTo<OfferResponse>(
+            ClinkJson.fromJsonToOfferResponse(
                 """{"error":"Invalid Amount","code":5,"range":{"min":1000,"max":50000}}""",
             )
         assertFalse(parsed.isSuccess())
@@ -143,7 +139,7 @@ class ClinkEventTest {
     @Test
     fun debitGfyResponseParses() {
         val parsed =
-            OptimizedJsonMapper.fromJsonTo<DebitResponse>(
+            ClinkJson.fromJsonToDebitResponse(
                 """{"res":"GFY","code":4,"error":"Rate Limited","retry_after":1717000000}""",
             )
         assertFalse(parsed.isOk())
@@ -153,7 +149,7 @@ class ClinkEventTest {
 
     @Test
     fun debitOkResponseParses() {
-        val parsed = OptimizedJsonMapper.fromJsonTo<DebitResponse>("""{"res":"ok","preimage":"deadbeef"}""")
+        val parsed = ClinkJson.fromJsonToDebitResponse("""{"res":"ok","preimage":"deadbeef"}""")
         assertTrue(parsed.isOk())
         assertEquals("deadbeef", parsed.preimage)
     }
@@ -166,13 +162,13 @@ class ClinkEventTest {
                 action = ManageRequest.ACTION_CREATE,
                 offer = ManageOffer(fields = OfferFields("Coffee", 1500L, "https://x/cb", listOf("email", "name"))),
             )
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = ClinkJson.toJson(request)
 
         // Offer data is nested under offer.fields (not flat).
         assertTrue(json.contains("\"offer\""), json)
         assertTrue(json.contains("\"fields\""), json)
 
-        val parsed = OptimizedJsonMapper.fromJsonTo<ManageRequest>(json)
+        val parsed = ClinkJson.fromJsonToManageRequest(json)
         assertEquals("Coffee", parsed.offer?.fields?.label)
         assertEquals(1500L, parsed.offer?.fields?.price_sats)
         // payer_data is a list of field names, not a map.
@@ -181,7 +177,7 @@ class ClinkEventTest {
 
     @Test
     fun manageFailureResponseParsesField() {
-        val parsed = OptimizedJsonMapper.fromJsonTo<ManageResponse>("""{"res":"GFY","code":5,"error":"bad","field":"price_sats"}""")
+        val parsed = ClinkJson.fromJsonToManageResponse("""{"res":"GFY","code":5,"error":"bad","field":"price_sats"}""")
         assertFalse(parsed.isOk())
         assertEquals("price_sats", parsed.field)
     }

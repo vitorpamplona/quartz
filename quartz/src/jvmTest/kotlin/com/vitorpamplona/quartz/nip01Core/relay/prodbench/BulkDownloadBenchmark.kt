@@ -20,9 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
-import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
-import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropySyncException
@@ -35,6 +32,9 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.LimitsPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.RelayLimits
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CancelHoldInvoiceSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CreateConnectionSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetBalanceSuccessResponse
@@ -38,7 +37,6 @@ import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayKeysendSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PaySuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.ReceiveSuccessResponse
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Response
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SettleHoldInvoiceSuccessResponse
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SignMessageSuccessResponse
 import kotlin.test.Test
@@ -53,7 +51,7 @@ class ResponseTest {
     @Test
     fun testPayInvoiceSuccessDeserialization() {
         val json = """{"result_type":"pay_invoice","result":{"preimage":"0123456789abcdef"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceSuccessResponse>(response)
         assertEquals("0123456789abcdef", response.result?.preimage)
     }
@@ -61,7 +59,7 @@ class ResponseTest {
     @Test
     fun testPayInvoiceSuccessWithFeesPaid() {
         val json = """{"result_type":"pay_invoice","result":{"preimage":"abc","fees_paid":100}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceSuccessResponse>(response)
         assertEquals("abc", response.result?.preimage)
         assertEquals(100L, response.result?.fees_paid)
@@ -70,7 +68,7 @@ class ResponseTest {
     @Test
     fun testPayInvoiceSuccessGuessWithoutResultType() {
         val json = """{"result":{"preimage":"0123456789abcdef"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceSuccessResponse>(response)
         assertEquals("0123456789abcdef", response.result?.preimage)
     }
@@ -80,7 +78,7 @@ class ResponseTest {
     @Test
     fun testPayInvoiceErrorDeserialization() {
         val json = """{"result_type":"pay_invoice","error":{"code":"INSUFFICIENT_BALANCE","message":"Not enough funds"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.INSUFFICIENT_BALANCE, response.error?.code)
         assertEquals("Not enough funds", response.error?.message)
@@ -89,7 +87,7 @@ class ResponseTest {
     @Test
     fun testPayInvoicePaymentFailedError() {
         val json = """{"result_type":"pay_invoice","error":{"code":"PAYMENT_FAILED","message":"Route not found"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.PAYMENT_FAILED, response.error?.code)
     }
@@ -100,7 +98,7 @@ class ResponseTest {
     fun testPaySuccessWithPayerProofDeserialization() {
         val json =
             """{"result_type":"pay","result":{"state":"settled","instruction_type":"bolt12","amount":21000,"fees_paid":100,"payment_hash":"abc","preimage":"def","payer_proof":"lnp1xyz","settled_at":1693876497}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PaySuccessResponse>(response)
         assertEquals("settled", response.result?.state)
         assertEquals("bolt12", response.result?.instruction_type)
@@ -116,7 +114,7 @@ class ResponseTest {
     fun testPaySuccessWithoutPayerProof() {
         // payer_proof is best-effort ("optional if unavailable") — absence must parse fine.
         val json = """{"result_type":"pay","result":{"state":"settled","preimage":"def"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PaySuccessResponse>(response)
         assertEquals("def", response.result?.preimage)
         assertNull(response.result?.payer_proof)
@@ -125,7 +123,7 @@ class ResponseTest {
     @Test
     fun testPayErrorUnsupportedInstruction() {
         val json = """{"result_type":"pay","error":{"code":"UNSUPPORTED_PAYMENT_INSTRUCTION","message":"no bolt12"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.UNSUPPORTED_PAYMENT_INSTRUCTION, response.error?.code)
     }
@@ -135,7 +133,7 @@ class ResponseTest {
     @Test
     fun testReceiveSuccessDeserialization() {
         val json = """{"result_type":"receive","result":{"bip321":"bitcoin:?lightning=lnbc1&lno=lno1","transaction_id":"tx1"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ReceiveSuccessResponse>(response)
         assertEquals("bitcoin:?lightning=lnbc1&lno=lno1", response.result?.bip321)
         assertEquals("tx1", response.result?.transaction_id)
@@ -146,7 +144,7 @@ class ResponseTest {
     @Test
     fun testPayKeysendSuccessDeserialization() {
         val json = """{"result_type":"pay_keysend","result":{"preimage":"abc123","fees_paid":50}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayKeysendSuccessResponse>(response)
         assertEquals("abc123", response.result?.preimage)
         assertEquals(50L, response.result?.fees_paid)
@@ -158,7 +156,7 @@ class ResponseTest {
     fun testMakeInvoiceSuccessDeserialization() {
         val json =
             """{"result_type":"make_invoice","result":{"type":"incoming","invoice":"lnbc50n1...","description":"test","payment_hash":"abc","amount":5000,"fees_paid":0,"created_at":1693876497,"expires_at":1694876497}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<MakeInvoiceSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("incoming", response.result.type)
@@ -175,7 +173,7 @@ class ResponseTest {
     @Test
     fun testLookupInvoiceSuccessDeserialization() {
         val json = """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"settled","invoice":"lnbc...","payment_hash":"hash123","amount":1000,"settled_at":1694876497}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("incoming", response.result.type)
@@ -191,7 +189,7 @@ class ResponseTest {
     fun testListTransactionsSuccessDeserialization() {
         val json =
             """{"result_type":"list_transactions","result":{"transactions":[{"type":"incoming","invoice":"lnbc1...","amount":100,"created_at":1000},{"type":"outgoing","invoice":"lnbc2...","amount":200,"created_at":2000}]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ListTransactionsSuccessResponse>(response)
         assertNotNull(response.result?.transactions)
         assertEquals(2, response.result.transactions.size)
@@ -216,7 +214,7 @@ class ResponseTest {
     @Test
     fun testListTransactionsEmptyResult() {
         val json = """{"result_type":"list_transactions","result":{"transactions":[]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ListTransactionsSuccessResponse>(response)
         assertNotNull(response.result?.transactions)
         assertEquals(0, response.result.transactions.size)
@@ -227,7 +225,7 @@ class ResponseTest {
     @Test
     fun testGetBalanceSuccessDeserialization() {
         val json = """{"result_type":"get_balance","result":{"balance":21000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBalanceSuccessResponse>(response)
         assertEquals(21000L, response.result?.balance)
     }
@@ -235,7 +233,7 @@ class ResponseTest {
     @Test
     fun testGetBalanceZero() {
         val json = """{"result_type":"get_balance","result":{"balance":0}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBalanceSuccessResponse>(response)
         assertEquals(0L, response.result?.balance)
     }
@@ -246,7 +244,7 @@ class ResponseTest {
     fun testGetInfoSuccessDeserialization() {
         val json =
             """{"result_type":"get_info","result":{"alias":"MyNode","color":"#ff9900","pubkey":"abc123","network":"mainnet","block_height":800000,"block_hash":"hash","methods":["pay_invoice","get_balance"],"notifications":["payment_received"]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("MyNode", response.result.alias)
@@ -264,7 +262,7 @@ class ResponseTest {
     @Test
     fun testMakeHoldInvoiceSuccessDeserialization() {
         val json = """{"result_type":"make_hold_invoice","result":{"type":"incoming","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"expires_at":2000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<MakeHoldInvoiceSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("lnbc...", response.result.invoice)
@@ -276,7 +274,7 @@ class ResponseTest {
     @Test
     fun testCancelHoldInvoiceSuccessDeserialization() {
         val json = """{"result_type":"cancel_hold_invoice","result":{}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<CancelHoldInvoiceSuccessResponse>(response)
     }
 
@@ -285,7 +283,7 @@ class ResponseTest {
     @Test
     fun testSettleHoldInvoiceSuccessDeserialization() {
         val json = """{"result_type":"settle_hold_invoice","result":{}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<SettleHoldInvoiceSuccessResponse>(response)
     }
 
@@ -294,7 +292,7 @@ class ResponseTest {
     @Test
     fun testGenericErrorForGetBalance() {
         val json = """{"result_type":"get_balance","error":{"code":"UNAUTHORIZED","message":"No wallet connected"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals("get_balance", response.resultType)
         assertEquals(NwcErrorCode.UNAUTHORIZED, response.error?.code)
@@ -304,7 +302,7 @@ class ResponseTest {
     @Test
     fun testGenericErrorForGetInfo() {
         val json = """{"result_type":"get_info","error":{"code":"NOT_IMPLEMENTED","message":"Not supported"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals("get_info", response.resultType)
         assertEquals(NwcErrorCode.NOT_IMPLEMENTED, response.error?.code)
@@ -313,7 +311,7 @@ class ResponseTest {
     @Test
     fun testGenericErrorForMakeInvoice() {
         val json = """{"result_type":"make_invoice","error":{"code":"QUOTA_EXCEEDED","message":"Spending limit reached"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.QUOTA_EXCEEDED, response.error?.code)
     }
@@ -321,7 +319,7 @@ class ResponseTest {
     @Test
     fun testGenericErrorRateLimited() {
         val json = """{"result_type":"pay_keysend","error":{"code":"RATE_LIMITED","message":"Too many requests"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.RATE_LIMITED, response.error?.code)
     }
@@ -329,7 +327,7 @@ class ResponseTest {
     @Test
     fun testGenericErrorUnsupportedEncryption() {
         val json = """{"result_type":"pay_invoice","error":{"code":"UNSUPPORTED_ENCRYPTION","message":"Use nip44"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         // pay_invoice errors go to PayInvoiceErrorResponse for backward compat
         assertIs<PayInvoiceErrorResponse>(response)
     }
@@ -339,7 +337,7 @@ class ResponseTest {
     @Test
     fun testGetBudgetSuccessDeserialization() {
         val json = """{"result_type":"get_budget","result":{"used_budget":50000,"total_budget":100000,"renews_at":1700000000,"renewal_period":"monthly"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBudgetSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals(50000L, response.result.used_budget)
@@ -351,7 +349,7 @@ class ResponseTest {
     @Test
     fun testGetBudgetNoBudgetLimit() {
         val json = """{"result_type":"get_budget","result":{"used_budget":0,"total_budget":0,"renewal_period":"never"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetBudgetSuccessResponse>(response)
         assertEquals(0L, response.result?.used_budget)
         assertEquals(0L, response.result?.total_budget)
@@ -364,7 +362,7 @@ class ResponseTest {
     @Test
     fun testSignMessageSuccessDeserialization() {
         val json = """{"result_type":"sign_message","result":{"message":"Hello Nostr","signature":"sig123abc"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<SignMessageSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("Hello Nostr", response.result.message)
@@ -376,7 +374,7 @@ class ResponseTest {
     @Test
     fun testCreateConnectionSuccessDeserialization() {
         val json = """{"result_type":"create_connection","result":{"wallet_pubkey":"walletpub123"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<CreateConnectionSuccessResponse>(response)
         assertNotNull(response.result)
         assertEquals("walletpub123", response.result.wallet_pubkey)
@@ -388,7 +386,7 @@ class ResponseTest {
     fun testGetInfoWithMetadataAndLud16() {
         val json =
             """{"result_type":"get_info","result":{"alias":"AlbyHub","methods":["pay_invoice","get_balance"],"notifications":["payment_received"],"lud16":"user@getalby.com"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         assertEquals("AlbyHub", response.result?.alias)
         assertEquals("user@getalby.com", response.result?.lud16)
@@ -399,12 +397,12 @@ class ResponseTest {
     fun testGetInfoExtensionsRoundTrip() {
         val json =
             """{"result_type":"get_info","result":{"methods":["pay_invoice","get_info","list_transactions"],"extensions":["02","05"],"notifications":["payment_received"]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         assertEquals(listOf("02", "05"), response.result?.extensions)
         assertEquals(listOf("payment_received"), response.result?.notifications)
 
-        val reparsed = OptimizedJsonMapper.fromJsonTo<Response>(OptimizedJsonMapper.toJson(response))
+        val reparsed = Nip47Json.fromJsonToResponse(Nip47Json.toJson(response))
         assertIs<GetInfoSuccessResponse>(reparsed)
         assertEquals(listOf("02", "05"), reparsed.result?.extensions)
     }
@@ -412,7 +410,7 @@ class ResponseTest {
     @Test
     fun testGetInfoWithoutExtensions() {
         val json = """{"result_type":"get_info","result":{"methods":["pay_invoice"]}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<GetInfoSuccessResponse>(response)
         assertNull(response.result?.extensions)
     }
@@ -423,7 +421,7 @@ class ResponseTest {
     fun testListTransactionsWithTotalCount() {
         val json =
             """{"result_type":"list_transactions","result":{"transactions":[{"type":"incoming","amount":100,"created_at":1000}],"total_count":42}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<ListTransactionsSuccessResponse>(response)
         assertEquals(1, response.result?.transactions?.size)
         assertEquals(42L, response.result?.total_count)
@@ -435,7 +433,7 @@ class ResponseTest {
     fun testTransactionWithSettleDeadline() {
         val json =
             """{"result_type":"lookup_invoice","result":{"type":"incoming","state":"ACCEPTED","invoice":"lnbc...","payment_hash":"hash","amount":5000,"created_at":1000,"settle_deadline":800000}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<LookupInvoiceSuccessResponse>(response)
         assertEquals(800000L, response.result?.settle_deadline)
         assertEquals("ACCEPTED", response.result?.state)
@@ -446,7 +444,7 @@ class ResponseTest {
     @Test
     fun testBadRequestError() {
         val json = """{"result_type":"pay_invoice","error":{"code":"BAD_REQUEST","message":"Invalid invoice"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.BAD_REQUEST, response.error?.code)
     }
@@ -454,7 +452,7 @@ class ResponseTest {
     @Test
     fun testNotFoundError() {
         val json = """{"result_type":"lookup_invoice","error":{"code":"NOT_FOUND","message":"Invoice not found"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals(NwcErrorCode.NOT_FOUND, response.error?.code)
     }
@@ -462,7 +460,7 @@ class ResponseTest {
     @Test
     fun testExpiredError() {
         val json = """{"result_type":"pay_invoice","error":{"code":"EXPIRED","message":"Connection expired"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertEquals(NwcErrorCode.EXPIRED, response.error?.code)
     }
@@ -478,7 +476,7 @@ class ResponseTest {
         val json =
             """{"result_type":"pay_invoice","error":{"code":"QUOTA_EXCEEDED",""" +
                 """"message":"this payment would exceed the connection's budget for this period"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<PayInvoiceErrorResponse>(response)
         assertIs<IErrorResponseLike>(response)
         assertEquals(NwcErrorCode.QUOTA_EXCEEDED, response.error?.code)
@@ -491,7 +489,7 @@ class ResponseTest {
     @Test
     fun testRestrictedListTransactionsIsRenderable() {
         val json = """{"result_type":"list_transactions","error":{"code":"RESTRICTED","message":"sending is disabled on this node"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         // Not a pay_invoice, so the deserializer yields the generic shape. It must
         // still be renderable, or the transactions screen shows "no transactions yet".
         assertIs<NwcErrorResponse>(response)
@@ -503,7 +501,7 @@ class ResponseTest {
     fun testErrorWithoutResultTypeIsRenderable() {
         // NIP-47 does not require a wallet to echo result_type on an error.
         val json = """{"error":{"code":"RESTRICTED","message":"sending is disabled on this node"}}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         assertIs<NwcErrorResponse>(response)
         assertEquals("sending is disabled on this node", (response as IErrorResponseLike).errorMessage())
     }
@@ -511,10 +509,10 @@ class ResponseTest {
     @Test
     fun testErrorMessageFallsBackToCodeNameWhenMessageMissing() {
         // `message` is optional in NIP-47; `code` alone must still produce text.
-        val payInvoice = OptimizedJsonMapper.fromJsonTo<Response>("""{"result_type":"pay_invoice","error":{"code":"QUOTA_EXCEEDED"}}""")
+        val payInvoice = Nip47Json.fromJsonToResponse("""{"result_type":"pay_invoice","error":{"code":"QUOTA_EXCEEDED"}}""")
         assertEquals("QUOTA_EXCEEDED", (payInvoice as IErrorResponseLike).errorMessage())
 
-        val generic = OptimizedJsonMapper.fromJsonTo<Response>("""{"result_type":"list_transactions","error":{"code":"RESTRICTED"}}""")
+        val generic = Nip47Json.fromJsonToResponse("""{"result_type":"list_transactions","error":{"code":"RESTRICTED"}}""")
         assertEquals("RESTRICTED", (generic as IErrorResponseLike).errorMessage())
     }
 
@@ -523,7 +521,7 @@ class ResponseTest {
     @Test
     fun testResponseWithNoResultOrError() {
         val json = """{"result_type":"pay_invoice"}"""
-        val response = OptimizedJsonMapper.fromJsonTo<Response>(json)
+        val response = Nip47Json.fromJsonToResponse(json)
         // Should still deserialize since result_type is present
         assertIs<PayInvoiceSuccessResponse>(response)
         assertNull(response.result)

@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -62,6 +64,8 @@ class WorkflowDefEvent(
     // same `(owner, d)` address — a CAS precondition, not a reference anyone navigates to. Linking
     // it routes nothing new and makes a client materialize a stub note for every update.
     override fun linkedEventIds(): List<HexKey> = emptyList()
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, name(), null, content)
 
     override fun indexableContent() = listOfNotNull(name(), content).joinToString("\n")
 

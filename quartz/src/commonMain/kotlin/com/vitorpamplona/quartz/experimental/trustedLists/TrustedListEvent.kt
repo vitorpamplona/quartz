@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -70,6 +72,16 @@ abstract class TrustedListEvent(
     PubKeyHintProvider,
     EventHintProvider,
     SearchableEvent {
+    // kinds 30392-30395 -- a Trusted List's title is the ONLY
+    // human-authored text the family carries (`content` is a machine
+    // echo of the membership, the member tags are hex ids, and
+    // `metric`/`d` name the computation), so `indexableContent()` is
+    // exactly `title()`. Without this branch the fallback below put
+    // that title in the TERTIARY tier: a list titled "Verified Human"
+    // matched the words on the same rung as a bio that happens to
+    // mention them, and lost the prefix/typo columns a title gets.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), null, null)
+
     /**
      * The list's label, and nothing else -- it is the only human-authored text
      * the family carries. `content` is a machine echo of the membership and the

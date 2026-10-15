@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -74,6 +76,8 @@ class SnoObjectEvent(
 
     /** The `name` tag, which duplicates the payload's name for relay-side filtering. */
     fun nameTag(): String? = tags.firstOrNull { it.size > 1 && it[0] == "name" }?.get(1)
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, nameTag(), null, null)
 
     /** The `name` tag is the only human text; the content is SNO geometry JSON and stays out. */
     override fun indexableContent() = nameTag().orEmpty()

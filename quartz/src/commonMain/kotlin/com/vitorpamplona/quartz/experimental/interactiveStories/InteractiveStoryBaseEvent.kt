@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 @Stable
@@ -44,6 +46,11 @@ open class InteractiveStoryBaseEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, kind, tags, content, sig),
     AddressHintProvider,
     SearchableEvent {
+    // kinds 30296/30297 -- the option labels are the choices a reader
+    // picks between: short answer-like values, so they sit in the
+    // secondary tier unjoined, as poll options do.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(summary()) + optionLabels(), content)
+
     // The option labels are the author's own prose (the choices a reader picks between), so
     // each one follows the body on its own line, the way poll options do.
     override fun indexableContent() = (listOfNotNull(title(), summary(), content) + optionLabels()).joinToString("\n")

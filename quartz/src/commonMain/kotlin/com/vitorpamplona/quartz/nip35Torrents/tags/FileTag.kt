@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip35Torrents.tags
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.nip46RemoteSigner.getOrNull
 import com.vitorpamplona.quartz.utils.ensure
 
 @Immutable

@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.experimental.clink
 
+import com.vitorpamplona.quartz.experimental.clink.ClinkJson
 import com.vitorpamplona.quartz.experimental.clink.manage.ManageResponse
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferRequest
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferResponse
@@ -36,7 +37,7 @@ import kotlin.test.assertTrue
  * wire shapes are still moving.
  */
 class ClinkMalformedInputTest {
-    private inline fun <reified T : OptimizedSerializable> parse(json: String): T = KotlinSerializationMapper.fromJsonTo<T>(json)
+    private inline fun <reified T : Any> parse(json: String): T = ClinkJson.fromJsonTo<T>(json)
 
     @Test
     fun anOfferRequestParsesFromNothingButTheOffer() {

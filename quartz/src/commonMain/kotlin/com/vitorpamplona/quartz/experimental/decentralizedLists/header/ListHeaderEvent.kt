@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.experimental.decentralizedLists.header
 
+import com.vitorpamplona.quartz.experimental.decentralizedLists.decentralizedListIndexableFields
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.decentralizedLists.DecentralizedListEvent
 import com.vitorpamplona.quartz.experimental.decentralizedLists.description
@@ -55,6 +57,8 @@ class ListHeaderEvent(
     DecentralizedListEvent,
     SearchableEvent {
     override fun listPointer() = id
+
+    override fun indexableFields(): IndexableFields = decentralizedListIndexableFields()
 
     override fun indexableContent() = tags.searchableListContent()
 

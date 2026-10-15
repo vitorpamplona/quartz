@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMetadataEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -70,6 +72,11 @@ class GroupEditMetadataEvent(
     fun children() = tags.childGroupIds()
 
     fun previousEvents() = tags.previousEvents()
+
+    // kind 9002 edits the very metadata kind 39000 publishes, so it
+    // splits the same way -- it was the only half of the pair falling
+    // through. Its hashtags() is `t`, carried once by the funnel.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, name(), about(), null)
 
     override fun indexableContent() = (listOfNotNull(name(), about()) + hashtags()).joinToString("\n")
 

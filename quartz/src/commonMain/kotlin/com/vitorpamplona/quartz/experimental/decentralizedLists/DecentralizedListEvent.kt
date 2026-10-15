@@ -20,7 +20,10 @@
  */
 package com.vitorpamplona.quartz.experimental.decentralizedLists
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.IEvent
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 
 /**
  * Common face of the four Decentralized Lists kinds (9998, 39998, 9999, 39999).
@@ -49,3 +52,13 @@ interface DecentralizedListItem : DecentralizedListEvent
  * through `kind:pubkey:d` coordinates.
  */
 interface AddressableDecentralizedListEvent : DecentralizedListEvent
+
+// kinds 9998/39998/9999/39999 -- a list's or item's names and titles are
+// what it is called, its description and comments what it is about. The
+// `t` values indexableContent() appends are the funnel's hashtag role
+// already, so -- as for 1111/1311/30382 -- they are not passed again, and
+// content is not part of the spec. One branch for all four: an item may
+// carry header tags (the spec's nonstandard method), and the tag helpers
+// read whichever are present. Every other natural-language tag value
+// (author, subject, artist, ...) is the text tier, below both.
+internal fun Event.decentralizedListIndexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, tags.searchableListTitles(), tags.searchableListDescriptions(), tags.searchableListExtraText())

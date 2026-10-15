@@ -20,8 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip85TrustedAssertions.users.index
 
-import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
-import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
@@ -31,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
 import com.vitorpamplona.quartz.utils.Hex
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient

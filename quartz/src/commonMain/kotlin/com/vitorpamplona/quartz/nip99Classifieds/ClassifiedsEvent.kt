@@ -53,6 +53,8 @@ import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHints
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeys
@@ -79,6 +81,10 @@ class ClassifiedsEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // location() and categories() (`t`) close its indexableContent(),
+    // and the funnel already carries both roles, so they are not passed.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), summary(), content)
+
     // A listing is searched by where it is and what category it is in as much as by
     // its title: the location and the `t` categories follow the body.
     override fun indexableContent() = (listOfNotNull(title(), summary(), content, location()) + categories()).joinToString("\n")

@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip29RelayGroups.GroupChatTimelineContent
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -50,7 +51,8 @@ class JobProgressEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
-    EventHintProvider {
+    EventHintProvider,
+    GroupChatTimelineContent {
     override fun indexableContent() = content
 
     override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)

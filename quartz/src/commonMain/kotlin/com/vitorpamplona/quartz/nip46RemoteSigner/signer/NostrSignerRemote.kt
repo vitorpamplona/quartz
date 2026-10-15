@@ -361,6 +361,13 @@ class NostrSignerRemote(
 
     override fun hasForegroundSupport(): Boolean = true
 
+    /**
+     * Every call is a relay round trip, and bunker apps (nsec.app, Amber, Keychat) serialize
+     * requests internally past ~10 in flight. Four covers the speedup of a 2-4 recipient send
+     * without saturating them.
+     */
+    override fun maxConcurrentRequests(): Int = MAX_CONCURRENT_REQUESTS
+
     fun convertExceptions(
         title: String,
         result: SignerResult.RequestAddressed<*>,
@@ -379,6 +386,9 @@ class NostrSignerRemote(
         }
 
     companion object {
+        /** See [maxConcurrentRequests]. */
+        const val MAX_CONCURRENT_REQUESTS = 4
+
         fun fromBunkerUri(
             bunkerUri: String,
             signer: NostrSignerInternal,

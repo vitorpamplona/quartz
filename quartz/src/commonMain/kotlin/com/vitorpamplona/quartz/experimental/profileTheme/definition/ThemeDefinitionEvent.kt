@@ -50,6 +50,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtag
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -83,6 +85,10 @@ class ThemeDefinitionEvent(
     PubKeyHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kind 36767 -- a shareable theme's name and description; never its colors,
+    // font families or URLs, and `content` is empty by spec.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null)
+
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 
     override fun forEachIndexableField(visitor: IndexableFieldVisitor) {

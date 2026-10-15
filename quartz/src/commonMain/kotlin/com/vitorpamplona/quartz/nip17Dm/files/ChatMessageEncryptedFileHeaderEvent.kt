@@ -35,6 +35,8 @@ import com.vitorpamplona.quartz.nip17Dm.files.tags.EncryptionNonce
 import com.vitorpamplona.quartz.nip17Dm.files.tags.FileTypeTag
 import com.vitorpamplona.quartz.nip17Dm.messages.ChatMessageEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.BlurhashTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.DimensionTag
@@ -56,6 +58,11 @@ class ChatMessageEncryptedFileHeaderEvent(
     sig: HexKey,
 ) : BaseDMGroupEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kinds 1065/1163 -- summary-only kinds. Their whole searchable
+    // text IS a summary, so it belongs in the summary tier, next to
+    // kind 1063's, rather than in the body tier the fallback gave it.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, summary(), null)
+
     // `content` is the encrypted file's URL, not text; the optional `summary`
     // tag is the only human-written caption the header carries.
     override fun indexableContent() = summary().orEmpty()

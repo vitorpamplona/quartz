@@ -33,7 +33,6 @@ import com.vitorpamplona.quartz.nip17Dm.messages.ChatMessageEvent
 import com.vitorpamplona.quartz.nip25Reactions.ReactionEvent
 import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import com.vitorpamplona.quartz.nip40Expiration.expiration
-import com.vitorpamplona.quartz.nip46RemoteSigner.signer.NostrSignerRemote
 import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapTemplateConversion
@@ -79,7 +78,7 @@ class NIP17Factory {
                 }
             }
 
-        val bunkerLimiter = if (signer is NostrSignerRemote) Semaphore(BUNKER_PARALLELISM) else null
+        val bunkerLimiter = signer.maxConcurrentRequests()?.let { Semaphore(it) }
 
         val seals =
             mapNotNullAsync(to.toList()) { next ->
@@ -134,8 +133,8 @@ class NIP17Factory {
      * the default `{ null }` lambda preserves the historical 2-element tag
      * shape for every recipient.
      *
-     * When [signer] is a [NostrSignerRemote] (NIP-46 bunker), seal building
-     * is rate-limited to [BUNKER_PARALLELISM] concurrent operations. Each
+     * When [signer] caps its concurrency (a NIP-46 bunker, see
+     * [NostrSigner.maxConcurrentRequests]), seal building is rate-limited to it. Each
      * seal needs `nip44_encrypt` + `sign` round-trips against the bunker; a
      * 5-recipient group otherwise launches 10 concurrent in-flight RPCs and
      * saturates the bunker socket. Local signers (NostrSignerInternal,
@@ -160,7 +159,7 @@ class NIP17Factory {
                 }
             }
 
-        val bunkerLimiter = if (signer is NostrSignerRemote) Semaphore(BUNKER_PARALLELISM) else null
+        val bunkerLimiter = signer.maxConcurrentRequests()?.let { Semaphore(it) }
 
         return mapNotNullAsync(
             to.toList(),
@@ -182,17 +181,6 @@ class NIP17Factory {
             }
             bunkerLimiter?.withPermit { build() } ?: build()
         }
-    }
-
-    companion object {
-        /**
-         * Max concurrent in-flight NIP-46 RPCs when building wraps via a
-         * remote signer. Empirically a sweet spot — covers parallelism
-         * speedup for 2–4 recipient sends without saturating typical
-         * bunker apps (nsec.app, Amber, Keychat) that serialize requests
-         * internally past ~10 in-flight.
-         */
-        const val BUNKER_PARALLELISM = 4
     }
 
     suspend fun createMessageNIP17(

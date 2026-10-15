@@ -45,6 +45,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.toATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.AddressBookmark
 import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.BookmarkIdTag
@@ -78,6 +80,11 @@ class ReleaseArtifactSetEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kind 30063 -- the body is a NIP-82 release's notes, and nothing for a
+    // NIP-51 set (its content may be encrypted private items); the event
+    // owns that guard, so both search paths apply the same one.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), searchableReleaseNotes())
+
     override fun indexableContent() = listOfNotNull(title(), description(), searchableReleaseNotes()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

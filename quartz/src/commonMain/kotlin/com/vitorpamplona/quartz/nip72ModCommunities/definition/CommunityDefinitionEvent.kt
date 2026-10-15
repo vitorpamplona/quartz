@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip72ModCommunities.definition.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip72ModCommunities.definition.tags.ImageTag
@@ -58,6 +60,8 @@ class CommunityDefinitionEvent(
     AddressHintProvider,
     PubKeyHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(name()), listOf(description(), rules()), content)
+
     override fun indexableContent() = listOfNotNull(name(), description(), rules(), content).joinToString("\n")
 
     // The read path: hands over the same fields indexableContent() joins, without

@@ -48,6 +48,8 @@ import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip37Drafts.ExposeInDraft
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip53LiveActivities.meetingSpaces.MeetingSpaceEvent
 import com.vitorpamplona.quartz.nip53LiveActivities.streaming.LiveActivitiesEvent
@@ -67,6 +69,8 @@ class LiveActivitiesChatMessageEvent(
     AddressHintProvider,
     ExposeInDraft,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, null, content)
+
     override fun indexableContent() = (listOf(content) + tags.hashtags()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, without the join.

@@ -34,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
+import com.vitorpamplona.quartz.nip29RelayGroups.GroupChatTimelineContent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -61,7 +62,8 @@ class StreamMessageV2Event(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     PubKeyHintProvider,
-    EventHintProvider {
+    EventHintProvider,
+    GroupChatTimelineContent {
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = mentions()

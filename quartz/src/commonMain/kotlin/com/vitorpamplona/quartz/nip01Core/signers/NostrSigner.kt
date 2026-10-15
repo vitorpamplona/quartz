@@ -86,6 +86,12 @@ abstract class NostrSigner(
 
     abstract fun hasForegroundSupport(): Boolean
 
+    /**
+     * How many sign/encrypt calls this signer takes well at once, or null for no limit. Batch
+     * work (NIP-17 seals and wraps for every member of a group) caps its concurrency to this.
+     */
+    open fun maxConcurrentRequests(): Int? = null
+
     suspend fun decrypt(
         encryptedContent: String,
         fromPublicKey: HexKey,

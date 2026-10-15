@@ -50,6 +50,8 @@ import com.vitorpamplona.quartz.nip23LongContent.longFormPublishedAt
 import com.vitorpamplona.quartz.nip23LongContent.longFormSummary
 import com.vitorpamplona.quartz.nip23LongContent.longFormTitle
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.uuid.ExperimentalUuidApi
@@ -88,6 +90,8 @@ class LongFormDraftEvent(
     AddressHintProvider,
     PublishedAtProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), summary(), content)
+
     override fun indexableContent() = tags.longFormIndexableContent(content)
 
     // The read path: hands over the same fields indexableContent() joins, without

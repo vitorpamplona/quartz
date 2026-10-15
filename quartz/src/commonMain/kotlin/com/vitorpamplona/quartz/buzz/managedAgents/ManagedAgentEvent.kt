@@ -35,6 +35,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
@@ -78,6 +80,8 @@ class ManagedAgentEvent(
 
     /** The `persona_id` names one of the author's own `30175` personas by its slug. */
     override fun linkedAddressIds(): List<String> = listOfNotNull(agentOrNull()?.personaId?.takeIf { it.isNotEmpty() }?.let { Address.assemble(PersonaEvent.KIND, pubKey, it) })
+
+    override fun indexableFields(): IndexableFields = agentOrNull()?.let { SearchFieldExtractor.tiers(this, it.name, null, it.systemPrompt) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = agentOrNull()?.let { listOfNotNull(it.name, it.systemPrompt).joinToString("\n") } ?: ""
 

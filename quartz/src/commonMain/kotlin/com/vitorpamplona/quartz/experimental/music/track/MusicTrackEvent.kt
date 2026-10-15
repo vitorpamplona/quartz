@@ -46,6 +46,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHints
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeys
@@ -68,6 +70,8 @@ class MusicTrackEvent(
     override fun pubKeyHints(): List<PubKeyHint> = tags.zapSplitHints()
 
     override fun linkedPubKeys(): List<HexKey> = tags.zapSplitPubKeys()
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(artist(), album()), content)
 
     override fun indexableContent(): String = listOfNotNull(title(), artist(), album(), content).joinToString("\n")
 

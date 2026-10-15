@@ -20,46 +20,11 @@
  */
 package com.vitorpamplona.quartz.nip29RelayGroups
 
-import com.vitorpamplona.quartz.buzz.workspace.isBuzzChatTimelineContent
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.core.TagArray
-import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip22Comments.CommentEvent
-import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.nip7DThreads.ThreadEvent
 import com.vitorpamplona.quartz.nip88Polls.poll.PollEvent
 import com.vitorpamplona.quartz.nipC7Chats.ChatEvent
-
-/*
- * NIP-29 group scoping via the `h` tag.
- *
- * NIP-29 does not define new event kinds for content: a group chat message is a
- * regular kind-9 [com.vitorpamplona.quartz.nipC7Chats.ChatEvent], a thread is a
- * kind-11 [com.vitorpamplona.quartz.nip7DThreads.ThreadEvent], and reactions,
- * polls, comments and deletions keep their own kinds. What makes any of them
- * "belong" to a group is a single `["h", "<groupId>"]` tag that tells the
- * relay to route and authorize the write. These helpers add and read that tag on
- * ANY event, so the existing carrier classes can be reused unchanged:
- *
- * ```
- * val msg = ChatEvent.build("gm") { hTag(groupId) }          // kind 9 in a group
- * val react = ReactionEvent.build("🔥", target) { hTag(gid) } // reaction in a group
- * val gid = someEvent.groupId()                               // which group is this in?
- * ```
- */
-
-/** Adds the `["h", groupId]` NIP-29 group tag (deduplicated). */
-fun <T : Event> TagArrayBuilder<T>.hTag(groupId: String) = addUnique(GroupIdTag.assemble(groupId))
-
-/** The group id (`h` tag value) that scopes this tag array to a NIP-29 group, or null. */
-fun TagArray.hTag(): String? = firstTagValue(GroupIdTag.TAG_NAME)
-
-/** The group id (`h` tag value) that scopes this event to a NIP-29 group, or null. */
-fun Event.groupId(): String? = tags.hTag()
-
-/** True when this event carries a NIP-29 group (`h`) tag. */
-fun Event.isGroupScoped(): Boolean = groupId() != null
 
 /**
  * True when this group-scoped event is actual room *content* — a message someone
@@ -72,11 +37,18 @@ fun Event.isGroupScoped(): Boolean = groupId() != null
  * Messages tab. NIP-29 content kinds: 9 ([ChatEvent]), 1068 ([PollEvent]), 11
  * ([ThreadEvent]), 1111 ([CommentEvent]).
  *
- * Plus the Buzz dialect's own chat-timeline rows ([isBuzzChatTimelineContent] — stream
+ * Plus any dialect's own chat-timeline rows ([GroupChatTimelineContent]; Buzz's stream
  * messages, system lines, diffs, agent-job and huddle lifecycle): they are `h`-scoped, attach
  * to the same channel as a kind-9 and render as chat rows, so they must count as a room's
  * newest message too — otherwise a Buzz channel's Messages-list preview and unread dot never
  * reflect its real activity. (A caller previewing these must summarize their `content`, which
  * is JSON/diff for the non-plain kinds; see the Buzz preview-summary helpers in the UI.)
  */
-fun Event.isGroupChatContent(): Boolean = this is ChatEvent || this is PollEvent || this is ThreadEvent || this is CommentEvent || isBuzzChatTimelineContent()
+fun Event.isGroupChatContent(): Boolean = this is ChatEvent || this is PollEvent || this is ThreadEvent || this is CommentEvent || this is GroupChatTimelineContent
+
+/**
+ * Marks an event class that a NIP-29 dialect renders as a row of a group's chat timeline,
+ * beside the standard content kinds [isGroupChatContent] lists. Buzz's stream messages,
+ * system lines, diffs, agent jobs and huddle lifecycle events implement it.
+ */
+interface GroupChatTimelineContent

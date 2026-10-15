@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip10Notes
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.experimental.nipsOnNostr.NipTextEvent
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -120,7 +119,7 @@ open class BaseThreadedEvent(
         val tagAddresses =
             taggedATags()
                 .filter { aTag ->
-                    aTag.kind != CommunityDefinitionEvent.KIND && (kind != WikiArticleEvent.KIND || aTag.kind != WikiArticleEvent.KIND) && (kind != NipTextEvent.KIND || aTag.kind != NipTextEvent.KIND)
+                    aTag.kind != CommunityDefinitionEvent.KIND && (kind != WikiArticleEvent.KIND || aTag.kind != WikiArticleEvent.KIND) && (kind != NIP_TEXT_KIND || aTag.kind != NIP_TEXT_KIND)
                     // removes forks from itself.
                 }.map {
                     it.toTag()
@@ -146,3 +145,6 @@ open class BaseThreadedEvent(
         }
     }
 }
+
+/** NipTextEvent (experimental/nipsOnNostr): its forks point at the NIP they fork, like a wiki article. */
+private const val NIP_TEXT_KIND = 30817

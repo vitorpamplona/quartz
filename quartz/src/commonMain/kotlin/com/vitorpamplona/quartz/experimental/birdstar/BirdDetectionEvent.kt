@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -56,6 +58,20 @@ class BirdDetectionEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 2473 -- a sighting IS its species, under both names: the
+    // scientific one from the `n` tag and the vernacular one
+    // commonName() parses out of the `alt`. The `alt` itself still
+    // goes to the summary tier whole. It is usually just Birdstar's
+    // boilerplate wrapper around those two names ("Bird detection:
+    // <Common> (<Scientific>)"), so this repeats them in a second
+    // role -- but only commonName()'s PREFIX match decides that the
+    // alt is boilerplate, and a publisher can write anything after
+    // the parenthetical. Dropping the alt on a prefix match lost that
+    // tail from every role, which is precisely the drift against
+    // indexableContent() this file exists to prevent: the repeat
+    // costs a duplicate in the weakest role, the drop cost recall.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(speciesName(), commonName()), listOf(summary()), null)
+
     override fun indexableContent() = listOfNotNull(summary(), speciesName()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

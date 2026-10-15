@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip50Search
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+
 /**
  * Receives one indexable field at a time. Returning false stops the walk.
  *
@@ -60,6 +62,13 @@ fun interface IndexableFieldVisitor {
  */
 interface SearchableEvent {
     fun indexableContent(): String
+
+    /**
+     * The same text as [indexableContent], split into the roles a search ranks by: title,
+     * summary, body, plus hashtags, locations and websites. Build it with
+     * [SearchFieldExtractor.tiers]. The default puts the whole [indexableContent] in the body.
+     */
+    fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this as Event, null, null, indexableContent())
 
     fun forEachIndexableField(visitor: IndexableFieldVisitor) {
         visitor.visit(indexableContent())

@@ -39,6 +39,8 @@ import com.vitorpamplona.quartz.nip34Git.repository.tags.NameTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RelaysTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.WebTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -56,6 +58,11 @@ class GitRepositoryEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     PubKeyHintProvider {
+    // The clone URL is as much a repository's public address as its
+    // homepage is -- `github.com/owner/repo.git` is how most people
+    // would search for it -- so both fill the affiliation role.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(name()), listOf(description()), content, websites = (webs() + clones()).distinct())
+
     // The `t` hashtags are appended after the body, as CommentEvent does.
     override fun indexableContent() = (listOfNotNull(name(), description(), content) + hashtags()).joinToString("\n")
 

@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip22Comments.tags
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Tag
 import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.nip46RemoteSigner.getOrNull
 import com.vitorpamplona.quartz.nip73ExternalIds.ExternalId
 import com.vitorpamplona.quartz.nip73ExternalIds.books.BookId
 import com.vitorpamplona.quartz.nip73ExternalIds.location.GeohashId

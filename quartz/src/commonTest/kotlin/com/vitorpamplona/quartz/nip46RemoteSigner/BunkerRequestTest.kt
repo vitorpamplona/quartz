@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip46RemoteSigner
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -30,7 +29,7 @@ class BunkerRequestTest {
     @Test
     fun testBunkerRequestDeSerialization() {
         val requestJson = """{"id":"123","method":"sign_event","params":["{\"created_at\":1234,\"kind\":1,\"tags\":[],\"content\":\"This is an unsigned event.\"}"]}"""
-        val bunkerRequest = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(requestJson)
+        val bunkerRequest = BunkerJson.fromJsonToRequest(requestJson)
 
         assertTrue(bunkerRequest is BunkerRequestSign)
         assertEquals(1, bunkerRequest.event.kind)
@@ -38,7 +37,7 @@ class BunkerRequestTest {
 
     @Test
     fun testSignEventWithoutParamsIsInvalidNotThrown() {
-        val bunkerRequest = OptimizedJsonMapper.fromJsonTo<BunkerRequest>("""{"id":"x1","method":"sign_event","params":[]}""")
+        val bunkerRequest = BunkerJson.fromJsonToRequest("""{"id":"x1","method":"sign_event","params":[]}""")
         assertTrue(bunkerRequest is BunkerRequestInvalid)
         assertEquals("x1", bunkerRequest.id)
         assertEquals("sign_event", bunkerRequest.method)
@@ -46,7 +45,7 @@ class BunkerRequestTest {
 
     @Test
     fun testSignEventWithMissingParamsFieldIsInvalid() {
-        val bunkerRequest = OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"x2","method":"sign_event"}""")
+        val bunkerRequest = BunkerJson.fromJsonToMessage("""{"id":"x2","method":"sign_event"}""")
         assertTrue(bunkerRequest is BunkerRequestInvalid)
         assertEquals("x2", bunkerRequest.id)
     }
@@ -55,14 +54,14 @@ class BunkerRequestTest {
     fun testSignEventWithObjectParamKeepsTheId() {
         // Some clients send the template as an object instead of a JSON string.
         val bunkerRequest =
-            OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"x3","method":"sign_event","params":[{"kind":1,"created_at":1,"tags":[],"content":"hi"}]}""")
+            BunkerJson.fromJsonToMessage("""{"id":"x3","method":"sign_event","params":[{"kind":1,"created_at":1,"tags":[],"content":"hi"}]}""")
         assertTrue(bunkerRequest is BunkerRequest)
         assertEquals("x3", bunkerRequest.id)
     }
 
     @Test
     fun testUnknownMethodStaysGeneric() {
-        val bunkerRequest = OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"x4","method":"frobnicate","params":["a"]}""")
+        val bunkerRequest = BunkerJson.fromJsonToMessage("""{"id":"x4","method":"frobnicate","params":["a"]}""")
         assertTrue(bunkerRequest is BunkerRequest)
         assertEquals("frobnicate", bunkerRequest.method)
         assertTrue(bunkerRequest !is BunkerRequestInvalid)
@@ -71,7 +70,7 @@ class BunkerRequestTest {
     @Test
     fun testConnectWithoutMetadata() {
         val requestJson = """{"id":"1","method":"connect","params":["abc","mysecret","sign_event"]}"""
-        val request = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(requestJson)
+        val request = BunkerJson.fromJsonToRequest(requestJson)
 
         assertTrue(request is BunkerRequestConnect)
         assertEquals("abc", request.remoteKey)
@@ -84,7 +83,7 @@ class BunkerRequestTest {
     fun testConnectWithClientMetadata() {
         val requestJson =
             """{"id":"1","method":"connect","params":["abc","mysecret","sign_event","{\"name\":\"Amethyst\",\"url\":\"https://amethyst.social\",\"image\":\"https://amethyst.social/logo.png\"}"]}"""
-        val request = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(requestJson)
+        val request = BunkerJson.fromJsonToRequest(requestJson)
 
         assertTrue(request is BunkerRequestConnect)
         assertEquals("Amethyst", request.clientMetadata?.name)
@@ -95,7 +94,7 @@ class BunkerRequestTest {
     @Test
     fun testConnectWithMalformedMetadataDegradesGracefully() {
         val requestJson = """{"id":"1","method":"connect","params":["abc","mysecret","sign_event","not-json"]}"""
-        val request = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(requestJson)
+        val request = BunkerJson.fromJsonToRequest(requestJson)
 
         assertTrue(request is BunkerRequestConnect)
         assertNull(request.clientMetadata)
@@ -114,7 +113,7 @@ class BunkerRequestTest {
 
         assertEquals(4, original.params.size)
 
-        val roundTripped = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(OptimizedJsonMapper.toJson(original))
+        val roundTripped = BunkerJson.fromJsonToRequest(BunkerJson.toJson(original))
         assertTrue(roundTripped is BunkerRequestConnect)
         assertEquals("Amethyst", roundTripped.clientMetadata?.name)
         assertEquals("https://amethyst.social", roundTripped.clientMetadata?.url)
@@ -137,7 +136,7 @@ class BunkerRequestTest {
         assertEquals("", request.params[2])
         assertTrue(request.params[3].contains("Amethyst"))
 
-        val roundTripped = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(OptimizedJsonMapper.toJson(request))
+        val roundTripped = BunkerJson.fromJsonToRequest(BunkerJson.toJson(request))
         assertTrue(roundTripped is BunkerRequestConnect)
         assertNull(roundTripped.secret)
         assertNull(roundTripped.permissions)

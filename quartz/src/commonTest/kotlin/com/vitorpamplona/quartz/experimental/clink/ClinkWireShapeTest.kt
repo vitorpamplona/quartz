@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.experimental.clink
 
+import com.vitorpamplona.quartz.experimental.clink.ClinkJson
 import com.vitorpamplona.quartz.experimental.clink.debits.DebitFrequency
 import com.vitorpamplona.quartz.experimental.clink.debits.DebitRequest
 import com.vitorpamplona.quartz.experimental.clink.debits.DebitResponse
@@ -49,7 +50,7 @@ import kotlin.test.assertTrue
  * markdown's quoted strings, matching what real services emit.
  */
 class ClinkWireShapeTest {
-    private inline fun <reified T : OptimizedSerializable> parse(json: String): T = OptimizedJsonMapper.fromJsonTo<T>(json)
+    private inline fun <reified T : Any> parse(json: String): T = ClinkJson.fromJsonTo<T>(json)
 
     // ---------- Offers (kind 21001) ----------
 

@@ -37,6 +37,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.publishedAt.PublishedAtProvider
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
 import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip89AppHandlers.PlatformType
 import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
@@ -61,6 +63,26 @@ class AppDefinitionEvent(
     PublishedAtProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kind 31990 — the app handler's metadata IS a UserMetadata clone,
+    // so route it through the kind-0 profile fields: an app's
+    // @-handle and site get the same treatment a person's do.
+    override fun indexableFields(): IndexableFields {
+        val md = appMetaData()
+        return if (md == null) {
+            IndexableFields.Profile()
+        } else {
+            IndexableFields.Profile(
+                // Per NIP-24 the deprecated `username` folds into `name`.
+                name = SearchFieldExtractor.clean(md.name ?: md.username),
+                displayName = SearchFieldExtractor.clean(md.displayName),
+                about = SearchFieldExtractor.clean(md.about),
+                nip05 = SearchFieldExtractor.clean(md.nip05),
+                lud16 = SearchFieldExtractor.clean(md.lud16),
+                website = SearchFieldExtractor.clean(md.website),
+            )
+        }
+    }
+
     // App-handler content is JSON; parse it and index the human-meaningful
     // fields plus the addresses/URLs people search by.
     override fun indexableContent() =

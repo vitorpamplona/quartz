@@ -31,6 +31,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -67,6 +69,13 @@ class TextNoteModificationEvent(
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(notifiedUser())
 
     fun summary() = tags.firstOrNull { it.size > 1 && it[0] == "summary" }?.get(1)
+
+    // kind 1010 -- `content` is the proposed replacement text and
+    // `summary` describes the edit, so they split the way kind 1063's
+    // summary and body do (indexableContent concatenates them in the
+    // other order; the roles, not the order, are what a weighted
+    // backend reads).
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, summary(), content)
 
     override fun indexableContent() = listOfNotNull(content, summary()).joinToString("\n")
 

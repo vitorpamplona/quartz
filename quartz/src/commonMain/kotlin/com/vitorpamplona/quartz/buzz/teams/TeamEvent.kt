@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
@@ -59,6 +61,8 @@ class TeamEvent(
 
     /** Each `persona_ids` entry names one of the author's own `30175` personas by its slug. */
     override fun linkedAddressIds(): List<String> = teamOrNull()?.personaIds?.mapNotNull { slug -> slug.takeIf { it.isNotEmpty() }?.let { Address.assemble(PersonaEvent.KIND, pubKey, it) } } ?: emptyList()
+
+    override fun indexableFields(): IndexableFields = teamOrNull()?.let { SearchFieldExtractor.tiers(this, it.name, it.description, it.instructions) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = teamOrNull()?.let { listOfNotNull(it.name, it.description, it.instructions).joinToString("\n") } ?: ""
 

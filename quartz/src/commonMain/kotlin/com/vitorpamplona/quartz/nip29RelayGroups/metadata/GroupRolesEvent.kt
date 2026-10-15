@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.RoleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -44,6 +46,9 @@ class GroupRolesEvent(
     fun groupId() = dTag()
 
     fun roles() = tags.mapNotNull(RoleTag::parse)
+
+    // kind 39003 -- role names and their descriptions are short keyword-like values.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, emptyList(), roles().flatMap { listOf(it.name, it.description) }, null)
 
     // Each role's name, then its human-written description, one per line.
     override fun indexableContent() = roles().flatMap { listOfNotNull(it.name, it.description) }.joinToString("\n")

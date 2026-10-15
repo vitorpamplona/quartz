@@ -43,6 +43,8 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -67,6 +69,8 @@ class GitPullRequestEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, subject(), null, content)
+
     // The `t` tags are the PR's NIP-34 labels, appended after the body.
     override fun indexableContent() = (listOfNotNull(subject(), content) + labels()).joinToString("\n")
 

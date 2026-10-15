@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip01Core.jackson
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CloseCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -62,6 +61,5 @@ class JacksonSerializerGuardTest {
     @Test
     fun registeredRootsStillSerialize() {
         assertEquals("""{"kinds":[1]}""", JacksonMapper.toJson(Filter(kinds = listOf(1))))
-        assertTrue(JacksonMapper.toJson(BunkerRequest("id-1", "connect", arrayOf("a"))).contains("\"connect\""))
     }
 }

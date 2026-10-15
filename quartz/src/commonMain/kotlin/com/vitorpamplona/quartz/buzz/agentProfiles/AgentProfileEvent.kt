@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
@@ -52,6 +54,10 @@ class AgentProfileEvent(
     sig: HexKey,
 ) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // Buzz agent/workspace kinds carry their metadata as JSON in `content`;
+    // split each decoded object the way its indexableContent() concatenates it.
+    override fun indexableFields(): IndexableFields = profileOrNull()?.let { SearchFieldExtractor.tiers(this, listOf(it.name, it.displayName), emptyList(), null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
+
     override fun indexableContent() = profileOrNull()?.let { listOfNotNull(it.name, it.displayName).joinToString("\n") } ?: ""
 
     // The read path. The parse happens once and its fields are handed over one by

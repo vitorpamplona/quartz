@@ -58,6 +58,8 @@ import com.vitorpamplona.quartz.nip22Comments.tags.RootEventTag
 import com.vitorpamplona.quartz.nip22Comments.tags.RootIdentifierTag
 import com.vitorpamplona.quartz.nip22Comments.tags.RootKindTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeysTo
@@ -80,6 +82,13 @@ class CommentEvent(
     PubKeyHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kinds 1111/1311 -- body-only kinds whose indexableContent()
+    // concatenates the `t` tags INTO the body. The funnel already
+    // carries them in the hashtag role, so passing the body alone
+    // stops the same words being indexed twice (the UserAssertion
+    // reasoning above, applied to the two chat/comment kinds).
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, null, content)
+
     override fun indexableContent() = (listOf(content) + tags.hashtags()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, without the join.

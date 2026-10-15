@@ -32,9 +32,7 @@ import com.vitorpamplona.quartz.experimental.clink.manage.OfferData
 import com.vitorpamplona.quartz.experimental.clink.manage.OfferFields
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferReceipt
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferRequest
-import com.vitorpamplona.quartz.experimental.clink.offers.OfferResponse
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
-import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -61,8 +59,8 @@ class ClinkKotlinSerializationTest {
                 description = "A coffee",
             )
 
-        val kotlinJson = KotlinSerializationMapper.toJson(request)
-        val parsed = KotlinSerializationMapper.fromJsonTo<OfferRequest>(kotlinJson)
+        val kotlinJson = ClinkJson.toJson(request)
+        val parsed = ClinkJson.fromJsonToOfferRequest(kotlinJson)
         assertEquals("coffee", parsed.offer)
         assertEquals(21000L, parsed.amount_sats)
         assertEquals("a@b.c", parsed.payer_data?.get("email"))
@@ -74,16 +72,16 @@ class ClinkKotlinSerializationTest {
         assertEquals("A coffee", parsed.description)
 
         // Jackson-serialized payload parses with kotlinx and vice versa.
-        val fromPlatform = KotlinSerializationMapper.fromJsonTo<OfferRequest>(OptimizedJsonMapper.toJson(request))
+        val fromPlatform = ClinkJson.fromJsonToOfferRequest(ClinkJson.toJson(request))
         assertEquals("coffee", fromPlatform.offer)
-        val platformParsed = OptimizedJsonMapper.fromJsonTo<OfferRequest>(kotlinJson)
+        val platformParsed = ClinkJson.fromJsonToOfferRequest(kotlinJson)
         assertEquals(21000L, platformParsed.amount_sats)
     }
 
     @Test
     fun offerResponseParsesRangeAndLatest() {
         val parsed =
-            KotlinSerializationMapper.fromJsonTo<OfferResponse>(
+            ClinkJson.fromJsonToOfferResponse(
                 """{"error":"Invalid Amount","code":5,"range":{"min":1000,"max":50000},"latest":"noffer1qqsmoved"}""",
             )
         assertEquals(5, parsed.code)
@@ -91,18 +89,18 @@ class ClinkKotlinSerializationTest {
         assertEquals(50000L, parsed.range?.max)
         assertEquals("noffer1qqsmoved", parsed.latest)
 
-        val success = KotlinSerializationMapper.fromJsonTo<OfferResponse>("""{"bolt11":"lnbc1..."}""")
+        val success = ClinkJson.fromJsonToOfferResponse("""{"bolt11":"lnbc1..."}""")
         assertTrue(success.isSuccess())
         assertEquals(
             "lnbc1...",
-            KotlinSerializationMapper.fromJsonTo<OfferResponse>(KotlinSerializationMapper.toJson(success)).bolt11,
+            ClinkJson.fromJsonToOfferResponse(ClinkJson.toJson(success)).bolt11,
         )
     }
 
     @Test
     fun offerReceiptRoundTrip() {
         val receipt = OfferReceipt(res = OfferReceipt.OK, preimage = "ab".repeat(32))
-        val parsed = KotlinSerializationMapper.fromJsonTo<OfferReceipt>(KotlinSerializationMapper.toJson(receipt))
+        val parsed = ClinkJson.fromJsonToOfferReceipt(ClinkJson.toJson(receipt))
         assertTrue(parsed.isOk())
         assertEquals("ab".repeat(32), parsed.preimage)
     }
@@ -117,7 +115,7 @@ class ClinkKotlinSerializationTest {
                 k1 = "4caa9ee5",
                 frequency = DebitFrequency(1, DebitFrequency.UNIT_MONTH),
             )
-        val parsed = KotlinSerializationMapper.fromJsonTo<DebitRequest>(KotlinSerializationMapper.toJson(request))
+        val parsed = ClinkJson.fromJsonToDebitRequest(ClinkJson.toJson(request))
         assertEquals("ndebit1...", parsed.pointer)
         assertEquals(1000L, parsed.amount_sats)
         assertEquals("4caa9ee5", parsed.k1)
@@ -136,7 +134,7 @@ class ClinkKotlinSerializationTest {
                 retry_after = 1717000000,
                 delta = GfyDelta(30000, 45000),
             )
-        val parsed = KotlinSerializationMapper.fromJsonTo<DebitResponse>(KotlinSerializationMapper.toJson(response))
+        val parsed = ClinkJson.fromJsonToDebitResponse(ClinkJson.toJson(response))
         assertEquals(3, parsed.code)
         assertEquals(10L, parsed.range?.min)
         assertEquals(1717000000L, parsed.retry_after)
@@ -156,29 +154,29 @@ class ClinkKotlinSerializationTest {
                         fields = OfferFields("Coffee", 1500L, "https://x/cb", listOf("email", "name")),
                     ),
             )
-        val json = KotlinSerializationMapper.toJson(request)
-        val parsed = KotlinSerializationMapper.fromJsonTo<ManageRequest>(json)
+        val json = ClinkJson.toJson(request)
+        val parsed = ClinkJson.fromJsonToManageRequest(json)
         assertEquals("offer-1", parsed.offer?.id)
         assertEquals("Coffee", parsed.offer?.fields?.label)
         assertEquals(1500L, parsed.offer?.fields?.price_sats)
         assertEquals(listOf("email", "name"), parsed.offer?.fields?.payer_data)
 
         // Jackson reads the kotlinx output identically.
-        val platformParsed = OptimizedJsonMapper.fromJsonTo<ManageRequest>(json)
+        val platformParsed = ClinkJson.fromJsonToManageRequest(json)
         assertEquals("Coffee", platformParsed.offer?.fields?.label)
     }
 
     @Test
     fun manageResponseCoercesSingleDetailsObjectToList() {
         val single =
-            KotlinSerializationMapper.fromJsonTo<ManageResponse>(
+            ClinkJson.fromJsonToManageResponse(
                 """{"res":"ok","resource":"offer","details":{"id":"o1","noffer":"noffer1...","label":"Coffee","price_sats":1500}}""",
             )
         assertEquals(1, single.details?.size)
         assertEquals("o1", single.details?.first()?.id)
 
         val array =
-            KotlinSerializationMapper.fromJsonTo<ManageResponse>(
+            ClinkJson.fromJsonToManageResponse(
                 """{"res":"ok","resource":"offer","details":[{"id":"o1"},{"id":"o2"}]}""",
             )
         assertEquals(listOf("o1", "o2"), array.details?.map { it.id })
@@ -192,13 +190,13 @@ class ClinkKotlinSerializationTest {
                 resource = "offer",
                 details = listOf(OfferData(id = "o1", noffer = "noffer1...", label = "Coffee", price_sats = 1500)),
             )
-        val json = KotlinSerializationMapper.toJson(response)
-        val parsed = KotlinSerializationMapper.fromJsonTo<ManageResponse>(json)
+        val json = ClinkJson.toJson(response)
+        val parsed = ClinkJson.fromJsonToManageResponse(json)
         assertTrue(parsed.isOk())
         assertEquals("o1", parsed.details?.first()?.id)
         assertEquals(1500L, parsed.details?.first()?.price_sats)
 
-        val platformParsed = OptimizedJsonMapper.fromJsonTo<ManageResponse>(json)
+        val platformParsed = ClinkJson.fromJsonToManageResponse(json)
         assertEquals("noffer1...", platformParsed.details?.first()?.noffer)
     }
 }

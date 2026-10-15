@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -76,6 +78,9 @@ class ArtifactEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     EventHintProvider {
+    // kind 45010 -- textBody() already drops a JSON (non-prose) payload.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), null, textBody())
+
     override fun indexableContent() = listOfNotNull(title(), textBody()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, in the same order.

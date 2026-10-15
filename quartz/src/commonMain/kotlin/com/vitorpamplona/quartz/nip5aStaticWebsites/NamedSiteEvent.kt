@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -41,6 +43,10 @@ class NamedSiteEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // A site's `source` tag is the URL its files were published
+    // from -- the same affiliation role a repo's homepage fills.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null, website = source())
+
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

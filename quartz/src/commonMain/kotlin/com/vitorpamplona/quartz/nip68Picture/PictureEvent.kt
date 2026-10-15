@@ -49,6 +49,8 @@ import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip68Picture.tags.LocationTag
 import com.vitorpamplona.quartz.nip92IMeta.imetas
@@ -70,6 +72,11 @@ class PictureEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // Each image's imeta `alt` describes that picture, so it is the
+    // summary tier; location() closes indexableContent() but is the
+    // funnel's role already, so it is not passed.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), imageDescriptions(), content)
+
     // The place name and each image's own `alt` (the poster's accessibility description of
     // that picture) are human-written too, and are how a photo is often searched for.
     override fun indexableContent() = (listOfNotNull(title(), content) + location() + imageDescriptions()).joinToString("\n")

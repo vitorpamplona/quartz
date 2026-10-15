@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.experimental.decentralizedLists.item
 
+import com.vitorpamplona.quartz.experimental.decentralizedLists.decentralizedListIndexableFields
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.decentralizedLists.DecentralizedListEvent
 import com.vitorpamplona.quartz.experimental.decentralizedLists.DecentralizedListItem
@@ -109,6 +111,8 @@ class ListItemEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = itemKeys()
+
+    override fun indexableFields(): IndexableFields = decentralizedListIndexableFields()
 
     override fun indexableContent() = tags.searchableListContent()
 

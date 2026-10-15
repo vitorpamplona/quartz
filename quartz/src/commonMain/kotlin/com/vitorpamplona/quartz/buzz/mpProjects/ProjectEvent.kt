@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.uuid.ExperimentalUuidApi
@@ -68,6 +70,9 @@ class ProjectEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     AddressHintProvider {
+    // kind 30621 -- the name (or slug) titles the project; its description is secondary.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, displayName(), description(), null)
+
     override fun indexableContent() = listOfNotNull(displayName(), description()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, in the same order.

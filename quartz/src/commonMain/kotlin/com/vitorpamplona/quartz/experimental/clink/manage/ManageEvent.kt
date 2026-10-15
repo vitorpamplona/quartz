@@ -21,11 +21,11 @@
 package com.vitorpamplona.quartz.experimental.clink.manage
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.experimental.clink.ClinkJson
 import com.vitorpamplona.quartz.experimental.clink.tags.ClinkVersionTag
 import com.vitorpamplona.quartz.experimental.clink.tags.clinkVersion
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -96,9 +96,9 @@ class ManageEvent(
         return signer.nip44Decrypt(content, peer)
     }
 
-    suspend fun decryptRequest(signer: NostrSigner): ManageRequest = OptimizedJsonMapper.fromJsonTo<ManageRequest>(decryptContent(signer))
+    suspend fun decryptRequest(signer: NostrSigner): ManageRequest = ClinkJson.fromJsonToManageRequest(decryptContent(signer))
 
-    suspend fun decryptResponse(signer: NostrSigner): ManageResponse = OptimizedJsonMapper.fromJsonTo<ManageResponse>(decryptContent(signer))
+    suspend fun decryptResponse(signer: NostrSigner): ManageResponse = ClinkJson.fromJsonToManageResponse(decryptContent(signer))
 
     companion object {
         const val KIND = 21003
@@ -110,7 +110,7 @@ class ManageEvent(
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
         ): ManageEvent {
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), serverPubKey)
+            val encrypted = signer.nip44Encrypt(ClinkJson.toJson(request), serverPubKey)
             return signer.sign(
                 eventTemplate(KIND, encrypted, createdAt) {
                     pTag(serverPubKey, null)
@@ -127,7 +127,7 @@ class ManageEvent(
             createdAt: Long = TimeUtils.now(),
         ): ManageEvent {
             val appPubKey = requestEvent.pubKey
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), appPubKey)
+            val encrypted = signer.nip44Encrypt(ClinkJson.toJson(response), appPubKey)
             return signer.sign(
                 eventTemplate(KIND, encrypted, createdAt) {
                     pTag(appPubKey, null)

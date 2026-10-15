@@ -20,8 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect.rpc
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
-
 object NwcNotificationType {
     const val PAYMENT_RECEIVED = "payment_received"
     const val PAYMENT_SENT = "payment_sent"
@@ -31,7 +29,7 @@ object NwcNotificationType {
 // NOTIFICATION OBJECTS
 abstract class Notification(
     val notification_type: String,
-) : OptimizedSerializable
+)
 
 // payment_received notification
 class PaymentReceivedNotification(

@@ -38,6 +38,8 @@ import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.hasZapSplitSetup
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
@@ -56,6 +58,11 @@ class ChatMessageEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kind 1 LAST among the explicit branches, defensively: a future
+    // kind extending the text-note base must hit its own branch first.
+    // kind 14 -- a NIP-14 subject names the conversation, the body is the message.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, subject(), null, content)
+
     // content is the decrypted (plaintext) direct-message body; the optional
     // NIP-14 subject (`changeSubject()`) names the conversation.
     override fun indexableContent() = listOfNotNull(subject(), content).joinToString("\n")

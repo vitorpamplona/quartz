@@ -49,6 +49,8 @@ import com.vitorpamplona.quartz.nip19Bech32.eventIds
 import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeysTo
@@ -68,6 +70,8 @@ class TextNoteEvent(
     PubKeyHintProvider,
     IForkableEvent,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, subject(), null, content)
+
     override fun indexableContent() = listOfNotNull(subject(), content).joinToString("\n")
 
     // The read path: hands over the same fields indexableContent() joins, without

@@ -33,6 +33,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import kotlinx.coroutines.CancellationException
 
@@ -69,6 +71,18 @@ class TeamCatalogEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 30178 -- the team and its members are what it is called; the
+    // instructions and member prompts are the body indexableContent() joins.
+    override fun indexableFields(): IndexableFields =
+        catalogOrNull()?.let { catalog ->
+            SearchFieldExtractor.tiers(
+                this,
+                listOf(catalog.name) + catalog.members.map { it.displayName },
+                listOf(catalog.description),
+                (listOf(catalog.instructions) + catalog.members.map { it.systemPrompt }).filterNotNull().joinToString("\n"),
+            )
+        } ?: SearchFieldExtractor.tiers(this, null, null, null)
+
     override fun indexableContent() =
         catalogOrNull()?.let { catalog ->
             buildList {

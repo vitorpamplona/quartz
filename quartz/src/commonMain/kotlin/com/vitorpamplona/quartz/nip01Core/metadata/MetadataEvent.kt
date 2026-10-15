@@ -52,6 +52,8 @@ import com.vitorpamplona.quartz.nip39ExtIdentities.mastodonClaim
 import com.vitorpamplona.quartz.nip39ExtIdentities.replaceClaims
 import com.vitorpamplona.quartz.nip39ExtIdentities.twitterClaim
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip68Picture.PictureMeta
 import com.vitorpamplona.quartz.utils.Log
@@ -121,6 +123,23 @@ class MetadataEvent(
         } ?: emptyList()
 
     override fun isContentEncoded() = true
+
+    // kind 0 -> the profile fields, each in its own role.
+    override fun indexableFields(): IndexableFields {
+        val md = contactMetaData()
+        return if (md == null) {
+            IndexableFields.Profile()
+        } else {
+            IndexableFields.Profile(
+                name = SearchFieldExtractor.clean(md.name),
+                displayName = SearchFieldExtractor.clean(md.displayName),
+                about = SearchFieldExtractor.clean(md.about),
+                nip05 = SearchFieldExtractor.clean(md.nip05),
+                lud16 = SearchFieldExtractor.clean(md.lud16),
+                website = SearchFieldExtractor.clean(md.website),
+            )
+        }
+    }
 
     // Profile content is JSON, so we parse it and index only the
     // human-meaningful fields: names, bio, plus the addresses people search

@@ -42,6 +42,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelNamespaceTag
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -65,6 +67,10 @@ class LabelEvent(
     PubKeyHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    // kind 1985 -- the label values are the keywords of the event;
+    // the reasoning, if any, is the body.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, emptyList(), labels().map { it.label }, content)
+
     override fun indexableContent() = (listOf(content) + labels().map { it.label }).filter { it.isNotEmpty() }.joinToString("\n")
 
     // The read path. Empty strings are skipped rather than visited: the joined form filters

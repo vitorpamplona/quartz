@@ -97,7 +97,13 @@ class TestWebSocketRelay(
             }
         embedded.start(wait = false)
         server = embedded
-        resolvedPort = runBlocking { embedded.engine.resolvedConnectors().first().port }
+        resolvedPort =
+            runBlocking {
+                embedded.engine
+                    .resolvedConnectors()
+                    .first()
+                    .port
+            }
         return this
     }
 

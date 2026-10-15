@@ -33,6 +33,8 @@ import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip71Video.credits.VideoCredits
 import com.vitorpamplona.quartz.nip71Video.tags.DurationTag
@@ -59,6 +61,8 @@ abstract class AddressableVideoEvent(
     EventHintProvider,
     AddressHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), segmentTitles(), content)
+
     // Chapter (`segment`) titles are publisher-written headings, searched like a title's words.
     override fun indexableContent() = (listOfNotNull(title(), content) + segmentTitles()).joinToString("\n")
 

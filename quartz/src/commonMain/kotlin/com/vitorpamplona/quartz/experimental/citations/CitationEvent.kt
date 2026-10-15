@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -60,6 +62,8 @@ abstract class CitationEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, kind, tags, content, sig),
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(summary(), author(), publishedBy()), content)
+
     // The bibliographic names (who wrote it, who published it) are how people look a source up,
     // so they ride after the citer's own text. Subclasses with more such fields override both.
     override fun indexableContent() = listOfNotNull(title(), summary(), content, author(), publishedBy()).joinToString("\n")

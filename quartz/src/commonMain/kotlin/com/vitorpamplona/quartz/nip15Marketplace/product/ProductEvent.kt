@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip15Marketplace.Nip15ParseFailed
 import com.vitorpamplona.quartz.nip15Marketplace.stall.StallEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -72,6 +74,11 @@ class ProductEvent(
      * the same merchant names its kind-30017 address.
      */
     fun stallAddress(): Address? = productData()?.stallId?.let { Address(StallEvent.KIND, pubKey, it) }
+
+    // ProductEvent.categories() is `t` under another name, so the
+    // funnel already carries it in the hashtag role -- passing it
+    // again would index the same words twice.
+    override fun indexableFields(): IndexableFields = productData()?.let { SearchFieldExtractor.tiers(this, it.name, it.description, null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = productData()?.let { (listOfNotNull(it.name, it.description) + categories()).joinToString("\n") } ?: ""
 

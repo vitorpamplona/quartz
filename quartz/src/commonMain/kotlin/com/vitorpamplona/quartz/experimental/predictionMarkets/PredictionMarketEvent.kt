@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -64,6 +66,18 @@ class PredictionMarketEvent(
     private val dataDetails by lazy { PredictionMarketDetails.parse(tags.marketData()) }
 
     private val contentDetails by lazy { PredictionMarketDetails.parse(content) }
+
+    // kind 38000 (BAO Markets) -- the question is the title, the
+    // outcome labels / resolution / cancel reason are short values
+    // matched whole, and the social post is the body only when no
+    // description supersedes it (see socialPost()).
+    override fun indexableFields(): IndexableFields =
+        SearchFieldExtractor.tiers(
+            this,
+            listOf(title()),
+            listOf(description()) + outcomes() + listOf(resolution(), cancelReason()),
+            socialPost(),
+        )
 
     // The question and its description, then each outcome label (poll-option style), the
     // resolution and the cancel reason. The social post in `content` is the fallback body only:

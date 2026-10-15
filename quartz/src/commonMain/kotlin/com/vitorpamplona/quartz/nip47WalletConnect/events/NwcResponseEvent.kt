@@ -23,13 +23,13 @@ package com.vitorpamplona.quartz.nip47WalletConnect.events
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip47WalletConnect.Nip47Json
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Response
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -67,7 +67,7 @@ class NwcResponseEvent(
         if (!canDecrypt(signer)) throw SignerExceptions.UnauthorizedDecryptionException()
 
         val json = signer.decrypt(content, talkingWith(signer.pubKey))
-        return OptimizedJsonMapper.fromJsonTo<Response>(json)
+        return Nip47Json.fromJsonToResponse(json)
     }
 
     companion object {
@@ -89,7 +89,7 @@ class NwcResponseEvent(
             useNip44: Boolean = false,
             createdAt: Long = TimeUtils.now(),
         ): NwcResponseEvent {
-            val serializedResponse = OptimizedJsonMapper.toJson(response)
+            val serializedResponse = Nip47Json.toJson(response)
 
             val clientPubkey = requestEvent.pubKey
 

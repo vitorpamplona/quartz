@@ -21,11 +21,11 @@
 package com.vitorpamplona.quartz.experimental.clink.offers
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.experimental.clink.ClinkJson
 import com.vitorpamplona.quartz.experimental.clink.tags.ClinkVersionTag
 import com.vitorpamplona.quartz.experimental.clink.tags.clinkVersion
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -98,11 +98,11 @@ class OfferEvent(
         return signer.nip44Decrypt(content, peer)
     }
 
-    suspend fun decryptRequest(signer: NostrSigner): OfferRequest = OptimizedJsonMapper.fromJsonTo<OfferRequest>(decryptContent(signer))
+    suspend fun decryptRequest(signer: NostrSigner): OfferRequest = ClinkJson.fromJsonToOfferRequest(decryptContent(signer))
 
-    suspend fun decryptResponse(signer: NostrSigner): OfferResponse = OptimizedJsonMapper.fromJsonTo<OfferResponse>(decryptContent(signer))
+    suspend fun decryptResponse(signer: NostrSigner): OfferResponse = ClinkJson.fromJsonToOfferResponse(decryptContent(signer))
 
-    suspend fun decryptReceipt(signer: NostrSigner): OfferReceipt = OptimizedJsonMapper.fromJsonTo<OfferReceipt>(decryptContent(signer))
+    suspend fun decryptReceipt(signer: NostrSigner): OfferReceipt = ClinkJson.fromJsonToOfferReceipt(decryptContent(signer))
 
     companion object {
         const val KIND = 21001
@@ -114,7 +114,7 @@ class OfferEvent(
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
         ): OfferEvent {
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), servicePubKey)
+            val encrypted = signer.nip44Encrypt(ClinkJson.toJson(request), servicePubKey)
             return signer.sign(
                 eventTemplate(KIND, encrypted, createdAt) {
                     pTag(servicePubKey, null)
@@ -131,7 +131,7 @@ class OfferEvent(
             createdAt: Long = TimeUtils.now(),
         ): OfferEvent {
             val payerPubKey = requestEvent.pubKey
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), payerPubKey)
+            val encrypted = signer.nip44Encrypt(ClinkJson.toJson(response), payerPubKey)
             return signer.sign(
                 eventTemplate(KIND, encrypted, createdAt) {
                     pTag(payerPubKey, null)
@@ -153,7 +153,7 @@ class OfferEvent(
             createdAt: Long = TimeUtils.now(),
         ): OfferEvent {
             val payerPubKey = requestEvent.pubKey
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(receipt), payerPubKey)
+            val encrypted = signer.nip44Encrypt(ClinkJson.toJson(receipt), payerPubKey)
             return signer.sign(
                 eventTemplate(KIND, encrypted, createdAt) {
                     pTag(payerPubKey, null)

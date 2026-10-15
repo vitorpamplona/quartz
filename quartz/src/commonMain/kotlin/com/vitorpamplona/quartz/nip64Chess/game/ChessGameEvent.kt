@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip64Chess.PgnSearchText
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -53,6 +55,11 @@ class ChessGameEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 64 -- a PGN's player/event/site/opening tag pairs are the
+    // names a game is found by; its {comments} are the prose. The move
+    // text is never indexed (see PgnSearchText).
+    override fun indexableFields(): IndexableFields = searchText().let { SearchFieldExtractor.tiers(this, it.headers, emptyList(), it.comments.joinToString("\n").ifEmpty { null }) }
+
     // A game is found by its players, event, site, opening and annotations -- the PGN's
     // natural-language parts -- never by its move text. See PgnSearchText.
     override fun indexableContent() = searchText().all().joinToString("\n")

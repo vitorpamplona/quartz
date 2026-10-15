@@ -42,6 +42,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -127,6 +129,10 @@ class BuildVerificationEvent(
         val registered = bundle.hashes()
         return registered.isNotEmpty() && verified.containsAll(registered)
     }
+
+    // kind 30301 (WalletScrutiny) -- the one-line description names what was reproduced;
+    // the markdown report is the body.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, description(), null, report())
 
     override fun indexableContent() = listOfNotNull(description(), report()).joinToString("\n")
 

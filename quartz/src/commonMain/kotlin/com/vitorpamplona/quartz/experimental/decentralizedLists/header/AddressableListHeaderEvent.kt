@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.experimental.decentralizedLists.header
 
+import com.vitorpamplona.quartz.experimental.decentralizedLists.decentralizedListIndexableFields
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.decentralizedLists.AddressableDecentralizedListEvent
 import com.vitorpamplona.quartz.experimental.decentralizedLists.description
@@ -74,6 +76,8 @@ class AddressableListHeaderEvent(
     override fun addressHints(): List<AddressHint> = emptyList()
 
     override fun linkedAddressIds(): List<String> = graphAddressIds()
+
+    override fun indexableFields(): IndexableFields = decentralizedListIndexableFields()
 
     override fun indexableContent() = tags.searchableListContent()
 

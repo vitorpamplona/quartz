@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -61,6 +63,10 @@ class Ps1SaveEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 38192 -- the save's title is a title; region and filename
+    // are the keywords beside it, like a torrent's file names.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(saveTitle()), listOf(summary(), region(), filename()), null)
+
     override fun indexableContent() = listOfNotNull(summary(), saveTitle(), region(), filename()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

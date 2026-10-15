@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /** A citation of something printed (kind 32): a book, a chapter, a journal paper. */
@@ -41,6 +43,18 @@ class HardcopyCitationEvent(
     content: String,
     sig: HexKey,
 ) : CitationEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
+    // kinds 31/32/33 -- what the source is called is the title band;
+    // the bibliographic names (author, editor, publisher, container,
+    // model) are the keywords beside the citer's summary; the
+    // citer's note is the body. Subclasses before the base.
+    override fun indexableFields(): IndexableFields =
+        SearchFieldExtractor.tiers(
+            this,
+            listOf(title(), chapterTitle()),
+            listOf(summary(), author(), editor(), publishedIn(), publishedBy()),
+            content,
+        )
+
     // A printed source is also found by its chapter, its editor and the work that contains it.
     override fun indexableContent() = listOfNotNull(title(), chapterTitle(), summary(), content, author(), editor(), publishedIn(), publishedBy()).joinToString("\n")
 

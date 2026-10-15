@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.tags.FiatAmountTag
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.tags.OrderStatus
@@ -47,6 +49,10 @@ class P2POrderEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 38383 -- an order is looked up by who is offering it;
+    // currency and payment methods are the keywords that qualify it.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(makerName()), listOf(currency()) + paymentMethods().orEmpty(), null)
+
     override fun indexableContent() = (listOfNotNull(makerName(), currency()) + paymentMethods().orEmpty()).joinToString(" ")
 
     // The read path: the same fields indexableContent() joins, without the join.

@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.experimental.clink.manage
 
 import com.vitorpamplona.quartz.experimental.clink.common.GfyDelta
 import com.vitorpamplona.quartz.experimental.clink.common.SatRange
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
 
 /**
  * The editable fields of a managed offer. `payer_data` is a list of field NAMES the offer
@@ -33,7 +32,7 @@ class OfferFields(
     var price_sats: Long? = null,
     var callback_url: String? = null,
     var payer_data: List<String>? = null,
-) : OptimizedSerializable
+)
 
 /**
  * The `offer` envelope on a Manage request: [id] identifies the target for update/get/delete,
@@ -42,7 +41,7 @@ class OfferFields(
 class ManageOffer(
     var id: String? = null,
     var fields: OfferFields? = null,
-) : OptimizedSerializable
+)
 
 /**
  * Decrypted request to a CLINK Manage service (kind 21003) for delegated offer CRUD.
@@ -57,7 +56,7 @@ class ManageRequest(
     var action: String? = null,
     var pointer: String? = null,
     var offer: ManageOffer? = null,
-) : OptimizedSerializable {
+) {
     companion object {
         const val RESOURCE_OFFER = "offer"
         const val ACTION_CREATE = "create"
@@ -76,7 +75,7 @@ class OfferData(
     var price_sats: Long? = null,
     var callback_url: String? = null,
     var payer_data: List<String>? = null,
-) : OptimizedSerializable
+)
 
 /**
  * Decrypted response from a CLINK Manage service. On success [res] is `"ok"` and [details]
@@ -98,7 +97,7 @@ class ManageResponse(
     var range: SatRange? = null,
     var retry_after: Long? = null,
     var delta: GfyDelta? = null,
-) : OptimizedSerializable {
+) {
     fun isOk(): Boolean = res == OK
 
     companion object {

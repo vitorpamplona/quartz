@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -45,6 +47,9 @@ class CreateGroupEvent(
     fun name() = tags.firstTagValue("name")
 
     fun about() = tags.firstTagValue("about")
+
+    // kind 9007 -- the create carries the same name/about pair (Buzz requires it).
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, name(), about(), null)
 
     // The same name/about pair the kind-9002 edit carries (Buzz requires them here).
     override fun indexableContent() = listOfNotNull(name(), about()).joinToString("\n")

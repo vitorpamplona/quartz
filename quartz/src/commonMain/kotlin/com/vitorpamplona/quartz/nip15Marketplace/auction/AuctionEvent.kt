@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip15Marketplace.Nip15ParseFailed
 import com.vitorpamplona.quartz.nip15Marketplace.stall.StallEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -75,6 +77,8 @@ class AuctionEvent(
      * the same merchant names its kind-30017 address.
      */
     fun stallAddress(): Address? = auctionData()?.stallId?.let { Address(StallEvent.KIND, pubKey, it) }
+
+    override fun indexableFields(): IndexableFields = auctionData()?.let { SearchFieldExtractor.tiers(this, it.name, it.description, null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = auctionData()?.let { (listOfNotNull(it.name, it.description) + tags.hashtags()).joinToString("\n") } ?: ""
 

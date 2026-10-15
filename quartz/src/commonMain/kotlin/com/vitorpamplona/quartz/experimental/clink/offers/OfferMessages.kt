@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.experimental.clink.offers
 
 import com.vitorpamplona.quartz.experimental.clink.common.SatRange
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
 
 /**
  * Decrypted request payload sent to a CLINK Offers service (kind 21001) to obtain a
@@ -35,7 +34,7 @@ class OfferRequest(
     var zap: String? = null,
     var expires_in_seconds: Long? = null,
     var description: String? = null,
-) : OptimizedSerializable
+)
 
 /**
  * Decrypted response from a CLINK Offers service. Either an invoice ([bolt11] set) or
@@ -48,7 +47,7 @@ class OfferResponse(
     var code: Int? = null,
     var range: SatRange? = null,
     var latest: String? = null,
-) : OptimizedSerializable {
+) {
     fun isSuccess(): Boolean = bolt11 != null
 }
 
@@ -60,7 +59,7 @@ class OfferResponse(
 class OfferReceipt(
     var res: String? = null,
     var preimage: String? = null,
-) : OptimizedSerializable {
+) {
     fun isOk(): Boolean = res == OK
 
     companion object {

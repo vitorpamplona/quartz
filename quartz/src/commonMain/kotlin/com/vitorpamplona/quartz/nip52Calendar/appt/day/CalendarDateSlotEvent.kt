@@ -37,6 +37,8 @@ import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip52Calendar.appt.tags.LocationTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -54,6 +56,8 @@ class CalendarDateSlotEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), summary(), content)
+
     // The free-text `location` names and the `t` topics are how people look an event
     // up ("meetup Lisbon", "#bitcoin"), so they follow the body, as kind 1111 does.
     override fun indexableContent() = (listOfNotNull(title(), summary(), content) + locations() + hashtags()).joinToString("\n")

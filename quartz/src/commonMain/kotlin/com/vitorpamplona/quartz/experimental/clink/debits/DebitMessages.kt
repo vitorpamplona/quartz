@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.experimental.clink.debits
 
 import com.vitorpamplona.quartz.experimental.clink.common.GfyDelta
 import com.vitorpamplona.quartz.experimental.clink.common.SatRange
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
 
 /**
  * Decrypted request to a CLINK Debits service (kind 21002). Two shapes:
@@ -36,13 +35,13 @@ class DebitRequest(
     var description: String? = null,
     var k1: String? = null,
     var frequency: DebitFrequency? = null,
-) : OptimizedSerializable
+)
 
 /** Recurring-budget cadence; [unit] is one of [UNIT_DAY], [UNIT_WEEK], [UNIT_MONTH]. */
 class DebitFrequency(
     var number: Int? = null,
     var unit: String? = null,
-) : OptimizedSerializable {
+) {
     companion object {
         const val UNIT_DAY = "day"
         const val UNIT_WEEK = "week"
@@ -67,7 +66,7 @@ class DebitResponse(
     var range: SatRange? = null,
     var retry_after: Long? = null,
     var delta: GfyDelta? = null,
-) : OptimizedSerializable {
+) {
     fun isOk(): Boolean = res == OK
 
     /**

@@ -35,6 +35,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip51Lists.tags.ImageTag
@@ -60,6 +62,9 @@ class AcceptedBadgeSetEvent(
     AddressHintProvider,
     PubKeyHintProvider,
     SearchableEvent {
+    // kind 30008 -- a general badge set's NIP-51 title and description.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null)
+
     // A general badge set's NIP-51 title and description; the badge pairs are ids.
     override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
 

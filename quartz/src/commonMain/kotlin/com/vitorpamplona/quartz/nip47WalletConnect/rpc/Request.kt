@@ -20,8 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect.rpc
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
-
 /**
  * A request parameter block carrying NIP-47's optional `metadata`, whose keys
  * NWC-06 defines.
@@ -38,7 +36,7 @@ interface MetadataCarrying {
 // REQUEST OBJECTS
 sealed class Request(
     var method: String? = null,
-) : OptimizedSerializable {
+) {
     /**
      * This request's NWC-06 metadata carrier, or null for a method that has none.
      *

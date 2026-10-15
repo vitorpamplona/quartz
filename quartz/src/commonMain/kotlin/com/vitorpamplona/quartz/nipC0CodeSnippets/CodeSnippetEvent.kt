@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip19Bech32.toAddressHint
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nipC0CodeSnippets.tags.RepoTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -65,6 +67,17 @@ class CodeSnippetEvent(
     override fun addressHints(): List<AddressHint> = addressHintsCache ?: tags.mapNotNull(RepoTag::parseNAddress).flatMap { it.toAddressHint() }.also { addressHintsCache = it }
 
     override fun linkedAddressIds(): List<String> = linkedAddressIdsCache ?: tags.mapNotNull(RepoTag::parseAddressId).also { linkedAddressIdsCache = it }
+
+    // Code snippets are searched by language/runtime as much as name —
+    // fold those keywords into the secondary tier, repo as affiliation.
+    override fun indexableFields(): IndexableFields =
+        SearchFieldExtractor.tiers(
+            this,
+            listOf(snippetName()),
+            listOf(snippetDescription(), language(), extension(), runtime()),
+            content,
+            websites = listOf(repo()),
+        )
 
     override fun indexableContent() = listOfNotNull(snippetName(), snippetDescription(), content).joinToString("\n")
 

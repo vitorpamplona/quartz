@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.mapValueTagged
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -58,6 +60,12 @@ class BirdexEvent(
     sig: HexKey,
 ) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 12473 is a life LIST, not a sighting: its species names are
+    // an unbounded collection, so they sit in the secondary tier with
+    // a torrent's file names rather than claiming the title band once
+    // per bird.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, emptyList(), listOf(summary()) + speciesNames(), null)
+
     override fun indexableContent() = (listOfNotNull(summary()) + speciesNames()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, without the join.

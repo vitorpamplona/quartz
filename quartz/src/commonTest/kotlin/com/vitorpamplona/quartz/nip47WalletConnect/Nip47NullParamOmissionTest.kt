@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.kotlinSerialization.Nip47RequestKSerializer
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CancelHoldInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CreateConnectionMethod
@@ -89,7 +88,7 @@ class Nip47NullParamOmissionTest {
     @Test
     fun noRequestEverSendsANullParam() {
         requests.forEach { (name, request) ->
-            val json = OptimizedJsonMapper.toJson(request)
+            val json = Nip47Json.toJson(request)
             val params = Json.parseToJsonElement(json).jsonObject["params"] as? JsonObject
 
             // RECURSIVE: `tlv_records` holds objects with optional fields of their own,
@@ -122,7 +121,7 @@ class Nip47NullParamOmissionTest {
      */
     @Test
     fun listTransactionsCarriesOnlyWhatWasAsked() {
-        val json = OptimizedJsonMapper.toJson(ListTransactionsMethod.create(limit = 20, offset = 0, unpaid = false))
+        val json = Nip47Json.toJson(ListTransactionsMethod.create(limit = 20, offset = 0, unpaid = false))
         val params = assertNotNull(Json.parseToJsonElement(json).jsonObject["params"], "no params in $json").jsonObject
 
         assertEquals(setOf("limit", "offset", "unpaid"), params.keys, "unexpected keys in $json")
@@ -135,7 +134,7 @@ class Nip47NullParamOmissionTest {
     @Test
     fun bothBackendsProduceTheSameDocument() {
         requests.forEach { (name, request) ->
-            val viaJackson = Json.parseToJsonElement(OptimizedJsonMapper.toJson(request)).jsonObject
+            val viaJackson = Json.parseToJsonElement(Nip47Json.toJson(request)).jsonObject
             val viaKotlinx = Json.parseToJsonElement(Json.encodeToString(Nip47RequestKSerializer, request)).jsonObject
 
             assertEquals(viaKotlinx, viaJackson, "$name differs between backends")

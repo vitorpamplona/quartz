@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -48,6 +50,8 @@ class PromptCitationEvent(
 ) : CitationEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
     /** The model that was prompted, as named by the citer. */
     fun llm() = value(CitationTags.LLM)
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(summary(), author(), publishedBy(), llm()), content)
 
     // The model's name is how a prompt citation is looked up ("which ones asked Claude?").
     override fun indexableContent() = listOfNotNull(title(), summary(), content, author(), publishedBy(), llm()).joinToString("\n")

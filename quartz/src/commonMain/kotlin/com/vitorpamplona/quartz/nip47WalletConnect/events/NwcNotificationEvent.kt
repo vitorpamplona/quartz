@@ -23,11 +23,11 @@ package com.vitorpamplona.quartz.nip47WalletConnect.events
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip47WalletConnect.Nip47Json
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Notification
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -57,7 +57,7 @@ class NwcNotificationEvent(
     suspend fun decryptNotification(signer: NostrSigner): Notification {
         if (!canDecrypt(signer)) throw SignerExceptions.UnauthorizedDecryptionException()
         val jsonText = signer.decrypt(content, talkingWith(signer.pubKey))
-        return OptimizedJsonMapper.fromJsonTo<Notification>(jsonText)
+        return Nip47Json.fromJsonToNotification(jsonText)
     }
 
     companion object {
@@ -79,7 +79,7 @@ class NwcNotificationEvent(
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
         ): NwcNotificationEvent {
-            val serialized = OptimizedJsonMapper.toJson(notification)
+            val serialized = Nip47Json.toJson(notification)
 
             val tags =
                 arrayOf(

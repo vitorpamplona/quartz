@@ -20,6 +20,4 @@
  */
 package com.vitorpamplona.quartz.nip46RemoteSigner
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
-
-abstract class BunkerMessage : OptimizedSerializable
+abstract class BunkerMessage

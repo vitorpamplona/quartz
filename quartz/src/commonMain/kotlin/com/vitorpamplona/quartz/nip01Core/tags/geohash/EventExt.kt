@@ -21,8 +21,6 @@
 package com.vitorpamplona.quartz.nip01Core.tags.geohash
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip22Comments.CommentEvent
-import com.vitorpamplona.quartz.nip73ExternalIds.location.geohashedScope
 
 fun Event.hasGeohashes() = tags.hasGeohashes()
 
@@ -33,10 +31,3 @@ fun Event.isTaggedGeoHash(hashtag: String) = tags.isTaggedGeoHash(hashtag)
 fun Event.geohashes() = tags.geohashes()
 
 fun Event.getGeoHash(): String? = tags.getGeoHash()
-
-fun Event.geoHashOrScope() =
-    if (this is CommentEvent) {
-        geohashedScope()
-    } else {
-        tags.getGeoHash()
-    }

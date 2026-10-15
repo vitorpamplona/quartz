@@ -42,6 +42,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.uuid.ExperimentalUuidApi
@@ -95,6 +97,8 @@ class MusicPlaylistEvent(
             val address = ATag.parseAddress(tag) ?: return@mapNotNull null
             if (address.kind == MusicTrackEvent.KIND) address else null
         }
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), content)
 
     override fun indexableContent(): String = listOfNotNull(title(), description(), content).joinToString("\n")
 

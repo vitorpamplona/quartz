@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
 import com.vitorpamplona.quartz.testing.relay.InMemoryRelay
 import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
+import com.vitorpamplona.quartz.testing.relay.TestWebSocketRelay
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request

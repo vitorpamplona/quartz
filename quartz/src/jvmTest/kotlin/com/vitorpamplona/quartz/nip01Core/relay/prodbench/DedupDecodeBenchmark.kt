@@ -20,9 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
-import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
+import com.vitorpamplona.quartz.testing.relay.SyntheticEvents
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip46RemoteSigner.signer
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerJson
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.NostrConnectEvent
@@ -53,7 +53,7 @@ class RemoteSignerManager(
 
     suspend fun newResponse(responseEvent: NostrConnectEvent) {
         val decryptedJson = signer.decrypt(responseEvent.content, remoteKey)
-        val bunkerResponse = OptimizedJsonMapper.fromJsonTo<BunkerResponse>(decryptedJson)
+        val bunkerResponse = BunkerJson.fromJsonToResponse(decryptedJson)
 
         // Peek (don't remove): a request may receive an `auth_url` challenge
         // followed by the real response under the same id. The waiting

@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip29RelayGroups.GroupChatTimelineContent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -53,7 +54,8 @@ class SystemMessageEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     PubKeyHintProvider,
-    EventHintProvider {
+    EventHintProvider,
+    GroupChatTimelineContent {
     override fun indexableContent() = payload()?.let { listOfNotNull(it.topic, it.purpose, it.publicReason).joinToString("\n") } ?: ""
 
     // The read path. The parse happens once; fields are handed over in indexableContent() order.

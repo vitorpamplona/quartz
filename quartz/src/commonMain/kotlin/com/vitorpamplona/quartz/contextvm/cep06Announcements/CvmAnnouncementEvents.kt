@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.contextvm.core.CvmTags
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -70,6 +72,10 @@ class CvmServerAnnouncementEvent(
 
     // Same first-match rule as DiscoverySurface.parse, without building the whole surface.
     private fun tagValue(name: String): String? = tags.firstOrNull { it.size >= 2 && it[0] == name }?.get(1)
+
+    // kind 11316 -- a ContextVM server's name and blurb; the content
+    // is the MCP initialize result (machine JSON) and stays out.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, serverName(), about(), null)
 
     /**
      * The server's name and blurb -- the only human-authored text it publishes. The

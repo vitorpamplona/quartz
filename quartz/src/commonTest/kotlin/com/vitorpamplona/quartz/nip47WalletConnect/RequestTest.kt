@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CancelHoldInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.CreateConnectionMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.GetBalanceMethod
@@ -35,7 +34,6 @@ import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayKeysendMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.ReceiveMethod
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SettleHoldInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.SignMessageMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.TlvRecord
@@ -69,7 +67,7 @@ class RequestTest {
     @Test
     fun testPayInvoiceSerialization() {
         val request = PayInvoiceMethod.create("lnbc50n1...")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"pay_invoice\""))
         assertTrue(json.contains("\"invoice\":\"lnbc50n1...\""))
     }
@@ -77,7 +75,7 @@ class RequestTest {
     @Test
     fun testPayInvoiceDeserialization() {
         val json = """{"method":"pay_invoice","params":{"invoice":"lnbc50n1..."}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayInvoiceMethod>(request)
         assertEquals("lnbc50n1...", request.params?.invoice)
     }
@@ -85,7 +83,7 @@ class RequestTest {
     @Test
     fun testPayInvoiceWithAmountDeserialization() {
         val json = """{"method":"pay_invoice","params":{"invoice":"lnbc50n1...","amount":1000}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayInvoiceMethod>(request)
         assertEquals("lnbc50n1...", request.params?.invoice)
         assertEquals(1000L, request.params?.amount)
@@ -105,7 +103,7 @@ class RequestTest {
     @Test
     fun testPaySerialization() {
         val request = PayMethod.create("bitcoin:?lno=lno1abc", amount = 21_000L, payerNote = "nostr:nipB1:deadbeef")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"pay\""))
         assertTrue(json.contains("\"payment\":\"bitcoin:?lno=lno1abc\""))
         assertTrue(json.contains("\"amount\":21000"))
@@ -115,7 +113,7 @@ class RequestTest {
     @Test
     fun testPayDeserialization() {
         val json = """{"method":"pay","params":{"payment":"bitcoin:?lno=lno1abc","amount":21000,"payer_note":"nostr:nipB1:deadbeef"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayMethod>(request)
         assertEquals("bitcoin:?lno=lno1abc", request.params?.payment)
         assertEquals(21_000L, request.params?.amount)
@@ -125,7 +123,7 @@ class RequestTest {
     @Test
     fun testPayAmountlessDeserialization() {
         val json = """{"method":"pay","params":{"payment":"bitcoin:?lno=lno1abc"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayMethod>(request)
         assertEquals("bitcoin:?lno=lno1abc", request.params?.payment)
         assertNull(request.params?.amount)
@@ -137,7 +135,7 @@ class RequestTest {
     @Test
     fun testReceiveSerialization() {
         val request = ReceiveMethod.create(amount = 21_000L, description = "tip jar")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"receive\""))
         assertTrue(json.contains("\"amount\":21000"))
         assertTrue(json.contains("\"description\":\"tip jar\""))
@@ -146,7 +144,7 @@ class RequestTest {
     @Test
     fun testReceiveDeserialization() {
         val json = """{"method":"receive","params":{"amount":21000,"description":"tip jar"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<ReceiveMethod>(request)
         assertEquals(21_000L, request.params?.amount)
         assertEquals("tip jar", request.params?.description)
@@ -192,7 +190,7 @@ class RequestTest {
     @Test
     fun testPayKeysendSerialization() {
         val request = PayKeysendMethod.create(1000L, "pubkey123")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"pay_keysend\""))
         assertTrue(json.contains("\"amount\":1000"))
         assertTrue(json.contains("\"pubkey\":\"pubkey123\""))
@@ -201,7 +199,7 @@ class RequestTest {
     @Test
     fun testPayKeysendDeserialization() {
         val json = """{"method":"pay_keysend","params":{"amount":1000,"pubkey":"pubkey123"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<PayKeysendMethod>(request)
         assertEquals(1000L, request.params?.amount)
         assertEquals("pubkey123", request.params?.pubkey)
@@ -222,7 +220,7 @@ class RequestTest {
     @Test
     fun testMakeInvoiceSerialization() {
         val request = MakeInvoiceMethod.create(5000L, "test")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"make_invoice\""))
         assertTrue(json.contains("\"amount\":5000"))
     }
@@ -230,7 +228,7 @@ class RequestTest {
     @Test
     fun testMakeInvoiceDeserialization() {
         val json = """{"method":"make_invoice","params":{"amount":5000,"description":"test","expiry":3600}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<MakeInvoiceMethod>(request)
         assertEquals(5000L, request.params?.amount)
         assertEquals("test", request.params?.description)
@@ -258,7 +256,7 @@ class RequestTest {
     @Test
     fun testLookupInvoiceDeserialization() {
         val json = """{"method":"lookup_invoice","params":{"payment_hash":"abc123"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<LookupInvoiceMethod>(request)
         assertEquals("abc123", request.params?.payment_hash)
     }
@@ -280,7 +278,7 @@ class RequestTest {
     @Test
     fun testListTransactionsDeserialization() {
         val json = """{"method":"list_transactions","params":{"from":1000,"until":2000,"limit":10}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<ListTransactionsMethod>(request)
         assertEquals(1000L, request.params?.from)
         assertEquals(2000L, request.params?.until)
@@ -301,14 +299,14 @@ class RequestTest {
     @Test
     fun testGetBalanceSerialization() {
         val request = GetBalanceMethod.create()
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"get_balance\""))
     }
 
     @Test
     fun testGetBalanceDeserialization() {
         val json = """{"method":"get_balance"}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<GetBalanceMethod>(request)
     }
 
@@ -323,7 +321,7 @@ class RequestTest {
     @Test
     fun testGetInfoDeserialization() {
         val json = """{"method":"get_info"}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<GetInfoMethod>(request)
     }
 
@@ -343,7 +341,7 @@ class RequestTest {
     @Test
     fun testMakeHoldInvoiceDeserialization() {
         val json = """{"method":"make_hold_invoice","params":{"amount":10000,"payment_hash":"abc","description":"test"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<MakeHoldInvoiceMethod>(request)
         assertEquals(10000L, request.params?.amount)
         assertEquals("abc", request.params?.payment_hash)
@@ -361,7 +359,7 @@ class RequestTest {
     @Test
     fun testCancelHoldInvoiceDeserialization() {
         val json = """{"method":"cancel_hold_invoice","params":{"payment_hash":"abc123"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<CancelHoldInvoiceMethod>(request)
         assertEquals("abc123", request.params?.payment_hash)
     }
@@ -378,7 +376,7 @@ class RequestTest {
     @Test
     fun testSettleHoldInvoiceDeserialization() {
         val json = """{"method":"settle_hold_invoice","params":{"preimage":"preimage_xyz"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<SettleHoldInvoiceMethod>(request)
         assertEquals("preimage_xyz", request.params?.preimage)
     }
@@ -394,14 +392,14 @@ class RequestTest {
     @Test
     fun testGetBudgetSerialization() {
         val request = GetBudgetMethod.create()
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"get_budget\""))
     }
 
     @Test
     fun testGetBudgetDeserialization() {
         val json = """{"method":"get_budget"}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<GetBudgetMethod>(request)
     }
 
@@ -417,7 +415,7 @@ class RequestTest {
     @Test
     fun testSignMessageSerialization() {
         val request = SignMessageMethod.create("test message")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"sign_message\""))
         assertTrue(json.contains("\"message\":\"test message\""))
     }
@@ -425,7 +423,7 @@ class RequestTest {
     @Test
     fun testSignMessageDeserialization() {
         val json = """{"method":"sign_message","params":{"message":"Hello Nostr"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<SignMessageMethod>(request)
         assertEquals("Hello Nostr", request.params?.message)
     }
@@ -455,7 +453,7 @@ class RequestTest {
     @Test
     fun testCreateConnectionSerialization() {
         val request = CreateConnectionMethod.create(pubkey = "abc123", name = "My App")
-        val json = OptimizedJsonMapper.toJson(request)
+        val json = Nip47Json.toJson(request)
         assertTrue(json.contains("\"method\":\"create_connection\""))
         assertTrue(json.contains("\"pubkey\":\"abc123\""))
         assertTrue(json.contains("\"name\":\"My App\""))
@@ -465,7 +463,7 @@ class RequestTest {
     fun testCreateConnectionDeserialization() {
         val json =
             """{"method":"create_connection","params":{"pubkey":"abc123","name":"Test App","request_methods":["pay_invoice"],"max_amount":50000,"budget_renewal":"monthly"}}"""
-        val request = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val request = Nip47Json.fromJsonToRequest(json)
         assertIs<CreateConnectionMethod>(request)
         assertEquals("abc123", request.params?.pubkey)
         assertEquals("Test App", request.params?.name)
@@ -480,7 +478,7 @@ class RequestTest {
     fun testUnknownMethodReturnsNull() {
         val json = """{"method":"unknown_method","params":{}}"""
         assertFailsWith<IllegalArgumentException> {
-            OptimizedJsonMapper.fromJsonTo<Request>(json)
+            Nip47Json.fromJsonToRequest(json)
         }
     }
 }

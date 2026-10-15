@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.BlurhashTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.DimensionTag
@@ -63,6 +65,8 @@ class ProfileGalleryEntryEvent(
 
     // An entry comes from one source event, so [fromEvent] is the only link.
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(fromEvent())
+
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, null, summary(), null)
 
     // Only the optional summary caption is indexed; this event is otherwise a
     // url/hash pointer with no natural-language body (content is empty).

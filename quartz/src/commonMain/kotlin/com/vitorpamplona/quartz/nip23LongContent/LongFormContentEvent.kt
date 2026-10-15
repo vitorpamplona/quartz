@@ -38,6 +38,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.publishedAt.PublishedAtProvider
 import com.vitorpamplona.quartz.nip10Notes.BaseThreadedEvent
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.uuid.ExperimentalUuidApi
@@ -59,6 +61,8 @@ class LongFormContentEvent(
     PublishedAtProvider,
     RootScope,
     SearchableEvent {
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), summary(), content)
+
     // Topics (`t`) are appended after the body, as CommentEvent does: authors pick
     // topics that the article text does not necessarily mention. Shared with the draft (30024).
     override fun indexableContent() = tags.longFormIndexableContent(content)

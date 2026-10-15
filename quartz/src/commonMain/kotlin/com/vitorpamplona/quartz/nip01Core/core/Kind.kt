@@ -21,14 +21,16 @@
 package com.vitorpamplona.quartz.nip01Core.core
 
 import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
-import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 
 typealias Kind = Int
 
-fun Kind.isRegular() = this > 0 && this < 10_000 && this != ContactListEvent.KIND
+// NIP-02 follow lists are replaceable despite their kind number sitting in the regular range.
+private const val CONTACT_LIST_KIND = 3
+
+fun Kind.isRegular() = this > 0 && this < 10_000 && this != CONTACT_LIST_KIND
 
 fun Kind.isEphemeral() = this >= 20_000 && this < 30_000
 
-fun Kind.isReplaceable() = this == MetadataEvent.KIND || this == ContactListEvent.KIND || (this >= 10_000 && this < 20_000)
+fun Kind.isReplaceable() = this == MetadataEvent.KIND || this == CONTACT_LIST_KIND || (this >= 10_000 && this < 20_000)
 
 fun Kind.isAddressable() = this >= 30_000 && this < 40_000

@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip46RemoteSigner.signer
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.EmptyNostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
@@ -32,7 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
+import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerJson
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestPing
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePong
@@ -61,7 +60,7 @@ class RemoteSignerManagerRetryTest {
 
     private suspend fun decodeRequestId(event: Event): String {
         val plaintext = bunkerSigner.decrypt(event.content, event.pubKey)
-        val request = OptimizedJsonMapper.fromJsonTo<BunkerRequest>(plaintext)
+        val request = BunkerJson.fromJsonToRequest(plaintext)
         return request.id
     }
 
@@ -85,7 +84,7 @@ class RemoteSignerManagerRetryTest {
     @Test
     fun authUrlResponseKeepsBothResultAndError() {
         val json = """{"id":"abc","result":"auth_url","error":"https://signer.example/auth?x=1"}"""
-        val resp = OptimizedJsonMapper.fromJsonTo<BunkerResponse>(json)
+        val resp = BunkerJson.fromJsonToResponse(json)
         // Must NOT be flattened into a plain error — the auth_url marker has to survive.
         assertEquals(BunkerResponse.RESULT_AUTH_URL, resp.result)
         assertEquals("https://signer.example/auth?x=1", resp.error)

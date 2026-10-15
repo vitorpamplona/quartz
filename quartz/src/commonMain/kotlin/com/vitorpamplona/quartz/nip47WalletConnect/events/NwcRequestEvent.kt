@@ -23,11 +23,11 @@ package com.vitorpamplona.quartz.nip47WalletConnect.events
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip47WalletConnect.Nip47Json
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -58,7 +58,7 @@ class NwcRequestEvent(
     suspend fun decryptRequest(signer: NostrSigner): Request {
         if (!canDecrypt(signer)) throw SignerExceptions.UnauthorizedDecryptionException()
         val jsonText = signer.decrypt(content, talkingWith(signer.pubKey))
-        return OptimizedJsonMapper.fromJsonTo<Request>(jsonText)
+        return Nip47Json.fromJsonToRequest(jsonText)
     }
 
     fun encryptionScheme() = tags.firstOrNull { it.size > 1 && it[0] == "encryption" }?.get(1)
@@ -88,7 +88,7 @@ class NwcRequestEvent(
             createdAt: Long = TimeUtils.now(),
             useNip44: Boolean = false,
         ): NwcRequestEvent {
-            val serializedRequest = OptimizedJsonMapper.toJson(request)
+            val serializedRequest = Nip47Json.toJson(request)
 
             val tags =
                 if (useNip44) {

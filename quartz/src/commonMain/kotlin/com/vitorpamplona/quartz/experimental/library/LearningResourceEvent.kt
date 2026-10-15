@@ -37,6 +37,8 @@ import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
@@ -60,6 +62,17 @@ class LearningResourceEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 30142 -- both vocabularies' names are titles; descriptions,
+    // the author and the facet labels (subjects, types, levels) are
+    // the keywords that qualify it.
+    override fun indexableFields(): IndexableFields =
+        SearchFieldExtractor.tiers(
+            this,
+            listOf(title(), alternateTitle()),
+            listOf(summary(), alternateSummary(), author()) + facetLabels(),
+            content,
+        )
+
     // Both vocabularies' names and descriptions (see [title]), who made it, and the facet labels
     // (subjects, resource types, levels) a reader would search by, in one language.
     override fun indexableContent() = (listOfNotNull(title(), alternateTitle(), summary(), alternateSummary(), content, author()) + facetLabels()).joinToString("\n")

@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip31Alts.AltTag
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags.AudioTag
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags.ChaptersTag
@@ -79,6 +81,14 @@ class Podcasting20EpisodeEvent(
     RootScope,
     EventHintProvider,
     SearchableEvent {
+    // kinds 30054/30055 -- the Podcasting 2.0 pair carries the same
+    // title/description shape kind 54 does and was falling through:
+    // an episode title indexed as body text. topics() is hashtags()
+    // under another name, so the funnel carries it once. Host/guest
+    // names and soundbite titles are short keywords beside the
+    // description, like a music track's artist and album.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(description()) + personNames() + soundbiteTitles(), content)
+
     // Hosts and guests are searched by name, and a soundbite's title is a human
     // headline for the moment it clips; both sit between the body and the topics.
     override fun indexableContent() = (listOfNotNull(title(), description(), content) + personNames() + soundbiteTitles() + topics()).joinToString("\n")

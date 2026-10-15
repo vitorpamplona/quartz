@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip13Pow.hasPoWTag
 import com.vitorpamplona.quartz.nip13Pow.miner.PoWRankEvaluator
 import com.vitorpamplona.quartz.nip13Pow.tags.PoWTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
 /**
@@ -65,6 +67,10 @@ class SnoAvatarEvent(
 
     /** The `name` tag: the shape's name for humans. */
     fun nameTag(): String? = tags.firstOrNull { it.size > 1 && it[0] == "name" }?.get(1)
+
+    // kinds 11333/33331 -- the `name` tag is the shape's only human
+    // text; the content is SNO geometry JSON.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, nameTag(), null, null)
 
     /** The `name` tag is the only human text; the content is SNO geometry JSON and stays out. */
     override fun indexableContent() = nameTag().orEmpty()

@@ -33,6 +33,8 @@ import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -47,6 +49,10 @@ class WebBookmarkEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     RootScope,
     SearchableEvent {
+    // A web bookmark IS its URL — route it to the affiliation website
+    // field so the bookmark is findable by its domain.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, title(), description(), null, website = url())
+
     // The `t` tags are the labels the user filed the bookmark under.
     override fun indexableContent() = (listOfNotNull(title(), description()) + hashtags()).joinToString("\n")
 

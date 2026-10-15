@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip15Marketplace.Nip15ParseFailed
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -64,6 +66,13 @@ class StallEvent(
      * scores, shop listings in other shapes); without a name there is nothing to show as a stall.
      */
     fun isWellFormed() = stallData()?.name != null
+
+    // NIP-15 kinds 30017/30018/30019/30020 -- the marketplace family
+    // keeps its name and description inside a JSON `content` blob, so
+    // the fallback dropped a stall/product/auction NAME into the body
+    // tier, where a title can never reach the title band. Decoding
+    // failures still reach the funnel, as they do for the buzz kinds.
+    override fun indexableFields(): IndexableFields = stallData()?.let { SearchFieldExtractor.tiers(this, it.name, it.description, null) } ?: SearchFieldExtractor.tiers(this, null, null, null)
 
     override fun indexableContent() = stallData()?.let { listOfNotNull(it.name, it.description).joinToString("\n") } ?: ""
 

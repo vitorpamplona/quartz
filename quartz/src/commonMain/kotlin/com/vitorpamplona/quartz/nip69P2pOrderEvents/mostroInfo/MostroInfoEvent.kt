@@ -31,6 +31,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.instanceName
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo.tags.EscrowModeTag
@@ -74,6 +76,10 @@ class MostroInfoEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
     PubKeyHintProvider {
+    // kind 38385 -- a Mostro instance is looked up by its name; the currencies it
+    // trades are the keywords that qualify it, as on an order.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(instanceName()), fiatCurrenciesAccepted().orEmpty(), null)
+
     override fun indexableContent() = (listOfNotNull(instanceName()) + fiatCurrenciesAccepted().orEmpty()).joinToString(" ")
 
     // The read path: the same fields indexableContent() joins, without the join.

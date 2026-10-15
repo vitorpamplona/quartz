@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.emojis
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
@@ -49,6 +51,10 @@ class EmojiPackEvent(
     sig: HexKey,
 ) : PrivateTagArrayEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 30030 -- `content` is NIP-44 ciphertext (private emoji tags),
+    // never indexed; the public shortcodes are keywords beside the description.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(titleOrName()), listOf(description()) + publicEmojiCodes(), null)
+
     // `content` is NOT indexed: as a PrivateTagArrayEvent it holds the NIP-44
     // ciphertext of the private emoji tags. The public `emoji` shortcodes are
     // what a pack is searched by instead.

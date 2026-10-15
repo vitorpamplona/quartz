@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.pack.EmojiPackEvent
 import com.vitorpamplona.quartz.nip30CustomEmoji.stickers.tags.StickerTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.uuid.ExperimentalUuidApi
@@ -61,6 +63,10 @@ class StickerPackEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
+    // kind 30031 -- the pack's name is the title; its description and every
+    // sticker shortcode are what a picker search matches. Never the content.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), listOf(description()) + stickers().map { it.code }, null)
+
     override fun indexableContent() = (listOfNotNull(title(), description()) + stickers().map { it.code }).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

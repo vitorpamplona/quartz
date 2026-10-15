@@ -55,6 +55,8 @@ import com.vitorpamplona.quartz.nip35Torrents.tags.InfoHashTag
 import com.vitorpamplona.quartz.nip35Torrents.tags.TrackerTag
 import com.vitorpamplona.quartz.nip36SensitiveContent.contentWarning
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.UrlEncoder
@@ -72,6 +74,10 @@ class TorrentEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider {
+    // Torrents are searched by FILE NAME above all — index the file
+    // list into the secondary tier, trackers as the affiliation URL.
+    override fun indexableFields(): IndexableFields = SearchFieldExtractor.tiers(this, listOf(title()), files().map { it.fileName }, content, websites = trackers())
+
     // Torrents are searched by file name as much as by title: each file path
     // follows the description on its own line.
     override fun indexableContent() = (listOfNotNull(title(), content) + fileNames()).joinToString("\n")

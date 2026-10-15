@@ -21,12 +21,10 @@
 package com.vitorpamplona.quartz.nip47WalletConnect
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip47WalletConnect.events.NwcInfoEvent
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcTransaction
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.NwcTransactionMetadata
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceMethod
-import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
 import com.vitorpamplona.quartz.nip47WalletConnect.tags.ExtensionsTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,7 +93,7 @@ class NwcOutgoingMetadataTest {
         val callbackBytes = event.toJson()
 
         val wire =
-            OptimizedJsonMapper.toJson(
+            Nip47Json.toJson(
                 PayInvoiceMethod.create("lnbc50n1abc", NwcTransactionMetadata.build(event, "user@domain.com", "hi")),
             )
 
@@ -108,8 +106,8 @@ class NwcOutgoingMetadataTest {
     @Test
     fun theZapRequestSurvivesAsAReadableObject() {
         val event = zapRequest()
-        val wire = OptimizedJsonMapper.toJson(PayInvoiceMethod.create("lnbc1", NwcTransactionMetadata.build(event, null, null)))
-        val back = OptimizedJsonMapper.fromJsonTo<Request>(wire) as PayInvoiceMethod
+        val wire = Nip47Json.toJson(PayInvoiceMethod.create("lnbc1", NwcTransactionMetadata.build(event, null, null)))
+        val back = Nip47Json.fromJsonToRequest(wire) as PayInvoiceMethod
         val parsed = assertNotNull(NwcTransactionMetadata.parse(back.params?.metadata))
 
         // Raw on the way out, a normal object on the way back in.
@@ -166,7 +164,7 @@ class NwcOutgoingMetadataTest {
     @Test
     fun whatWeSendStaysUnderTheSpecCeiling() {
         val meta = NwcTransactionMetadata.build(zapRequest(), "user@domain.com", "great post")
-        val serialized = OptimizedJsonMapper.toJson(PayInvoiceMethod.create("lnbc50n1abc", meta))
+        val serialized = Nip47Json.toJson(PayInvoiceMethod.create("lnbc50n1abc", meta))
         assertTrue(serialized.length < NwcTransactionMetadata.MAX_METADATA_CHARS)
     }
 
@@ -175,12 +173,12 @@ class NwcOutgoingMetadataTest {
     @Test
     fun metadataSurvivesASerializationRoundTrip() {
         val meta = NwcTransactionMetadata.build(zapRequest(), "user@domain.com", "great post")
-        val json = OptimizedJsonMapper.toJson(PayInvoiceMethod.create("lnbc50n1abc", meta))
+        val json = Nip47Json.toJson(PayInvoiceMethod.create("lnbc50n1abc", meta))
 
         assertTrue(json.contains("\"kind\":9734"), "kind must stay an integer: $json")
         assertTrue(json.contains("\"created_at\":1756000000"), "created_at must stay an integer: $json")
 
-        val back = OptimizedJsonMapper.fromJsonTo<Request>(json)
+        val back = Nip47Json.fromJsonToRequest(json)
         assertIs<PayInvoiceMethod>(back)
         val parsed = assertNotNull(NwcTransactionMetadata.parse(back.params?.metadata))
         assertEquals(recipientHex, parsed.recipientPubkeyHex())
@@ -191,8 +189,8 @@ class NwcOutgoingMetadataTest {
     fun noMetadataMeansTheRequestIsUnchanged() {
         // The regression test that protects every wallet which has not advertised
         // NWC-06: what they receive must be byte-identical to what they receive today.
-        val expected = OptimizedJsonMapper.toJson(PayInvoiceMethod.create("lnbc50n1abc"))
-        val actual = OptimizedJsonMapper.toJson(PayInvoiceMethod.create("lnbc50n1abc", null))
+        val expected = Nip47Json.toJson(PayInvoiceMethod.create("lnbc50n1abc"))
+        val actual = Nip47Json.toJson(PayInvoiceMethod.create("lnbc50n1abc", null))
         assertEquals(expected, actual)
         assertFalse(actual.contains("recipient_data"))
     }
@@ -228,10 +226,10 @@ class NwcOutgoingMetadataTest {
     @Test
     fun anOutgoingRowResolvesThePayeeFromThePTag() {
         val wire =
-            OptimizedJsonMapper.toJson(
+            Nip47Json.toJson(
                 PayInvoiceMethod.create("lnbc1", NwcTransactionMetadata.build(zapRequest(content = "for the article"), "user@domain.com", "")),
             )
-        val back = OptimizedJsonMapper.fromJsonTo<Request>(wire) as PayInvoiceMethod
+        val back = Nip47Json.fromJsonToRequest(wire) as PayInvoiceMethod
         val parsed = assertNotNull(NwcTransactionMetadata.parse(back.params?.metadata))
 
         // The p tag, not the pubkey: on an outgoing zap the pubkey is US.
@@ -244,10 +242,10 @@ class NwcOutgoingMetadataTest {
     @Test
     fun theZappedNoteSurvivesTheRoundTrip() {
         val wire =
-            OptimizedJsonMapper.toJson(
+            Nip47Json.toJson(
                 PayInvoiceMethod.create("lnbc1", NwcTransactionMetadata.build(zapRequest(zappedNoteId = noteHex), "user@domain.com", "")),
             )
-        val back = OptimizedJsonMapper.fromJsonTo<Request>(wire) as PayInvoiceMethod
+        val back = Nip47Json.fromJsonToRequest(wire) as PayInvoiceMethod
         val parsed = assertNotNull(NwcTransactionMetadata.parse(back.params?.metadata))
 
         assertEquals(noteHex, parsed.zappedNoteId())
