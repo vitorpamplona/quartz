@@ -30,6 +30,10 @@ touches expect/actual). -->
 - [ ] Drafted with AI assistance, manually reviewed and tested
 - [ ] Written by hand
 
+If "Drafted with AI assistance" is ticked, a human must have reviewed the
+whole diff and tested the change by hand before this PR was opened. See
+[`CONTRIBUTING-WITH-AI.md`](CONTRIBUTING-WITH-AI.md).
+
 ## License
 
 - [ ] By submitting this PR, I agree to license my contribution under the

@@ -143,6 +143,12 @@ then depend on `1.20.0-local` from a build that has `mavenLocal()` among its rep
 Set `quartz` in `gradle/libs.versions.toml`, commit, and push a matching `vX.Y.Z` tag. The
 Release workflow publishes every artifact to Maven Central.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), and [CONTRIBUTING-WITH-AI.md](CONTRIBUTING-WITH-AI.md) when
+an AI assistant wrote much of the change. Report security issues privately, as
+[SECURITY.md](SECURITY.md) describes.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

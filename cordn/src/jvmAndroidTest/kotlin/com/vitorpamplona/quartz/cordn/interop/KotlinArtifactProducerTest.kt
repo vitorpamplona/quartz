@@ -45,13 +45,13 @@ import kotlin.test.assertTrue
  * still emit something nobody else accepts — and the failure mode is worse,
  * because our own tests stay green while every peer silently drops us.
  *
- * This test writes files; `cordn/interop/verify-with-ts-mls.sh` feeds them to
+ * This test writes files; `interop/verify-with-ts-mls.sh` feeds them to
  * ts-mls. The split is deliberate: producing the artifacts needs no toolchain
  * beyond Gradle and runs in CI unconditionally, while running ts-mls needs bun
  * and a cordn checkout. A green run here means the artifacts exist and our own
  * engine round-trips them; it does **not** by itself mean ts-mls accepted them.
  *
- * Output goes to `-Dcordn.interop.out`, defaulting to `build/interop/kotlin`.
+ * Output goes to `-Dcordn.interop.out`, defaulting to `build/interop/kotlin` under the `cordn` module.
  */
 @OptIn(ExperimentalEncodingApi::class)
 class KotlinArtifactProducerTest {

@@ -96,7 +96,10 @@ Quartz is MIT.
 ## Git
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, ...). Never `--no-verify`.
-- Don't open a PR on your own; hand the branch over with a test plan.
+- Don't open a PR on your own; hand the branch over with a test plan. A human reviews the whole
+  diff and tests it by hand first, see [CONTRIBUTING-WITH-AI.md](CONTRIBUTING-WITH-AI.md).
+- Signing, key handling and encryption, the release pipeline, NIP interpretation (a new kind or
+  tag) and breaking public API changes need a maintainer's agreement before the change.
 - The first JVM compile installs `.git-hooks/` into the clone: `spotlessCheck` before a commit,
   `jvmTest` before a push.
 - Design docs for larger changes go in `plans/YYYY-MM-DD-<slug>.md`.

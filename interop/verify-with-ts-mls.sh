@@ -2,7 +2,7 @@
 #
 # The reverse interop direction: ts-mls checks OUR output.
 #
-# `quartz/cordn`'s own tests prove we can read what ts-mls writes. That is half of
+# The `cordn` module's own tests prove we can read what ts-mls writes. That is half of
 # interoperating -- a client can parse everything correctly and still emit
 # something nobody accepts, and that failure keeps our tests green while every
 # peer silently drops us. This script closes the loop by handing our artifacts
@@ -13,7 +13,7 @@
 # artifacts unconditionally; only the verification below needs the extras.
 #
 # Usage:
-#   quartz/interop/verify-with-ts-mls.sh
+#   interop/verify-with-ts-mls.sh
 #
 # Environment:
 #   CORDN_DIR       cordn checkout with `pnpm install` run (default ../cordn)
@@ -24,10 +24,11 @@
 #
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CORDN="${CORDN_DIR:-$REPO/../cordn}"
 STAIRCASE="${STAIRCASE_DIR:-$REPO/../staircase}"
-OUT="$REPO/build/interop"
+# KotlinArtifactProducerTest writes build/interop/kotlin under its module.
+OUT="$REPO/cordn/build/interop"
 FIXTURES="$REPO/test-resources/tsmls"
 VERIFY="$STAIRCASE/conformance/fixtures-gen/verify.ts"
 
