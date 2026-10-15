@@ -6,10 +6,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 //
 //   ./gradlew :benchmark:connectedBenchmarkAndroidTest
 plugins {
-    // Not applied: puts the catalog's Kotlin on the classpath, so AGP's built-in
-    // Kotlin compiles with it rather than the older one AGP bundles.
-    alias(libs.plugins.kotlinMultiplatform) apply false
-    alias(libs.plugins.androidLibrary)
+    // AGP's version comes from the root build, which loads it for every project.
+    id("com.android.library")
     alias(libs.plugins.androidBenchmark)
 }
 

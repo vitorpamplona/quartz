@@ -4,6 +4,13 @@ import com.diffplug.gradle.spotless.SpotlessExtensionPredeclare
 // `quartz.kmp-library` convention plugin in build-logic/.
 plugins {
     alias(libs.plugins.diffplugSpotless)
+    // Not applied here: loads AGP and the catalog's Kotlin once, in one classloader,
+    // for every project. The convention plugin and :benchmark then share one Kotlin
+    // Gradle plugin, and AGP's built-in Kotlin in :benchmark uses the catalog's Kotlin
+    // instead of the older one AGP bundles.
+    alias(libs.plugins.kotlinMultiplatform) apply false
+    alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
+    alias(libs.plugins.androidLibrary) apply false
 }
 
 allprojects {
