@@ -35,6 +35,8 @@ holds in [README.md](README.md#modules). The rules that keep them separable:
 A new protocol over Nostr is a new module (or a package in an existing one), not a new
 repository. `testing` is an unpublished module with fixtures shared by several modules' tests:
 `InMemoryRelay`, `InProcessRelays`, `RelayClientTest`, `TestWebSocketRelay`, `TestResourceLoader`.
+`benchmark` is an unpublished Android module with the androidx.benchmark microbenchmarks; it
+depends on the `quartz` umbrella and reads `test-resources/`.
 
 ## Skills
 
@@ -51,6 +53,7 @@ keeps copies of them; when a change here makes one wrong, fix both.
 ./gradlew :social:jvmTest --tests "com.vitorpamplona.quartz.nip10Notes.*"
 ./gradlew linuxX64Test                  # Linux native
 ./gradlew :core:testAndroidHostTest     # Android host tests, per module
+./gradlew :benchmark:connectedBenchmarkAndroidTest   # Android microbenchmarks, needs a device
 ./gradlew spotlessApply                 # always, after changing Kotlin files
 ```
 

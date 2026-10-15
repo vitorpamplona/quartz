@@ -117,6 +117,14 @@ Your own kinds go through `EventFactory.factories[kind] = EventBuilder { ... }`,
 ./gradlew spotlessApply            # formatting
 ```
 
+Android microbenchmarks (event parsing, hashing, signing, NIP-44, gift wraps, caches, the
+SQLite store) live in the unpublished `benchmark` module and run on a device or emulator:
+
+```bash
+./gradlew :benchmark:connectedBenchmarkAndroidTest
+./benchmarks/run_all.sh            # secp256k1: C, Kotlin/Native, JVM and Android side by side
+```
+
 Modules share their setup through the `quartz.kmp-library` convention plugin in
 [`build-logic/`](build-logic/src/main/kotlin/quartz.kmp-library.gradle.kts). Shared test data
 lives in `test-resources/`, and fixtures shared by several modules' tests (in-memory relays,

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
 # Run all secp256k1 benchmarks.
-# Run from the amethyst root directory:
+# Run from the quartz root directory:
 #
-#   ./quartz/benchmarks/run_all.sh
+#   ./benchmarks/run_all.sh
 #
 # Runs: C native, Kotlin/Native, JVM (always), and Android (if device connected).
 #
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-BENCH_DIR="$ROOT/quartz/benchmarks"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BENCH_DIR="$ROOT/benchmarks"
 
 # ============================================================================
 # Platform detection

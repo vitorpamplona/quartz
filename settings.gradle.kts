@@ -58,3 +58,6 @@ include(":cyberspace")
 include(":experimental")
 include(":quartz")
 include(":testing")
+
+// Android microbenchmarks (androidx.benchmark); unpublished, runs on a device.
+include(":benchmark")
