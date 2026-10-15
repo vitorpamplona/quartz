@@ -1,0 +1,17 @@
+# JitPack builds of Quartz, a secondary channel to Maven Central:
+#
+#   repositories { maven("https://jitpack.io") }
+#   implementation("com.github.vitorpamplona.quartz:quartz-core:<tag or commit>")
+#
+# Every module is published under group com.github.vitorpamplona.quartz with its usual artifact
+# id (quartz, quartz-core, quartz-social, ...). VERSION is the tag or commit JitPack is building;
+# passing it as quartzVersion makes the modules' dependencies on each other carry that same
+# version, so they resolve on JitPack too.
+#
+# Only the JVM and Android variants are built here: Kotlin/Native needs a large toolchain
+# download, and iOS, macOS and Linux users get Quartz from Maven Central. Signing is skipped
+# because no signing key is set.
+jdk:
+  - openjdk21
+install:
+  - ./gradlew publishKotlinMultiplatformPublicationToMavenLocal publishJvmPublicationToMavenLocal publishAndroidPublicationToMavenLocal -PquartzVersion=$VERSION --max-workers=2 -x test
