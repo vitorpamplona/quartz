@@ -41,7 +41,8 @@ import java.io.File
  * what this exists to catch, then shows up as a diff nobody asked for.
  */
 class IndexableContentGoldenTest {
-    private val golden = File("src/jvmTest/resources/indexable-content.golden")
+    // The shared test data at the repository root; the build passes its path to every test JVM.
+    private val golden = File(checkNotNull(System.getenv("TEST_RESOURCES_ROOT")) { "TEST_RESOURCES_ROOT is not set" }, "indexable-content.golden")
 
     /**
      * One event per kind, carrying every tag name the accessors read plus a content body, so the

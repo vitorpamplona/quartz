@@ -35,7 +35,7 @@ import kotlin.test.assertTrue
  *   FieldP.add:   9 ns/op
  *   FieldP.sub:  10 ns/op
  *
- * Run with: ./gradlew :quartz:jvmTest --tests "*.Fe4Benchmark"
+ * Run with: ./gradlew :core:jvmTest --tests "*.Fe4Benchmark"
  */
 class Fe4Benchmark {
     private val aBytes = hexToBytes("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")

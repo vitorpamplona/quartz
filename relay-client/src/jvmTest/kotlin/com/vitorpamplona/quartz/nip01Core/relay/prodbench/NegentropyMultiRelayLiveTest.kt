@@ -52,7 +52,7 @@ import kotlin.test.fail
  * return without an external wall-clock rescue.
  *
  * Gated (opens live sockets to ~35 relays):
- *   NEG_MULTI=1 ./gradlew :quartz:jvmTest --tests "*.NegentropyMultiRelayLiveTest" --info
+ *   NEG_MULTI=1 ./gradlew :relay-client:jvmTest --tests "*.NegentropyMultiRelayLiveTest" --info
  *
  * The wall-clock [HARD_TIMEOUT_MS] is only a safety net set well above [IDLE_MS]:
  * with the fix a refusing relay trips the idle watchdog (or the notice/closed

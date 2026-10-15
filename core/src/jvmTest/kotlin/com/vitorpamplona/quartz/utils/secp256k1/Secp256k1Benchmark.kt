@@ -55,7 +55,7 @@ import fr.acinq.secp256k1.Secp256k1 as NativeSecp256k1
  *   side does `privKey.copyOf()` before each call, adding one allocation
  *   to the native measurement that the Kotlin side doesn't incur.
  *
- * Run with: ./gradlew :quartz:jvmTest --tests "*.Secp256k1Benchmark"
+ * Run with: ./gradlew :core:jvmTest --tests "*.Secp256k1Benchmark"
  */
 class Secp256k1Benchmark {
     // Test data (same across all 3 platform benchmarks for comparability)

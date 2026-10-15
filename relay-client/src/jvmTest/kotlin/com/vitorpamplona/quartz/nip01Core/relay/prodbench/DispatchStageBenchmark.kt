@@ -70,7 +70,7 @@ import kotlin.test.Test
  * exposes the PoolRequests spin lock). A PoolRequests-only pass attributes how
  * much of the stage is the subscription state machine itself.
  *
- * Run with: ./gradlew :quartz:jvmTest --tests "*.DispatchStageBenchmark"
+ * Run with: ./gradlew :relay-client:jvmTest --tests "*.DispatchStageBenchmark"
  */
 class DispatchStageBenchmark {
     companion object {

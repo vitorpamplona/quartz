@@ -31,7 +31,7 @@ import fr.acinq.secp256k1.Secp256k1 as NativeSecp256k1
  * 2. Pure Kotlin (our KMP implementation) — portable, no native deps
  * 3. Custom C (libschnorr256k1 via JNI) — maximum performance target
  *
- * Run with: ./gradlew :quartz:jvmTest --tests "*.Secp256k1TripleBenchmark"
+ * Run with: ./gradlew :core:jvmTest --tests "*.Secp256k1TripleBenchmark"
  */
 class Secp256k1TripleBenchmark {
     private val privKey = hexToBytes("67E56582298859DDAE725F972992A07C6C4FB9F62A8FFF58CE3CA926A1063530")

@@ -192,11 +192,16 @@ mavenPublishing {
     coordinates(
         groupId = "com.vitorpamplona.quartz",
         artifactId = artifactName,
-        version = libs.findVersion("quartz").get().requiredVersion,
+        // -PquartzVersion=1.20.0-local publishes a local build without touching the catalog.
+        version = (project.findProperty("quartzVersion") as? String) ?: libs.findVersion("quartz").get().requiredVersion,
     )
 
     publishToMavenCentral(automaticRelease = true)
-    signAllPublications()
+    // Release builds sign (the Release workflow provides the key); publishToMavenLocal on a
+    // machine without one does not need to.
+    if (project.findProperty("signingInMemoryKey") != null) {
+        signAllPublications()
+    }
 
     pom {
         name.set(provider { "Quartz: ${project.description ?: artifactName}" })

@@ -44,8 +44,8 @@ import kotlin.time.TimeSource
  * Test data is the same across all 3 platform benchmarks for cross-platform comparability.
  *
  * Run with:
- *   ./gradlew :quartz:linuxX64Test --tests "*.Secp256k1NativeBenchmark"
- *   ./gradlew :quartz:macosArm64Test --tests "*.Secp256k1NativeBenchmark"
+ *   ./gradlew :core:linuxX64Test --tests "*.Secp256k1NativeBenchmark"
+ *   ./gradlew :core:macosArm64Test --tests "*.Secp256k1NativeBenchmark"
  *
  * IMPORTANT: Requires -opt in the compiler options for meaningful results.
  * Without it, K/N compiles in debug mode (~12x slower). See build.gradle.kts.

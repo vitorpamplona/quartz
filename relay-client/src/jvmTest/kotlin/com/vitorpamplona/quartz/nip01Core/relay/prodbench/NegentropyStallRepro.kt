@@ -46,7 +46,7 @@ import kotlin.test.Test
  *
  * Gated: no-ops unless NEG_STALL_REPRO is set.
  *
- *   NEG_STALL_REPRO=1 ./gradlew :quartz:jvmTest --tests "*.NegentropyStallRepro" --info
+ *   NEG_STALL_REPRO=1 ./gradlew :relay-client:jvmTest --tests "*.NegentropyStallRepro" --info
  */
 class NegentropyStallRepro {
     companion object {

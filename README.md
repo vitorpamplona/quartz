@@ -10,11 +10,11 @@ of them.
 ```kotlin
 dependencies {
     // Everything:
-    implementation("com.vitorpamplona.quartz:quartz:1.19.0")
+    implementation("com.vitorpamplona.quartz:quartz:1.20.0")
 
     // Or only what you need, e.g. a client that posts notes and reads relays:
-    implementation("com.vitorpamplona.quartz:quartz-social:1.19.0")
-    implementation("com.vitorpamplona.quartz:quartz-relay-client:1.19.0")
+    implementation("com.vitorpamplona.quartz:quartz-social:1.20.0")
+    implementation("com.vitorpamplona.quartz:quartz-relay-client:1.20.0")
 }
 ```
 
@@ -121,6 +121,14 @@ Modules share their setup through the `quartz.kmp-library` convention plugin in
 [`build-logic/`](build-logic/src/main/kotlin/quartz.kmp-library.gradle.kts). Shared test data
 lives in `test-resources/`, and fixtures shared by several modules' tests (in-memory relays,
 resource loaders) in the unpublished `testing` module.
+
+## Trying a change in an app before releasing it
+
+```bash
+./gradlew publishToMavenLocal -PquartzVersion=1.20.0-local
+```
+
+then depend on `1.20.0-local` from a build that has `mavenLocal()` among its repositories.
 
 ## Releasing
 

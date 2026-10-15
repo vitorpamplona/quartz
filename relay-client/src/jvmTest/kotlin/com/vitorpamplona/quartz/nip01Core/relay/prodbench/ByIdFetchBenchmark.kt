@@ -64,7 +64,7 @@ import kotlin.test.Test
  * the same work in the same order. Events are counted, not retained.
  *
  * Gated (opens live sockets, downloads the corpus once per cell):
- *   ./gradlew :quartz:jvmTest --tests "*.ByIdFetchBenchmark" -PprodRelayBench=1
+ *   ./gradlew :relay-client:jvmTest --tests "*.ByIdFetchBenchmark" -PprodRelayBench=1
  */
 class ByIdFetchBenchmark {
     companion object {

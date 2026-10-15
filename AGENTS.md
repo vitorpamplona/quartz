@@ -36,6 +36,14 @@ A new protocol over Nostr is a new module (or a package in an existing one), not
 repository. `testing` is an unpublished module with fixtures shared by several modules' tests:
 `InMemoryRelay`, `InProcessRelays`, `RelayClientTest`, `TestWebSocketRelay`, `TestResourceLoader`.
 
+## Skills
+
+`.claude/skills/<name>/` (symlinked from `.agents/skills/<name>` for Codex) holds the
+repo-specific guides: `nostr-expert` (event classes, kinds, tags, the kind registry, NIP-19/44),
+`event-store-semantics` (store contract and NIP-50 search) and `nip85-trusted-assertions`. Amethyst
+keeps copies of them; when a change here makes one wrong, fix both.
+`scripts/nip-catalog.py` regenerates the package/kind catalog.
+
 ## Build
 
 ```bash

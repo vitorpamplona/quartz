@@ -39,7 +39,7 @@ import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
  * produced `anr_2026-08-03-12-55-26-256` (it was a *spin* lock then, which burned 6 of
  * 9 cores — see [PlatformLock]). Striping removes the contention instead of making
  * waiting cheaper: measured 1.5-2.8x the throughput of one lock per sub in
- * `quartz/src/jvmTest/.../prodbench/LockDesignComparisonBenchmark.kt`. Full analysis,
+ * `relay-client/src/jvmTest/.../prodbench/LockDesignComparisonBenchmark.kt`. Full analysis,
  * including why a suspending `Mutex` was rejected, is in
  * `quartz/plans/2026-08-03-poolrequests-lock-contention.md`.
  *

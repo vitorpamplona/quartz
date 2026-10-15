@@ -55,7 +55,7 @@ import kotlin.test.assertTrue
  * BUZZ_RELAY_WS=ws://127.0.0.1:3000 \
  * BUZZ_MEMBER_SK=<64-hex member secret key> \
  * BUZZ_OWNER_SK=<64-hex member secret key for the OA owner test> \
- * ./gradlew :quartz:jvmTest --tests "*BuzzRelayLiveInteropTest"
+ * ./gradlew :buzz:jvmTest --tests "*BuzzRelayLiveInteropTest"
  * ```
  *
  * Proves, against the actual Rust implementation (not vectors): NIP-42 auth,

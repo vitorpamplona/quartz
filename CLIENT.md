@@ -33,7 +33,7 @@ dependencies {
 
     // Quartz from Maven Central (check the latest version there). `quartz` is everything;
     // `quartz-relay-client` alone is enough for this guide.
-    implementation("com.vitorpamplona.quartz:quartz-relay-client:1.19.0")
+    implementation("com.vitorpamplona.quartz:quartz-relay-client:1.20.0")
 }
 ```
 

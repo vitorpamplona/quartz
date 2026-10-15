@@ -84,7 +84,7 @@ private fun compare(
  * [ParallelEventVerifier] → append to arrays → sort → save, without holding events.
  *
  * Opens sockets to a live relay, so it is opt-in:
- * `./gradlew :quartz:jvmTest --tests "*WotNetworkIndexBenchmark*" -PprodRelayBench=1`.
+ * `./gradlew :trusted-assertions:jvmTest --tests "*WotNetworkIndexBenchmark*" -PprodRelayBench=1`.
  * Override the observer with `-DwotObserver=<hex>`.
  */
 class WotNetworkIndexBenchmark {

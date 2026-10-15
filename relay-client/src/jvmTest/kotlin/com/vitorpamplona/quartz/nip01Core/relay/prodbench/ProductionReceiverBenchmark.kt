@@ -77,7 +77,7 @@ import kotlin.test.Test
  * unless the environment variable PROD_RELAY_BENCH is set.
  *
  * Run with:
- *   PROD_RELAY_BENCH=1 ./gradlew :quartz:jvmTest --tests "*.ProductionReceiverBenchmark"
+ *   PROD_RELAY_BENCH=1 ./gradlew :relay-client:jvmTest --tests "*.ProductionReceiverBenchmark"
  */
 class ProductionReceiverBenchmark {
     companion object {

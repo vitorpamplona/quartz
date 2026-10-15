@@ -67,7 +67,7 @@ import kotlin.test.Test
  * asserts nothing for that reason — it REPORTS, and a human reads it.
  *
  * ```
- * ./gradlew :quartz:jvmTest --tests "*.CursorTerminationProbe" -PprodRelayBench=1 -i
+ * ./gradlew :relay-client:jvmTest --tests "*.CursorTerminationProbe" -PprodRelayBench=1 -i
  * ```
  */
 class CursorTerminationProbe {

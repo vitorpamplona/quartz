@@ -75,7 +75,7 @@ import kotlin.test.Test
  *    connection — the protocol-level answer to serial page round-trips.
  *
  * Gated behind PROD_RELAY_BENCH (same as ProductionReceiverBenchmark):
- *   ./gradlew :quartz:jvmTest --tests "*.BulkDownloadBenchmark" -PprodRelayBench=1
+ *   ./gradlew :relay-server:jvmTest --tests "*.BulkDownloadBenchmark" -PprodRelayBench=1
  */
 class BulkDownloadBenchmark {
     companion object {

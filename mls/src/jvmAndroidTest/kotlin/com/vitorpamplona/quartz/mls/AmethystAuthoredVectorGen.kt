@@ -43,7 +43,7 @@ import kotlin.test.Test
  *
  *   JOINER_HANDOFF_JSON=/tmp/joiner-handoff.json \
  *   AMETHYST_FIXTURE_JSON=/tmp/amethyst-fixture.json \
- *   ./gradlew :quartz:jvmTest \
+ *   ./gradlew :mls:jvmTest \
  *     --tests com.vitorpamplona.quartz.mls.AmethystAuthoredVectorGen
  *
  * The handoff file comes from the foreign backend's
