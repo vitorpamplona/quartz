@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -20,5 +21,40 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "quartz"
+rootProject.name = "quartz-root"
+
+include(":core")
+include(":store")
+include(":store-sqlite")
+include(":relay-client")
+include(":relay-server")
+include(":relay-management")
+include(":nip46-remote-signer")
+include(":nip55-android-signer")
+include(":social")
+include(":dms")
+include(":payments")
+include(":trusted-assertions")
+include(":git")
+include(":chess")
+include(":ots")
+include(":relay-groups")
+include(":dvms")
+include(":podcasts")
+include(":marketplace")
+include(":media-servers")
+include(":nsites")
+include(":webrtc-calls")
+include(":ble")
+include(":push-notifications")
+include(":relay-monitor")
+include(":mls")
+include(":marmot")
+include(":cordn")
+include(":contextvm")
+include(":concord")
+include(":buzz")
+include(":cyberspace")
+include(":experimental")
 include(":quartz")
+include(":testing")

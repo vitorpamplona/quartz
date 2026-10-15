@@ -47,22 +47,28 @@ import kotlin.test.fail
  * data; an import in shipped code is a dependency.
  */
 class BindingIsolationTest {
-    private val quartzRoot: File by lazy {
+    private val repoRoot: File by lazy {
         // Gradle runs tests with the module directory as the working directory,
         // but resolve it rather than trust it: a wrong root would make every
         // assertion below vacuously pass, which is the one outcome an
         // architecture test must never have.
         generateSequence(File(".").absoluteFile) { it.parentFile }
-            .map { if (it.name == "quartz") it else File(it, "quartz") }
-            .firstOrNull { File(it, "src/commonMain/kotlin/com/vitorpamplona/quartz").isDirectory }
-            ?: fail("cannot locate the quartz module from ${File(".").absolutePath}")
+            .firstOrNull { File(it, "settings.gradle.kts").isFile && File(it, "core/src").isDirectory }
+            ?: fail("cannot locate the repository root from ${File(".").absolutePath}")
     }
 
-    /** Main source sets only — see the class KDoc. */
+    /**
+     * Main source sets only — see the class KDoc. Each of mls, marmot and cordn is its own
+     * module now, named after its package, but scan every module so a file that drifts into
+     * another one is still checked.
+     */
     private fun sourceSets(pkg: String): List<File> =
-        File(quartzRoot, "src")
+        repoRoot
             .listFiles()
             .orEmpty()
+            .map { File(it, "src") }
+            .filter { it.isDirectory }
+            .flatMap { it.listFiles().orEmpty().toList() }
             .filter { it.isDirectory && !it.name.endsWith("Test") }
             .map { File(it, "kotlin/com/vitorpamplona/quartz/$pkg") }
             .filter { it.isDirectory }
@@ -79,7 +85,7 @@ class BindingIsolationTest {
                 .flatMap { file ->
                     file.readLines().withIndex().mapNotNull { (i, line) ->
                         if (line.trimStart().startsWith("import $forbidden")) {
-                            "${file.relativeTo(quartzRoot)}:${i + 1}  ${line.trim()}"
+                            "${file.relativeTo(repoRoot)}:${i + 1}  ${line.trim()}"
                         } else {
                             null
                         }

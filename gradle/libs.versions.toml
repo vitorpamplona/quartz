@@ -13,6 +13,7 @@ jackson = "2.22.3"
 junit = "4.13.2"
 kchesslib = "1.0.5"
 kotlin = "2.4.20"
+kotlinxCrypto = "0.0.4"
 kotlinxCollectionsImmutable = "0.5.2"
 kotlinxCoroutinesCore = "1.11.0"
 kotlinxSerialization = "1.11.0"
@@ -63,6 +64,14 @@ androidx-core = { group = "androidx.test", name = "core", version.ref = "core" }
 androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "sqlite" }
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 androidx-sqlite-bundled-jvm = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
+kotlinx-crypto-hmac = { module = "io.github.andreypfau:kotlinx-crypto-hmac", version.ref = "kotlinxCrypto" }
+kotlinx-crypto-sha2 = { module = "io.github.andreypfau:kotlinx-crypto-sha2", version.ref = "kotlinxCrypto" }
+
+# Gradle plugins as libraries, for build-logic's convention plugin.
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-serialization-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-serialization", version.ref = "kotlin" }
+android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
+maven-publish-gradle-plugin = { module = "com.vanniktech:gradle-maven-publish-plugin", version.ref = "mavenPublish" }
 
 [plugins]
 diffplugSpotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
