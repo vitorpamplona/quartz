@@ -44,6 +44,10 @@ fun versionOf(name: String): Int =
 // :core -> quartz-core; the umbrella :quartz keeps its old coordinates.
 val artifactName = if (project.name == "quartz") "quartz" else "quartz-${project.name}"
 
+// A module whose code only exists on Android (NIP-55 talks to other Android apps) sets
+// `quartz.androidOnly=true` in its own gradle.properties and gets the Android target alone.
+val androidOnly = (project.findProperty("quartz.androidOnly") as? String).toBoolean()
+
 // Shared test data (relay dumps, interop vectors) lives once, at the repository root.
 val sharedTestResources = rootProject.file("test-resources")
 
@@ -54,9 +58,11 @@ kotlin {
         optIn.add("com.vitorpamplona.quartz.utils.InternalQuartzApi")
     }
 
-    jvm {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
+    if (!androidOnly) {
+        jvm {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_17)
+            }
         }
     }
 
@@ -86,10 +92,12 @@ kotlin {
         }
     }
 
-    iosArm64()
-    iosSimulatorArm64()
-    linuxX64()
-    macosArm64()
+    if (!androidOnly) {
+        iosArm64()
+        iosSimulatorArm64()
+        linuxX64()
+        macosArm64()
+    }
 
     // Enable LLVM optimizations for core's linuxX64 test binary only: that is where the native
     // secp256k1 benchmark runs, and a benchmark on an unoptimized binary measures nothing. Every
@@ -123,9 +131,10 @@ kotlin {
                 }
             }
 
+        androidMain { dependsOn(jvmAndroid) }
+        if (androidOnly) return@sourceSets
         jvmMain { dependsOn(jvmAndroid) }
         jvmTest { dependsOn(jvmAndroidTest) }
-        androidMain { dependsOn(jvmAndroid) }
 
         val nativeMain = create("nativeMain") { dependsOn(commonMain.get()) }
         val nativeTest = create("nativeTest") { dependsOn(commonTest.get()) }
@@ -180,7 +189,7 @@ tasks.withType<KotlinNativeTest>().configureEach {
 tasks.register("test") {
     group = "verification"
     description = "Runs the JVM unit tests for this Kotlin Multiplatform module."
-    dependsOn("jvmTest")
+    dependsOn(if (androidOnly) "testAndroidHostTest" else "jvmTest")
 }
 
 // Fails fast, on Linux, when a source set that compiles for Apple imports a JVM-only API.

@@ -19,7 +19,6 @@ kotlin {
             export(project(":relay-server"))
             export(project(":relay-management"))
             export(project(":nip46-remote-signer"))
-            export(project(":nip55-android-signer"))
             export(project(":social"))
             export(project(":dms"))
             export(project(":payments"))
@@ -58,7 +57,6 @@ kotlin {
                 api(project(":relay-server"))
                 api(project(":relay-management"))
                 api(project(":nip46-remote-signer"))
-                api(project(":nip55-android-signer"))
                 api(project(":social"))
                 api(project(":dms"))
                 api(project(":payments"))
@@ -84,6 +82,12 @@ kotlin {
                 api(project(":buzz"))
                 api(project(":cyberspace"))
                 api(project(":experimental"))
+            }
+        }
+        androidMain {
+            dependencies {
+                // NIP-55 only exists on Android.
+                api(project(":nip55-android-signer"))
             }
         }
         commonTest {
