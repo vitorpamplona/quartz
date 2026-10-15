@@ -18,6 +18,17 @@ dependencies {
 }
 ```
 
+JVM and Android builds are also on [JitPack](https://jitpack.io/#vitorpamplona/quartz), for any tag
+or commit, under the group `com.github.vitorpamplona.quartz`:
+
+```kotlin
+repositories { maven("https://jitpack.io") }
+
+dependencies {
+    implementation("com.github.vitorpamplona.quartz:quartz-social:<tag or commit>")
+}
+```
+
 Package names do not depend on the artifact: `com.vitorpamplona.quartz.nip10Notes.TextNoteEvent`
 is the same class whether it comes from `quartz` or from `quartz-social`, so moving from the
 umbrella to individual artifacts is a dependency change, not a code change.
