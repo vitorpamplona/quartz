@@ -97,6 +97,23 @@ Quartz is MIT.
 
 - Conventional commits (`feat:`, `fix:`, `refactor:`, ...). Never `--no-verify`.
 - Don't open a PR on your own; hand the branch over with a test plan.
+- The first JVM compile installs `.git-hooks/` into the clone: `spotlessCheck` before a commit,
+  `jvmTest` before a push.
 - Design docs for larger changes go in `plans/YYYY-MM-DD-<slug>.md`.
 - Public API changes update [CLIENT.md](CLIENT.md), [RELAY.md](RELAY.md) and
   `agent-skill/quartz/`, the skill other projects install to use Quartz.
+
+## Agent configuration (Claude Code + Codex)
+
+Both agents read the same rules, skills and checks:
+
+- **This file is the single source of rules.** `.claude/CLAUDE.md` only imports it
+  (`@../AGENTS.md`) and adds Claude-specific notes. Never write a rule in a `CLAUDE.md`.
+- **Skills are written once** in `.claude/skills/<name>/` and symlinked from
+  `.agents/skills/<name>`. A skill's `description` is how both agents decide to load it: keep its
+  class names, paths and "NOT for …" scope, 120-300 characters.
+- **`agent-skill/`** is the skill other projects install; the same name/description checks apply,
+  and its links into this repository must resolve.
+- **Shared checks live in `tools/agent-hooks/`.** `.claude/settings.json` and `.codex/hooks.json`
+  run the same pre-push scripts (spotless, then `agent_config_check.py`), and CI runs the check
+  too.

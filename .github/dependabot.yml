@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keep the GitHub Actions in the workflows current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore(actions)
+    groups:
+      actions:
+        patterns:
+          - "*"

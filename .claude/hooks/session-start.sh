@@ -1,0 +1,271 @@
+#!/bin/bash
+# Session start hook: Configure proxy auth, SSL trust, and Android SDK for Claude Code on the web
+set -euo pipefail
+
+# Only run in remote (web) environments
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  exit 0
+fi
+
+# --- Proxy credentials: configure Maven/Gradle if authenticated proxy is set ---
+proxy="${https_proxy:-${HTTPS_PROXY:-}}"
+if [ -n "$proxy" ] && echo "$proxy" | grep -q '@'; then
+  rest="${proxy#*://}"
+  userpass="${rest%@*}"
+  hostport="${rest##*@}"
+  user="${userpass%%:*}"
+  pass="${userpass#*:}"
+  host="${hostport%%:*}"
+  port="${hostport##*:}"
+  port="${port%/}"
+
+  mkdir -p ~/.m2
+  cat > ~/.m2/settings.xml << EOF
+<settings>
+  <proxies>
+    <proxy>
+      <id>ccw</id><active>true</active><protocol>https</protocol>
+      <host>$host</host><port>$port</port>
+      <username>$user</username>
+      <password><![CDATA[$pass]]></password>
+    </proxy>
+  </proxies>
+</settings>
+EOF
+
+  # Force wagon transport for Maven 3.9+ proxy auth compatibility
+  cat > ~/.mavenrc << 'MAVENRC'
+MAVEN_OPTS="$MAVEN_OPTS -Dmaven.resolver.transport=wagon"
+MAVENRC
+
+  mkdir -p ~/.gradle
+  cat > ~/.gradle/gradle.properties << EOF
+systemProp.https.proxyHost=$host
+systemProp.https.proxyPort=$port
+systemProp.https.proxyUser=$user
+systemProp.https.proxyPassword=$pass
+systemProp.http.proxyHost=$host
+systemProp.http.proxyPort=$port
+systemProp.http.proxyUser=$user
+systemProp.http.proxyPassword=$pass
+# Override nonProxyHosts: route all external traffic (incl. *.google.com) through proxy
+systemProp.http.nonProxyHosts=localhost|127.0.0.1
+systemProp.https.nonProxyHosts=localhost|127.0.0.1
+# Use Ubuntu's Java trust store (includes Anthropic TLS inspection CA) for all Gradle JVMs.
+# This is needed because Gradle may download a custom JDK (e.g. JetBrains) whose bundled
+# trust store doesn't include the Anthropic CA, causing TLS inspection failures.
+systemProp.javax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+systemProp.javax.net.ssl.trustStoreType=JKS
+systemProp.javax.net.ssl.trustStorePassword=changeit
+systemProp.jdk.http.auth.tunneling.disabledSchemes=
+systemProp.jdk.http.auth.proxying.disabledSchemes=
+EOF
+
+  echo "Configured Maven/Gradle proxy from HTTPS_PROXY" >&2
+fi
+
+# --- SSL trust: import Anthropic TLS inspection CA into JVM trust stores ---
+ANTHROPIC_CA_PEM=$(python3 -c "
+import re, ssl, sys
+try:
+    with open('/etc/ssl/certs/ca-certificates.crt') as f:
+        certs = re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', f.read(), re.DOTALL)
+    for cert in certs:
+        der = ssl.PEM_cert_to_DER_cert(cert)
+        if b'Anthropic' in der and b'sandbox-egress-production' in der:
+            print(cert)
+            break
+except Exception as e:
+    sys.stderr.write(f'CA extraction failed: {e}\n')
+" 2>/dev/null)
+
+if [ -n "$ANTHROPIC_CA_PEM" ]; then
+  TMPCA=$(mktemp /tmp/anthropic-ca.XXXXXX.pem)
+  echo "$ANTHROPIC_CA_PEM" > "$TMPCA"
+  for cacerts in \
+    /usr/lib/jvm/java-21-openjdk-amd64/lib/security/cacerts \
+    /root/.gradle/jdks/*/lib/security/cacerts; do
+    [ -f "$cacerts" ] || continue
+    keytool -list -keystore "$cacerts" -storepass changeit \
+      -alias anthropic-egress-production-ca >/dev/null 2>&1 && continue
+    keytool -import \
+      -alias anthropic-egress-production-ca \
+      -file "$TMPCA" \
+      -keystore "$cacerts" \
+      -storepass changeit \
+      -noprompt >/dev/null 2>&1 && \
+      echo "Imported Anthropic CA into $cacerts" >&2
+  done
+  rm -f "$TMPCA"
+fi
+
+ANDROID_SDK_DIR="/root/android-sdk"
+SDK_REPO_BASE="https://dl.google.com/android/repository"
+
+# Install Android SDK packages by downloading directly with curl
+# (sdkmanager cannot reach the SDK repository through the proxy)
+install_sdk_package() {
+  local zip_url="$1"
+  local dest_dir="$2"
+  local inner_dir="$3"  # top-level dir inside the zip
+
+  if [ -d "$dest_dir" ]; then
+    return 0
+  fi
+
+  echo "Downloading $zip_url..."
+  local TMP_ZIP
+  TMP_ZIP=$(mktemp /tmp/sdk-pkg.XXXXXX.zip)
+  curl -fsSL "$zip_url" -o "$TMP_ZIP"
+
+  local TMP_DIR
+  TMP_DIR=$(mktemp -d)
+  unzip -q "$TMP_ZIP" -d "$TMP_DIR"
+  rm -f "$TMP_ZIP"
+
+  mkdir -p "$(dirname "$dest_dir")"
+  mv "$TMP_DIR/$inner_dir" "$dest_dir"
+  rm -rf "$TMP_DIR"
+  echo "Installed to $dest_dir"
+}
+
+# Install Android platform 37
+install_sdk_package \
+  "$SDK_REPO_BASE/platform-37.0_r01.zip" \
+  "$ANDROID_SDK_DIR/platforms/android-37" \
+  "android-37.0"
+
+# Install build-tools 37.0.0 (zip uses "android-37.0" as inner dir name)
+install_sdk_package \
+  "$SDK_REPO_BASE/build-tools_r37_linux.zip" \
+  "$ANDROID_SDK_DIR/build-tools/37.0.0" \
+  "android-37.0"
+
+# Install platform-tools
+install_sdk_package \
+  "$SDK_REPO_BASE/platform-tools_r37.0.0-linux.zip" \
+  "$ANDROID_SDK_DIR/platform-tools" \
+  "platform-tools"
+
+# Accept SDK licenses (create license files manually)
+echo "Writing SDK license files..."
+mkdir -p "$ANDROID_SDK_DIR/licenses"
+# android-sdk-license
+echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_SDK_DIR/licenses/android-sdk-license"
+echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> "$ANDROID_SDK_DIR/licenses/android-sdk-license"
+# android-sdk-preview-license
+echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_SDK_DIR/licenses/android-sdk-preview-license"
+echo -e "\n504667f4c0de7af1a06de9f4b1727b84351f2910" >> "$ANDROID_SDK_DIR/licenses/android-sdk-preview-license"
+# intel-android-extra-license
+echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > "$ANDROID_SDK_DIR/licenses/intel-android-extra-license"
+
+# Create local.properties if missing
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || echo "${CLAUDE_PROJECT_DIR:-$PWD}")"
+LOCAL_PROPS="$REPO_ROOT/local.properties"
+if [ ! -f "$LOCAL_PROPS" ]; then
+  echo "sdk.dir=$ANDROID_SDK_DIR" > "$LOCAL_PROPS"
+  echo "Created local.properties with sdk.dir=$ANDROID_SDK_DIR"
+fi
+
+# Export ANDROID_HOME for the session
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  echo "export ANDROID_HOME=$ANDROID_SDK_DIR" >> "$CLAUDE_ENV_FILE"
+  echo "export ANDROID_SDK_ROOT=$ANDROID_SDK_DIR" >> "$CLAUDE_ENV_FILE"
+  echo "export PATH=\$PATH:$ANDROID_SDK_DIR/platform-tools" >> "$CLAUDE_ENV_FILE"
+fi
+
+# --- Kotlin/Native: pre-install native dependencies (GCC sysroot, LLDB) ---
+# The K/N compiler downloads these on first use, but that fails through the proxy.
+# Pre-download them so K/N benchmarks and linuxX64 compilation work out of the box.
+KONAN_DIR="/root/.konan"
+KONAN_DEPS_URL="https://download.jetbrains.com/kotlin/native"
+KONAN_DEPS_DIR="$KONAN_DIR/dependencies"
+
+install_konan_dep() {
+  local dep_name="$1"
+  local url="$2"  # full download URL
+  # Already extracted?
+  if [ -d "$KONAN_DEPS_DIR/$dep_name" ]; then
+    return 0
+  fi
+  local archive="$dep_name.tar.gz"
+  local cache_dir="$KONAN_DEPS_DIR/cache"
+  mkdir -p "$cache_dir"
+  if [ ! -f "$cache_dir/$archive" ]; then
+    echo "Downloading K/N dependency $dep_name..."
+    curl -fsSL "$url" -o "$cache_dir/$archive" || {
+      echo "Failed to download $dep_name" >&2; return 1
+    }
+  fi
+  echo "Extracting $dep_name..."
+  tar -xzf "$cache_dir/$archive" -C "$KONAN_DEPS_DIR"
+}
+
+# Dependencies for linuxX64 target (from konan.properties for Kotlin 2.3.20)
+install_konan_dep "x86_64-unknown-linux-gnu-gcc-8.3.0-glibc-2.19-kernel-4.9-2" \
+  "$KONAN_DEPS_URL/x86_64-unknown-linux-gnu-gcc-8.3.0-glibc-2.19-kernel-4.9-2.tar.gz"
+install_konan_dep "lldb-4-linux" \
+  "$KONAN_DEPS_URL/lldb-4-linux.tar.gz"
+install_konan_dep "llvm-19-x86_64-linux-essentials-109" \
+  "$KONAN_DEPS_URL/resources/llvm/19-x86_64-linux/llvm-19-x86_64-linux-essentials-109.tar.gz"
+install_konan_dep "libffi-3.2.1-2-linux-x86-64" \
+  "$KONAN_DEPS_URL/libffi-3.2.1-2-linux-x86-64.tar.gz"
+
+# --- Gradle distribution: pre-seed the wrapper distribution ---
+# The wrapper's distributionUrl (services.gradle.org) 307-redirects to
+# github.com release assets, which the web sandbox's git-only GitHub proxy
+# blocks (403) even at Full network access — so `./gradlew` can't bootstrap.
+# Download the pinned distribution from a mirror instead, but verify it against
+# Gradle's OFFICIAL sha256 (served from services.gradle.org, reachable here)
+# so a tampered/wrong mirror file is rejected and never executed. Idempotent:
+# skips entirely if the distribution is already installed.
+seed_gradle_distribution() {
+  local props="$CLAUDE_PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+  [ -f "$props" ] || return 0
+  local url zip name hash dir ver official mirror ok=""
+  url=$(sed -n 's/^distributionUrl=//p' "$props" | sed 's/\\//g')
+  [ -n "$url" ] || return 0
+  zip=${url##*/}; name=${zip%.zip}
+  # Gradle stores the dist under base36(md5(distributionUrl)) — derive it so this
+  # keeps working across version bumps instead of hardcoding the hash dir.
+  hash=$(python3 - "$url" <<'PY'
+import hashlib, sys
+n = int.from_bytes(hashlib.md5(sys.argv[1].encode()).digest(), 'big')
+d = "0123456789abcdefghijklmnopqrstuvwxyz"; s = ""
+while n:
+    s = d[n % 36] + s; n //= 36
+print(s or "0")
+PY
+)
+  dir="${GRADLE_USER_HOME:-$HOME/.gradle}/wrapper/dists/$name/$hash"
+  ver=${name%-bin}; ver=${ver%-all}
+  if [ -x "$dir/$ver/bin/gradle" ]; then return 0; fi   # already installed
+  echo "Seeding Gradle distribution $ver (github release blocked; using verified mirror)..." >&2
+  mkdir -p "$dir"
+  official=$(curl -fsSL "https://services.gradle.org/distributions/${zip}.sha256") || {
+    echo "Could not fetch official Gradle checksum; leaving gradlew to fail as before." >&2
+    return 0
+  }
+  for mirror in \
+      "https://mirrors.cloud.tencent.com/gradle" \
+      "https://mirrors.huaweicloud.com/gradle"; do
+    if curl -fsSL -o "$dir/$zip" "$mirror/$zip" \
+       && echo "${official}  $dir/$zip" | sha256sum -c - >/dev/null 2>&1; then
+      ok=1; break
+    fi
+    echo "Mirror $mirror failed download/verify; trying next." >&2
+    rm -f "$dir/$zip"
+  done
+  if [ -z "$ok" ]; then
+    echo "Gradle seed failed against all mirrors; leaving gradlew to fail as before." >&2
+    return 0
+  fi
+  unzip -q "$dir/$zip" -d "$dir" && touch "$dir/$zip.ok"
+  echo "Gradle $ver seeded and verified against official sha256." >&2
+}
+seed_gradle_distribution
+
+cd "$CLAUDE_PROJECT_DIR"
+./gradlew --version > /dev/null 2>&1
+
+echo "Android SDK setup complete."

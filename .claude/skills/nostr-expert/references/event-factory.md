@@ -42,8 +42,8 @@ Amethyst picks them up when it bumps `quartz` in `gradle/libs.versions.toml`.
    codecs and builder extensions (see `tag-patterns.md`).
 2. **The module's `EventKindProvider`**: `registry.register(MyEvent.KIND, ::MyEvent)`, or the
    kind parses as plain `Event`.
-3. **`LocalCache` dispatch** (here, in Amethyst): `justConsumeInnerInner` in
-   `commons/src/commonMain/kotlin/com/vitorpamplona/amethyst/commons/model/cache/EventCache.kt`
+3. **`LocalCache` dispatch** (in Amethyst, not in this repository): `justConsumeInnerInner` in
+   [`commons/.../model/cache/EventCache.kt`](https://github.com/vitorpamplona/amethyst/blob/main/commons/src/commonMain/kotlin/com/vitorpamplona/amethyst/commons/model/cache/EventCache.kt)
    (`LocalCache` is `object LocalCache : EventCache()`). Without a branch the event hits the
    `else` and is dropped with only a `Log.w("Event Not Supported")` — including the
    account's own freshly signed copy. Add it next to a sibling of the same shape.

@@ -37,3 +37,26 @@ allprojects {
         }
     }
 }
+
+// Installs .git-hooks/ (spotlessCheck before a commit, the JVM tests before a
+// push) into this clone. Runs with the first JVM compile, so a fresh clone gets
+// the hooks on its first build.
+val installGitHook =
+    tasks.register<Copy>("installGitHook") {
+        val dotGit = File(rootProject.rootDir, ".git")
+        val hooksDir: File =
+            if (dotGit.isFile) {
+                // Git worktree: .git is a file with "gitdir: <path>"
+                File(File(dotGit.readText().trim().removePrefix("gitdir: ")), "hooks")
+            } else {
+                File(dotGit, "hooks")
+            }
+        from(File(rootProject.rootDir, ".git-hooks/pre-commit"))
+        from(File(rootProject.rootDir, ".git-hooks/pre-push"))
+        into(hooksDir)
+        filePermissions { unix("0777") }
+    }
+
+subprojects {
+    tasks.matching { it.name == "compileKotlinJvm" }.configureEach { dependsOn(installGitHook) }
+}

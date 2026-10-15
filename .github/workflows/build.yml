@@ -29,6 +29,11 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # Claude Code and Codex must keep reading the same rules and skills; the
+      # same check runs before every agent push (tools/agent-hooks/).
+      - name: Agent config
+        run: tools/agent-hooks/agent_config_check.py
+
       # The metadata compile resolves commonMain against only the deps every
       # target shares (the Apple classpath), so a JVM-only dependency leaking
       # into common code fails here, on Linux, instead of in test-ios.

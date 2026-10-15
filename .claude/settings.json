@@ -1,0 +1,47 @@
+{
+  "env": {
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/tools/agent-hooks/pre-push-spotless.sh",
+            "timeout": 180
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/tools/agent-hooks/pre-push-agent-config.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-spotless.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

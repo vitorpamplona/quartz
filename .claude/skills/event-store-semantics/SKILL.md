@@ -25,7 +25,7 @@ behavior, update that rule and its changelog in the same PR.
 | Replaceable / addressable supersession | `sqlite/ReplaceableModule.kt`, `sqlite/AddressableModule.kt` |
 | NIP-09 / NIP-40 / NIP-62 / ephemeral | `sqlite/DeletionRequestModule.kt`, `sqlite/ExpirationModule.kt`, `sqlite/RightToVanishModule.kt`, `sqlite/EphemeralModule.kt` |
 | NIP-50 FTS | `sqlite/FullTextSearchModule.kt` |
-| Index / feature toggles | `sqlite/IndexingStrategy.kt` (client default); geode's `geode/src/main/kotlin/com/vitorpamplona/geode/RelayIndexingStrategy.kt` (relay preset) |
+| Index / feature toggles | `sqlite/IndexingStrategy.kt` (client default); Amethyst geode's [`RelayIndexingStrategy.kt`](https://github.com/vitorpamplona/amethyst/blob/main/geode/src/main/kotlin/com/vitorpamplona/geode/RelayIndexingStrategy.kt) (relay preset) |
 | Operations (concurrency, pragmas, maintenance) | `sqlite/README.md` |
 
 Executable spec: `store-sqlite/src/commonTest/.../nip01Core/store/sqlite/` (`BasicTest`,
