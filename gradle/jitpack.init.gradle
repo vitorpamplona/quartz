@@ -1,0 +1,19 @@
+// Init script for JitPack builds only (see jitpack.yml).
+
+// JitPack has no signing keys; publishing to mavenLocal doesn't need signatures.
+allprojects {
+    tasks.matching { it.name.toLowerCase().startsWith("sign") }.configureEach { it.enabled = false }
+}
+
+// JitPack resolves mavenCentral() through a mirror that can lag Central by days, so a freshly
+// released crypto-kmp or mls-kmp fails with "Could not find". Ask Central directly for those two.
+beforeSettings { settings ->
+    settings.dependencyResolutionManagement.repositories.maven {
+        name = "MavenCentralDirect"
+        url = "https://repo1.maven.org/maven2/"
+        content {
+            includeGroup("com.vitorpamplona.crypto")
+            includeGroup("com.vitorpamplona.mls")
+        }
+    }
+}
