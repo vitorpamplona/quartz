@@ -11,7 +11,6 @@ coreKtx = "1.19.1"
 cryptoKmp = "1.0.0"
 espressoCore = "3.7.0"
 jackson = "2.22.3"
-kchesslib = "1.0.5"
 kotlin = "2.4.20"
 kotlinx-coroutines-test = "1.11.0"
 kotlinxCollectionsImmutable = "0.5.2"
@@ -41,7 +40,6 @@ androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.r
 androidx-sqlite-bundled-jvm = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 crypto = { module = "com.vitorpamplona.crypto:crypto", version.ref = "cryptoKmp" }
 jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
-kchesslib = { module = "io.github.cvb941:kchesslib", version.ref = "kchesslib" }
 kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlin" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
