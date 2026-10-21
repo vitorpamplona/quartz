@@ -5,12 +5,14 @@ allprojects {
     tasks.matching { it.name.toLowerCase().startsWith("sign") }.configureEach { it.enabled = false }
 }
 
-// JitPack resolves mavenCentral() through a mirror that can lag Central by days, so a freshly
-// released crypto-kmp or mls-kmp fails with "Could not find". Ask Central directly for those two.
+// JitPack's ~/.gradle/init.d/maven-mirror.gradle points every Maven Central URL at
+// MAVEN_CENTRAL_MIRROR (Google's copy of Central), which can lag Central by days, so a freshly
+// released crypto-kmp or mls-kmp fails with "Could not find". That script matches exact URLs,
+// so the explicit :443 keeps this repo on Central itself; it serves only those two groups.
 beforeSettings { settings ->
     settings.dependencyResolutionManagement.repositories.maven {
         name = "MavenCentralDirect"
-        url = "https://repo1.maven.org/maven2/"
+        url = "https://repo1.maven.org:443/maven2/"
         content {
             includeGroup("com.vitorpamplona.crypto")
             includeGroup("com.vitorpamplona.mls")

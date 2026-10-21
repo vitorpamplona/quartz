@@ -1,10 +1,4 @@
 jdk:
   - openjdk21
-before_install:
-  - env | grep -i -E 'proxy|maven|gradle|java_opts|jitpack' || true
-  - ls -la ~/.gradle ~/.gradle/init.d ~/.m2 2>&1 || true
-  - cat ~/.gradle/gradle.properties ~/.gradle/init.d/* ~/.gradle/init.gradle ~/.m2/settings.xml 2>&1 || true
-  - for u in https://repo1.maven.org/maven2 https://repo.maven.apache.org/maven2; do curl -sS -o /dev/null -w "$u crypto %{http_code}\n" $u/com/vitorpamplona/crypto/crypto/1.0.0/crypto-1.0.0.module; curl -sS -o /dev/null -w "$u stdlib %{http_code}\n" $u/org/jetbrains/kotlin/kotlin-stdlib/2.2.0/kotlin-stdlib-2.2.0.pom; done
-  - ./gradlew --init-script gradle/jitpack.init.gradle :quartz:dependencyInsight --configuration commonMainResolvableDependenciesMetadata --dependency com.vitorpamplona.crypto --info 2>&1 | grep -iE 'vitorpamplona|repo|mirror|http|status|search' | head -80 || true
 install:
   - ./gradlew :quartz:publishKotlinMultiplatformPublicationToMavenLocal :quartz:publishJvmPublicationToMavenLocal --init-script gradle/jitpack.init.gradle
