@@ -27,7 +27,11 @@ include(":quartz")
 // Central. To change one alongside quartz, point Gradle at a local checkout and it builds that
 // checkout instead of the published artifact:
 //   ./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest
-providers.gradleProperty("cryptoKmpDir").orNull?.let { dir ->
+// When quartz is itself an included build (Amethyst's -PquartzDir), the same -P flags reach this
+// file too; the outer build includes those checkouts once for the whole composite, so skip them.
+val isIncludedBuild = gradle.parent != null
+
+providers.gradleProperty("cryptoKmpDir").orNull?.takeUnless { isIncludedBuild }?.let { dir ->
     includeBuild(dir) {
         dependencySubstitution {
             substitute(module("com.vitorpamplona.crypto:crypto")).using(project(":crypto"))
@@ -36,7 +40,7 @@ providers.gradleProperty("cryptoKmpDir").orNull?.let { dir ->
 }
 
 //   ./gradlew -PmlsKmpDir=../mls-kmp :quartz:jvmTest
-providers.gradleProperty("mlsKmpDir").orNull?.let { dir ->
+providers.gradleProperty("mlsKmpDir").orNull?.takeUnless { isIncludedBuild }?.let { dir ->
     includeBuild(dir) {
         dependencySubstitution {
             substitute(module("com.vitorpamplona.mls:mls")).using(project(":mls"))
