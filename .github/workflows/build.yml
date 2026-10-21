@@ -1,0 +1,183 @@
+name: Test/Build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Agent config (Claude Code and Codex read the same rules and skills)
+        run: tools/agent-hooks/agent_config_check.py
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      # Writes the Gradle cache on push to main, reads it on PRs and other branches.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The metadata compiles resolve commonMain against only the deps every target shares,
+      # which is the Apple classpath: a dependency that reaches the JVM transitively (okio via
+      # OkHttp) but is missing for iOS fails here, on Linux, instead of in test-apple. The
+      # git-hooks/pre-push hook runs this same list.
+      - name: Linter (gradle)
+        run: |
+          ./gradlew spotlessCheck \
+            :quartz:verifyKmpPurity \
+            :quartz:compileCommonMainKotlinMetadata \
+            :quartz:compileAppleMainKotlinMetadata
+
+      - name: Test JVM (gradle)
+        run: ./gradlew :quartz:jvmTest
+
+      # The console names the failing test and stops there; the annotations carry the
+      # exception message (NegentropySyncException's `detail`, for one) past the runner.
+      - name: JVM Test Report
+        uses: mikepenz/action-junit-report@a9170d5795813c01ab4901ffb045b52bab4ab09d # v6.5.0
+        if: always()
+        with:
+          report_paths: 'quartz/build/test-results/jvmTest/TEST-*.xml'
+          annotate_only: true
+          detailed_summary: true
+          fail_on_failure: true
+
+      - name: Upload JVM Test Reports
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: Quartz JVM Test Reports
+          path: quartz/build/reports/tests
+
+      - name: Build (gradle)
+        run: ./gradlew :quartz:assemble
+
+  # Runs the whole suite on a Linux Native frontend, which also catches a commonMain or
+  # commonTest source reaching for a JVM-only API on a target that, unlike Apple, has no
+  # Foundation to fall back on. Before this job existed in Amethyst nothing ran linuxX64:
+  # a copy-on-write LargeCache with O(n) writes and a non-atomic read-copy-write sat
+  # unnoticed, and TestResourceLoader stayed a TODO() that failed every vector suite there.
+  test-linux-native:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The Kotlin/Native toolchain (compiler, LLVM, sysroot) lands in ~/.konan, which
+      # setup-gradle does not cache. Keyed on the version catalog so a Kotlin bump refreshes it.
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Test Linux Native
+        run: ./gradlew :quartz:linuxX64Test
+
+      - name: Linux Native Test Report
+        uses: mikepenz/action-junit-report@a9170d5795813c01ab4901ffb045b52bab4ab09d # v6.5.0
+        if: always()
+        with:
+          report_paths: 'quartz/build/test-results/linuxX64Test/TEST-*.xml'
+          annotate_only: true
+          detailed_summary: true
+          fail_on_failure: true
+
+      - name: Upload Linux Native Test Reports
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: Quartz Linux Native Test Reports
+          path: quartz/build/reports
+
+  # Apple test binaries link and run only on macOS. macos-latest is 3 M1 cores and 7 GB of
+  # RAM, 5 to 10x slower than a laptop on Kotlin/Native links, so the daemon heap is capped at
+  # 4 GB (gradle.properties asks for 6) and the test binaries link unoptimized (see
+  # quartz/build.gradle.kts): an optimized iOS test link alone took 12 minutes here.
+  test-apple:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      # iosSimulatorArm64Test runs the suite on the simulator, exercising secp256k1 and the
+      # CommonCrypto-backed primitives on a real Apple toolchain. iosArm64 has no simulator to
+      # run on; compiling its tests catches device-only drift.
+      - name: Test iOS
+        run: |
+          ./gradlew \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            :quartz:iosSimulatorArm64Test \
+            :quartz:compileTestKotlinIosArm64
+
+      - name: iOS Test Report
+        uses: mikepenz/action-junit-report@a9170d5795813c01ab4901ffb045b52bab4ab09d # v6.5.0
+        if: always()
+        with:
+          report_paths: 'quartz/build/test-results/iosSimulatorArm64Test/TEST-*.xml'
+          annotate_only: true
+          detailed_summary: true
+          fail_on_failure: true
+
+      - name: Upload iOS Test Reports
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: Quartz iOS Test Reports
+          path: quartz/build/reports

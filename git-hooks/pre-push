@@ -1,0 +1,39 @@
+#!/bin/bash
+
+GREEN='\033[0;32m'
+NO_COLOR='\033[0m'
+
+echo "*********************************************************"
+echo "Running git pre-push hook."
+echo "*********************************************************"
+echo ""
+echo "Java Version: "
+echo "$JAVA_HOME"
+echo "$(java -version)"
+echo "Running test... "
+
+# The same checks as CI's build job. The JVM tests compile shared code for the JVM only, where
+# java.util and java.io APIs still resolve; the metadata compiles reject them, so a break that only
+# iOS or Linux Native would hit fails here on any host. linuxX64Test and the Apple tests run in CI.
+TASKS=(
+    spotlessCheck
+    :quartz:verifyKmpPurity
+    :quartz:compileCommonMainKotlinMetadata
+    :quartz:compileAppleMainKotlinMetadata
+    :quartz:jvmTest
+)
+
+./gradlew "${TASKS[@]}" --quiet
+
+status=$?
+
+if [ "$status" = 0 ] ; then
+    echo "All test passed."
+    exit 0
+else
+    echo "*********************************************************"
+    echo 1>&2 "Formatting, a check or a test failed"
+    printf "Run ${GREEN}./gradlew spotlessApply${NO_COLOR}, fix the compile errors or failing tests above and push again.\n"
+    echo "*********************************************************"
+    exit 1
+fi
