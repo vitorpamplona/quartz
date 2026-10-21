@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.pool
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.client.pool.PoolEventOutboxState.ConnectFailure
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -30,6 +31,9 @@ import kotlin.test.assertTrue
 
 class PoolEventOutboxStateTest {
     private val relay = NormalizedRelayUrl("wss://relay.example/")
+
+    /** A fixed clock for the failed-connection limit, in seconds. */
+    private val t0 = 1_700_000_000L
 
     private fun fakeEvent() =
         Event(
@@ -143,5 +147,47 @@ class PoolEventOutboxStateTest {
         state.newTry(relay)
         state.newResponse(relay, success = false, message = "auth-required: sign in")
         assertTrue(state.isDone())
+    }
+
+    @Test
+    fun aFailedConnectionIsNotAVerdictAndKeepsTheEventPending() {
+        // A relay that restarts fails a dial or two: the event must still be there to re-send.
+        val state = PoolEventOutboxState(fakeEvent(), setOf(relay))
+        state.newTry(relay)
+        // The doubling back-off: failures 1, 2, 4, ... 64 seconds apart, all inside the limit.
+        listOf(0L, 1, 3, 7, 15, 31, 63, 119).forEach { at ->
+            assertEquals(ConnectFailure.KEPT, state.cannotConnect(relay, t0 + at), "a failure at ${at}s gives up nothing")
+        }
+        assertContains(state.relaysLeft(), relay)
+        assertFalse(state.isDone())
+    }
+
+    @Test
+    fun aRelayUnreachableForTheLimitIsGivenUpOn() {
+        // A host that does not resolve is redialled five minutes apart: the second failure is past the limit.
+        val state = PoolEventOutboxState(fakeEvent(), setOf(relay))
+        assertEquals(ConnectFailure.KEPT, state.cannotConnect(relay, t0))
+        assertEquals(ConnectFailure.GAVE_UP, state.cannotConnect(relay, t0 + 301), "unreachable past the limit")
+        assertTrue(state.isDone())
+        assertEquals(ConnectFailure.NOT_OWED, state.cannotConnect(relay, t0 + 600), "and a relay it is no longer owed to is nothing to give up")
+    }
+
+    @Test
+    fun aConnectionThatOpensStartsTheClockOver() {
+        // A relay that came back and dropped again much later has not been unreachable all along.
+        val state = PoolEventOutboxState(fakeEvent(), setOf(relay))
+        state.cannotConnect(relay, t0)
+        assertTrue(state.reachable(relay), "still owed, so the reconnect re-sends it")
+        assertEquals(ConnectFailure.KEPT, state.cannotConnect(relay, t0 + 300), "a new run of failures, not the old one")
+        assertEquals(ConnectFailure.GAVE_UP, state.cannotConnect(relay, t0 + 300 + PoolEventOutboxState.MAX_UNREACHABLE_SECONDS))
+        assertFalse(state.reachable(relay), "nothing to re-send to a relay it was given up on")
+    }
+
+    @Test
+    fun theRelaysAnswerAfterAFailedConnectionStillDecides() {
+        val state = PoolEventOutboxState(fakeEvent(), setOf(relay))
+        state.cannotConnect(relay, t0)
+        state.newResponse(relay, success = true, message = "")
+        assertTrue(state.isDone(), "an OK on the next connection ends delivery as always")
     }
 }
