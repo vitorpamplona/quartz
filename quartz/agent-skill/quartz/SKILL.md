@@ -28,8 +28,8 @@ implementation("com.vitorpamplona.quartz:quartz:<version>")
 
 Targets: Android, JVM, iosArm64, iosSimulatorArm64, macosArm64, linuxX64 (per-target
 artifacts such as `quartz-jvm` and `quartz-android` exist for non-KMP builds). Ktor is not
-a dependency: on JVM and Android, Quartz talks to relays through OkHttp and parses events
-with Jackson.
+a dependency: on JVM and Android, Quartz talks to relays through OkHttp. Events and relay
+messages are parsed by Quartz's own reader on every target.
 
 ## Where things are
 
