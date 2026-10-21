@@ -61,8 +61,9 @@ class PoolEventOutboxState(
     // Guarded by [lock]; created on the first `auth-required:` that keeps the event. See [newResponse].
     private var authWaits: HashMap<NormalizedRelayUrl, Int>? = null
 
-    // Guarded by [lock]; created on the first failed connection while the event was pending. See [cannotConnect].
-    private var connectFailures: HashMap<NormalizedRelayUrl, Int>? = null
+    // Guarded by [lock]; when each relay's current run of failed connections began, in seconds.
+    // Created on the first failed connection while the event was pending. See [cannotConnect].
+    private var unreachableSince: HashMap<NormalizedRelayUrl, Long>? = null
 
     fun updateRelays(newRelays: Set<NormalizedRelayUrl>) {
         lock.withLock {
@@ -166,7 +167,7 @@ class PoolEventOutboxState(
                 failures?.remove(url)
                 backOffs?.remove(url)
                 authWaits?.remove(url)
-                connectFailures?.remove(url)
+                unreachableSince?.remove(url)
             }
         }
     }
@@ -176,27 +177,57 @@ class PoolEventOutboxState(
      * nothing about this event, so it is not a verdict, and the event stays pending to be re-sent on
      * the next connection — what the outbox is for. It used to arrive here as a refusal and, since
      * any OK ends delivery, one failed dial dropped every event outstanding at the relay: a writer
-     * whose relay restarted lost its whole window and heard nothing until its own timeout. Bounded
-     * so a relay that never comes back is given up on: the [MAX_CONNECT_FAILURES]th failure in a row
-     * (the pool's reconnect back-off doubles from a second to five minutes, so about thirteen
-     * minutes unreachable) drops it. Returns true when it did.
+     * whose relay restarted lost its whole window and heard nothing until its own timeout.
+     *
+     * Bounded by time, not by a count of failures, so a relay that never comes back is given up on:
+     * the first failure after [url] has been unreachable for [MAX_UNREACHABLE_SECONDS] drops it. A
+     * count would last as long as the pool's reconnect back-off made it: that doubles from a second
+     * for a refused or reset connection, but starts at five minutes for a host that does not
+     * resolve or an HTTP rejection, so ten failures were thirteen minutes for one relay and
+     * forty-five for another. A connection that opens restarts the clock ([reachable]); a relay
+     * that keeps opening and dropping is bounded instead by the send budget ([Tries]), since every
+     * connection re-sends.
      */
-    fun cannotConnect(url: NormalizedRelayUrl): Boolean =
+    fun cannotConnect(
+        url: NormalizedRelayUrl,
+        now: Long = TimeUtils.now(),
+    ): ConnectFailure =
         lock.withLock {
-            if (url !in remaining) return@withLock false
-            val c = connectFailures ?: HashMap<NormalizedRelayUrl, Int>(2).also { connectFailures = it }
-            val n = (c[url] ?: 0) + 1
-            if (n < MAX_CONNECT_FAILURES) {
-                c[url] = n
-                return@withLock false
-            }
+            if (url !in remaining) return@withLock ConnectFailure.NOT_OWED
+            val since = unreachableSince ?: HashMap<NormalizedRelayUrl, Long>(2).also { unreachableSince = it }
+            val first = since.getOrPut(url) { now }
+            if (now - first < MAX_UNREACHABLE_SECONDS) return@withLock ConnectFailure.KEPT
             drop(url)
-            c.remove(url)
+            since.remove(url)
             failures?.remove(url)
             backOffs?.remove(url)
             authWaits?.remove(url)
+            ConnectFailure.GAVE_UP
+        }
+
+    /**
+     * A connection to [url] is open and about to be re-sent what it is owed, so it is reachable:
+     * its run of failed connections ([cannotConnect]) is over. Returns whether [url] is still owed
+     * this event, like [isSupposedToGo], under the same single lock.
+     */
+    fun reachable(url: NormalizedRelayUrl): Boolean =
+        lock.withLock {
+            if (url !in remaining) return@withLock false
+            unreachableSince?.remove(url)
             true
         }
+
+    /** What one failed connection did to this event: see [cannotConnect]. */
+    enum class ConnectFailure {
+        /** The relay was not owed this event. */
+        NOT_OWED,
+
+        /** Still owed, and kept pending to be re-sent on the next connection. */
+        KEPT,
+
+        /** Unreachable too long: no longer owed, given up on there. */
+        GAVE_UP,
+    }
 
     companion object {
         /** `rate-limited:` back-offs one relay may state for one event before they count as failures. */
@@ -205,8 +236,8 @@ class PoolEventOutboxState(
         /** `auth-required:` answers that keep one event pending for one relay before it is refused for good. */
         const val MAX_AUTH_WAITS = 10
 
-        /** Failed connections in a row to one relay that keep one event pending before it is given up on there. */
-        const val MAX_CONNECT_FAILURES = 10
+        /** Seconds one relay may stay unreachable, since its first failed connection, before one event is given up on there. */
+        const val MAX_UNREACHABLE_SECONDS = 2L * TimeUtils.ONE_MINUTE
     }
 
     /**

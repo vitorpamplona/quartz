@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.EventCmd
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.LargeCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -223,12 +224,18 @@ class PoolEventOutbox {
     // --------------------------
     // State management functions
     // --------------------------
+
+    /**
+     * Re-sends what [relay] is owed. It runs on a connection that is open (on connect, and again
+     * once an AUTH lands), so the relay is reachable and each event's run of failed connections to
+     * it is over ([PoolEventOutboxState.reachable]).
+     */
     fun syncState(
         relay: NormalizedRelayUrl,
         sync: (Command) -> Unit,
     ) {
         eventOutbox.forEach { _, outboxCache ->
-            outboxCache.forEachUnsentEvent(relay) {
+            if (outboxCache.reachable(relay)) {
                 sync(outboxCache.command())
             }
         }
@@ -288,23 +295,40 @@ class PoolEventOutbox {
     /**
      * A connection to [relay] failed. Every event owed to it stays pending, to be re-sent when it
      * connects again ([PoolEventOutboxState.cannotConnect]); returns the events given up on at
-     * [relay] because it has failed too many times in a row, which the client reports as gave-ups.
+     * [relay] because it has been unreachable too long, which the client reports as gave-ups.
+     *
+     * When that leaves [relay] owed nothing, it leaves [relays] now rather than at the next sweep:
+     * a relay stays in the pool, and is redialled, for as long as it is in that set, and this one
+     * just proved it cannot be reached. The walk already saw every entry, so that costs nothing.
      */
-    fun onCannotConnect(relay: NormalizedRelayUrl): List<Event> {
-        var gaveUp: MutableList<Event>? = null
+    fun onCannotConnect(
+        relay: NormalizedRelayUrl,
+        now: Long = TimeUtils.now(),
+    ): List<Event> {
+        var gaveUp: MutableList<PoolEventOutboxState>? = null
+        var stillOwed = false
         eventOutbox.forEach { _, outboxCache ->
-            if (outboxCache.cannotConnect(relay)) {
-                (gaveUp ?: ArrayList<Event>().also { gaveUp = it }).add(outboxCache.event)
+            when (outboxCache.cannotConnect(relay, now)) {
+                PoolEventOutboxState.ConnectFailure.GAVE_UP -> (gaveUp ?: ArrayList<PoolEventOutboxState>().also { gaveUp = it }).add(outboxCache)
+                PoolEventOutboxState.ConnectFailure.KEPT -> stillOwed = true
+                PoolEventOutboxState.ConnectFailure.NOT_OWED -> {}
             }
         }
-        gaveUp?.forEach { event ->
-            val waiting = eventOutbox.get(event.id)
-            if (waiting != null && waiting.isDone()) {
-                eventOutbox.remove(event.id)
+        val given = gaveUp ?: return emptyList()
+        given.forEach { waiting ->
+            if (waiting.isDone()) {
+                eventOutbox.remove(waiting.event.id)
                 onRemoved()
             }
         }
-        return gaveUp.orEmpty()
+        // Re-checked inside the update, as the sweep does, for a publish to [relay] that landed
+        // after the walk passed it.
+        if (!stillOwed) {
+            relays.update { current ->
+                if (relay in current && eventOutbox.values().none { it.isSupposedToGo(relay) }) current - relay else current
+            }
+        }
+        return given.map { it.event }
     }
 
     fun destroy() {
