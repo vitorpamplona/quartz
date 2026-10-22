@@ -164,9 +164,8 @@ to `onPause` methods.
 Crypto primitives come from [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp), MLS from
 [mls-kmp](https://github.com/vitorpamplona/mls-kmp), secp256k1 from
 [secp256k1-kmp](https://github.com/ACINQ/secp256k1-kmp) and NIP-77 from
-[negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp). Events and every
-relay message are read and written by Quartz's own `NostrJsonReader` and `NostrJsonWriter`, on
-every target. On the JVM and Android, OkHttp is the bundled WebSocket transport.
+[negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp). On the JVM and Android, Jackson
+parses events and OkHttp is the bundled WebSocket transport.
 
 ## Developer Setup
 

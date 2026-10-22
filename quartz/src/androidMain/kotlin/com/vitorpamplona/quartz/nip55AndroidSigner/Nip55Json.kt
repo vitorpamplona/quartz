@@ -31,7 +31,7 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
  * NIP-55's JSON: the permission list a client sends a signer app, and the results a signer
  * returns for a batch of requests.
  *
- * Read like the Jackson deserializers it replaces (unknown fields skipped; `package`, `result`,
+ * Read like the Jackson deserializers it mirrors (unknown fields skipped; `package`, `result`,
  * `event` and `id` only when they are strings; `rejected` only when it is a boolean), with one
  * fix: a permission's `"kind": null` reads as no kind, as it was written, instead of kind 0.
  */

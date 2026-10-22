@@ -18,7 +18,7 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
 ## Layout
 
 - `quartz/`: the library module. `quartz/src/<sourceSet>/kotlin/com/vitorpamplona/quartz/…`.
-  - Source sets: `commonMain`; `jvmAndroid` (OkHttp; shared by `jvmMain` and
+  - Source sets: `commonMain`; `jvmAndroid` (Jackson, OkHttp; shared by `jvmMain` and
     `androidMain`); `nativeMain` above `appleMain` (`iosMain`, `macosMain`) and `linuxMain`.
     Tests mirror them (`commonTest`, `jvmAndroidTest`, `jvmTest`, `androidHostTest`,
     `androidDeviceTest`, `nativeTest`, `appleTest`, `iosTest`, `linuxTest`).

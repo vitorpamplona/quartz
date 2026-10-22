@@ -21,14 +21,11 @@
 package com.vitorpamplona.quartz.nip06KeyDerivation
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.Hex
 import junit.framework.TestCase.fail
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,13 +34,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class Bip39MnemonicsTest {
     private val tests =
-        Json
-            .parseToJsonElement(
-                javaClass.classLoader!!
-                    .getResourceAsStream("bip39.vectors.json")
-                    .bufferedReader()
-                    .use { it.readText() },
-            ).jsonObject
+        ObjectMapper()
+            .readTree(javaClass.classLoader?.getResourceAsStream("bip39.vectors.json"))
 
     @Test
     fun toSeed() {
@@ -58,10 +50,10 @@ class Bip39MnemonicsTest {
 
     @Test
     fun referenceTests() {
-        tests.getValue("english").jsonArray.map {
-            val raw = it.jsonArray[0].jsonPrimitive.content
-            val mnemonics = it.jsonArray[1].jsonPrimitive.content
-            val seed = it.jsonArray[2].jsonPrimitive.content
+        tests.get("english").map {
+            val raw = it.get(0).asText()
+            val mnemonics = it.get(1).asText()
+            val seed = it.get(2).asText()
             assertEquals(Bip39Mnemonics.toMnemonics(Hex.decode(raw)).joinToString(" "), mnemonics)
             assertEquals(Hex.encode(Bip39Mnemonics.toSeed(Bip39Mnemonics.toMnemonics(Hex.decode(raw)), "TREZOR")), seed)
         }

@@ -31,7 +31,8 @@ package com.vitorpamplona.quartz.nip01Core.core
  * that binding depend on key order, escaping and number formatting agreeing by
  * coincidence — and it fails silently, as an unlabelled row, when they do not.
  *
- * kotlinx emits the string verbatim, via `JsonUnquotedLiteral`. [json] MUST already be well-formed JSON; nothing
+ * Both backends emit the string verbatim: Jackson via `writeRawValue`, kotlinx via
+ * `JsonUnquotedLiteral`. [json] MUST already be well-formed JSON; nothing
  * validates it, and an invalid value corrupts the whole document.
  */
 data class RawJson(

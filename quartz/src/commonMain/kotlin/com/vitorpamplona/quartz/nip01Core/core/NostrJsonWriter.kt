@@ -31,9 +31,10 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 /**
  * Quartz's own JSON writer for what it puts on a WebSocket (events, tags, rumors, filters,
  * every relay message and client command) and for the NIP-01 id hash, the twin of
- * [NostrJsonReader].
+ * [NostrJsonReader]. [OptimizedJsonMapper] and the id hash write through it when
+ * [JsonEngine.HAND_WRITTEN] is selected.
  *
- * The output is byte-identical to the Jackson serializers it replaces, including their
+ * The output is byte-identical to the Jackson serializers it mirrors, including their
  * escaping, which is wider than NIP-01's: `"`, `\` and the short forms `\b \f \n \r \t`, every
  * other char below 0x20 as `\u00XX` in uppercase hex, everything else (DEL, U+2028, `/`,
  * non-ASCII) as is. Two modes share that rule:

@@ -502,6 +502,20 @@ Relay responds with:
 | Relay → Client | `["OK", eventId, success, message]` | Publish acknowledgement |
 | Relay → Client | `["NOTICE", message]` | Relay notice |
 
+### JSON engine
+
+Every NIP-01 frame, event, filter, NIP-46 and NIP-55 message goes through `OptimizedJsonMapper`
+(and the event id through `EventHasher`). By default that is Jackson on JVM and Android and
+kotlinx on native. Quartz also has its own hand-written reader and writer, `NostrJsonReader` and
+`NostrJsonWriter`: the same code on every target, about twice as fast as Jackson on events, and
+byte-identical to it on output. It is opt-in while it is being tested:
+
+```kotlin
+JsonEngine.current = JsonEngine.HAND_WRITTEN // or JsonEngine.DEFAULT
+```
+
+The flag is read on every call, so it can change at any time; set it once at startup.
+
 ## Filters
 
 Filters define what events a subscription matches. All fields are optional — omitted fields match everything.

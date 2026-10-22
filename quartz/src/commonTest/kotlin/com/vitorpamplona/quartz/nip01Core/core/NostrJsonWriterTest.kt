@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip01Core.core
 
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
-import com.vitorpamplona.quartz.nip01Core.crypto.EventHasherSerializer
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountResult
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EoseMessage
@@ -74,20 +73,20 @@ class NostrJsonWriterTest {
         assertEquals("[[$expected,\"\"],[]]", NostrJsonWriter.toJson(arrayOf(arrayOf(e.content, ""), emptyArray())))
         assertEquals(
             "[0,\"$pk\",1,1,[],$expected]".encodeToByteArray().toList(),
-            EventHasherSerializer.fastMakeJsonForId(pk, 1, 1, emptyArray(), e.content).toList(),
+            NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), e.content).toList(),
         )
     }
 
     @Test
     fun surrogatesStayAsIsInTextAndAreEscapedAloneInUtf8() {
         val lone = "x\uD83Dy\uDE00"
-        assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", EventHasherSerializer.makeJsonForId(pk, 1, 1, emptyArray(), lone))
+        assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", NostrJsonWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
         assertEquals(
             "[0,\"$pk\",1,1,[],\"x\\uD83Dy\\uDE00\"]".encodeToByteArray().toList(),
-            EventHasherSerializer.fastMakeJsonForId(pk, 1, 1, emptyArray(), lone).toList(),
+            NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), lone).toList(),
         )
 
-        val bytes = EventHasherSerializer.fastMakeJsonForId(pk, 1, 1, emptyArray(), "\uD83D\uDE00\u00E9\u6F22")
+        val bytes = NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "\uD83D\uDE00\u00E9\u6F22")
         val tail = bytes.copyOfRange(bytes.size - 11, bytes.size)
         assertContentEquals(
             byteArrayOf(0x22, 0xF0.toByte(), 0x9F.toByte(), 0x98.toByte(), 0x80.toByte(), 0xC3.toByte(), 0xA9.toByte(), 0xE6.toByte(), 0xBC.toByte(), 0xA2.toByte(), 0x22),
@@ -99,15 +98,15 @@ class NostrJsonWriterTest {
     fun numbersAtTheEdges() {
         assertEquals(
             "[0,\"$pk\",-9223372036854775808,-2147483648,[],\"\"]",
-            EventHasherSerializer.fastMakeJsonForId(pk, Long.MIN_VALUE, Int.MIN_VALUE, emptyArray(), "").decodeToString(),
+            NostrJsonWriter.idPreimageBytes(pk, Long.MIN_VALUE, Int.MIN_VALUE, emptyArray(), "").decodeToString(),
         )
         assertEquals(
             "[0,\"$pk\",9223372036854775807,0,[],\"\"]",
-            EventHasherSerializer.fastMakeJsonForId(pk, Long.MAX_VALUE, 0, emptyArray(), "").decodeToString(),
+            NostrJsonWriter.idPreimageBytes(pk, Long.MAX_VALUE, 0, emptyArray(), "").decodeToString(),
         )
         assertEquals(
-            EventHasherSerializer.makeJsonForId(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y"),
-            EventHasherSerializer.fastMakeJsonForId(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y").decodeToString(),
+            NostrJsonWriter.idPreimageJson(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y"),
+            NostrJsonWriter.idPreimageBytes(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y").decodeToString(),
         )
     }
 

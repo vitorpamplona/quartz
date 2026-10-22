@@ -25,8 +25,8 @@ import kotlin.test.assertEquals
 
 /**
  * A SHA-256 over every outcome a suite produces, pinned to the value it had when the same suite
- * also compared each outcome with the Jackson code these readers and writers replaced. A change
- * to any one parse or write changes the digest, without keeping Jackson around to say so.
+ * also compared each outcome with the Jackson code these readers and writers mirror. A change
+ * to any one parse or write changes the digest, even for inputs the live comparisons do not cover.
  *
  * An empty [check] expectation prints the digest instead, for recording a new suite.
  */

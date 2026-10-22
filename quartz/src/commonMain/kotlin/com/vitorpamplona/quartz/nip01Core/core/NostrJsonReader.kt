@@ -34,14 +34,15 @@ import kotlin.reflect.KClass
 /**
  * Reads what travels over a Nostr WebSocket straight off the frame's `String`: relay messages
  * ([readMessage]), client commands ([readCommand]), and the events, rumors and event lists inside
- * them. About twice as fast as Jackson on events, with ~40% less garbage.
+ * them. About twice as fast as Jackson on events, with ~40% less garbage. [OptimizedJsonMapper]
+ * reads through it when [JsonEngine.HAND_WRITTEN] is selected.
  *
  * It finds the end of every string value with `String.indexOf('"')`, an intrinsic on HotSpot
  * and ART, and tracks the next backslash in the frame (also found with `indexOf`), so a value
  * without escapes is one `substring`. Event keys are matched by length and characters, never
  * built. Only values with escapes go through a `StringBuilder`.
  *
- * Every type follows what Quartz's former Jackson deserializers accepted and built (`EventDeserializer`,
+ * Every type follows what Quartz's Jackson deserializers accept and build (`EventDeserializer`,
  * `RumorDeserializer`, `MessageDeserializer`, `CommandDeserializer`, `ManualFilterDeserializer`,
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
  * lenient fields. It follows the JSON grammar everywhere, including values it skips, and never
@@ -784,7 +785,7 @@ internal expect fun threadNostrJsonReader(): NostrJsonReader?
 
 /**
  * [json] read as [type] when it is one of the types [NostrJsonReader] knows, else null so the
- * caller can hand it to another reader. Exact classes, like the Jackson registrations it replaced.
+ * caller can hand it to another reader. Exact classes, like the Jackson registrations.
  */
 @PublishedApi
 internal fun readKnownType(

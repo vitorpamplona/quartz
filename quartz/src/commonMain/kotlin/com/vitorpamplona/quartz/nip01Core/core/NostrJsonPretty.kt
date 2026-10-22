@@ -26,7 +26,7 @@ package com.vitorpamplona.quartz.nip01Core.core
  * more containers deep (a tag inside an event's `tags`) kept on one line as `["e", "…"]`.
  *
  * It re-indents JSON text rather than re-serialising a tree, so strings and numbers come out
- * exactly as they went in. That matches the Jackson pretty printer it replaces
+ * exactly as they went in. That matches the Jackson pretty printer it mirrors
  * (`InliningTagArrayPrettyPrinter`) for every JSON Quartz writes itself; for arbitrary input it
  * only differs where Jackson would have rewritten an escape or a number. Lines end in `\n` on
  * every platform.

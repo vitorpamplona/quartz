@@ -20,15 +20,8 @@
  */
 package com.vitorpamplona.quartz.nipBCOnchainZaps.chain
 
+import com.vitorpamplona.quartz.nip01Core.jackson.JacksonMapper
 import com.vitorpamplona.quartz.utils.Log
-import com.vitorpamplona.quartz.utils.asBoolean
-import com.vitorpamplona.quartz.utils.asDouble
-import com.vitorpamplona.quartz.utils.asInt
-import com.vitorpamplona.quartz.utils.asLong
-import com.vitorpamplona.quartz.utils.asText
-import com.vitorpamplona.quartz.utils.elements
-import com.vitorpamplona.quartz.utils.get
-import com.vitorpamplona.quartz.utils.parseJsonTree
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -219,7 +212,7 @@ class EsploraBackend(
     }
 
     internal fun parseTx(json: String): BitcoinTx {
-        val node = parseJsonTree(json)
+        val node = JacksonMapper.mapper.readTree(json)
         val txid = node["txid"].asText()
         val status = node["status"]
         val confirmed = status?.get("confirmed")?.asBoolean() == true
@@ -227,7 +220,7 @@ class EsploraBackend(
         val blockHash = status?.get("block_hash")?.asText()
 
         val outputs =
-            node["vout"].elements().mapIndexed { idx, vout ->
+            node["vout"].mapIndexed { idx, vout ->
                 BitcoinTxOutput(
                     index = idx,
                     valueSats = vout["value"].asLong(),
@@ -262,8 +255,8 @@ class EsploraBackend(
         json: String,
         address: String,
     ): List<BitcoinAddressTx> {
-        val node = parseJsonTree(json)
-        return node.elements().map { tx ->
+        val node = JacksonMapper.mapper.readTree(json)
+        return node.map { tx ->
             val txid = tx["txid"].asText()
             val status = tx["status"]
             val confirmed = status?.get("confirmed")?.asBoolean() == true
@@ -272,7 +265,7 @@ class EsploraBackend(
 
             var spentByMe = 0L
             val incomingCounterparties = LinkedHashSet<String>()
-            tx["vin"].elements().forEach { vin ->
+            tx["vin"]?.forEach { vin ->
                 val prevout = vin["prevout"]
                 val prevAddress = prevout?.get("scriptpubkey_address")?.asText()
                 val value = prevout?.get("value")?.asLong() ?: 0L
@@ -285,7 +278,7 @@ class EsploraBackend(
 
             var receivedByMe = 0L
             val outgoingCounterparties = LinkedHashSet<String>()
-            tx["vout"].elements().forEach { vout ->
+            tx["vout"]?.forEach { vout ->
                 val outAddress = vout["scriptpubkey_address"]?.asText()
                 val value = vout["value"]?.asLong() ?: 0L
                 if (outAddress == address) {
@@ -311,8 +304,8 @@ class EsploraBackend(
     }
 
     internal fun parseUtxoList(json: String): List<Utxo> {
-        val node = parseJsonTree(json)
-        return node.elements().map { utxo ->
+        val node = JacksonMapper.mapper.readTree(json)
+        return node.map { utxo ->
             val confirmed = utxo["status"]?.get("confirmed")?.asBoolean() == true
             Utxo(
                 txid = utxo["txid"].asText(),
@@ -325,7 +318,7 @@ class EsploraBackend(
 
     /** mempool.space `/v1/fees/recommended`: `{ fastestFee, halfHourFee, hourFee, minimumFee }`. */
     internal fun parseRecommendedFees(json: String): FeeEstimates {
-        val node = parseJsonTree(json)
+        val node = JacksonMapper.mapper.readTree(json)
         val fast = node["fastestFee"]?.asDouble()
         val normal = node["halfHourFee"]?.asDouble() ?: fast
         val slow = node["hourFee"]?.asDouble() ?: node["minimumFee"]?.asDouble() ?: normal
@@ -347,7 +340,7 @@ class EsploraBackend(
      * 2-block / 6-block / 144-block targets to the fast / normal / slow tiers.
      */
     internal fun parseFeeEstimates(json: String): FeeEstimates {
-        val node = parseJsonTree(json)
+        val node = JacksonMapper.mapper.readTree(json)
 
         fun rate(vararg targets: String): Double? = targets.firstNotNullOfOrNull { node[it]?.asDouble() }
 

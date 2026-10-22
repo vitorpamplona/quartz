@@ -29,7 +29,7 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
  * NIP-46 messages, the plaintext of a kind 24133 event: `{"id","method","params"}` from a client,
  * `{"id","result","error"}` from a signer.
  *
- * Read like the Jackson deserializers they replace, with one difference: a JSON `null` field
+ * Read like the Jackson deserializers they mirror, with one difference: a JSON `null` field
  * reads as absent, as the kotlinx path on native always did, instead of the text "null" (which
  * made `"error": null` an error).
  */

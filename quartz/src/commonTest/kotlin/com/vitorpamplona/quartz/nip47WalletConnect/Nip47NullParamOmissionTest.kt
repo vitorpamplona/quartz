@@ -53,8 +53,11 @@ import kotlin.test.assertTrue
  * `Invalid list_transactions params: from must be an integer` from a real wallet
  * and failed the request outright.
  *
- * EVERY params-bearing method is listed here on purpose, so a thirteenth method
- * that writes a null parameter fails here before it reaches a wallet.
+ * EVERY params-bearing method is listed here on purpose. The Jackson mixin
+ * registrations that fix this are a hand-maintained list, and unlike the two
+ * `when` blocks over the sealed `Request` they are not compiler-checked — so a
+ * thirteenth method can be added, serialize correctly on native, and regress on
+ * JVM/Android alone. This list is the only thing that would catch that.
  */
 class Nip47NullParamOmissionTest {
     private val requests: List<Pair<String, Request>> =
@@ -126,16 +129,16 @@ class Nip47NullParamOmissionTest {
     }
 
     /**
-     * One wire format: the entry point the app calls writes what the kotlinx
-     * serializer writes.
+     * The invariant the bug broke: one wire format, two backends, same document.
+     * This is the actual fix — the mixin is only the mechanism that restores it.
      */
     @Test
     fun bothBackendsProduceTheSameDocument() {
         requests.forEach { (name, request) ->
-            val viaMapper = Json.parseToJsonElement(OptimizedJsonMapper.toJson(request)).jsonObject
+            val viaJackson = Json.parseToJsonElement(OptimizedJsonMapper.toJson(request)).jsonObject
             val viaKotlinx = Json.parseToJsonElement(Json.encodeToString(Nip47RequestKSerializer, request)).jsonObject
 
-            assertEquals(viaKotlinx, viaMapper, "$name differs between the entry point and kotlinx")
+            assertEquals(viaKotlinx, viaJackson, "$name differs between backends")
         }
     }
 }

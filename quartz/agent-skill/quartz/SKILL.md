@@ -28,8 +28,8 @@ implementation("com.vitorpamplona.quartz:quartz:<version>")
 
 Targets: Android, JVM, iosArm64, iosSimulatorArm64, macosArm64, linuxX64 (per-target
 artifacts such as `quartz-jvm` and `quartz-android` exist for non-KMP builds). Ktor is not
-a dependency: on JVM and Android, Quartz talks to relays through OkHttp. Events and relay
-messages are parsed by Quartz's own reader on every target.
+a dependency: on JVM and Android, Quartz talks to relays through OkHttp and parses events
+with Jackson.
 
 ## Where things are
 
@@ -121,6 +121,9 @@ suspend fun post(client: NostrClient) {
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
   (NIP-55) signers implement the same class.
 - `Event.verify()` checks the id and signature of events you receive from relays.
+- Nostr JSON goes through `OptimizedJsonMapper`: Jackson on JVM/Android and kotlinx on native
+  by default. `JsonEngine.current = JsonEngine.HAND_WRITTEN` switches every target to Quartz's
+  own `NostrJsonReader`/`NostrJsonWriter` (opt-in, read on every call).
 
 ## Identifiers
 
