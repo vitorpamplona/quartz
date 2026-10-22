@@ -24,14 +24,20 @@ import kotlin.concurrent.Volatile
 
 /**
  * Which code reads and writes Nostr JSON: events, tags, templates, rumors, filters, relay
- * messages, client commands, NIP-46 and NIP-55 messages, the event-id preimage and the
- * pretty-printed form.
+ * messages, client commands, NIP-46 and NIP-55 messages, and the event-id preimage.
  *
  * Every entry point ([OptimizedJsonMapper], [com.vitorpamplona.quartz.nip01Core.crypto.EventHasher],
  * [com.vitorpamplona.quartz.nip01Core.crypto.EventHasherSerializer], the NIP-55 intents) reads
  * [current] on each call, so it can be switched at any time, typically once at startup.
  *
- * NIP-47 and CLINK go through kotlinx under either engine.
+ * Not covered: NIP-47 and CLINK go through kotlinx under either engine, and pretty-printing
+ * is whatever the caller picks (`JacksonMapper.toJsonPretty` or [NostrJsonWriter.toPrettyJson]).
+ *
+ * On JVM and Android both engines write the same bytes, so an event has the same id under
+ * either. On native they differ for content or tags holding a control character with a hex
+ * letter in its escape (U+000B, U+000E, U+000F, U+001A-U+001F) or a lone surrogate: kotlinx
+ * escapes in lowercase and replaces a lone surrogate with U+FFFD, the hand-written writer
+ * writes what Jackson writes on the JVM. Switching engines on native changes those ids.
  */
 enum class JsonEngine {
     /** Jackson on JVM and Android, kotlinx on native. */

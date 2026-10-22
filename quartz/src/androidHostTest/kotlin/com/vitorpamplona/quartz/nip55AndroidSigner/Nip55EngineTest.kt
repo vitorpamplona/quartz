@@ -69,6 +69,14 @@ class Nip55EngineTest {
     }
 
     @Test
+    fun coercesKindsTheSame() {
+        for (kind in listOf("7", "-3", "7.9", "1e3", "4294967297", "\"5.7\"", "\" 12 \"", "\"x\"", "\"4294967297\"", "\"+5\"", "\"-7\"", "\"1e2\"", "\"\"", "true", "false", "{}", "[1]")) {
+            val json = """{"type":"sign_event","kind":$kind}"""
+            both { Permission.fromJson(json).kind }.let { assertEquals(it.first, it.second, "kind $kind") }
+        }
+    }
+
+    @Test
     fun followsTheEngine() {
         // The one documented difference: Jackson reads `"kind": null` as 0, the hand-written reader as no kind.
         val json = """{"type":"sign_event","kind":null}"""

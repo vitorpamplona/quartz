@@ -98,13 +98,15 @@ internal class NostrJsonReader {
             s = ""
             inUse = false
             if (!done) {
-                // A parse that failed inside the tags left references in the scratch.
+                // A parse that failed partway left references in the scratch and the event fields.
                 tagsScratch?.fill(null)
                 tagScratch?.fill(null)
+                clearFields()
             }
-            // Don't let one huge event pin its buffers to the thread.
+            // Don't let one huge event pin its buffers to the thread, whether or not it parsed.
             if ((tagsScratch?.size ?: 0) > MAX_KEPT_TAGS) tagsScratch = null
             if ((tagScratch?.size ?: 0) > MAX_KEPT_TAGS) tagScratch = null
+            if ((sb?.length ?: 0) > MAX_KEPT_CHARS) sb = null
         }
     }
 
@@ -230,8 +232,22 @@ internal class NostrJsonReader {
             ws()
             if (i >= n) fail("unexpected end of input")
             when (field) {
-                F_ID -> if (withIdentity) fId = readString() else skipValue(base)
-                F_PUBKEY -> if (withIdentity) fPubKey = readString() else skipValue(base)
+                F_ID ->
+                    if (!withIdentity) {
+                        skipValue(base)
+                    } else if (withSig) {
+                        fId = readString()
+                    } else {
+                        fId = scalarTextOrNull()
+                    }
+                F_PUBKEY ->
+                    if (!withIdentity) {
+                        skipValue(base)
+                    } else if (withSig) {
+                        fPubKey = readString()
+                    } else {
+                        fPubKey = scalarTextOrNull()
+                    }
                 F_CREATED_AT -> {
                     fCreatedAt = readLong()
                     fHasCreatedAt = true
@@ -241,7 +257,7 @@ internal class NostrJsonReader {
                     fHasKind = true
                 }
                 F_TAGS -> fTags = readTags()
-                F_CONTENT -> fContent = readString()
+                F_CONTENT -> fContent = if (withSig) readString() else scalarTextOrNull()
                 F_SIG -> if (withSig) fSig = readString() else skipValue(base)
                 else -> skipValue(base)
             }
@@ -575,7 +591,7 @@ internal class NostrJsonReader {
             // Like TagArrayDeserializer: null is "", numbers and booleans keep their text.
             val value =
                 when (s[i]) {
-                    '"' -> readString()
+                    '"' -> oneCharString() ?: readString()
                     'n' -> literal("null", "")
                     't' -> literal("true", "true")
                     'f' -> literal("false", "false")
@@ -599,6 +615,18 @@ internal class NostrJsonReader {
         return tag
     }
 
+    /**
+     * A one-character ASCII string (the cursor on its opening quote), as a shared instance: most
+     * tag names are one letter, and a 1,000-follow list would otherwise build 1,000 "p"s.
+     */
+    private fun oneCharString(): String? {
+        if (i + 2 >= n || s[i + 2] != '"') return null
+        val c = s[i + 1]
+        if (c == '"' || c == '\\' || c.code >= ONE_CHAR_STRINGS.size) return null
+        i += 3
+        return ONE_CHAR_STRINGS[c.code]
+    }
+
     internal fun literal(
         word: String,
         value: String,
@@ -607,6 +635,24 @@ internal class NostrJsonReader {
         i += word.length
         return value
     }
+
+    /**
+     * A rumor's `id`, `pubkey` or `content`, as leniently as `RumorDeserializer` reads them: a
+     * number or boolean by its text. `null` reads as absent, where Jackson made it the text "null".
+     * An array or object fails: Jackson would go on reading inside it.
+     */
+    private fun scalarTextOrNull(): String? =
+        when (s[i]) {
+            '"' -> readString()
+            'n' -> {
+                literal("null", "")
+                null
+            }
+            't' -> literal("true", "true")
+            'f' -> literal("false", "false")
+            '{', '[' -> fail("expected a string")
+            else -> numberText()
+        }
 
     internal fun numberText(): String {
         val start = i
@@ -722,6 +768,8 @@ internal class NostrJsonReader {
 
         private val EMPTY_TAGS: TagArray = emptyArray()
         private val EMPTY_TAG = emptyArray<String>()
+
+        private val ONE_CHAR_STRINGS = Array(128) { it.toChar().toString() }
 
         private fun acquire(): NostrJsonReader {
             val local = threadNostrJsonReader()

@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
+import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePublicKey
 import java.util.zip.GZIPInputStream
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -157,6 +158,19 @@ class JsonEngineTest {
             OptimizedJsonMapper.toJson(OptimizedJsonMapper.fromJsonTo<Command>(close)),
             with(JsonEngine.HAND_WRITTEN) { OptimizedJsonMapper.toJson(OptimizedJsonMapper.fromJsonTo<Command>(close)) },
         )
+    }
+
+    @Test
+    fun `both engines read a null nip-46 error as no error`() {
+        val pubkey = "a".repeat(64)
+        for (json in listOf("""{"id":"x","result":"$pubkey","error":null}""", """{"id":"x","result":null,"error":"denied"}""", """{"id":"x","result":""}""")) {
+            val jackson = OptimizedJsonMapper.fromJsonTo<BunkerResponse>(json)
+            val handWritten = with(JsonEngine.HAND_WRITTEN) { OptimizedJsonMapper.fromJsonTo<BunkerResponse>(json) }
+            assertEquals(jackson::class, handWritten::class, json)
+            assertEquals(jackson.result, handWritten.result, json)
+            assertEquals(jackson.error, handWritten.error, json)
+        }
+        assertIs<BunkerResponsePublicKey>(OptimizedJsonMapper.fromJsonTo<BunkerResponse>("""{"id":"x","result":"$pubkey","error":null}"""))
     }
 
     @Test

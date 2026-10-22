@@ -62,6 +62,9 @@ class NostrJsonWriter internal constructor() {
     private var buf = ByteArray(INITIAL_BYTES)
     private var pos = 0
 
+    /** Set while writing an id preimage that is hashed as it goes, see [grow]. */
+    private var hashing = false
+
     /** Set when the next object field needs a comma before it; reset by [objectStart]. */
     private var needsComma = false
 
@@ -278,6 +281,9 @@ class NostrJsonWriter internal constructor() {
     // ---------------------------------------------------------------------------------------
 
     private fun grow(more: Int) {
+        // A big event (a contact list, a long-form post) is fed to the digest in chunks
+        // instead of growing the buffer to its whole size, where the platform can stream.
+        if (hashing && pos + more > HASH_CHUNK && pos > 0 && sha256Feed(buf, pos)) pos = 0
         if (pos + more > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, pos + more))
     }
 
@@ -335,16 +341,21 @@ class NostrJsonWriter internal constructor() {
         start: Int,
         end: Int,
     ) {
-        val len = end - start
-        grow(len)
-        if (len >= BULK_COPY_MIN) {
-            copyAsciiInto(s, start, end, buf, pos)
-            pos += len
-        } else {
-            val o = buf
-            var p = pos
-            for (k in start until end) o[p++] = s[k].code.toByte()
-            pos = p
+        var from = start
+        while (from < end) {
+            // While hashing, a long run goes in chunks so [grow] can feed the digest between them.
+            val len = if (hashing) minOf(end - from, HASH_CHUNK) else end - from
+            grow(len)
+            if (len >= BULK_COPY_MIN) {
+                copyAsciiInto(s, from, from + len, buf, pos)
+                pos += len
+            } else {
+                val o = buf
+                var p = pos
+                for (k in from until from + len) o[p++] = s[k].code.toByte()
+                pos = p
+            }
+            from += len
         }
     }
 
@@ -464,6 +475,9 @@ class NostrJsonWriter internal constructor() {
         private const val INITIAL_BYTES = 1024
         private const val MAX_KEPT_CHARS = 16 * 1024
         private const val MAX_KEPT_BYTES = 32 * 1024
+
+        /** While hashing, bytes past this go to the digest instead of a bigger buffer. */
+        private const val HASH_CHUNK = 16 * 1024
 
         private const val HEX = "0123456789ABCDEF"
         private const val LONG_MIN = "-9223372036854775808"
@@ -604,8 +618,17 @@ class NostrJsonWriter internal constructor() {
             content: String,
         ): ByteArray =
             acquire().writing {
-                idPreimage(pubKey, createdAt, kind, tags, content)
-                sha256Of(buf, pos)
+                hashing = true
+                try {
+                    idPreimage(pubKey, createdAt, kind, tags, content)
+                    sha256Of(buf, pos)
+                } catch (e: Throwable) {
+                    // Don't leave a half-fed digest for this thread's next hash.
+                    sha256Abort()
+                    throw e
+                } finally {
+                    hashing = false
+                }
             }
     }
 }
@@ -618,6 +641,18 @@ internal expect fun sha256Of(
     data: ByteArray,
     length: Int,
 ): ByteArray
+
+/**
+ * Feeds the first [length] bytes of [data] to this thread's SHA-256, finished by [sha256Of].
+ * Returns false where the platform cannot hash in pieces; the caller then keeps the bytes.
+ */
+internal expect fun sha256Feed(
+    data: ByteArray,
+    length: Int,
+): Boolean
+
+/** Drops whatever [sha256Feed] gave this thread's SHA-256. */
+internal expect fun sha256Abort()
 
 /** Copies `s[start until end]`, which is all ASCII, into [dest] at [at], one byte per char. */
 internal expect fun copyAsciiInto(

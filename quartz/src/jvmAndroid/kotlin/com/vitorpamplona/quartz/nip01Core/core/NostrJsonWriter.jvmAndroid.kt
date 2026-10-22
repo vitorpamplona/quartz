@@ -39,6 +39,18 @@ internal actual fun copyAsciiInto(
     (s as java.lang.String).getBytes(start, end, dest, at)
 }
 
+internal actual fun sha256Feed(
+    data: ByteArray,
+    length: Int,
+): Boolean {
+    threadLocalDigest.get()!!.update(data, 0, length)
+    return true
+}
+
+internal actual fun sha256Abort() {
+    threadLocalDigest.get()!!.reset()
+}
+
 // MessageDigest.digest() resets it for the next caller on this thread.
 internal actual fun sha256Of(
     data: ByteArray,

@@ -35,6 +35,14 @@ internal actual fun copyAsciiInto(
     for (k in start until end) dest[at + k - start] = s[k].code.toByte()
 }
 
+// crypto-kmp has no public streaming SHA-256 on native: the writer keeps every byte.
+internal actual fun sha256Feed(
+    data: ByteArray,
+    length: Int,
+): Boolean = false
+
+internal actual fun sha256Abort() {}
+
 // crypto-kmp has no public streaming SHA-256 on native, so this hashes a copy.
 internal actual fun sha256Of(
     data: ByteArray,

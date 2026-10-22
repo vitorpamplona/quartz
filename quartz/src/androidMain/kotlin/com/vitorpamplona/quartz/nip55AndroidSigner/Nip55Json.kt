@@ -147,10 +147,10 @@ object Nip55Json {
         var rejected: Boolean? = null
         forEachField { key ->
             when (key) {
-                "package" -> pkg = stringOrSkip()
+                "package" -> pkg = stringOrSkip()?.intern()
                 "result" -> result = stringOrSkip()
                 "event" -> event = stringOrSkip()
-                "id" -> id = stringOrSkip()
+                "id" -> id = stringOrSkip()?.intern()
                 "rejected" -> rejected = booleanOrSkip()
                 else -> skipValue(1)
             }
@@ -196,7 +196,15 @@ object Nip55Json {
             }
 
             '"' -> {
-                readString().trim().toIntOrNull() ?: 0
+                // NumberInput.parseAsInt: digits are an int (0 when out of range); anything else
+                // is a double truncated, else 0.
+                val text = readString().trim()
+                val digits = text.removePrefix("-").removePrefix("+")
+                if (digits.isNotEmpty() && digits.all { it in '0'..'9' }) {
+                    text.toIntOrNull() ?: 0
+                } else {
+                    text.toDoubleOrNull()?.toInt() ?: 0
+                }
             }
 
             't' -> {
@@ -215,7 +223,10 @@ object Nip55Json {
             }
 
             else -> {
-                numberText().toDoubleOrNull()?.toInt() ?: 0
+                // An integer keeps its low 32 bits, like (int) of Jackson's LongNode; a fraction
+                // or exponent is truncated, like (int) of its DoubleNode.
+                val text = numberText()
+                text.toLongOrNull()?.toInt() ?: text.toDoubleOrNull()?.toInt() ?: 0
             }
         }
 

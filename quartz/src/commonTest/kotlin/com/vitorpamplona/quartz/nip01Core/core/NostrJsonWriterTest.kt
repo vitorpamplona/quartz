@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.core
 
+import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountResult
@@ -51,6 +52,20 @@ class NostrJsonWriterTest {
         content: String,
         tags: TagArray = emptyArray(),
     ) = Event("a".repeat(64), pk, 1, 1, tags, content, "c".repeat(128))
+
+    @Test
+    fun bigEventsHashTheSameInChunksAsWhole() {
+        val pk = "b".repeat(64)
+        // Runs that cross the hash chunk at every alignment, with a pair and an escape at the edges.
+        for (shift in listOf(0, 1, 5, 6, 16383, 16384, 16385)) {
+            val content = "x".repeat(shift) + "\uD83D\uDE00" + "lorem ipsum ".repeat(9000) + "\n\"" + "\u00E9".repeat(20000)
+            val tags = Array(1200) { arrayOf("p", "c".repeat(64), "wss://relay.example.com/", "") }
+            val whole = sha256(NostrJsonWriter.idPreimageBytes(pk, 1, 3, tags, content))
+            assertContentEquals(whole, NostrJsonWriter.idHash(pk, 1, 3, tags, content), "shift $shift")
+            // The thread's digest is clean for the next, small hash.
+            assertContentEquals(sha256(NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "a")), NostrJsonWriter.idHash(pk, 1, 1, emptyArray(), "a"))
+        }
+    }
 
     @Test
     fun aSignedEventWritesBackToItsOwnJsonAndId() {

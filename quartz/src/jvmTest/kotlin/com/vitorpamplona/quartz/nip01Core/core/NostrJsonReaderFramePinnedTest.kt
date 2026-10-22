@@ -489,7 +489,7 @@ class NostrJsonReaderFramePinnedTest {
                 "message frame edits" to "d696141ddf629b3faf296afc3ec0ee8008d7837e91f06585f107944e9a24d302",
                 "command frames" to "274107586724de359085c7abb4f00c1dbf4ee1be9d63c8afbeb534aff051be40",
                 "command frame edits" to "327098acc72ad8e4f4346495161ab28efe936738b2554422fb34c30be5259907",
-                "rumors" to "0f51ada32bfbe4ccf0356b0335b390bd54526b106ab85c796b3eb635da926e17",
+                "rumors" to "59c9cab38d34dce9720da8f0f7c935095b8db0c8f1058bcdb1b5e982e8a6219e",
                 "rumor edits" to "0e3c68c521cba9077d702072ae58518bd236ae038501e71483c5fe7301fd7665",
                 "event lists" to "2822098140d55ebc0b5567fa33a6315839e92523cbacb0883726cea05d17a043",
                 "event list edits" to "35c84027a3a169a30c9a90c89d79cf07e93c623fc1dcb1113923f16bed6719b0",

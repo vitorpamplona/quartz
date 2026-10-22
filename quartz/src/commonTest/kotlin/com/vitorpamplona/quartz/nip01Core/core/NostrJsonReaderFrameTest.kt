@@ -222,6 +222,23 @@ class NostrJsonReaderFrameTest {
     }
 
     @Test
+    fun rumorsReadScalarIdentityAndContentLikeJackson() {
+        // RumorDeserializer takes any scalar's text here; a gift-wrapped DM must not be dropped
+        // over an id or pubkey that mergeWith recomputes anyway.
+        val n = NostrJsonReader.readRumor("""{"id":null,"pubkey":null,"kind":14,"content":null}""")
+        assertNull(n.id)
+        assertNull(n.pubKey)
+        assertNull(n.content)
+        val s = NostrJsonReader.readRumor("""{"id":5,"pubkey":true,"kind":14,"content":7.5}""")
+        assertEquals("5", s.id)
+        assertEquals("true", s.pubKey)
+        assertEquals("7.5", s.content)
+        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readRumor("""{"content":{}}""") }
+        // Signed events stay strict.
+        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readEvent("""{"id":5,"pubkey":"$pubkey","content":""}""") }
+    }
+
+    @Test
     fun eventLists() {
         assertEquals(2, NostrJsonReader.readEventList("[$event,$event]").size)
         assertEquals(0, NostrJsonReader.readEventList("[]").size)
