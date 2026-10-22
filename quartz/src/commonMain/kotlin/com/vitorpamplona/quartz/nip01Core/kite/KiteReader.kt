@@ -51,7 +51,8 @@ import kotlin.reflect.KClass
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
  * lenient fields. It follows the JSON grammar everywhere, including values it skips, and never
  * accepts a frame Jackson rejects. It is stricter only where Jackson builds garbage or depends
- * on token order: a non-string `id`, `pubkey`, `content` or `sig`; an array or object inside a
+ * on token order: a non-string `id`, `pubkey` or `sig`, or a `content` other than a string or
+ * `null` (which reads as absent, where Jackson made it the text "null"); an array or object inside a
  * tag, or where a frame element should be a string or number; a missing closing bracket is
  * rejected by both. Keys are matched by their text, where `EventDeserializer` matched hashes.
  * Every failure is an [IllegalArgumentException].
@@ -261,7 +262,7 @@ internal class KiteReader {
                     fHasKind = true
                 }
                 F_TAGS -> fTags = readTags()
-                F_CONTENT -> fContent = if (withSig) readString() else scalarTextOrNull()
+                F_CONTENT -> fContent = if (withSig) stringOrNull() else scalarTextOrNull()
                 F_SIG -> if (withSig) fSig = readString() else skipValue(base)
                 else -> skipValue(base)
             }
@@ -274,7 +275,11 @@ internal class KiteReader {
         }
     }
 
-    /** One event object, like `EventDeserializer`: absent fields read as empty, a missing pubkey fails. */
+    /**
+     * One event object, like `EventDeserializer`: absent fields read as empty, a missing pubkey
+     * fails. A `null` content reads as absent, so empty: relays do send it, and an event whose
+     * content Jackson read as the text "null" was no better (neither verifies against its id).
+     */
     internal fun readEventObject(base: Int): Event {
         readEventFields(base, withSig = true)
         val pubKey = fPubKey
@@ -638,6 +643,13 @@ internal class KiteReader {
         if (!s.startsWith(word, i)) fail("expected $word")
         i += word.length
         return value
+    }
+
+    /** An event's `content`: a string, or `null` read as absent. Anything else fails. */
+    private fun stringOrNull(): String? {
+        if (s[i] != 'n') return readString()
+        literal("null", "")
+        return null
     }
 
     /**

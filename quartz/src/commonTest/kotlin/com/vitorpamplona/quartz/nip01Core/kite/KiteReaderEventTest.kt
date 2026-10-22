@@ -190,9 +190,18 @@ class KiteReaderEventTest {
 
     @Test
     fun rejectsNonStringValuesWhereStringsBelong() {
-        for (bad in listOf("null", "1", "true", "[]", "{}")) {
+        for (bad in listOf("1", "true", "[]", "{}", "nul", "nullx")) {
             assertFailsWith<IllegalArgumentException>(bad) { read(event(content = bad)) }
         }
+    }
+
+    @Test
+    fun nullContentReadsAsEmpty() {
+        assertEquals("", contentOf("null"))
+        assertEquals("", contentOf(" null "))
+        assertEquals("", KiteReader.readEvent(event(content = "null")).content)
+        val msg = KiteReader.readMessage("[\"EVENT\",\"s\",${event(content = "null")}]")
+        assertEquals("", (msg as EventMessage).event.content)
     }
 
     @Test
