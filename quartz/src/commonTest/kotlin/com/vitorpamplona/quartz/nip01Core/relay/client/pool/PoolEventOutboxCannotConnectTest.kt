@@ -60,7 +60,7 @@ class PoolEventOutboxCannotConnectTest {
     }
 
     @Test
-    fun `a relay that stays unreachable is given up on, and only for its own events`() {
+    fun `a relay that stays unreachable is given up on for its own events only`() {
         val outbox = PoolEventOutbox()
         outbox.markAsSending(event(1), setOf(down))
         outbox.markAsSending(event(2), setOf(down, up))

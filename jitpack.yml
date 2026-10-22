@@ -3,4 +3,8 @@ jdk:
 before_install:
   - echo 'allprojects { tasks.matching { it.name.toLowerCase().startsWith("sign") }.configureEach { it.enabled = false } }' > nosign.init.gradle
 install:
-  - ./gradlew :quartz:publishKotlinMultiplatformPublicationToMavenLocal :quartz:publishJvmPublicationToMavenLocal --init-script nosign.init.gradle
+  # JitPack's ~/.gradle/init.d/maven-mirror.gradle points every Maven Central repository at
+  # $MAVEN_CENTRAL_MIRROR, Google's mirror, which lags Central by days and had no crypto-kmp or mls-kmp
+  # 1.0.0: every JitPack build of Quartz failed from the crypto-kmp split on. Without the variable the
+  # script does nothing, and Gradle reads Central itself.
+  - env -u MAVEN_CENTRAL_MIRROR ./gradlew :quartz:publishKotlinMultiplatformPublicationToMavenLocal :quartz:publishJvmPublicationToMavenLocal --init-script nosign.init.gradle
