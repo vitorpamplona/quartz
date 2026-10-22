@@ -192,12 +192,6 @@ kotlin {
                 dependsOn(commonMain.get())
 
                 dependencies {
-                    // Quartz itself no longer uses Jackson: its JSON is NostrJsonReader,
-                    // NostrJsonWriter, Nip55Json and kotlinx, on every target. It is still
-                    // exported only because Amethyst's own modules use Jackson through Quartz
-                    // until they move to kotlinx (amethyst#4599); then this line goes.
-                    api(libs.jackson.databind)
-
                     // Websockets API
                     implementation(libs.okhttp)
                     implementation(libs.okhttpCoroutines)
@@ -361,7 +355,7 @@ kotlin {
     }
 }
 
-// iOS purity gate. Jackson and OkHttp are JVM-only and must never appear
+// iOS purity gate. JVM-only libraries (OkHttp, and Jackson should it come back) must never appear
 // in source sets that compile for iOS / native / common targets. The KMP
 // build would eventually fail with an "unresolved reference" if these
 // leaked in, but that requires a macOS runner. This task is a fast Linux
@@ -369,7 +363,7 @@ kotlin {
 //
 // Scope: source sets whose code is compiled for at least one non-JVM
 // target. Excludes jvmAndroid, jvmMain, androidMain (and their tests),
-// where Jackson and OkHttp are legitimately used.
+// where JVM-only libraries are legitimately used.
 //
 // See gradle/kmp-purity.gradle.kts for the pattern table and checked dirs.
 apply(from = rootProject.file("gradle/kmp-purity.gradle.kts"))
