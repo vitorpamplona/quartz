@@ -18,7 +18,33 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
-// Native keeps no reader per thread: every parse gets a fresh one.
-internal actual fun threadNostrJsonReader(): NostrJsonReader? = null
+import com.vitorpamplona.crypto.sha2.sha256
+
+// Native keeps no writer per thread: every write gets a fresh one.
+internal actual fun threadKiteWriter(): KiteWriter? = null
+
+internal actual fun copyAsciiInto(
+    s: String,
+    start: Int,
+    end: Int,
+    dest: ByteArray,
+    at: Int,
+) {
+    for (k in start until end) dest[at + k - start] = s[k].code.toByte()
+}
+
+// crypto-kmp has no public streaming SHA-256 on native: the writer keeps every byte.
+internal actual fun sha256Feed(
+    data: ByteArray,
+    length: Int,
+): Boolean = false
+
+internal actual fun sha256Abort() {}
+
+// crypto-kmp has no public streaming SHA-256 on native, so this hashes a copy.
+internal actual fun sha256Of(
+    data: ByteArray,
+    length: Int,
+): ByteArray = sha256(data.copyOf(length))

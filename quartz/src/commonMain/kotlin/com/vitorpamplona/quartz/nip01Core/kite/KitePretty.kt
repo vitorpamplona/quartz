@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 /**
  * Human-readable JSON in the layout Quartz has always shown events in: two-space indentation,
@@ -31,7 +31,7 @@ package com.vitorpamplona.quartz.nip01Core.core
  * only differs where Jackson would have rewritten an escape or a number. Lines end in `\n` on
  * every platform.
  */
-object NostrJsonPretty {
+object KitePretty {
     private const val INDENT = "  "
 
     /** [json] (any valid JSON text) re-indented; whitespace between tokens is dropped first. */

@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.AuthCmd
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CloseCmd
@@ -38,7 +38,7 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegOpenCmd
  */
 
 /** One client-to-relay frame: `["REQ", …]`, `["EVENT", …]`, `["CLOSE", …]` and the rest. */
-internal fun NostrJsonReader.readCommandFrame(): Command {
+internal fun KiteReader.readCommandFrame(): Command {
     val label = openFrame() ?: fail("command type is not a string")
     val command =
         when (label) {
@@ -91,7 +91,7 @@ internal fun NostrJsonReader.readCommandFrame(): Command {
 }
 
 /** Every remaining element of a REQ or COUNT, each a filter object. */
-private fun NostrJsonReader.filtersToTheEnd(): List<Filter> {
+private fun KiteReader.filtersToTheEnd(): List<Filter> {
     val filters = mutableListOf<Filter>()
     while (nextElement()) {
         if (s[i] != '{') fail("expected a filter object")
@@ -106,7 +106,7 @@ private fun NostrJsonReader.filtersToTheEnd(): List<Filter> {
  * `limit` and `search` leaving them unset, and unknown fields skipped. [depth] is the object's
  * nesting depth.
  */
-internal fun NostrJsonReader.readFilterObject(depth: Int): Filter {
+internal fun KiteReader.readFilterObject(depth: Int): Filter {
     var ids: List<String>? = null
     var authors: List<String>? = null
     var kinds: List<Int>? = null
@@ -180,7 +180,7 @@ internal fun NostrJsonReader.readFilterObject(depth: Int): Filter {
  * A string or a number by its text, or `true`/`false`, like Jackson's `getText()`. An array or
  * object fails: Jackson would go on reading inside it.
  */
-private fun NostrJsonReader.scalarText(): String =
+private fun KiteReader.scalarText(): String =
     when (s[i]) {
         '"' -> readString()
         't' -> literal("true", "true")
@@ -190,7 +190,7 @@ private fun NostrJsonReader.scalarText(): String =
     }
 
 /** The strings of an array (other entries dropped); empty when the value is not an array. */
-private fun NostrJsonReader.lenientStrings(depth: Int): MutableList<String> {
+private fun KiteReader.lenientStrings(depth: Int): MutableList<String> {
     val out = mutableListOf<String>()
     if (s[i] != '[') {
         skipValue(depth)
@@ -216,7 +216,7 @@ private fun NostrJsonReader.lenientStrings(depth: Int): MutableList<String> {
  * The numbers of an array as ints, like Jackson's `intValue` (a fraction truncated, out of range
  * fails); other entries dropped. Empty when the value is not an array.
  */
-private fun NostrJsonReader.lenientInts(depth: Int): MutableList<Int> {
+private fun KiteReader.lenientInts(depth: Int): MutableList<Int> {
     val out = mutableListOf<Int>()
     if (s[i] != '[') {
         skipValue(depth)

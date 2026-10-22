@@ -31,29 +31,30 @@ import kotlin.concurrent.Volatile
  * [current] on each call, so it can be switched at any time, typically once at startup.
  *
  * Not covered: NIP-47 and CLINK go through kotlinx under either engine, and pretty-printing
- * is whatever the caller picks (`JacksonMapper.toJsonPretty` or [NostrJsonWriter.toPrettyJson]).
+ * is whatever the caller picks (`JacksonMapper.toJsonPretty` or [com.vitorpamplona.quartz.nip01Core.kite.KiteWriter.toPrettyJson]).
  *
  * On JVM and Android both engines write the same bytes, so an event has the same id under
  * either. On native they differ for content or tags holding a control character with a hex
  * letter in its escape (U+000B, U+000E, U+000F, U+001A-U+001F) or a lone surrogate: kotlinx
- * escapes in lowercase and replaces a lone surrogate with U+FFFD, the hand-written writer
- * writes what Jackson writes on the JVM. Switching engines on native changes those ids.
+ * escapes in lowercase and replaces a lone surrogate with U+FFFD, Kite writes what Jackson
+ * writes on the JVM. Switching engines on native changes those ids.
  */
 enum class JsonEngine {
     /** Jackson on JVM and Android, kotlinx on native. */
     DEFAULT,
 
     /**
-     * Quartz's own [NostrJsonReader] and [NostrJsonWriter], the same code on every target.
-     * Opt-in while it is being tested.
+     * Kite: Quartz's own Nostr JSON reader and writer ([com.vitorpamplona.quartz.nip01Core.kite.KiteWriter] and its internal
+     * reader, in `nip01Core.kite`), the same code on every target. Opt-in while it is being
+     * tested.
      */
-    HAND_WRITTEN,
+    KITE,
     ;
 
     companion object {
         @Volatile
         var current: JsonEngine = DEFAULT
 
-        val isHandWritten: Boolean get() = current === HAND_WRITTEN
+        val isKite: Boolean get() = current === KITE
     }
 }

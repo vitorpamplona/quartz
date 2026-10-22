@@ -18,8 +18,11 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -27,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
+import com.vitorpamplona.quartz.nip46RemoteSigner.kite.readBunkerObject
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.reflect.KClass
@@ -35,7 +39,7 @@ import kotlin.reflect.KClass
  * Reads what travels over a Nostr WebSocket straight off the frame's `String`: relay messages
  * ([readMessage]), client commands ([readCommand]), and the events, rumors and event lists inside
  * them. About twice as fast as Jackson on events, with ~40% less garbage. [OptimizedJsonMapper]
- * reads through it when [JsonEngine.HAND_WRITTEN] is selected.
+ * reads through it when [JsonEngine.KITE] is selected.
  *
  * It finds the end of every string value with `String.indexOf('"')`, an intrinsic on HotSpot
  * and ART, and tracks the next backslash in the frame (also found with `indexOf`), so a value
@@ -53,11 +57,11 @@ import kotlin.reflect.KClass
  * Every failure is an [IllegalArgumentException].
  *
  * A reader holds the cursor and scratch buffers, so one parse at a time uses it. On JVM and
- * Android each thread reuses its own (see [threadNostrJsonReader]), so the decode buffer and
+ * Android each thread reuses its own (see [threadKiteReader]), so the decode buffer and
  * tag scratch are allocated once per thread, not once per event; a nested parse on the same
  * thread, and every parse on native, gets a fresh one.
  */
-internal class NostrJsonReader {
+internal class KiteReader {
     internal var s = ""
     internal var n = 0
 
@@ -771,9 +775,9 @@ internal class NostrJsonReader {
 
         private val ONE_CHAR_STRINGS = Array(128) { it.toChar().toString() }
 
-        private fun acquire(): NostrJsonReader {
-            val local = threadNostrJsonReader()
-            return if (local == null || local.inUse) NostrJsonReader() else local
+        private fun acquire(): KiteReader {
+            val local = threadKiteReader()
+            return if (local == null || local.inUse) KiteReader() else local
         }
 
         /** One event object; throws [IllegalArgumentException] on malformed input or a missing pubkey. */
@@ -810,7 +814,7 @@ internal class NostrJsonReader {
         /** Runs [read] on [json] with this thread's reader, for formats read outside this package. */
         internal fun <T> read(
             json: String,
-            read: NostrJsonReader.() -> T,
+            read: KiteReader.() -> T,
         ): T = acquire().run { parse(json) { read() } }
 
         /** A tag array on its own. */
@@ -829,10 +833,10 @@ internal class NostrJsonReader {
 }
 
 /** This thread's reusable reader, or null where readers are not kept per thread (native). */
-internal expect fun threadNostrJsonReader(): NostrJsonReader?
+internal expect fun threadKiteReader(): KiteReader?
 
 /**
- * [json] read as [type] when it is one of the types [NostrJsonReader] knows, else null so the
+ * [json] read as [type] when it is one of the types [KiteReader] knows, else null so the
  * caller can hand it to another reader. Exact classes, like the Jackson registrations.
  */
 @PublishedApi
@@ -841,14 +845,14 @@ internal fun readKnownType(
     json: String,
 ): OptimizedSerializable? =
     when (type) {
-        Event::class -> NostrJsonReader.readEvent(json)
-        Filter::class -> NostrJsonReader.readFilter(json)
-        Message::class -> NostrJsonReader.readMessage(json)
-        Command::class -> NostrJsonReader.readCommand(json)
-        Rumor::class -> NostrJsonReader.readRumor(json)
-        EventTemplate::class -> NostrJsonReader.readEventTemplate(json)
-        BunkerMessage::class -> NostrJsonReader.readBunkerMessage(json)
-        BunkerRequest::class -> NostrJsonReader.readBunkerRequest(json)
-        BunkerResponse::class -> NostrJsonReader.readBunkerResponse(json)
+        Event::class -> KiteReader.readEvent(json)
+        Filter::class -> KiteReader.readFilter(json)
+        Message::class -> KiteReader.readMessage(json)
+        Command::class -> KiteReader.readCommand(json)
+        Rumor::class -> KiteReader.readRumor(json)
+        EventTemplate::class -> KiteReader.readEventTemplate(json)
+        BunkerMessage::class -> KiteReader.readBunkerMessage(json)
+        BunkerRequest::class -> KiteReader.readBunkerRequest(json)
+        BunkerResponse::class -> KiteReader.readBunkerResponse(json)
         else -> null
     }

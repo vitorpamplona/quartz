@@ -18,18 +18,19 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * [NostrJsonPretty], the layout Jackson's `InliningTagArrayPrettyPrinter` wrote. The expected
+ * [KitePretty], the layout Jackson's `InliningTagArrayPrettyPrinter` wrote. The expected
  * text and the pin were recorded while every output was also compared with Jackson.
  */
-class NostrJsonPrettyPinnedTest {
+class KitePrettyPinnedTest {
     @Test
     fun eventsAndTemplates() {
         val e =
@@ -59,7 +60,7 @@ class NostrJsonPrettyPinnedTest {
               "sig": "${"c".repeat(128)}"
             }
             """.trimIndent(),
-            NostrJsonWriter.toPrettyJson(e),
+            KiteWriter.toPrettyJson(e),
         )
         val empty = Event("a".repeat(64), "b".repeat(64), 1, 1, emptyArray(), "", "c".repeat(128))
         assertEquals(
@@ -74,7 +75,7 @@ class NostrJsonPrettyPinnedTest {
               "sig": "${"c".repeat(128)}"
             }
             """.trimIndent(),
-            NostrJsonWriter.toPrettyJson(empty),
+            KiteWriter.toPrettyJson(empty),
         )
 
         val t = EventTemplate<Event>(5, 7, arrayOf(arrayOf("d", "1")), "c")
@@ -89,7 +90,7 @@ class NostrJsonPrettyPinnedTest {
               "content": "c"
             }
             """.trimIndent(),
-            NostrJsonWriter.toPrettyJson(t),
+            KiteWriter.toPrettyJson(t),
         )
     }
 
@@ -118,10 +119,10 @@ class NostrJsonPrettyPinnedTest {
         val pin = Pin("pretty random trees")
         repeat(5_000) {
             val compact = randomTree(random, 0)
-            val formatted = NostrJsonPretty.format(compact)
+            val formatted = KitePretty.format(compact)
             pin.add(formatted)
             // Whitespace in the input changes nothing.
-            assertEquals(formatted, NostrJsonPretty.format(formatted), compact)
+            assertEquals(formatted, KitePretty.format(formatted), compact)
         }
         pin.check(PIN_RANDOM_TREES)
     }

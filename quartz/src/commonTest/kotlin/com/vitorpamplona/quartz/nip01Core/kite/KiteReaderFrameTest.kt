@@ -18,8 +18,9 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
@@ -48,14 +49,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Every relay message and client command type, rumors and event lists, as they are read. */
-class NostrJsonReaderFrameTest {
+class KiteReaderFrameTest {
     private val pubkey = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     private val event = """{"id":"ab","pubkey":"$pubkey","created_at":1,"kind":1,"tags":[["t","x"]],"content":"hi","sig":"cd"}"""
     private val authEvent = """{"id":"ab","pubkey":"$pubkey","created_at":1,"kind":22242,"tags":[["challenge","c1"]],"content":"","sig":"cd"}"""
 
-    private fun message(json: String) = NostrJsonReader.readMessage(json)
+    private fun message(json: String) = KiteReader.readMessage(json)
 
-    private fun command(json: String) = NostrJsonReader.readCommand(json)
+    private fun command(json: String) = KiteReader.readCommand(json)
 
     @Test
     fun eose() {
@@ -211,39 +212,39 @@ class NostrJsonReaderFrameTest {
 
     @Test
     fun rumors() {
-        val r = NostrJsonReader.readRumor("""{"pubkey":"$pubkey","kind":14,"tags":[["p","x"]],"content":"hi","sig":"ignored"}""")
+        val r = KiteReader.readRumor("""{"pubkey":"$pubkey","kind":14,"tags":[["p","x"]],"content":"hi","sig":"ignored"}""")
         assertNull(r.id)
         assertEquals(pubkey, r.pubKey)
         assertNull(r.createdAt)
         assertEquals(14, r.kind)
         assertContentEquals(arrayOf("p", "x"), r.tags!![0])
         assertEquals("hi", r.content)
-        assertNull(NostrJsonReader.readRumor("{}").pubKey)
+        assertNull(KiteReader.readRumor("{}").pubKey)
     }
 
     @Test
     fun rumorsReadScalarIdentityAndContentLikeJackson() {
         // RumorDeserializer takes any scalar's text here; a gift-wrapped DM must not be dropped
         // over an id or pubkey that mergeWith recomputes anyway.
-        val n = NostrJsonReader.readRumor("""{"id":null,"pubkey":null,"kind":14,"content":null}""")
+        val n = KiteReader.readRumor("""{"id":null,"pubkey":null,"kind":14,"content":null}""")
         assertNull(n.id)
         assertNull(n.pubKey)
         assertNull(n.content)
-        val s = NostrJsonReader.readRumor("""{"id":5,"pubkey":true,"kind":14,"content":7.5}""")
+        val s = KiteReader.readRumor("""{"id":5,"pubkey":true,"kind":14,"content":7.5}""")
         assertEquals("5", s.id)
         assertEquals("true", s.pubKey)
         assertEquals("7.5", s.content)
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readRumor("""{"content":{}}""") }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readRumor("""{"content":{}}""") }
         // Signed events stay strict.
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readEvent("""{"id":5,"pubkey":"$pubkey","content":""}""") }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readEvent("""{"id":5,"pubkey":"$pubkey","content":""}""") }
     }
 
     @Test
     fun eventLists() {
-        assertEquals(2, NostrJsonReader.readEventList("[$event,$event]").size)
-        assertEquals(0, NostrJsonReader.readEventList("[]").size)
-        assertEquals(1, NostrJsonReader.readEventList(event).size)
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readEventList("[null]") }
+        assertEquals(2, KiteReader.readEventList("[$event,$event]").size)
+        assertEquals(0, KiteReader.readEventList("[]").size)
+        assertEquals(1, KiteReader.readEventList(event).size)
+        assertFailsWith<IllegalArgumentException> { KiteReader.readEventList("[null]") }
     }
 
     @Test

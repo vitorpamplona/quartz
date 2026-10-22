@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
@@ -53,18 +53,18 @@ import com.vitorpamplona.quartz.utils.Hex
  */
 
 /** `["<label>"`, the start of every frame. */
-private fun NostrJsonWriter.frame(label: String) {
+private fun KiteWriter.frame(label: String) {
     raw('[')
     string(label)
 }
 
-private fun NostrJsonWriter.next(value: String) {
+private fun KiteWriter.next(value: String) {
     raw(',')
     string(value)
 }
 
 /** One relay-to-client frame; false, with nothing written, for a type this writer does not know. */
-internal fun NostrJsonWriter.message(msg: Message): Boolean {
+internal fun KiteWriter.message(msg: Message): Boolean {
     when (msg) {
         is EventMessage -> {
             frame(msg.label())
@@ -154,7 +154,7 @@ internal fun NostrJsonWriter.message(msg: Message): Boolean {
 }
 
 /** NIP-45's result object: `{"count":…}`, plus `"approximate":true` and `"hll"` when set. */
-private fun NostrJsonWriter.countResult(result: CountResult) {
+private fun KiteWriter.countResult(result: CountResult) {
     objectStart()
     field("count")
     number(result.count)
@@ -170,7 +170,7 @@ private fun NostrJsonWriter.countResult(result: CountResult) {
 }
 
 /** The LIMITS object: only the limits the relay set, in declaration order. */
-private fun NostrJsonWriter.limits(msg: LimitsMessage) {
+private fun KiteWriter.limits(msg: LimitsMessage) {
     objectStart()
     msg.canWrite?.let {
         field("can_write")
@@ -219,7 +219,7 @@ private fun NostrJsonWriter.limits(msg: LimitsMessage) {
     objectEnd()
 }
 
-private fun NostrJsonWriter.intField(
+private fun KiteWriter.intField(
     name: String,
     value: Int,
 ) {
@@ -227,7 +227,7 @@ private fun NostrJsonWriter.intField(
     number(value)
 }
 
-private fun NostrJsonWriter.longField(
+private fun KiteWriter.longField(
     name: String,
     value: Long,
 ) {
@@ -236,7 +236,7 @@ private fun NostrJsonWriter.longField(
 }
 
 /** One client-to-relay frame; false, with nothing written, for a type this writer does not know. */
-internal fun NostrJsonWriter.command(cmd: Command): Boolean {
+internal fun KiteWriter.command(cmd: Command): Boolean {
     when (cmd) {
         is ReqCmd -> {
             frame(cmd.label())
@@ -296,7 +296,7 @@ internal fun NostrJsonWriter.command(cmd: Command): Boolean {
     return true
 }
 
-private fun NostrJsonWriter.filters(filters: List<Filter>) {
+private fun KiteWriter.filters(filters: List<Filter>) {
     for (k in filters.indices) {
         raw(',')
         filter(filters[k])
@@ -304,7 +304,7 @@ private fun NostrJsonWriter.filters(filters: List<Filter>) {
 }
 
 /** kinds, ids, authors, each `#x` then each `&x`, since, until, limit, search; set fields only. */
-internal fun NostrJsonWriter.filter(filter: Filter) {
+internal fun KiteWriter.filter(filter: Filter) {
     objectStart()
     filter.kinds?.let {
         field("kinds")
@@ -331,7 +331,7 @@ internal fun NostrJsonWriter.filter(filter: Filter) {
 }
 
 /** `"#e":[…]` per entry; the tag name comes from the caller, so it is escaped like a value. */
-private fun NostrJsonWriter.tagFields(
+private fun KiteWriter.tagFields(
     prefix: Char,
     tags: Map<String, List<String>>,
 ) {
@@ -342,7 +342,7 @@ private fun NostrJsonWriter.tagFields(
 }
 
 /** A rumor's set fields, in event order and without `sig`. */
-internal fun NostrJsonWriter.rumor(rumor: Rumor) {
+internal fun KiteWriter.rumor(rumor: Rumor) {
     objectStart()
     rumor.id?.let {
         field("id")

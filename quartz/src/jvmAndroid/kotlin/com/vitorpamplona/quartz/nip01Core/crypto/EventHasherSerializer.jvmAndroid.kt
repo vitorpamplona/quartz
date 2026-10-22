@@ -31,9 +31,9 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.vitorpamplona.crypto.sha2.threadLocalDigest
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
-import com.vitorpamplona.quartz.nip01Core.core.NostrJsonWriter
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip01Core.jackson.JacksonMapper
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
 import com.vitorpamplona.quartz.utils.Hex
 import java.io.IOException
 
@@ -71,8 +71,8 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): String =
-        if (JsonEngine.isHandWritten) {
-            NostrJsonWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
+        if (JsonEngine.isKite) {
+            KiteWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
         } else {
             JacksonMapper.toJson(makeJsonObjectForId(pubKey, createdAt, kind, tags, content))
         }
@@ -84,7 +84,7 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): ByteArray {
-        if (JsonEngine.isHandWritten) return NostrJsonWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
+        if (JsonEngine.isKite) return KiteWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
 
         val br: BufferRecycler = JacksonMapper.mapper.factory._getBufferRecycler()
         try {
@@ -135,7 +135,7 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): Boolean {
-        if (JsonEngine.isHandWritten) return Hex.isEqual(id, NostrJsonWriter.idHash(pubKey, createdAt, kind, tags, content))
+        if (JsonEngine.isKite) return Hex.isEqual(id, KiteWriter.idHash(pubKey, createdAt, kind, tags, content))
 
         val br: BufferRecycler = JacksonMapper.mapper.factory._getBufferRecycler()
         val digest = threadLocalDigest.get()!!

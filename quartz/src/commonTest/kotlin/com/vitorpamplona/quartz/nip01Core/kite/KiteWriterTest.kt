@@ -18,9 +18,12 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.crypto.sha2.sha256
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountResult
@@ -38,11 +41,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * [NostrJsonWriter]'s exact output on every target. The JVM suite also checks it byte for byte
- * against Jackson (NostrJsonWriterJacksonParityTest); these pin the same rules where Jackson
+ * [KiteWriter]'s exact output on every target. The JVM suite also checks it byte for byte
+ * against Jackson (KiteWriterJacksonParityTest); these pin the same rules where Jackson
  * does not run.
  */
-class NostrJsonWriterTest {
+class KiteWriterTest {
     private val signed =
         """{"id":"0da25a3f43de63544610b0e488d5ead47626d3566ac722fe482d7eeb416f50ef","pubkey":"460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c","created_at":1709640151,"kind":1,"tags":[["r","https://github.com/nostr-protocol/nips/pull/997"]],"content":"Git NIP is merged. 🚀 \n\nGood morning. \n\nhttps://github.com/nostr-protocol/nips/pull/997","sig":"e0039c218213e5f7e8312adfda6945f648c410790baf75ee4293bf36b4290c150ed6a3f0f004324481b7b28f5d979c16cfa9964882cb330273245f27d6b72b19"}"""
 
@@ -60,18 +63,18 @@ class NostrJsonWriterTest {
         for (shift in listOf(0, 1, 5, 6, 16383, 16384, 16385)) {
             val content = "x".repeat(shift) + "\uD83D\uDE00" + "lorem ipsum ".repeat(9000) + "\n\"" + "\u00E9".repeat(20000)
             val tags = Array(1200) { arrayOf("p", "c".repeat(64), "wss://relay.example.com/", "") }
-            val whole = sha256(NostrJsonWriter.idPreimageBytes(pk, 1, 3, tags, content))
-            assertContentEquals(whole, NostrJsonWriter.idHash(pk, 1, 3, tags, content), "shift $shift")
+            val whole = sha256(KiteWriter.idPreimageBytes(pk, 1, 3, tags, content))
+            assertContentEquals(whole, KiteWriter.idHash(pk, 1, 3, tags, content), "shift $shift")
             // The thread's digest is clean for the next, small hash.
-            assertContentEquals(sha256(NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "a")), NostrJsonWriter.idHash(pk, 1, 1, emptyArray(), "a"))
+            assertContentEquals(sha256(KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "a")), KiteWriter.idHash(pk, 1, 1, emptyArray(), "a"))
         }
     }
 
     @Test
     fun aSignedEventWritesBackToItsOwnJsonAndId() {
-        val e = NostrJsonReader.readEvent(signed)
-        assertEquals(signed, NostrJsonWriter.toJson(e))
-        assertEquals(e.id, NostrJsonWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content).toHexKey())
+        val e = KiteReader.readEvent(signed)
+        assertEquals(signed, KiteWriter.toJson(e))
+        assertEquals(e.id, KiteWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content).toHexKey())
         assertTrue(EventHasher.hashIdCheck(e.id, e.pubKey, e.createdAt, e.kind, e.tags, e.content))
         assertEquals(e.id, EventHasher.hashId(e.pubKey, e.createdAt, e.kind, e.tags, e.content))
     }
@@ -83,25 +86,25 @@ class NostrJsonWriterTest {
         val expected = "\"a\\u0001\\u001F\\\"\\\\\\n\\b\\f\\r\\t/\u007F\u2028\""
         assertEquals(
             "{\"id\":\"${e.id}\",\"pubkey\":\"$pk\",\"created_at\":1,\"kind\":1,\"tags\":[],\"content\":$expected,\"sig\":\"${e.sig}\"}",
-            NostrJsonWriter.toJson(e),
+            KiteWriter.toJson(e),
         )
-        assertEquals("[[$expected,\"\"],[]]", NostrJsonWriter.toJson(arrayOf(arrayOf(e.content, ""), emptyArray())))
+        assertEquals("[[$expected,\"\"],[]]", KiteWriter.toJson(arrayOf(arrayOf(e.content, ""), emptyArray())))
         assertEquals(
             "[0,\"$pk\",1,1,[],$expected]".encodeToByteArray().toList(),
-            NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), e.content).toList(),
+            KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), e.content).toList(),
         )
     }
 
     @Test
     fun surrogatesStayAsIsInTextAndAreEscapedAloneInUtf8() {
         val lone = "x\uD83Dy\uDE00"
-        assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", NostrJsonWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
+        assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", KiteWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
         assertEquals(
             "[0,\"$pk\",1,1,[],\"x\\uD83Dy\\uDE00\"]".encodeToByteArray().toList(),
-            NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), lone).toList(),
+            KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), lone).toList(),
         )
 
-        val bytes = NostrJsonWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "\uD83D\uDE00\u00E9\u6F22")
+        val bytes = KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), "\uD83D\uDE00\u00E9\u6F22")
         val tail = bytes.copyOfRange(bytes.size - 11, bytes.size)
         assertContentEquals(
             byteArrayOf(0x22, 0xF0.toByte(), 0x9F.toByte(), 0x98.toByte(), 0x80.toByte(), 0xC3.toByte(), 0xA9.toByte(), 0xE6.toByte(), 0xBC.toByte(), 0xA2.toByte(), 0x22),
@@ -113,15 +116,15 @@ class NostrJsonWriterTest {
     fun numbersAtTheEdges() {
         assertEquals(
             "[0,\"$pk\",-9223372036854775808,-2147483648,[],\"\"]",
-            NostrJsonWriter.idPreimageBytes(pk, Long.MIN_VALUE, Int.MIN_VALUE, emptyArray(), "").decodeToString(),
+            KiteWriter.idPreimageBytes(pk, Long.MIN_VALUE, Int.MIN_VALUE, emptyArray(), "").decodeToString(),
         )
         assertEquals(
             "[0,\"$pk\",9223372036854775807,0,[],\"\"]",
-            NostrJsonWriter.idPreimageBytes(pk, Long.MAX_VALUE, 0, emptyArray(), "").decodeToString(),
+            KiteWriter.idPreimageBytes(pk, Long.MAX_VALUE, 0, emptyArray(), "").decodeToString(),
         )
         assertEquals(
-            NostrJsonWriter.idPreimageJson(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y"),
-            NostrJsonWriter.idPreimageBytes(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y").decodeToString(),
+            KiteWriter.idPreimageJson(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y"),
+            KiteWriter.idPreimageBytes(pk, -10, 10, arrayOf(arrayOf("t", "x")), "y").decodeToString(),
         )
     }
 
@@ -148,12 +151,12 @@ class NostrJsonWriterTest {
     fun bigValuesThenSmallOnes() {
         val big = "\u00FC\"".repeat(40_000)
         val e = event(big, arrayOf(arrayOf("t", big)))
-        val json = NostrJsonWriter.toJson(e)
-        assertEquals(e.content, NostrJsonReader.readEvent(json).content)
+        val json = KiteWriter.toJson(e)
+        assertEquals(e.content, KiteReader.readEvent(json).content)
         assertEquals(
-            NostrJsonWriter.idPreimageJson(e.pubKey, e.createdAt, e.kind, e.tags, e.content),
-            NostrJsonWriter.idPreimageBytes(e.pubKey, e.createdAt, e.kind, e.tags, e.content).decodeToString(),
+            KiteWriter.idPreimageJson(e.pubKey, e.createdAt, e.kind, e.tags, e.content),
+            KiteWriter.idPreimageBytes(e.pubKey, e.createdAt, e.kind, e.tags, e.content).decodeToString(),
         )
-        assertEquals("[[\"a\"]]", NostrJsonWriter.toJson(arrayOf(arrayOf("a"))))
+        assertEquals("[[\"a\"]]", KiteWriter.toJson(arrayOf(arrayOf("a"))))
     }
 }

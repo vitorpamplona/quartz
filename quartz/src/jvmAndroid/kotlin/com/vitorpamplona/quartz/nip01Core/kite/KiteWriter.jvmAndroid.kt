@@ -18,13 +18,13 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.crypto.sha2.threadLocalDigest
 
-private val threadWriter = ThreadLocal.withInitial { NostrJsonWriter() }
+private val threadWriter = ThreadLocal.withInitial { KiteWriter() }
 
-internal actual fun threadNostrJsonWriter(): NostrJsonWriter? = threadWriter.get()
+internal actual fun threadKiteWriter(): KiteWriter? = threadWriter.get()
 
 // String.getBytes(int, int, byte[], int) keeps the low byte of each char, which for ASCII is
 // the UTF-8 byte, and copies a Latin-1 string's backing array in one go.

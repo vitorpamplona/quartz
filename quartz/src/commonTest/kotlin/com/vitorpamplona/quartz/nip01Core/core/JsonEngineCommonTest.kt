@@ -29,7 +29,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Both [JsonEngine]s, on every target: the platform default and the hand-written one agree. */
+/** Both [JsonEngine]s, on every target: the platform default and Kite agree. */
 class JsonEngineCommonTest {
     @AfterTest
     fun reset() {
@@ -38,7 +38,7 @@ class JsonEngineCommonTest {
 
     private fun <T> both(block: () -> T): Pair<T, T> {
         val platform = block()
-        JsonEngine.current = JsonEngine.HAND_WRITTEN
+        JsonEngine.current = JsonEngine.KITE
         try {
             return platform to block()
         } finally {

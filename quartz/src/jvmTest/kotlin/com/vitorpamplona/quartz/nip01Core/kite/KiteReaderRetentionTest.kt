@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
@@ -27,10 +27,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** A failed parse must not leave a hostile frame's data on this thread's reused reader. */
-class NostrJsonReaderRetentionTest {
+class KiteReaderRetentionTest {
     private fun field(name: String): Any? {
-        val reader = assertNotNull(threadNostrJsonReader())
-        return NostrJsonReader::class.java
+        val reader = assertNotNull(threadKiteReader())
+        return KiteReader::class.java
             .getDeclaredField(name)
             .apply { isAccessible = true }
             .get(reader)
@@ -39,7 +39,7 @@ class NostrJsonReaderRetentionTest {
     @Test
     fun aFailedDecodeDropsAHugeBuffer() {
         val huge = """{"pubkey":"a","content":"${"\\n".repeat(200_000)}\x"}"""
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readEvent(huge) }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readEvent(huge) }
         val sb = field("sb") as StringBuilder?
         assertTrue(sb == null || sb.capacity() < 100_000, "decode buffer of ${sb?.capacity()} chars kept")
     }
@@ -47,7 +47,7 @@ class NostrJsonReaderRetentionTest {
     @Test
     fun aFailedEventDropsItsFields() {
         val content = "x".repeat(100_000)
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readMessage("""["EVENT","s",{"pubkey":"a","content":"$content","sig":1}]""") }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readMessage("""["EVENT","s",{"pubkey":"a","content":"$content","sig":1}]""") }
         assertNull(field("fContent"))
         assertNull(field("fPubKey"))
     }

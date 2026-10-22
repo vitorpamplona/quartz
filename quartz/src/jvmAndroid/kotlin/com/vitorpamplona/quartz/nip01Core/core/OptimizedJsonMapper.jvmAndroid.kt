@@ -31,6 +31,9 @@ import com.vitorpamplona.quartz.experimental.clink.offers.OfferReceipt
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferRequest
 import com.vitorpamplona.quartz.experimental.clink.offers.OfferResponse
 import com.vitorpamplona.quartz.nip01Core.jackson.JacksonMapper
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.nip01Core.kite.readKnownType
 import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
@@ -42,23 +45,23 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import kotlinx.serialization.SerializationException
 
 actual object OptimizedJsonMapper {
-    actual fun fromJson(json: String): Event = if (JsonEngine.isHandWritten) NostrJsonReader.readEvent(json) else jackson { JacksonMapper.fromJson(json) }
+    actual fun fromJson(json: String): Event = if (JsonEngine.isKite) KiteReader.readEvent(json) else jackson { JacksonMapper.fromJson(json) }
 
-    actual fun toJson(event: Event) = if (JsonEngine.isHandWritten) NostrJsonWriter.toJson(event) else JacksonMapper.toJson(event)
+    actual fun toJson(event: Event) = if (JsonEngine.isKite) KiteWriter.toJson(event) else JacksonMapper.toJson(event)
 
-    actual fun fromJsonToMessage(json: String): Message = if (JsonEngine.isHandWritten) NostrJsonReader.readMessage(json) else jackson { JacksonMapper.fromJsonToMessage(json) }
+    actual fun fromJsonToMessage(json: String): Message = if (JsonEngine.isKite) KiteReader.readMessage(json) else jackson { JacksonMapper.fromJsonToMessage(json) }
 
-    actual fun fromJsonToCommand(json: String): Command = if (JsonEngine.isHandWritten) NostrJsonReader.readCommand(json) else jackson { JacksonMapper.fromJsonToCommand(json) }
+    actual fun fromJsonToCommand(json: String): Command = if (JsonEngine.isKite) KiteReader.readCommand(json) else jackson { JacksonMapper.fromJsonToCommand(json) }
 
-    actual fun fromJsonToTagArray(json: String): Array<Array<String>> = if (JsonEngine.isHandWritten) NostrJsonReader.readTagArray(json) else jackson { JacksonMapper.fromJsonToTagArray(json) }
+    actual fun fromJsonToTagArray(json: String): Array<Array<String>> = if (JsonEngine.isKite) KiteReader.readTagArray(json) else jackson { JacksonMapper.fromJsonToTagArray(json) }
 
-    actual fun fromJsonToRumor(json: String): Rumor = if (JsonEngine.isHandWritten) NostrJsonReader.readRumor(json) else jackson { JacksonMapper.fromJsonToRumor(json) }
+    actual fun fromJsonToRumor(json: String): Rumor = if (JsonEngine.isKite) KiteReader.readRumor(json) else jackson { JacksonMapper.fromJsonToRumor(json) }
 
-    actual fun fromJsonToEventTemplate(json: String): EventTemplate<Event> = if (JsonEngine.isHandWritten) NostrJsonReader.readEventTemplate(json) else jackson { JacksonMapper.fromJsonToEventTemplate(json) }
+    actual fun fromJsonToEventTemplate(json: String): EventTemplate<Event> = if (JsonEngine.isKite) KiteReader.readEventTemplate(json) else jackson { JacksonMapper.fromJsonToEventTemplate(json) }
 
-    actual fun fromJsonToEventList(json: String): List<Event> = if (JsonEngine.isHandWritten) NostrJsonReader.readEventList(json) else jackson { JacksonMapper.fromJsonToEventList(json) }
+    actual fun fromJsonToEventList(json: String): List<Event> = if (JsonEngine.isKite) KiteReader.readEventList(json) else jackson { JacksonMapper.fromJsonToEventList(json) }
 
-    actual fun toJson(tags: Array<Array<String>>): String = if (JsonEngine.isHandWritten) NostrJsonWriter.toJson(tags) else JacksonMapper.toJson(tags)
+    actual fun toJson(tags: Array<Array<String>>): String = if (JsonEngine.isKite) KiteWriter.toJson(tags) else JacksonMapper.toJson(tags)
 
     private inline fun <T> jackson(read: () -> T): T =
         try {
@@ -82,10 +85,10 @@ actual object OptimizedJsonMapper {
      *    MismatchedInputException and lost the whole response over one bad field.
      *
      * Everything else stays on Jackson, which is faster on the event hot path and is
-     * already non-reflective there, unless [JsonEngine.HAND_WRITTEN] is on.
+     * already non-reflective there, unless [JsonEngine.KITE] is on.
      */
     actual inline fun <reified T : OptimizedSerializable> fromJsonTo(json: String): T {
-        if (JsonEngine.isHandWritten) {
+        if (JsonEngine.isKite) {
             readKnownType(T::class, json)?.let { return it as T }
         }
         return when (T::class) {
@@ -114,7 +117,7 @@ actual object OptimizedJsonMapper {
     }
 
     actual fun toJson(value: OptimizedSerializable): String =
-        (if (JsonEngine.isHandWritten) NostrJsonWriter.toJsonOrNull(value) else null) ?: when (value) {
+        (if (JsonEngine.isKite) KiteWriter.toJsonOrNull(value) else null) ?: when (value) {
             is Request, is Response, is Notification,
             is OfferRequest, is OfferResponse, is OfferReceipt,
             is DebitRequest, is DebitResponse,

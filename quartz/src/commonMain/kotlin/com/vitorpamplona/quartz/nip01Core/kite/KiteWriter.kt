@@ -18,21 +18,27 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
+import com.vitorpamplona.quartz.nip46RemoteSigner.kite.bunkerRequest
+import com.vitorpamplona.quartz.nip46RemoteSigner.kite.bunkerResponse
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 
 /**
  * Quartz's own JSON writer for what it puts on a WebSocket (events, tags, rumors, filters,
  * every relay message and client command) and for the NIP-01 id hash, the twin of
- * [NostrJsonReader]. [OptimizedJsonMapper] and the id hash write through it when
- * [JsonEngine.HAND_WRITTEN] is selected.
+ * [KiteReader]. [OptimizedJsonMapper] and the id hash write through it when
+ * [JsonEngine.KITE] is selected.
  *
  * The output is byte-identical to the Jackson serializers it mirrors, including their
  * escaping, which is wider than NIP-01's: `"`, `\` and the short forms `\b \f \n \r \t`, every
@@ -51,10 +57,10 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
  * [copyAsciiInto] in one call and only the chars between runs are encoded one by one.
  *
  * Not thread-safe. On the JVM and Android each thread reuses its own (see
- * [threadNostrJsonWriter]), so the buffers are allocated once per thread, not once per write;
+ * [threadKiteWriter]), so the buffers are allocated once per thread, not once per write;
  * a nested write on the same thread, and every write on native, gets a fresh one.
  */
-class NostrJsonWriter internal constructor() {
+class KiteWriter internal constructor() {
     private var inUse = false
 
     internal var sb = StringBuilder(INITIAL_CHARS)
@@ -68,7 +74,7 @@ class NostrJsonWriter internal constructor() {
     /** Set when the next object field needs a comma before it; reset by [objectStart]. */
     private var needsComma = false
 
-    private inline fun <T> writing(write: NostrJsonWriter.() -> T): T {
+    private inline fun <T> writing(write: KiteWriter.() -> T): T {
         inUse = true
         try {
             return write()
@@ -80,7 +86,7 @@ class NostrJsonWriter internal constructor() {
         }
     }
 
-    private inline fun text(write: NostrJsonWriter.() -> Unit): String =
+    private inline fun text(write: KiteWriter.() -> Unit): String =
         writing {
             write()
             sb.toString()
@@ -496,9 +502,9 @@ class NostrJsonWriter internal constructor() {
         /** In 0x20..0x7F (DEL included, as Jackson writes it) and not `"` or `\`: its own single UTF-8 byte. */
         private fun isPlainAscii(c: Char): Boolean = (c.code - 0x20) in 0 until 0x60 && c != '"' && c != '\\'
 
-        private fun acquire(): NostrJsonWriter {
-            val local = threadNostrJsonWriter()
-            return if (local == null || local.inUse) NostrJsonWriter() else local
+        private fun acquire(): KiteWriter {
+            val local = threadKiteWriter()
+            return if (local == null || local.inUse) KiteWriter() else local
         }
 
         /** The event as `EventSerializer` writes it. */
@@ -538,13 +544,13 @@ class NostrJsonWriter internal constructor() {
         fun toJson(response: BunkerResponse): String = acquire().text { bunkerResponse(response) }
 
         /** Runs [write] with this thread's writer and returns the text, for formats written outside this package. */
-        internal fun write(write: NostrJsonWriter.() -> Unit): String = acquire().text(write)
+        internal fun write(write: KiteWriter.() -> Unit): String = acquire().text(write)
 
-        /** The event laid out for people to read; see [NostrJsonPretty]. */
-        fun toPrettyJson(event: Event): String = NostrJsonPretty.format(toJson(event))
+        /** The event laid out for people to read; see [KitePretty]. */
+        fun toPrettyJson(event: Event): String = KitePretty.format(toJson(event))
 
-        /** The template laid out for people to read; see [NostrJsonPretty]. */
-        fun toPrettyJson(template: EventTemplate<*>): String = NostrJsonPretty.format(toJson(template))
+        /** The template laid out for people to read; see [KitePretty]. */
+        fun toPrettyJson(template: EventTemplate<*>): String = KitePretty.format(toJson(template))
 
         fun toJson(filter: Filter): String = acquire().text { filter(filter) }
 
@@ -634,7 +640,7 @@ class NostrJsonWriter internal constructor() {
 }
 
 /** This thread's reusable writer, or null where there is none (native). */
-internal expect fun threadNostrJsonWriter(): NostrJsonWriter?
+internal expect fun threadKiteWriter(): KiteWriter?
 
 /** SHA-256 of the first [length] bytes of [data]. */
 internal expect fun sha256Of(

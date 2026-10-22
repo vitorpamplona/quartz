@@ -18,12 +18,13 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class NostrJsonPrettyTest {
+class KitePrettyTest {
     @Test
     fun test() {
         val expected =
@@ -36,7 +37,7 @@ class NostrJsonPrettyTest {
               ]
             }
             """.trimIndent()
-        assertEquals(expected, NostrJsonPretty.format("""{"tags":[[1,2,3],[4,5,6],[7,8,9]]}"""))
+        assertEquals(expected, KitePretty.format("""{"tags":[[1,2,3],[4,5,6],[7,8,9]]}"""))
 
         val expected2 =
             """
@@ -47,7 +48,7 @@ class NostrJsonPrettyTest {
               ]
             }
             """.trimIndent()
-        assertEquals(expected2, NostrJsonPretty.format("""{"tags":[[[1,2],[3,4]],[[5,6],[7,8]]]}"""))
+        assertEquals(expected2, KitePretty.format("""{"tags":[[[1,2],[3,4]],[[5,6],[7,8]]]}"""))
     }
 
     @Test
@@ -68,6 +69,6 @@ class NostrJsonPrettyTest {
             }
             """.trimIndent()
 
-        assertEquals(nostrObject, NostrJsonWriter.toPrettyJson(Event.fromJson(nostrObject)))
+        assertEquals(nostrObject, KiteWriter.toPrettyJson(Event.fromJson(nostrObject)))
     }
 }

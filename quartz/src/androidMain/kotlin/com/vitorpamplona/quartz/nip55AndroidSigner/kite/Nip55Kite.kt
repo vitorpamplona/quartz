@@ -18,11 +18,11 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip55AndroidSigner
+package com.vitorpamplona.quartz.nip55AndroidSigner.kite
 
-import com.vitorpamplona.quartz.nip01Core.core.NostrJsonReader
-import com.vitorpamplona.quartz.nip01Core.core.NostrJsonWriter
-import com.vitorpamplona.quartz.nip01Core.core.forEachField
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.nip01Core.kite.forEachField
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
@@ -35,20 +35,20 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
  * `event` and `id` only when they are strings; `rejected` only when it is a boolean), with one
  * fix: a permission's `"kind": null` reads as no kind, as it was written, instead of kind 0.
  */
-object Nip55Json {
-    fun fromJsonToPermission(json: String): Permission = NostrJsonReader.read(json) { readPermission() }
+object Nip55Kite {
+    fun fromJsonToPermission(json: String): Permission = KiteReader.read(json) { readPermission() }
 
-    fun fromJsonToPermissionArray(json: String): Array<Permission> = NostrJsonReader.read(json) { readArray { readPermission() } }.toTypedArray()
+    fun fromJsonToPermissionArray(json: String): Array<Permission> = KiteReader.read(json) { readArray { readPermission() } }.toTypedArray()
 
-    fun fromJsonToIntentResult(json: String): IntentResult = NostrJsonReader.read(json) { readIntentResult() }
+    fun fromJsonToIntentResult(json: String): IntentResult = KiteReader.read(json) { readIntentResult() }
 
-    fun fromJsonToIntentResultList(json: String): List<IntentResult> = NostrJsonReader.read(json) { readArray { readIntentResult() } }
+    fun fromJsonToIntentResultList(json: String): List<IntentResult> = KiteReader.read(json) { readArray { readIntentResult() } }
 
     /** `{"type":"sign_event","kind":1}`; `kind` is written as `null` when the permission has none. */
-    fun toJson(permission: Permission): String = NostrJsonWriter.write { permission(permission) }
+    fun toJson(permission: Permission): String = KiteWriter.write { permission(permission) }
 
     fun toJson(permissions: List<Permission>): String =
-        NostrJsonWriter.write {
+        KiteWriter.write {
             raw('[')
             permissions.forEachIndexed { index, permission ->
                 if (index > 0) raw(',')
@@ -59,7 +59,7 @@ object Nip55Json {
 
     /** The result's set fields, in declaration order. */
     fun toJson(result: IntentResult): String =
-        NostrJsonWriter.write {
+        KiteWriter.write {
             objectStart()
             result.`package`?.let {
                 field("package")
@@ -84,7 +84,7 @@ object Nip55Json {
             objectEnd()
         }
 
-    private fun NostrJsonWriter.permission(permission: Permission) {
+    private fun KiteWriter.permission(permission: Permission) {
         objectStart()
         field("type")
         val code = permission.type?.code
@@ -95,7 +95,7 @@ object Nip55Json {
         objectEnd()
     }
 
-    private inline fun <T> NostrJsonReader.readArray(item: NostrJsonReader.() -> T): List<T> {
+    private inline fun <T> KiteReader.readArray(item: KiteReader.() -> T): List<T> {
         if (peek() != '[') fail("expected an array")
         i++
         val out = ArrayList<T>()
@@ -115,7 +115,7 @@ object Nip55Json {
         }
     }
 
-    private fun NostrJsonReader.readPermission(): Permission {
+    private fun KiteReader.readPermission(): Permission {
         var hasType = false
         var type: String? = null
         var kind: Int? = null
@@ -139,7 +139,7 @@ object Nip55Json {
         return Permission(CommandType.parse(type ?: "null"), kind)
     }
 
-    private fun NostrJsonReader.readIntentResult(): IntentResult {
+    private fun KiteReader.readIntentResult(): IntentResult {
         var pkg: String? = null
         var result: String? = null
         var event: String? = null
@@ -159,7 +159,7 @@ object Nip55Json {
     }
 
     /** Jackson's `asText()`: a scalar's text, "" for a container. */
-    private fun NostrJsonReader.asText(): String =
+    private fun KiteReader.asText(): String =
         when (s[i]) {
             '"' -> {
                 readString()
@@ -188,7 +188,7 @@ object Nip55Json {
         }
 
     /** Jackson's `asInt()` for a present field, except that `null` stays null. */
-    private fun NostrJsonReader.asIntOrNull(): Int? =
+    private fun KiteReader.asIntOrNull(): Int? =
         when (s[i]) {
             'n' -> {
                 literal("null", "")
@@ -230,13 +230,13 @@ object Nip55Json {
             }
         }
 
-    private fun NostrJsonReader.stringOrSkip(): String? {
+    private fun KiteReader.stringOrSkip(): String? {
         if (s[i] == '"') return readString()
         skipValue(1)
         return null
     }
 
-    private fun NostrJsonReader.booleanOrSkip(): Boolean? =
+    private fun KiteReader.booleanOrSkip(): Boolean? =
         when (s[i]) {
             't' -> {
                 literal("true", "")

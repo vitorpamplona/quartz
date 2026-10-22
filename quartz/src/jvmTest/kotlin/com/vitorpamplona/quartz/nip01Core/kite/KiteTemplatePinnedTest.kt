@@ -18,8 +18,10 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import java.util.zip.GZIPInputStream
@@ -33,7 +35,7 @@ import kotlin.test.fail
  * of a sample. The pins were recorded while every outcome was also compared with the Jackson
  * (de)serializers they replaced; the two agreed wherever Jackson accepted the input.
  */
-class NostrJsonTemplatePinnedTest {
+class KiteTemplatePinnedTest {
     private fun <T> run(block: () -> T): Result<T> =
         try {
             Result.success(block())
@@ -72,9 +74,9 @@ class NostrJsonTemplatePinnedTest {
         t.pin.check(PINS.getValue(name))
     }
 
-    private val templateReader = { s: String -> describe(NostrJsonReader.readEventTemplate(s)) }
-    private val tagsReader = { s: String -> describe(NostrJsonReader.readTagArray(s)) }
-    private val filterReader = { s: String -> describe(NostrJsonReader.readFilter(s)) }
+    private val templateReader = { s: String -> describe(KiteReader.readEventTemplate(s)) }
+    private val tagsReader = { s: String -> describe(KiteReader.readTagArray(s)) }
+    private val filterReader = { s: String -> describe(KiteReader.readFilter(s)) }
 
     private fun capturedEvents(limit: Int): List<String> {
         val out = ArrayList<String>()
@@ -132,11 +134,11 @@ class NostrJsonTemplatePinnedTest {
         val written = Tally()
         for (json in capturedEvents(Int.MAX_VALUE)) {
             compare(json, templateReader, templates)
-            val e = NostrJsonReader.readEvent(json)
-            val tagsJson = NostrJsonWriter.toJson(e.tags)
+            val e = KiteReader.readEvent(json)
+            val tagsJson = KiteWriter.toJson(e.tags)
             compare(tagsJson, tagsReader, tags)
             val template = EventTemplate<Event>(e.createdAt, e.kind, e.tags, e.content)
-            compare("", { NostrJsonWriter.toJson(template) }, written)
+            compare("", { KiteWriter.toJson(template) }, written)
         }
         assertPinned("templates", templates)
         assertPinned("tag arrays", tags)
@@ -182,11 +184,11 @@ class NostrJsonTemplatePinnedTest {
         // Tags of the wrong shape, and every prefix of a real template, are rejected. These were
         // always checked against the reader alone: the replaced deserializer was no oracle for them.
         for (bad in listOf("""{"tags":{}}""", """{"tags":null}""", """{"tags":[{"a":1}]}""", """{"tags":["a"]}""", """{"tags":[[{}]]}""", """{"tags":[[["nested"]]]}""")) {
-            if (run { NostrJsonReader.readEventTemplate(bad) }.isSuccess) fail("accepted malformed tags: $bad")
+            if (run { KiteReader.readEventTemplate(bad) }.isSuccess) fail("accepted malformed tags: $bad")
         }
         for (json in capturedEvents(40)) {
             for (k in json.indices) {
-                if (run { NostrJsonReader.readEventTemplate(json.substring(0, k)) }.isSuccess) fail("accepted a truncated template: ${json.substring(0, k)}")
+                if (run { KiteReader.readEventTemplate(json.substring(0, k)) }.isSuccess) fail("accepted a truncated template: ${json.substring(0, k)}")
             }
         }
 
@@ -196,7 +198,7 @@ class NostrJsonTemplatePinnedTest {
         for (s in oddTags) compare(s, tagsReader, tags)
         assertPinned("odd tag arrays", tags)
         for (bad in listOf("[", """[["a"],""", """[["a""", """[["a",""", "[[[]]]", """[{"a":1}]""", """["a"]""", "{}")) {
-            if (run { NostrJsonReader.readTagArray(bad) }.isSuccess) fail("accepted a malformed tag array: $bad")
+            if (run { KiteReader.readTagArray(bad) }.isSuccess) fail("accepted a malformed tag array: $bad")
         }
 
         val filters = Tally()

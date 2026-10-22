@@ -18,8 +18,10 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import com.vitorpamplona.quartz.nip57Zaps.LnZapEvent
 import kotlin.test.Test
@@ -29,7 +31,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class NostrJsonReaderEventTest {
+class KiteReaderEventTest {
     private val id = "0a5b8e8f2b4b0a6b1f0b64e5d0e9a8f7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a291"
     private val pubkey = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     private val sig = "908a15e46fb4d8675bab026fc230a0e3542bfade63da02d542fb78b2a8513fcd0092619a2c8c1221e581946e0191f2af505dfdf8657a414dbca329186f009262"
@@ -42,7 +44,7 @@ class NostrJsonReaderEventTest {
         extra: String = "",
     ) = """{"id":"$id","pubkey":"$pubkey","created_at":$createdAt,"kind":$kind,"tags":$tags,"content":$content,"sig":"$sig"$extra}"""
 
-    private fun read(json: String) = NostrJsonReader.readEvent(json)
+    private fun read(json: String) = KiteReader.readEvent(json)
 
     private fun contentOf(raw: String) = read(event(content = raw)).content
 
@@ -219,7 +221,7 @@ class NostrJsonReaderEventTest {
         assertEquals(sig, read(event(extra = ",\"x\":${nested(999)}")).sig)
         assertFailsWith<IllegalArgumentException> { read(event(extra = ",\"x\":${nested(1000)}")) }
         assertEquals(sig, frame("[\"EVENT\",\"s\",${event(extra = ",\"x\":${nested(998)}")}]").event.sig)
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readMessage("[\"EVENT\",\"s\",${event(extra = ",\"x\":${nested(999)}")}]") }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readMessage("[\"EVENT\",\"s\",${event(extra = ",\"x\":${nested(999)}")}]") }
         val objects = "{\"a\":".repeat(999) + "1" + "}".repeat(999)
         assertEquals(sig, read(event(extra = ",\"x\":$objects")).sig)
         // Deep nesting is a counter, not recursion: far past the limit it still fails cleanly.
@@ -274,7 +276,7 @@ class NostrJsonReaderEventTest {
         }
     }
 
-    private fun frame(json: String) = NostrJsonReader.readMessage(json) as EventMessage
+    private fun frame(json: String) = KiteReader.readMessage(json) as EventMessage
 
     @Test
     fun readsEventFrames() {
@@ -293,14 +295,14 @@ class NostrJsonReaderEventTest {
     @Test
     fun readsAnEscapedEventLabel() {
         assertEquals("s", frame("[\"EV\\u0045NT\",\"s\",${event()}]").subId)
-        assertFailsWith<IllegalArgumentException> { NostrJsonReader.readMessage("[\"EV\\u0045NTS\",\"s\",${event()}]") }
+        assertFailsWith<IllegalArgumentException> { KiteReader.readMessage("[\"EV\\u0045NTS\",\"s\",${event()}]") }
     }
 
     @Test
     fun rejectsMalformedEventFrames() {
         // A frame cut before its closing bracket fails, as in Jackson.
         for (bad in listOf("{}", "", "[\"EVENT\"]", "[\"EVENT\",1,{}]", "[\"EVENT\",\"s\"]", "[\"EVENT\",\"s\",{}]", "[\"EVENT\",\"s\",${event()},]", "[\"EVENT\",\"s\",${event()} x]", "[\"EVENT\",\"s\",${event()}", "[\"EVENT\",\"s\",${event()},")) {
-            assertFailsWith<IllegalArgumentException>(bad) { NostrJsonReader.readMessage(bad) }
+            assertFailsWith<IllegalArgumentException>(bad) { KiteReader.readMessage(bad) }
         }
     }
 

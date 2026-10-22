@@ -18,8 +18,12 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasherSerializer
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
@@ -58,14 +62,14 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * [NostrJsonWriter] over every event of the recorded startup capture (as JSON, as its id
+ * [KiteWriter] over every event of the recorded startup capture (as JSON, as its id
  * preimage in text and UTF-8, as tags, as a rumor and inside frames), hand-picked and random
  * strings that need escaping, and every message and command type, each test pinned by a [Pin].
  *
  * The pins were recorded while every output was also compared, byte for byte, with the
  * Jackson serializers the writer replaced.
  */
-class NostrJsonWriterPinnedTest {
+class KiteWriterPinnedTest {
     @get:Rule val testName = TestName()
 
     private val pin = Pin("")
@@ -82,12 +86,12 @@ class NostrJsonWriterPinnedTest {
     /** Every way the writer serializes [e], pinned. */
     private fun assertPinned(e: Event) {
         val idBytes = EventHasherSerializer.fastMakeJsonForId(e.pubKey, e.createdAt, e.kind, e.tags, e.content)
-        pin.add(NostrJsonWriter.toJson(e))
-        pin.add(NostrJsonWriter.toJson(e.tags))
+        pin.add(KiteWriter.toJson(e))
+        pin.add(KiteWriter.toJson(e.tags))
         pin.add(EventHasherSerializer.makeJsonForId(e.pubKey, e.createdAt, e.kind, e.tags, e.content))
         pin.add(idBytes.toHexKey())
-        pin.add(NostrJsonWriter.toJson(Rumor.create(e)))
-        assertContentEquals(sha.digest(idBytes), NostrJsonWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content), "id hash for ${NostrJsonWriter.toJson(e).take(300)}")
+        pin.add(KiteWriter.toJson(Rumor.create(e)))
+        assertContentEquals(sha.digest(idBytes), KiteWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content), "id hash for ${KiteWriter.toJson(e).take(300)}")
     }
 
     private fun forEachCapturedEvent(action: (String) -> Unit) {
@@ -145,17 +149,17 @@ class NostrJsonWriterPinnedTest {
         var validIds = 0
         var validIdsFromBytes = 0
         forEachCapturedEvent { json ->
-            val e = NostrJsonReader.readEvent(json)
+            val e = KiteReader.readEvent(json)
             assertPinned(e)
             if (EventHasherSerializer.makeJsonForIdHashAndCheck(e.id, e.pubKey, e.createdAt, e.kind, e.tags, e.content)) validIds++
             if (sha.digest(EventHasherSerializer.fastMakeJsonForId(e.pubKey, e.createdAt, e.kind, e.tags, e.content)).toHexKey() == e.id) validIdsFromBytes++
 
             val frame = EventMessage("sub", e)
-            pin.add(NostrJsonWriter.toJsonOrNull(frame))
-            assertEquals(frame.toJson(), NostrJsonWriter.toJsonOrNull(frame))
+            pin.add(KiteWriter.toJsonOrNull(frame))
+            assertEquals(frame.toJson(), KiteWriter.toJsonOrNull(frame))
             val cmd = EventCmd(e)
-            pin.add(NostrJsonWriter.toJsonOrNull(cmd))
-            assertEquals(cmd.toJson(), NostrJsonWriter.toJsonOrNull(cmd))
+            pin.add(KiteWriter.toJsonOrNull(cmd))
+            assertEquals(cmd.toJson(), KiteWriter.toJsonOrNull(cmd))
             count++
         }
         println("captured events: $count written, $validIds with a matching id")
@@ -311,7 +315,7 @@ class NostrJsonWriterPinnedTest {
             ReqCmd("odd \" \\ \u0000", listOf(Filter(kinds = listOf(1)))),
             CountCmd("q", filters),
             EventCmd(sampleEvent),
-            EventCmd(sampleEvent, NostrJsonWriter.toJson(sampleEvent)),
+            EventCmd(sampleEvent, KiteWriter.toJson(sampleEvent)),
             EventCmd(sampleEvent, "{ \"raw\" : true }"),
             CloseCmd("sub"),
             CloseCmd("\u2028"),
@@ -323,25 +327,25 @@ class NostrJsonWriterPinnedTest {
     @Test
     fun everyMessageTypeWritesAsPinned() {
         for (msg in messages) {
-            pin.add(NostrJsonWriter.toJsonOrNull(msg))
+            pin.add(KiteWriter.toJsonOrNull(msg))
             // The type's own toJson, fast paths included.
-            assertEquals(NostrJsonWriter.toJsonOrNull(msg), msg.toJson(), msg::class.simpleName)
+            assertEquals(KiteWriter.toJsonOrNull(msg), msg.toJson(), msg::class.simpleName)
         }
     }
 
     @Test
     fun everyCommandTypeWritesAsPinned() {
         for (cmd in commands) {
-            pin.add(NostrJsonWriter.toJsonOrNull(cmd))
-            assertEquals(NostrJsonWriter.toJsonOrNull(cmd), cmd.toJson(), cmd::class.simpleName)
+            pin.add(KiteWriter.toJsonOrNull(cmd))
+            assertEquals(KiteWriter.toJsonOrNull(cmd), cmd.toJson(), cmd::class.simpleName)
         }
     }
 
     @Test
     fun filtersAndRumorsWriteAsPinned() {
         for (f in filters) {
-            pin.add(NostrJsonWriter.toJson(f))
-            assertEquals(NostrJsonWriter.toJson(f), f.toJson())
+            pin.add(KiteWriter.toJson(f))
+            assertEquals(KiteWriter.toJson(f), f.toJson())
         }
         val rumors =
             listOf(
@@ -351,8 +355,8 @@ class NostrJsonWriterPinnedTest {
                 Rumor.create(sampleEvent),
             )
         for (r in rumors) {
-            pin.add(NostrJsonWriter.toJson(r))
-            assertEquals(NostrJsonWriter.toJson(r), Rumor.toJson(r))
+            pin.add(KiteWriter.toJson(r))
+            assertEquals(KiteWriter.toJson(r), Rumor.toJson(r))
         }
     }
 
@@ -361,7 +365,7 @@ class NostrJsonWriterPinnedTest {
         val random = Random(7)
         val events = List(500) { event(randomString(random), arrayOf(arrayOf("t", randomString(random)))) }
         // What one thread alone writes.
-        val expectedJson = events.map { NostrJsonWriter.toJson(it) }
+        val expectedJson = events.map { KiteWriter.toJson(it) }
         val expectedId = events.map { sha.digest(EventHasherSerializer.fastMakeJsonForId(it.pubKey, it.createdAt, it.kind, it.tags, it.content)) }
         val failures = AtomicInteger()
         val threads =
@@ -371,8 +375,8 @@ class NostrJsonWriterPinnedTest {
                         for (k in events.indices) {
                             val idx = (k * 7 + t * 13 + round) % events.size
                             val e = events[idx]
-                            if (NostrJsonWriter.toJson(e) != expectedJson[idx]) failures.incrementAndGet()
-                            if (!NostrJsonWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content).contentEquals(expectedId[idx])) failures.incrementAndGet()
+                            if (KiteWriter.toJson(e) != expectedJson[idx]) failures.incrementAndGet()
+                            if (!KiteWriter.idHash(e.pubKey, e.createdAt, e.kind, e.tags, e.content).contentEquals(expectedId[idx])) failures.incrementAndGet()
                         }
                     }
                 }
@@ -388,8 +392,8 @@ class NostrJsonWriterPinnedTest {
             object : Message {
                 override fun label() = "CUSTOM"
             }
-        assertEquals(null, NostrJsonWriter.toJsonOrNull(custom))
-        if (NostrJsonWriter.toJsonOrNull(custom as OptimizedSerializable) != null) fail("expected null")
+        assertEquals(null, KiteWriter.toJsonOrNull(custom))
+        if (KiteWriter.toJsonOrNull(custom as OptimizedSerializable) != null) fail("expected null")
     }
 
     companion object {

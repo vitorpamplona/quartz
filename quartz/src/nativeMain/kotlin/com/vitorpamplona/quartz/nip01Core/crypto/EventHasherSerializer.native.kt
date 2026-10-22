@@ -23,8 +23,8 @@ package com.vitorpamplona.quartz.nip01Core.crypto
 import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
-import com.vitorpamplona.quartz.nip01Core.core.NostrJsonWriter
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
 import com.vitorpamplona.quartz.utils.Hex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.add
@@ -62,8 +62,8 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): String =
-        if (JsonEngine.isHandWritten) {
-            NostrJsonWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
+        if (JsonEngine.isKite) {
+            KiteWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
         } else {
             makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString()
         }
@@ -75,8 +75,8 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): ByteArray =
-        if (JsonEngine.isHandWritten) {
-            NostrJsonWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
+        if (JsonEngine.isKite) {
+            KiteWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
         } else {
             makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray()
         }
@@ -89,7 +89,7 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): Boolean {
-        if (JsonEngine.isHandWritten) return Hex.isEqual(id, NostrJsonWriter.idHash(pubKey, createdAt, kind, tags, content))
+        if (JsonEngine.isKite) return Hex.isEqual(id, KiteWriter.idHash(pubKey, createdAt, kind, tags, content))
 
         val eventIdHash = sha256(makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray())
         return Hex.isEqual(id, eventIdHash)

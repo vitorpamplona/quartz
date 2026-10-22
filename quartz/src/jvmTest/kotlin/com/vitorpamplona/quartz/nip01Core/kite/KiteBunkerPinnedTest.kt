@@ -18,8 +18,9 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
@@ -33,7 +34,7 @@ import kotlin.test.fail
  * intended difference: a JSON `null` in `id`, `method`, `result` or `error` reads as absent,
  * where Jackson read the text "null".
  */
-class NostrJsonBunkerPinnedTest {
+class KiteBunkerPinnedTest {
     private fun describe(m: BunkerMessage): String =
         when (m) {
             is BunkerRequest -> "${m::class.simpleName}|${m.id}|${m.method}|${m.params.joinToString("\u00A6")}"
@@ -100,7 +101,7 @@ class NostrJsonBunkerPinnedTest {
         input: String,
         typed: (String) -> BunkerMessage,
     ) {
-        val r = run { describe(NostrJsonReader.readBunkerMessage(input)) }
+        val r = run { describe(KiteReader.readBunkerMessage(input)) }
         readPin.add(r.getOrNull())
         assertEquals(r.getOrNull(), run { describe(typed(input)) }.getOrNull(), input)
     }
@@ -118,14 +119,14 @@ class NostrJsonBunkerPinnedTest {
             compare(s) { OptimizedJsonMapper.fromJsonTo<BunkerResponse>(it) }
         }
         for (s in broken) {
-            if (run { NostrJsonReader.readBunkerMessage(s) }.isSuccess) fail("accepted $s")
+            if (run { KiteReader.readBunkerMessage(s) }.isSuccess) fail("accepted $s")
         }
         readPin.check(PIN_READS)
 
         // Every prefix of a real request and response is rejected.
         for (s in listOf(requests[0], requests[1], responses[6])) {
             for (k in s.indices) {
-                if (run { NostrJsonReader.readBunkerMessage(s.substring(0, k)) }.isSuccess) fail("accepted a prefix: ${s.substring(0, k)}")
+                if (run { KiteReader.readBunkerMessage(s.substring(0, k)) }.isSuccess) fail("accepted a prefix: ${s.substring(0, k)}")
             }
         }
     }
@@ -133,29 +134,29 @@ class NostrJsonBunkerPinnedTest {
     @Test
     fun anEmptyResultIsARawResponse() {
         // Jackson's deserializer threw StringIndexOutOfBoundsException on it (result[0] of "").
-        assertEquals("BunkerResponse|10||null", describe(NostrJsonReader.readBunkerMessage("""{"id":"10","result":""}""")))
+        assertEquals("BunkerResponse|10||null", describe(KiteReader.readBunkerMessage("""{"id":"10","result":""}""")))
     }
 
     @Test
     fun nullFieldsReadAsAbsent() {
         // Jackson read these nulls as the text "null": the first was an error named "null".
-        assertEquals("BunkerResponsePublicKey|1|$pk|null", describe(NostrJsonReader.readBunkerMessage("""{"id":"1","result":"$pk","error":null}""")))
-        assertEquals("BunkerResponse|2|null|null", describe(NostrJsonReader.readBunkerMessage("""{"id":"2","result":null}""")))
-        assertEquals("BunkerResponseError|3|null|nope", describe(NostrJsonReader.readBunkerMessage("""{"id":"3","result":null,"error":"nope"}""")))
-        if (run { NostrJsonReader.readBunkerMessage("""{"id":null,"result":"ack"}""") }.isSuccess) fail("an id of null")
-        if (run { NostrJsonReader.readBunkerMessage("""{"id":"4","method":null}""") }.isSuccess) fail("a method of null")
+        assertEquals("BunkerResponsePublicKey|1|$pk|null", describe(KiteReader.readBunkerMessage("""{"id":"1","result":"$pk","error":null}""")))
+        assertEquals("BunkerResponse|2|null|null", describe(KiteReader.readBunkerMessage("""{"id":"2","result":null}""")))
+        assertEquals("BunkerResponseError|3|null|nope", describe(KiteReader.readBunkerMessage("""{"id":"3","result":null,"error":"nope"}""")))
+        if (run { KiteReader.readBunkerMessage("""{"id":null,"result":"ack"}""") }.isSuccess) fail("an id of null")
+        if (run { KiteReader.readBunkerMessage("""{"id":"4","method":null}""") }.isSuccess) fail("a method of null")
     }
 
     @Test
     fun writesAsPinned() {
         val values =
-            requests.map { NostrJsonReader.readBunkerRequest(it) } +
-                responses.map { NostrJsonReader.readBunkerResponse(it) } +
+            requests.map { KiteReader.readBunkerRequest(it) } +
+                responses.map { KiteReader.readBunkerResponse(it) } +
                 listOf(BunkerResponse("x", null, null), BunkerResponse("y", null, "e\n\"r\""), BunkerRequest("z", "m\u0001", arrayOf("", "\u2028", "\uD83D\uDE00")))
         val pin = Pin("bunker writes")
         for (v in values) {
-            pin.add(NostrJsonWriter.toJsonOrNull(v))
-            assertEquals(OptimizedJsonMapper.toJson(v), NostrJsonWriter.toJsonOrNull(v), describe(v as BunkerMessage))
+            pin.add(KiteWriter.toJsonOrNull(v))
+            assertEquals(OptimizedJsonMapper.toJson(v), KiteWriter.toJsonOrNull(v), describe(v as BunkerMessage))
         }
         pin.check(PIN_WRITES)
     }

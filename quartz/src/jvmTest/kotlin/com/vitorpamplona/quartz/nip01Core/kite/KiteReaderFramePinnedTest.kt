@@ -18,8 +18,9 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
@@ -49,7 +50,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * [NostrJsonReader] for everything besides a bare event: every relay message type, every client
+ * [KiteReader] for everything besides a bare event: every relay message type, every client
  * command type with its filters, rumors and event lists. Each type gets hand-written frames
  * covering its optional elements and odd values, real events from the startup capture, and
  * random edits of all of them, each set pinned by a [Pin].
@@ -59,7 +60,7 @@ import kotlin.test.assertTrue
  * never accepted a frame Jackson rejected. It rejects some frames Jackson accepted, only where
  * Jackson built garbage or read on inside a value of the wrong shape.
  */
-class NostrJsonReaderFramePinnedTest {
+class KiteReaderFramePinnedTest {
     private fun describe(e: Event): String = "${e::class.simpleName}(${e.id},${e.pubKey},${e.createdAt},${e.kind},${e.tags.joinToString("|") { it.joinToString(",") }},${e.content},${e.sig})"
 
     private fun describe(f: Filter): String = "Filter(${f.ids},${f.authors},${f.kinds},${f.tags},${f.tagsAll},${f.since},${f.until},${f.limit},${f.search})"
@@ -333,7 +334,7 @@ class NostrJsonReaderFramePinnedTest {
     fun everyMessageTypeParsesAsPinned() {
         val events = capturedEvents(400)
         val frames = messageFrames(events)
-        val reader = { s: String -> run { describe(NostrJsonReader.readMessage(s)) } }
+        val reader = { s: String -> run { describe(KiteReader.readMessage(s)) } }
 
         val base = Tally("message frames")
         frames.forEach { compare(it, base, reader) }
@@ -351,7 +352,7 @@ class NostrJsonReaderFramePinnedTest {
     private fun commandFrames(events: List<String>): List<String> {
         val ev = events.first()
         val auth = """{"id":"ab","pubkey":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","created_at":1700000000,"kind":22242,"tags":[["relay","wss://r.example"],["challenge","c1"]],"content":"","sig":"cd"}"""
-        val parsed = events.take(60).map { NostrJsonReader.readEvent(it) }
+        val parsed = events.take(60).map { KiteReader.readEvent(it) }
         val f = ArrayList<String>()
         parsed.forEach { e ->
             val p = e.tags.firstOrNull { it.size > 1 && it[0] == "p" }?.get(1) ?: e.pubKey
@@ -431,7 +432,7 @@ class NostrJsonReaderFramePinnedTest {
     fun everyCommandTypeParsesAsPinned() {
         val events = capturedEvents(400)
         val frames = commandFrames(events)
-        val reader = { s: String -> run { describe(NostrJsonReader.readCommand(s)) } }
+        val reader = { s: String -> run { describe(KiteReader.readCommand(s)) } }
 
         val base = Tally("command frames")
         frames.forEach { compare(it, base, reader) }
@@ -453,7 +454,7 @@ class NostrJsonReaderFramePinnedTest {
         events.forEach { rumors += it.replace(Regex(""","sig":"[0-9a-f]*""""), "") }
         rumors += listOf("{}", """{"content":"x"}""", """{"kind":1,"tags":[]}""", """{"sig":"abc","kind":"x"}""", """{"pubkey":null}""", "[]", "null")
 
-        val reader = { s: String -> run { describe(NostrJsonReader.readRumor(s)) } }
+        val reader = { s: String -> run { describe(KiteReader.readRumor(s)) } }
         val base = Tally("rumors")
         rumors.forEach { compare(it, base, reader) }
         assertPinned(base)
@@ -471,7 +472,7 @@ class NostrJsonReaderFramePinnedTest {
         events.chunked(10).forEach { lists += it.joinToString(",", "[", "]") }
         lists += listOf("[]", " [ ] ", events.first(), "[${events.first()}] trailing", "[null]", "[1]", "[${events.first()},]", "{}", "5")
 
-        val reader = { s: String -> run { NostrJsonReader.readEventList(s).joinToString("\n") { describe(it) } } }
+        val reader = { s: String -> run { KiteReader.readEventList(s).joinToString("\n") { describe(it) } } }
         val base = Tally("event lists")
         lists.forEach { compare(it, base, reader) }
         assertPinned(base)

@@ -37,7 +37,7 @@ class Nip55EngineTest {
 
     private fun <T> both(block: () -> T): Pair<T, T> {
         val jackson = block()
-        JsonEngine.current = JsonEngine.HAND_WRITTEN
+        JsonEngine.current = JsonEngine.KITE
         try {
             return jackson to block()
         } finally {
@@ -78,7 +78,7 @@ class Nip55EngineTest {
 
     @Test
     fun followsTheEngine() {
-        // The one documented difference: Jackson reads `"kind": null` as 0, the hand-written reader as no kind.
+        // The one documented difference: Jackson reads `"kind": null` as 0, Kite as no kind.
         val json = """{"type":"sign_event","kind":null}"""
         assertEquals(Pair<Int?, Int?>(0, null), both { Permission.fromJson(json).kind })
     }

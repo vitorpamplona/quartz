@@ -18,8 +18,11 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip46RemoteSigner.kite
 
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.nip01Core.kite.forEachField
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestParser
@@ -35,7 +38,7 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
  */
 
 /** One NIP-46 object: a request when it carries a `method`, else a response. */
-internal fun NostrJsonReader.readBunkerObject(): BunkerMessage {
+internal fun KiteReader.readBunkerObject(): BunkerMessage {
     var id: String? = null
     var method: String? = null
     var hasMethod = false
@@ -81,7 +84,7 @@ internal fun NostrJsonReader.readBunkerObject(): BunkerMessage {
 }
 
 /** A field's text: a string as it is, a number or boolean by its text, `null` as absent. */
-private fun NostrJsonReader.bunkerText(): String? =
+private fun KiteReader.bunkerText(): String? =
     when (s[i]) {
         '"' -> readString()
         't' -> literal("true", "true")
@@ -96,7 +99,7 @@ private fun NostrJsonReader.bunkerText(): String? =
  * error: anything but an array is no params, a scalar entry reads as its text (`null` as "null"),
  * and an object or array entry as its compact JSON.
  */
-private fun NostrJsonReader.bunkerParams(): Array<String> {
+private fun KiteReader.bunkerParams(): Array<String> {
     if (s[i] != '[') {
         skipValue(1)
         return EMPTY_PARAMS
@@ -188,7 +191,7 @@ private fun compactJson(
 private val EMPTY_PARAMS = emptyArray<String>()
 
 /** `{"id":…,"method":…,"params":[…]}`, as `BunkerRequestSerializer` writes it. */
-internal fun NostrJsonWriter.bunkerRequest(request: BunkerRequest) {
+internal fun KiteWriter.bunkerRequest(request: BunkerRequest) {
     raw("{\"id\":")
     string(request.id)
     raw(",\"method\":")
@@ -203,7 +206,7 @@ internal fun NostrJsonWriter.bunkerRequest(request: BunkerRequest) {
 }
 
 /** `{"id":…}` plus `result` and `error` when set, as `BunkerResponseSerializer` writes it. */
-internal fun NostrJsonWriter.bunkerResponse(response: BunkerResponse) {
+internal fun KiteWriter.bunkerResponse(response: BunkerResponse) {
     raw("{\"id\":")
     string(response.id)
     response.result?.let {

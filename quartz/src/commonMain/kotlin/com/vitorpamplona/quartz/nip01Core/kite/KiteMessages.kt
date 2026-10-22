@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
@@ -42,7 +42,7 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegMsgMessage
  */
 
 /** One relay-to-client frame: `["EVENT", …]`, `["EOSE", …]`, `["OK", …]` and the rest. */
-internal fun NostrJsonReader.readMessageFrame(): Message {
+internal fun KiteReader.readMessageFrame(): Message {
     val label = openFrame() ?: fail("message type is not a string")
     val message =
         when (label) {
@@ -122,7 +122,7 @@ internal fun NostrJsonReader.readMessageFrame(): Message {
 }
 
 /** The next element, which must be `true` or `false`. */
-internal fun NostrJsonReader.requiredBoolean(): Boolean {
+internal fun KiteReader.requiredBoolean(): Boolean {
     if (!nextElement()) fail("missing element")
     return when (s[i]) {
         't' -> {
@@ -142,7 +142,7 @@ internal fun NostrJsonReader.requiredBoolean(): Boolean {
  * Jackson's `nextTextValue() ?: ""`. An array or object there fails: Jackson would go on
  * reading inside it.
  */
-internal fun NostrJsonReader.optionalText(): String {
+internal fun KiteReader.optionalText(): String {
     if (!nextElement()) return ""
     return when (s[i]) {
         '"' -> readString()
@@ -158,7 +158,7 @@ internal fun NostrJsonReader.optionalText(): String {
  * The optional `params` of an OK or CLOSED: a string, or an integer by its text. Anything
  * else, a container included, reads as absent.
  */
-internal fun NostrJsonReader.optionalParams(): String? {
+internal fun KiteReader.optionalParams(): String? {
     if (!nextElement()) return null
     return when (s[i]) {
         '"' -> readString()
@@ -174,7 +174,7 @@ internal fun NostrJsonReader.optionalParams(): String? {
 }
 
 /** EOSE's optional NIP-67 hints: the strings of an array (other entries dropped), or null. */
-private fun NostrJsonReader.eoseHints(): List<String>? {
+private fun KiteReader.eoseHints(): List<String>? {
     if (!nextElement()) return null
     if (s[i] != '[') {
         skipValue(1)
@@ -198,7 +198,7 @@ private fun NostrJsonReader.eoseHints(): List<String>? {
 }
 
 /** NEG-ERR's optional cap: an integer, else absent. */
-private fun NostrJsonReader.negErrCap(): Long? {
+private fun KiteReader.negErrCap(): Long? {
     if (!nextElement()) return null
     if (s[i] == '-' || s[i] in '0'..'9') {
         val start = i
@@ -210,7 +210,7 @@ private fun NostrJsonReader.negErrCap(): Long? {
 }
 
 /** COUNT's result, read like `CountResultDeserializer` over a JSON tree. */
-private fun NostrJsonReader.countResult(): CountResult {
+private fun KiteReader.countResult(): CountResult {
     if (s[i] != '{') {
         // Any other value is a tree without fields: zero, not approximate.
         skipValue(1)
@@ -231,7 +231,7 @@ private fun NostrJsonReader.countResult(): CountResult {
 }
 
 /** LIMITS' object, read like `LimitsDeserializer`: a field of the wrong type reads as null. */
-private fun NostrJsonReader.limits(): LimitsMessage {
+private fun KiteReader.limits(): LimitsMessage {
     var canWrite: Boolean? = null
     var canRead: Boolean? = null
     var authForRead: Boolean? = null
@@ -301,7 +301,7 @@ private fun NostrJsonReader.limits(): LimitsMessage {
  * Calls [action] with every key of the object at the cursor, with the cursor on the key's value,
  * which [action] must read or skip. Leaves the cursor past the object.
  */
-internal inline fun NostrJsonReader.forEachField(action: (key: String) -> Unit) {
+internal inline fun KiteReader.forEachField(action: (key: String) -> Unit) {
     if (peek() != '{') fail("expected an object")
     i++
     if (peek() == '}') {
@@ -325,14 +325,14 @@ internal inline fun NostrJsonReader.forEachField(action: (key: String) -> Unit) 
 }
 
 /** Consumes a `null` at the cursor and returns true, or returns false for any other value. */
-internal fun NostrJsonReader.takeNull(): Boolean {
+internal fun KiteReader.takeNull(): Boolean {
     if (s[i] != 'n') return false
     literal("null", "")
     return true
 }
 
 /** True when the value at the cursor is a number. */
-internal fun NostrJsonReader.atNumber(): Boolean = s[i] == '-' || s[i] in '0'..'9'
+internal fun KiteReader.atNumber(): Boolean = s[i] == '-' || s[i] in '0'..'9'
 
 private val INTEGER_TEXT = Regex("[+-]?[0-9]+")
 
@@ -340,7 +340,7 @@ private val INTEGER_TEXT = Regex("[+-]?[0-9]+")
 private fun canonicalInteger(literal: String): String = literal.toLongOrNull()?.toString() ?: literal
 
 /** A number as a `JsonNode.intValue()`: in range, a fraction truncated. Out of range fails (Jackson wraps). */
-private fun NostrJsonReader.nodeNumberAsInt(): Int {
+private fun KiteReader.nodeNumberAsInt(): Int {
     val start = i
     val real = scanNumber()
     val text = s.substring(start, i)
@@ -355,7 +355,7 @@ private fun NostrJsonReader.nodeNumberAsInt(): Int {
 }
 
 /** A number as a `JsonNode.longValue()`: in range, a fraction truncated. Out of range fails (Jackson wraps). */
-private fun NostrJsonReader.nodeNumberAsLong(): Long {
+private fun KiteReader.nodeNumberAsLong(): Long {
     val start = i
     val real = scanNumber()
     val text = s.substring(start, i)
@@ -366,7 +366,7 @@ private fun NostrJsonReader.nodeNumberAsLong(): Long {
 }
 
 /** Any value as `JsonNode.asInt()`: numbers, `true` as 1, plain integer strings; 0 for the rest. */
-private fun NostrJsonReader.nodeAsInt(): Int =
+private fun KiteReader.nodeAsInt(): Int =
     when (s[i]) {
         '"' -> {
             // Jackson parses an integer string; anything fancier fails here instead.
@@ -386,7 +386,7 @@ private fun NostrJsonReader.nodeAsInt(): Int =
     }
 
 /** Any value as `JsonNode.asBoolean()`: booleans, non-zero integers, "true"/"false" strings; false for the rest. */
-private fun NostrJsonReader.nodeAsBoolean(): Boolean =
+private fun KiteReader.nodeAsBoolean(): Boolean =
     when (s[i]) {
         '"' -> readString().trim() == "true"
         't' -> {
@@ -405,7 +405,7 @@ private fun NostrJsonReader.nodeAsBoolean(): Boolean =
     }
 
 /** Any value as `JsonNode.asText()`: strings as they are, scalars by their text, containers as "". */
-private fun NostrJsonReader.nodeAsText(): String =
+private fun KiteReader.nodeAsText(): String =
     when (s[i]) {
         '"' -> readString()
         't' -> literal("true", "true")
@@ -423,7 +423,7 @@ private fun NostrJsonReader.nodeAsText(): String =
     }
 
 /** A boolean, or null for any other value. */
-private fun NostrJsonReader.typedBoolean(): Boolean? =
+private fun KiteReader.typedBoolean(): Boolean? =
     when (s[i]) {
         't' -> {
             literal("true", "")
@@ -440,21 +440,21 @@ private fun NostrJsonReader.typedBoolean(): Boolean? =
     }
 
 /** A number as an int, or null for any other value. */
-private fun NostrJsonReader.typedInt(): Int? {
+private fun KiteReader.typedInt(): Int? {
     if (atNumber()) return nodeNumberAsInt()
     skipValue(2)
     return null
 }
 
 /** A number as a long, or null for any other value. */
-private fun NostrJsonReader.typedLong(): Long? {
+private fun KiteReader.typedLong(): Long? {
     if (atNumber()) return nodeNumberAsLong()
     skipValue(2)
     return null
 }
 
 /** The numbers of an array as ints (other entries dropped), or null when it is not an array. */
-private fun NostrJsonReader.typedIntList(): List<Int>? {
+private fun KiteReader.typedIntList(): List<Int>? {
     if (s[i] != '[') {
         skipValue(2)
         return null
@@ -481,7 +481,7 @@ private fun NostrJsonReader.typedIntList(): List<Int>? {
  * LIMITS' `required_tags`: every entry that is an array becomes the text of its scalar values;
  * any other entry an empty tag. Null when it is not an array.
  */
-private fun NostrJsonReader.requiredTagsList(): List<List<String>>? {
+private fun KiteReader.requiredTagsList(): List<List<String>>? {
     if (s[i] != '[') {
         skipValue(2)
         return null

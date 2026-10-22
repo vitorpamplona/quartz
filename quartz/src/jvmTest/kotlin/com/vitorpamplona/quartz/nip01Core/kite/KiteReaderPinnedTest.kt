@@ -18,8 +18,9 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.core
+package com.vitorpamplona.quartz.nip01Core.kite
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
@@ -29,7 +30,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * [NostrJsonReader] over every event of the recorded startup capture, as an event and as an
+ * [KiteReader] over every event of the recorded startup capture, as an event and as an
  * EVENT frame, every prefix of a sample, and random edits of real events, each set pinned by
  * a [Pin].
  *
@@ -39,10 +40,10 @@ import kotlin.test.assertTrue
  * cases, and a jackson-core quirk that took any character whose low byte is a hex digit
  * inside a \u escape).
  */
-class NostrJsonReaderPinnedTest {
+class KiteReaderPinnedTest {
     private fun reader(json: String): Event? =
         try {
-            NostrJsonReader.readEvent(json)
+            KiteReader.readEvent(json)
         } catch (e: IllegalArgumentException) {
             null
         }
@@ -133,9 +134,9 @@ class NostrJsonReaderPinnedTest {
             compare(json, events)
 
             val frame = "[\"EVENT\",\"sub\",$json]"
-            val viaFrame = NostrJsonReader.readMessage(frame) as EventMessage
+            val viaFrame = KiteReader.readMessage(frame) as EventMessage
             assertEquals("sub", viaFrame.subId)
-            assertTrue(sameEvent(NostrJsonReader.readEvent(json), viaFrame.event), "EVENT frame differs: ${json.take(300)}")
+            assertTrue(sameEvent(KiteReader.readEvent(json), viaFrame.event), "EVENT frame differs: ${json.take(300)}")
             frames++
         }
         assertPinned("captured events", events)
@@ -159,7 +160,7 @@ class NostrJsonReaderPinnedTest {
         // Each thread keeps its own reader; four threads over the same events must each get
         // exactly what one thread alone builds.
         val events = sample(SAMPLE_SIZE)
-        val expected = events.map { NostrJsonReader.readEvent(it) }
+        val expected = events.map { KiteReader.readEvent(it) }
         val failures = AtomicInteger()
         val threads =
             List(4) { t ->
@@ -167,7 +168,7 @@ class NostrJsonReaderPinnedTest {
                     repeat(5) { round ->
                         for (k in events.indices) {
                             val idx = (k * 7 + t * 13 + round) % events.size
-                            val got = NostrJsonReader.readEvent(events[idx])
+                            val got = KiteReader.readEvent(events[idx])
                             if (!sameEvent(expected[idx], got)) failures.incrementAndGet()
                         }
                     }
