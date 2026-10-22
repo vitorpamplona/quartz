@@ -20,6 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip01Core.core
 
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.nip01Core.kite.readKnownType
 import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
@@ -28,65 +31,41 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import kotlinx.serialization.SerializationException
 
 actual object OptimizedJsonMapper {
-    actual fun fromJson(json: String): Event =
+    actual fun fromJson(json: String): Event = if (JsonEngine.isKite) KiteReader.readEvent(json) else kotlinx { KotlinSerializationMapper.fromJson(json) }
+
+    actual fun toJson(event: Event): String = if (JsonEngine.isKite) KiteWriter.toJson(event) else KotlinSerializationMapper.toJson(event)
+
+    actual fun fromJsonToMessage(json: String): Message = if (JsonEngine.isKite) KiteReader.readMessage(json) else kotlinx { KotlinSerializationMapper.fromJsonToMessage(json) }
+
+    actual fun fromJsonToCommand(json: String): Command = if (JsonEngine.isKite) KiteReader.readCommand(json) else kotlinx { KotlinSerializationMapper.fromJsonToCommand(json) }
+
+    actual fun fromJsonToTagArray(json: String): Array<Array<String>> = if (JsonEngine.isKite) KiteReader.readTagArray(json) else kotlinx { KotlinSerializationMapper.fromJsonToTagArray(json) }
+
+    actual fun fromJsonToEventTemplate(json: String): EventTemplate<Event> = if (JsonEngine.isKite) KiteReader.readEventTemplate(json) else kotlinx { KotlinSerializationMapper.fromJsonToEventTemplate(json) }
+
+    actual fun fromJsonToEventList(json: String): List<Event> = if (JsonEngine.isKite) KiteReader.readEventList(json) else kotlinx { KotlinSerializationMapper.fromJsonToEventList(json) }
+
+    actual fun fromJsonToRumor(json: String): Rumor = if (JsonEngine.isKite) KiteReader.readRumor(json) else kotlinx { KotlinSerializationMapper.fromJsonToRumor(json) }
+
+    actual fun toJson(tags: Array<Array<String>>): String = if (JsonEngine.isKite) KiteWriter.toJson(tags) else KotlinSerializationMapper.toJson(tags)
+
+    private inline fun <T> kotlinx(read: () -> T): T =
         try {
-            KotlinSerializationMapper.fromJson(json)
+            read()
         } catch (e: SerializationException) {
             throw IllegalArgumentException(e.message, e)
         }
 
-    actual fun toJson(event: Event): String = KotlinSerializationMapper.toJson(event)
-
-    actual fun fromJsonToMessage(json: String): Message =
-        try {
-            KotlinSerializationMapper.fromJsonToMessage(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
+    actual inline fun <reified T : OptimizedSerializable> fromJsonTo(json: String): T {
+        if (JsonEngine.isKite) {
+            readKnownType(T::class, json)?.let { return it as T }
         }
-
-    actual fun fromJsonToCommand(json: String): Command =
-        try {
-            KotlinSerializationMapper.fromJsonToCommand(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
-        }
-
-    actual fun fromJsonToTagArray(json: String): Array<Array<String>> =
-        try {
-            KotlinSerializationMapper.fromJsonToTagArray(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
-        }
-
-    actual fun fromJsonToEventTemplate(json: String): EventTemplate<Event> =
-        try {
-            KotlinSerializationMapper.fromJsonToEventTemplate(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
-        }
-
-    actual fun fromJsonToEventList(json: String): List<Event> =
-        try {
-            KotlinSerializationMapper.fromJsonToEventList(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
-        }
-
-    actual fun fromJsonToRumor(json: String): Rumor =
-        try {
-            KotlinSerializationMapper.fromJsonToRumor(json)
-        } catch (e: SerializationException) {
-            throw IllegalArgumentException(e.message, e)
-        }
-
-    actual fun toJson(tags: Array<Array<String>>): String = KotlinSerializationMapper.toJson(tags)
-
-    actual inline fun <reified T : OptimizedSerializable> fromJsonTo(json: String): T =
-        try {
+        return try {
             KotlinSerializationMapper.fromJsonTo<T>(json)
         } catch (e: SerializationException) {
             throw IllegalArgumentException(e.message, e)
         }
+    }
 
-    actual fun toJson(value: OptimizedSerializable): String = KotlinSerializationMapper.toJson(value)
+    actual fun toJson(value: OptimizedSerializable): String = (if (JsonEngine.isKite) KiteWriter.toJsonOrNull(value) else null) ?: KotlinSerializationMapper.toJson(value)
 }

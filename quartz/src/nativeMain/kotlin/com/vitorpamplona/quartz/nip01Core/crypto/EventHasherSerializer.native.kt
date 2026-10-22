@@ -22,7 +22,9 @@ package com.vitorpamplona.quartz.nip01Core.crypto
 
 import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
 import com.vitorpamplona.quartz.utils.Hex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.add
@@ -59,7 +61,12 @@ actual object EventHasherSerializer {
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): String = makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString()
+    ): String =
+        if (JsonEngine.isKite) {
+            KiteWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
+        } else {
+            makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString()
+        }
 
     actual fun fastMakeJsonForId(
         pubKey: HexKey,
@@ -67,7 +74,12 @@ actual object EventHasherSerializer {
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): ByteArray = makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray()
+    ): ByteArray =
+        if (JsonEngine.isKite) {
+            KiteWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
+        } else {
+            makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray()
+        }
 
     actual fun makeJsonForIdHashAndCheck(
         id: HexKey,
@@ -77,6 +89,8 @@ actual object EventHasherSerializer {
         tags: Array<Array<String>>,
         content: String,
     ): Boolean {
+        if (JsonEngine.isKite) return Hex.isEqual(id, KiteWriter.idHash(pubKey, createdAt, kind, tags, content))
+
         val eventIdHash = sha256(makeJsonObjectForId(pubKey, createdAt, kind, tags, content).toString().encodeToByteArray())
         return Hex.isEqual(id, eventIdHash)
     }

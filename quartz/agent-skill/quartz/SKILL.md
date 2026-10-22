@@ -121,6 +121,9 @@ suspend fun post(client: NostrClient) {
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
   (NIP-55) signers implement the same class.
 - `Event.verify()` checks the id and signature of events you receive from relays.
+- Nostr JSON goes through `OptimizedJsonMapper`: Jackson on JVM/Android and kotlinx on native
+  by default. `JsonEngine.current = JsonEngine.KITE` switches every target to Kite,
+  Quartz's own Nostr JSON reader and writer (`nip01Core.kite`; opt-in, read on every call).
 
 ## Identifiers
 

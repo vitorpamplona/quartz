@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
 import com.vitorpamplona.quartz.nip01Core.jackson.InliningTagArrayPrettyPrinter
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResultJsonDeserializer
@@ -34,6 +35,7 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.result
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.PermissionDeserializer
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.PermissionSerializer
+import com.vitorpamplona.quartz.nip55AndroidSigner.kite.Nip55Kite
 
 object JsonMapperNip55 {
     val defaultMapper: ObjectMapper =
@@ -77,13 +79,19 @@ object JsonMapperNip55 {
 
     val intentResultListType: JavaType = defaultMapper.typeFactory.constructCollectionType(List::class.java, IntentResult::class.java)
 
-    fun fromJsonToPermission(json: String): Permission = defaultMapper.readValue(json, permissionType)
+    fun fromJsonToPermission(json: String): Permission = if (JsonEngine.isKite) Nip55Kite.fromJsonToPermission(json) else defaultMapper.readValue(json, permissionType)
 
-    fun fromJsonToPermissionArray(json: String): Array<Permission> = defaultMapper.readValue(json, permissionArrayType)
+    fun fromJsonToPermissionArray(json: String): Array<Permission> = if (JsonEngine.isKite) Nip55Kite.fromJsonToPermissionArray(json) else defaultMapper.readValue(json, permissionArrayType)
 
-    fun fromJsonToIntentResult(json: String): IntentResult = defaultMapper.readValue(json, intentResultType)
+    fun fromJsonToIntentResult(json: String): IntentResult = if (JsonEngine.isKite) Nip55Kite.fromJsonToIntentResult(json) else defaultMapper.readValue(json, intentResultType)
 
-    fun fromJsonToIntentResultList(json: String): List<IntentResult> = defaultMapper.readValue(json, intentResultListType)
+    fun fromJsonToIntentResultList(json: String): List<IntentResult> = if (JsonEngine.isKite) Nip55Kite.fromJsonToIntentResultList(json) else defaultMapper.readValue(json, intentResultListType)
+
+    fun toJson(permission: Permission): String = if (JsonEngine.isKite) Nip55Kite.toJson(permission) else defaultMapper.writeValueAsString(permission)
+
+    fun toJson(permissions: List<Permission>): String = if (JsonEngine.isKite) Nip55Kite.toJson(permissions) else defaultMapper.writeValueAsString(permissions)
+
+    fun toJson(result: IntentResult): String = if (JsonEngine.isKite) Nip55Kite.toJson(result) else defaultMapper.writeValueAsString(result)
 
     fun toJson(event: ArrayNode): String = defaultMapper.writeValueAsString(event)
 

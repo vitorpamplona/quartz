@@ -25,13 +25,6 @@ import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseAck
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseError
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseEvent
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseGetRelays
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePong
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePublicKey
-import com.vitorpamplona.quartz.utils.Hex
 
 class BunkerResponseDeserializer : StdDeserializer<BunkerResponse>(BunkerResponse::class.java) {
     override fun deserialize(
@@ -40,54 +33,12 @@ class BunkerResponseDeserializer : StdDeserializer<BunkerResponse>(BunkerRespons
     ): BunkerResponse {
         val jsonObject: JsonNode = jp.codec.readTree(jp)
 
+        // A JSON null reads as absent: asText() would make it the text "null", and an
+        // `"error": null` would then turn a successful response into an error named "null".
         val id = jsonObject.get("id").asText().intern()
-        val result = jsonObject.get("result")?.asText()
-        val error = jsonObject.get("error")?.asText()
+        val result = jsonObject.get("result")?.takeUnless { it.isNull }?.asText()
+        val error = jsonObject.get("error")?.takeUnless { it.isNull }?.asText()
 
-        // NIP-46 auth challenge: `{"result":"auth_url","error":"<url>"}`. It carries
-        // an `error` (the URL) but is NOT a failure — keep both fields so the client
-        // can surface the URL and keep waiting for the real response. Must precede the
-        // generic error branch below, which would otherwise drop the `auth_url` marker.
-        if (result == BunkerResponse.RESULT_AUTH_URL) {
-            return BunkerResponse(id, result, error)
-        }
-
-        if (error != null) {
-            return BunkerResponseError.parse(id, result, error)
-        }
-
-        if (result != null) {
-            when (result) {
-                BunkerResponseAck.RESULT -> {
-                    return BunkerResponseAck.parse(id, result, error)
-                }
-
-                BunkerResponsePong.RESULT -> {
-                    return BunkerResponsePong.parse(id, result, error)
-                }
-
-                else -> {
-                    if (result.length == 64 && Hex.isHex(result)) {
-                        return BunkerResponsePublicKey.parse(id, result)
-                    }
-
-                    if (result.get(0) == '{') {
-                        try {
-                            return BunkerResponseEvent.parse(id, result)
-                        } catch (_: Exception) {
-                        }
-
-                        try {
-                            return BunkerResponseGetRelays.parse(id, result)
-                        } catch (_: Exception) {
-                        }
-                    }
-
-                    return BunkerResponse(id, result, error)
-                }
-            }
-        }
-
-        return BunkerResponse(id, result, error)
+        return BunkerResponse.parse(id, result, error)
     }
 }
