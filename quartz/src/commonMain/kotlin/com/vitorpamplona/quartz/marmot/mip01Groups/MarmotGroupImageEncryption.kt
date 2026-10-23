@@ -99,7 +99,7 @@ object MarmotGroupImageEncryption {
     /**
      * Decrypt a group image blob (MIP-01 v2): `image_key` is an HKDF seed.
      *
-     * @throws IllegalStateException on authentication failure.
+     * @throws IllegalArgumentException on authentication failure.
      */
     fun decrypt(
         ciphertext: ByteArray,

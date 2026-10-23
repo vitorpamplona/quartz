@@ -118,7 +118,7 @@ object TokenEncryption {
      * @param encryptedTokenBase64 base64-encoded EncryptedToken
      * @param serverPrivKey 32-byte notification server private key
      * @return decoded token info
-     * @throws IllegalStateException if authentication fails
+     * @throws IllegalArgumentException if authentication fails
      */
     @OptIn(ExperimentalEncodingApi::class)
     fun decrypt(

@@ -79,7 +79,7 @@ class MarmotGroupImageTest {
     @Test
     fun decrypt_wrongSeed_fails() {
         val enc = MarmotGroupImageEncryption.encrypt(plaintext)
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<IllegalArgumentException> {
             MarmotGroupImageEncryption.decrypt(enc.ciphertext, RandomInstance.bytes(32), enc.imageNonce)
         }
     }

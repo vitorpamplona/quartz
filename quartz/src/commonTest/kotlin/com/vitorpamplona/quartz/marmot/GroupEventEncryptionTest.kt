@@ -102,7 +102,7 @@ class GroupEventEncryptionTest {
 
         val encrypted = GroupEventEncryption.encrypt(mlsMessage, testGroupKey)
 
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<IllegalArgumentException> {
             GroupEventEncryption.decrypt(encrypted, wrongKey)
         }
     }
@@ -139,7 +139,7 @@ class GroupEventEncryptionTest {
         decoded[GroupEvent.NONCE_LENGTH] = (decoded[GroupEvent.NONCE_LENGTH].toInt() xor 0xFF).toByte()
         val tamperedBase64 = Base64.encode(decoded)
 
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<IllegalArgumentException> {
             GroupEventEncryption.decrypt(tamperedBase64, testGroupKey)
         }
     }
