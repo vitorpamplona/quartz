@@ -639,16 +639,33 @@ internal class KiteReader {
             i++
             return EMPTY_TAGS
         }
-        var outer = tagsScratch ?: arrayOfNulls<Array<String>>(16).also { tagsScratch = it }
+        // Most events carry one or two tags: those stay in locals and become the array directly;
+        // the scratch only takes over from the third.
+        var t0: Array<String>? = null
+        var t1: Array<String>? = null
+        var outer: Array<Array<String>?>? = null
         var count = 0
         while (true) {
             ws()
             val tag = readTag()
-            if (count == outer.size) {
-                outer = outer.copyOf(count * 2)
-                tagsScratch = outer
+            when (count) {
+                0 -> t0 = tag
+                1 -> t1 = tag
+                else -> {
+                    var o = outer
+                    if (o == null) {
+                        o = tagsScratch ?: arrayOfNulls<Array<String>>(16).also { tagsScratch = it }
+                        o[0] = t0
+                        o[1] = t1
+                    } else if (count == o.size) {
+                        o = o.copyOf(count * 2)
+                        tagsScratch = o
+                    }
+                    o[count] = tag
+                    outer = o
+                }
             }
-            outer[count++] = tag
+            count++
             ws()
             if (i >= n) fail("unexpected end of input in tags")
             val c = s[i++]
@@ -656,6 +673,7 @@ internal class KiteReader {
             if (c == ']') break
             fail("expected ',' or ']' in tags")
         }
+        if (outer == null) return if (count == 1) arrayOf(t0!!) else arrayOf(t0!!, t1!!)
         @Suppress("UNCHECKED_CAST")
         val tags = outer.copyOf(count) as TagArray
         outer.fill(null, 0, count)
@@ -670,7 +688,11 @@ internal class KiteReader {
             i++
             return EMPTY_TAG
         }
-        var buf = tagScratch ?: arrayOfNulls<String>(8).also { tagScratch = it }
+        // Most tags are a name and a value (["p", "…"]): the first two values stay in locals and
+        // become the array directly; the scratch only takes over from the third.
+        var v0: String? = null
+        var v1: String? = null
+        var buf: Array<String?>? = null
         var count = 0
         while (true) {
             ws()
@@ -684,11 +706,24 @@ internal class KiteReader {
                     'f' -> literal("false", "false")
                     else -> numberText()
                 }
-            if (count == buf.size) {
-                buf = buf.copyOf(count * 2)
-                tagScratch = buf
+            when (count) {
+                0 -> v0 = value
+                1 -> v1 = value
+                else -> {
+                    var b = buf
+                    if (b == null) {
+                        b = tagScratch ?: arrayOfNulls<String>(8).also { tagScratch = it }
+                        b[0] = v0
+                        b[1] = v1
+                    } else if (count == b.size) {
+                        b = b.copyOf(count * 2)
+                        tagScratch = b
+                    }
+                    b[count] = value
+                    buf = b
+                }
             }
-            buf[count++] = value
+            count++
             ws()
             if (i >= n) fail("unexpected end of input in a tag")
             val c = s[i++]
@@ -696,6 +731,7 @@ internal class KiteReader {
             if (c == ']') break
             fail("expected ',' or ']' in a tag")
         }
+        if (buf == null) return if (count == 1) arrayOf(v0!!) else arrayOf(v0!!, v1!!)
         @Suppress("UNCHECKED_CAST")
         val tag = buf.copyOf(count) as Array<String>
         buf.fill(null, 0, count)
