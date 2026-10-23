@@ -59,6 +59,12 @@ import kotlin.test.assertTrue
  * the reader replaced: whenever both accepted a frame they built the same thing, and the reader
  * never accepted a frame Jackson rejected. It rejects some frames Jackson accepted, only where
  * Jackson built garbage or read on inside a value of the wrong shape.
+ *
+ * The edit pins were re-recorded when event keys came to be matched by length and first and
+ * last character. Every outcome that moved (1,522 events, rumors and frames built differently,
+ * 327 inputs now accepted, none newly rejected, of ~395,000) was an edit that misspelled an
+ * event key and kept those three (`"pubk6y"`, `"createduat"`), now read as that key where
+ * Jackson skipped it. The unedited sets did not move.
  */
 class KiteReaderFramePinnedTest {
     private fun describe(e: Event): String = "${e::class.simpleName}(${e.id},${e.pubKey},${e.createdAt},${e.kind},${e.tags.joinToString("|") { it.joinToString(",") }},${e.content},${e.sig})"
@@ -487,13 +493,13 @@ class KiteReaderFramePinnedTest {
         private val PINS =
             mapOf(
                 "message frames" to "857c9897f5b03e31b03d88fa198bdeb1eb4c8017346a8268dd555821820f5238",
-                "message frame edits" to "d696141ddf629b3faf296afc3ec0ee8008d7837e91f06585f107944e9a24d302",
+                "message frame edits" to "d4aff300c13f40c6ca107c2ec7a0cd19ffd5f7cd3ff4cdef68de4d529758e503",
                 "command frames" to "274107586724de359085c7abb4f00c1dbf4ee1be9d63c8afbeb534aff051be40",
-                "command frame edits" to "327098acc72ad8e4f4346495161ab28efe936738b2554422fb34c30be5259907",
+                "command frame edits" to "8128db015585e3a506220fddce1ed019a3e8cf1879ab6dcb4484fee83237ad85",
                 "rumors" to "59c9cab38d34dce9720da8f0f7c935095b8db0c8f1058bcdb1b5e982e8a6219e",
-                "rumor edits" to "0e3c68c521cba9077d702072ae58518bd236ae038501e71483c5fe7301fd7665",
+                "rumor edits" to "e87f5a1a4e6815e149963d6094be47f9a64ced9a633d99e463648c7fc4839de4",
                 "event lists" to "2822098140d55ebc0b5567fa33a6315839e92523cbacb0883726cea05d17a043",
-                "event list edits" to "35c84027a3a169a30c9a90c89d79cf07e93c623fc1dcb1113923f16bed6719b0",
+                "event list edits" to "0bdc9e8275b210590edffbdc5e8770c9dc2aecb5393f34c365ad48fcb6bf8642",
             )
 
         const val CORPUS = "nostr_vitor_startup_data.json.gz"

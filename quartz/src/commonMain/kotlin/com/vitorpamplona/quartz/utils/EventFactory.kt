@@ -527,6 +527,29 @@ class EventFactory {
             content: String,
             sig: HexKey,
         ): T =
+            // Split in four: one `when` over every kind compiled to ~15,000 bytes of bytecode, past
+            // HotSpot's 8,000-byte limit for JIT compilation (DontCompileHugeMethods), so create ran
+            // in the interpreter on every event; the split made parsing 11 to 21% faster. Keep each
+            // part well under the limit when adding kinds.
+            (
+                createPart1(id, pubKey, createdAt, kind, tags, content, sig)
+                    ?: createPart2(id, pubKey, createdAt, kind, tags, content, sig)
+                    ?: createPart3(id, pubKey, createdAt, kind, tags, content, sig)
+                    ?: createPart4(id, pubKey, createdAt, kind, tags, content, sig)
+                    ?: factories[kind]?.build(id, pubKey, createdAt, tags, content, sig)
+                    ?: Event(id, pubKey, createdAt, kind, tags, content, sig)
+            ) as T
+
+        /** A quarter of [create]'s kinds, or null for a kind it does not own. */
+        private fun createPart1(
+            id: HexKey,
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: Array<Array<String>>,
+            content: String,
+            sig: HexKey,
+        ): Event? =
             when (kind) {
                 AcceptedBadgeSetEvent.KIND -> AcceptedBadgeSetEvent(id, pubKey, createdAt, tags, content, sig)
                 ConcordChatEditEvent.KIND -> ConcordChatEditEvent(id, pubKey, createdAt, tags, content, sig)
@@ -644,6 +667,20 @@ class EventFactory {
                 CalendarCollectionEvent.KIND -> CalendarCollectionEvent(id, pubKey, createdAt, tags, content, sig)
                 CalendarTimeSlotEvent.KIND -> CalendarTimeSlotEvent(id, pubKey, createdAt, tags, content, sig)
                 CalendarRSVPEvent.KIND -> CalendarRSVPEvent(id, pubKey, createdAt, tags, content, sig)
+                else -> null
+            }
+
+        /** A quarter of [create]'s kinds, or null for a kind it does not own. */
+        private fun createPart2(
+            id: HexKey,
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: Array<Array<String>>,
+            content: String,
+            sig: HexKey,
+        ): Event? =
+            when (kind) {
                 CapabilityDiscoveryEvent.KIND -> CapabilityDiscoveryEvent(id, pubKey, createdAt, tags, content, sig)
                 CallAnswerEvent.KIND -> CallAnswerEvent(id, pubKey, createdAt, tags, content, sig)
                 CallHangupEvent.KIND -> CallHangupEvent(id, pubKey, createdAt, tags, content, sig)
@@ -802,6 +839,20 @@ class EventFactory {
                 CiCoordinatorAdvertisementEvent.KIND -> CiCoordinatorAdvertisementEvent(id, pubKey, createdAt, tags, content, sig)
                 CiRequestReadinessListEvent.KIND -> CiRequestReadinessListEvent(id, pubKey, createdAt, tags, content, sig)
                 CiRepositoryStatusEvent.KIND -> CiRepositoryStatusEvent(id, pubKey, createdAt, tags, content, sig)
+                else -> null
+            }
+
+        /** A quarter of [create]'s kinds, or null for a kind it does not own. */
+        private fun createPart3(
+            id: HexKey,
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: Array<Array<String>>,
+            content: String,
+            sig: HexKey,
+        ): Event? =
+            when (kind) {
                 CiSecretUpdateEvent.KIND -> CiSecretUpdateEvent(id, pubKey, createdAt, tags, content, sig)
                 UserGraspListEvent.KIND -> UserGraspListEvent(id, pubKey, createdAt, tags, content, sig)
                 GoodWikiAuthorListEvent.KIND -> GoodWikiAuthorListEvent(id, pubKey, createdAt, tags, content, sig)
@@ -946,6 +997,20 @@ class EventFactory {
                     } else {
                         UnrecognizedKind38385Event(id, pubKey, createdAt, tags, content, sig)
                     }
+                else -> null
+            }
+
+        /** A quarter of [create]'s kinds, or null for a kind it does not own. */
+        private fun createPart4(
+            id: HexKey,
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: Array<Array<String>>,
+            content: String,
+            sig: HexKey,
+        ): Event? =
+            when (kind) {
                 MostroDisputeEvent.KIND ->
                     if (MostroDisputeEvent.isMostroDispute(tags)) {
                         MostroDisputeEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1090,8 +1155,8 @@ class EventFactory {
                 WorkoutRecordEvent.KIND -> WorkoutRecordEvent(id, pubKey, createdAt, tags, content, sig)
                 ExerciseTemplateEvent.KIND -> ExerciseTemplateEvent(id, pubKey, createdAt, tags, content, sig)
                 WorkoutTemplateEvent.KIND -> WorkoutTemplateEvent(id, pubKey, createdAt, tags, content, sig)
-                else -> factories[kind]?.build(id, pubKey, createdAt, tags, content, sig) ?: Event(id, pubKey, createdAt, kind, tags, content, sig)
-            } as T
+                else -> null
+            }
 
         /**
          * True when [kind] maps to a typed Quartz event class — either a

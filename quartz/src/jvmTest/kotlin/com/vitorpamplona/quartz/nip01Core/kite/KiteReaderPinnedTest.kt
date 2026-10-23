@@ -39,6 +39,12 @@ import kotlin.test.assertTrue
  * never accepted what Jackson rejected. It rejects some inputs Jackson took (its stricter
  * cases, and a jackson-core quirk that took any character whose low byte is a hex digit
  * inside a \u escape).
+ *
+ * The edit pins were re-recorded when event keys came to be matched by length and first and
+ * last character. Every outcome that moved (1,522 events, rumors and frames built differently,
+ * 327 inputs now accepted, none newly rejected, of ~395,000) was an edit that misspelled an
+ * event key and kept those three (`"pubk6y"`, `"createduat"`), now read as that key where
+ * Jackson skipped it. The unedited sets did not move.
  */
 class KiteReaderPinnedTest {
     private fun reader(json: String): Event? =
@@ -222,7 +228,7 @@ class KiteReaderPinnedTest {
             mapOf(
                 "captured events" to "8d14fbe28335faba96c5be2ee89c3e54fc1fe4416521cc1c085cef5201cb26c4",
                 "truncations" to "d7c2f5c951128648f9af1c91c7d6820694cb3c9c045fbe8b08a9018fe98899eb",
-                "random edits" to "45aa82e140702ef8bcdd0ed3a26dad73a4dd9cf5ca6d0b1328e83384430eedcc",
+                "random edits" to "f1b276b9543f03c1f058540fcbd18ed93d5992f2d4f7ccc09387ad0f89de43af",
             )
 
         const val CORPUS = "nostr_vitor_startup_data.json.gz"
