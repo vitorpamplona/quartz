@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.kite
 
-import com.vitorpamplona.crypto.sha2.threadLocalDigest
+import com.vitorpamplona.quartz.nip01Core.crypto.threadLocalSha256
 
 private val threadWriter = ThreadLocal.withInitial { KiteWriter() }
 
@@ -43,12 +43,12 @@ internal actual fun sha256Feed(
     data: ByteArray,
     length: Int,
 ): Boolean {
-    threadLocalDigest.get()!!.update(data, 0, length)
+    threadLocalSha256.get()!!.update(data, 0, length)
     return true
 }
 
 internal actual fun sha256Abort() {
-    threadLocalDigest.get()!!.reset()
+    threadLocalSha256.get()!!.reset()
 }
 
 // MessageDigest.digest() resets it for the next caller on this thread.
@@ -56,7 +56,7 @@ internal actual fun sha256Of(
     data: ByteArray,
     length: Int,
 ): ByteArray {
-    val digest = threadLocalDigest.get()!!
+    val digest = threadLocalSha256.get()!!
     digest.update(data, 0, length)
     return digest.digest()
 }

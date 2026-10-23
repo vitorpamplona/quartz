@@ -455,7 +455,7 @@ class MarmotMipComplianceTest {
         // nostr_group_id used by the pre-fix implementation) MUST fail
         // ChaCha20-Poly1305 authentication. If it succeeds, AAD has
         // silently become non-empty again.
-        assertFailsWith<IllegalStateException>(
+        assertFailsWith<IllegalArgumentException>(
             message = "AAD must be empty per MIP-03; a non-empty AAD cannot decrypt a spec-compliant ciphertext",
         ) {
             ChaCha20Poly1305.decrypt(

@@ -81,7 +81,7 @@ class GroupBlossomImageCryptoTest {
         val lying = encrypted.component.copy(mediaType = "image/gif")
 
         assertNull(GroupBlossomImageCrypto.decryptOrNull(encrypted.ciphertext, lying))
-        assertFailsWith<IllegalStateException> { GroupBlossomImageCrypto.decrypt(encrypted.ciphertext, lying) }
+        assertFailsWith<IllegalArgumentException> { GroupBlossomImageCrypto.decrypt(encrypted.ciphertext, lying) }
     }
 
     @Test
@@ -89,7 +89,7 @@ class GroupBlossomImageCryptoTest {
         // Guards against silently regressing to the MIP-01 AAD.
         val encrypted = GroupBlossomImageCrypto.encrypt(plaintext, "image/png")
         val component = encrypted.component
-        assertFailsWith<IllegalStateException> {
+        assertFailsWith<IllegalArgumentException> {
             ChaCha20Poly1305.decrypt(
                 encrypted.ciphertext,
                 ByteArray(0),

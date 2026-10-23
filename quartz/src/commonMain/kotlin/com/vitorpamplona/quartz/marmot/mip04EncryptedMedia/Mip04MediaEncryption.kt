@@ -127,7 +127,8 @@ object Mip04MediaEncryption {
      * @param mimeType canonical MIME type (from imeta "m" field)
      * @param filename original filename (from imeta "filename" field)
      * @return decrypted file bytes
-     * @throws IllegalStateException if authentication fails
+     * @throws IllegalArgumentException if authentication fails
+     * @throws IllegalStateException if the decrypted file's SHA-256 does not match [originalFileHash]
      */
     fun decrypt(
         ciphertextWithTag: ByteArray,

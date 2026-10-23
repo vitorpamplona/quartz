@@ -75,7 +75,7 @@ object GroupEventEncryption {
      * @param encryptedContentBase64 base64-encoded content from the GroupEvent
      * @param groupKey 32-byte key derived from MLS-Exporter("marmot", "group-event", 32)
      * @return decrypted MLS message bytes
-     * @throws IllegalStateException if authentication fails
+     * @throws IllegalArgumentException if authentication fails
      * @throws IllegalArgumentException if content is malformed
      */
     @OptIn(ExperimentalEncodingApi::class)
