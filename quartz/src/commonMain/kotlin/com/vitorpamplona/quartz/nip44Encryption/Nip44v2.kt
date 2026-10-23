@@ -45,7 +45,6 @@ class Nip44v2(
 ) {
     private val sharedKeyCache = SharedKeyCache()
     private val hkdf = Hkdf()
-    private val chaCha = ChaCha20()
 
     private val saltPrefix = "nip44-v2".encodeToByteArray()
     private val hashLength = 32
@@ -83,7 +82,7 @@ class Nip44v2(
         val messageKeys = getMessageKeys(conversationKey, nonce)
         val padded = pad(plaintext)
 
-        val ciphertext = chaCha.encrypt(padded, messageKeys.chachaNonce, messageKeys.chachaKey)
+        val ciphertext = ChaCha20.encrypt(padded, messageKeys.chachaNonce, messageKeys.chachaKey)
 
         val mac = hmacAad(messageKeys.hmacKey, ciphertext, nonce)
 
@@ -129,7 +128,7 @@ class Nip44v2(
         val messageKey = checkMessageKeys(conversationKey, decoded)
 
         return unpad(
-            chaCha.decrypt(
+            ChaCha20.decrypt(
                 decoded.ciphertext,
                 messageKey.chachaNonce,
                 messageKey.chachaKey,
