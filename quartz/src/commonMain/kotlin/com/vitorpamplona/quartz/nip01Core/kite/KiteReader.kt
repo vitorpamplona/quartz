@@ -44,20 +44,24 @@ import kotlin.reflect.KClass
  * It finds the end of every string value with `String.indexOf('"')`, an intrinsic on HotSpot
  * and ART, and tracks the next backslash in the frame (also found with `indexOf`), so a value
  * without escapes is one `substring`. Event keys are matched by length and characters, never
- * built. Only values with escapes go through a `StringBuilder`.
+ * built. Only values with escapes are decoded, run by run, into a reused char buffer.
  *
  * Every type follows what Quartz's Jackson deserializers accept and build (`EventDeserializer`,
  * `RumorDeserializer`, `MessageDeserializer`, `CommandDeserializer`, `ManualFilterDeserializer`,
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
- * lenient fields. It follows the JSON grammar everywhere, including values it skips. It is
- * stricter where Jackson builds garbage or depends on token order: a non-string `id`, `pubkey`
- * or `sig`, or a `content` other than a string or `null` (which reads as absent, where Jackson
- * made it the text "null"); an array or object inside a tag, or where a frame element should be
- * a string or number; a missing closing bracket is rejected by both. It is looser in one place:
- * an event key is recognized by its length and its first and last characters (an escaped key
- * by its decoded text), so a misspelled `"pubKey"` reads as `pubkey` where Jackson, matching
- * hashes, skipped it. Only a malformed event spells a key so, and the event is still checked by
- * its id and signature; reading the whole key cost 4 to 7% of the parse.
+ * lenient fields. It follows the JSON grammar everywhere, including values it skips, but for one
+ * thing it shares with Quartz's Jackson mapper (ALLOW_UNESCAPED_CONTROL_CHARS): raw control
+ * characters inside a string are kept as they are. It is stricter where Jackson builds garbage
+ * or depends on token order: a non-string `id`, `pubkey` or `sig`, or a `content` other than a
+ * string or `null` (which reads as absent, where Jackson made it the text "null"); an array or
+ * object inside a tag, or where a frame element should be a string or number; a missing closing
+ * bracket is rejected by both. It is looser in two places. An event key is recognized by its
+ * length and its first and last characters (an escaped key by its decoded text), so a
+ * misspelled `"pubKey"` reads as `pubkey` where Jackson, matching hashes, skipped it. Only a
+ * malformed event spells a key so, and the event is still checked by its id and signature;
+ * reading the whole key cost 4 to 7% of the parse. And it has none of Jackson's size limits
+ * (StreamReadConstraints), such as its 1,000 digits for a number: its work stays linear in the
+ * input, so a long value costs only its length.
  * Every failure is an [IllegalArgumentException].
  *
  * A reader holds the cursor and scratch buffers, so one parse at a time uses it. On JVM and
