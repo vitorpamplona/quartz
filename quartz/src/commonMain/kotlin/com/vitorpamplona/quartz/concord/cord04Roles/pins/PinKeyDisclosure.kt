@@ -40,7 +40,6 @@ object PinKeyDisclosure {
     const val MESSAGE_KEYS_BYTES = 76
 
     private val HEX = Regex("^[0-9a-f]{152}$")
-    private val chaCha = ChaCha20()
 
     /** The 76-byte lowercase-hex wire form of [keys]. */
     fun encode(keys: MessageKey): String = (keys.chachaKey + keys.chachaNonce + keys.hmacKey).toHexKey()
@@ -85,7 +84,7 @@ object PinKeyDisclosure {
                 return null
             }
         if (!mac.equalsConstantTime(decoded.mac)) return null
-        val padded = chaCha.decrypt(decoded.ciphertext, keys.chachaNonce, keys.chachaKey)
+        val padded = ChaCha20.decrypt(decoded.ciphertext, keys.chachaNonce, keys.chachaKey)
         if (padded.size < 2) return null
         val len = (padded[0].toInt() and 0xFF shl 8) or (padded[1].toInt() and 0xFF)
         if (len < 1) return null

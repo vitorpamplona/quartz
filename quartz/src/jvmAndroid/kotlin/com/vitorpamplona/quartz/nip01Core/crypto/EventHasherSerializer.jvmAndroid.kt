@@ -28,7 +28,6 @@ import com.fasterxml.jackson.core.util.ByteArrayBuilder
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
-import com.vitorpamplona.crypto.sha2.threadLocalDigest
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
@@ -138,7 +137,7 @@ actual object EventHasherSerializer {
         if (JsonEngine.isKite) return Hex.isEqual(id, KiteWriter.idHash(pubKey, createdAt, kind, tags, content))
 
         val br: BufferRecycler = JacksonMapper.mapper.factory._getBufferRecycler()
-        val digest = threadLocalDigest.get()!!
+        val digest = threadLocalSha256.get()!!
         val bb = HashingByteArrayBuilder(br, digest)
         try {
             val generator = JacksonMapper.mapper.createGenerator(bb, JsonEncoding.UTF8)
