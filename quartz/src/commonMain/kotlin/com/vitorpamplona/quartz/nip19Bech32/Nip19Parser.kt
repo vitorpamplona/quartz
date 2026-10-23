@@ -25,7 +25,6 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
-import com.vitorpamplona.quartz.nip19Bech32.bech32.bechToBytes
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
 import com.vitorpamplona.quartz.nip19Bech32.entities.NAddress
 import com.vitorpamplona.quartz.nip19Bech32.entities.NEmbed
@@ -105,6 +104,11 @@ object Nip19Parser {
         return null
     }
 
+    /**
+     * Decodes `type + key` (`type` is the prefix with its `1`, in either case) to its entity, or
+     * null when it is not one. Runs per reference on every ingested note, so a malformed candidate
+     * costs no exception: [Bech32.decodeBytesOrNull] also checks that the hrp is [type]'s.
+     */
     fun parseComponents(
         type: String,
         key: String?,
@@ -112,22 +116,22 @@ object Nip19Parser {
     ): ParseReturn? =
         try {
             val nip19 = (type + key)
-            val bytes = nip19.bechToBytes()
 
             when (type.lowercase()) {
-                "nsec1" -> NSec.parse(bytes)
-                "npub1" -> NPub.parse(bytes)
-                "note1" -> NNote.parse(bytes)
-                "nprofile1" -> NProfile.parse(bytes)
-                "nevent1" -> NEvent.parse(bytes)
-                "nrelay1" -> NRelay.parse(bytes)
-                "naddr1" -> NAddress.parse(bytes)
-                "nembed1" -> NEmbed.parse(bytes)
+                "nsec1" -> Bech32.decodeBytesOrNull(nip19, "nsec")?.let { NSec.parse(it) }
+                "npub1" -> Bech32.decodeBytesOrNull(nip19, "npub")?.let { NPub.parse(it) }
+                "note1" -> Bech32.decodeBytesOrNull(nip19, "note")?.let { NNote.parse(it) }
+                "nprofile1" -> Bech32.decodeBytesOrNull(nip19, "nprofile")?.let { NProfile.parse(it) }
+                "nevent1" -> Bech32.decodeBytesOrNull(nip19, "nevent")?.let { NEvent.parse(it) }
+                "nrelay1" -> Bech32.decodeBytesOrNull(nip19, "nrelay")?.let { NRelay.parse(it) }
+                "naddr1" -> Bech32.decodeBytesOrNull(nip19, "naddr")?.let { NAddress.parse(it) }
+                "nembed1" -> Bech32.decodeBytesOrNull(nip19, "nembed")?.let { NEmbed.parse(it) }
                 else -> null
             }?.let {
                 ParseReturn(it, nip19, additionalChars)
             }
         } catch (e: Throwable) {
+            // the entity parsers can still throw (an nembed's gzip or JSON)
             Log.d("NIP19 Parser") { "Issue trying to Decode NIP19 $key: ${e.message}" }
             null
         }

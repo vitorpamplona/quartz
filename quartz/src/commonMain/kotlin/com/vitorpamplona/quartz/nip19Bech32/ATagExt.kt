@@ -63,6 +63,10 @@ fun ATag.Companion.parseAtagUnckecked(atag: String): ATag? =
         null
     }
 
+/**
+ * @throws IllegalArgumentException when the d-tag is over 255 bytes, which no naddr can hold;
+ * see [NAddress.createOrNull].
+ */
 fun ATag.toNAddr(overrideRelay: NormalizedRelayUrl? = relay): String = NAddress.create(kind, pubKeyHex, dTag, overrideRelay ?: relay)
 
 fun ATag.Companion.parseNAddr(naddr: String) =

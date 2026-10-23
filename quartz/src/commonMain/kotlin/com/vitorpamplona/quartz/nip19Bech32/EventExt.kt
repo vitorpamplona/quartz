@@ -23,12 +23,14 @@ package com.vitorpamplona.quartz.nip19Bech32
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip19Bech32.entities.NAddress
 import com.vitorpamplona.quartz.nip19Bech32.entities.NEvent
 
+/**
+ * The NIP-19 reference to this event: an `naddr` for an addressable event, else an `nevent`.
+ * An addressable event whose d-tag is too long for an naddr (over 255 bytes) is cited by its
+ * `nevent` instead, which still resolves to this version of it.
+ */
 fun Event.toNIP19(relayHint: NormalizedRelayUrl? = null): String =
-    if (this is AddressableEvent) {
-        ATag(kind, pubKey, dTag(), relayHint).toNAddr()
-    } else {
-        NEvent.create(id, pubKey, kind, relayHint)
-    }
+    (if (this is AddressableEvent) NAddress.createOrNull(kind, pubKey, dTag(), relayHint) else null)
+        ?: NEvent.create(id, pubKey, kind, relayHint)

@@ -22,9 +22,8 @@ package com.vitorpamplona.quartz.nip19Bech32.entities
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.nip19Bech32.toNote
+import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
 
 @Immutable
 data class NNote(
@@ -36,7 +35,6 @@ data class NNote(
             return NNote(bytes.toHexKey())
         }
 
-        @Suppress("DEPRECATION")
-        fun create(eventId: HexKey): String = eventId.hexToByteArray().toNote()
+        fun create(eventId: HexKey): String = Bech32.encodeHex("note", eventId)
     }
 }

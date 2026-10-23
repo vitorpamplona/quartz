@@ -22,9 +22,8 @@ package com.vitorpamplona.quartz.nip19Bech32.entities
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.nip19Bech32.toNpub
+import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
 
 @Immutable
 data class NPub(
@@ -40,6 +39,9 @@ data class NPub(
             return NPub(bytes.toHexKey())
         }
 
-        fun create(authorPubKeyHex: HexKey): String = authorPubKeyHex.hexToByteArray().toNpub()
+        fun create(authorPubKeyHex: HexKey): String = Bech32.encodeHex("npub", authorPubKeyHex)
+
+        /** `nostr:npub1…`, built in one buffer. */
+        fun createNostrUri(authorPubKeyHex: HexKey): String = Bech32.encodeHex("npub", authorPubKeyHex, NOSTR_URI_PREFIX)
     }
 }
