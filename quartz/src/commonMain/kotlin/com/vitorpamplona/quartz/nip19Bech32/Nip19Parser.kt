@@ -106,33 +106,45 @@ object Nip19Parser {
 
     /**
      * Decodes `type + key` (`type` is the prefix with its `1`, in either case) to its entity, or
-     * null when it is not one. Runs per reference on every ingested note, so a malformed candidate
-     * costs no exception: [Bech32.decodeBytesOrNull] also checks that the hrp is [type]'s.
+     * null when it is not one, without throwing: [Bech32.decodeBytesOrNull] also checks that the
+     * hrp is [type]'s. The content scans ([parseAll] and friends) skip the concatenation and decode
+     * each candidate in place.
      */
     fun parseComponents(
         type: String,
         key: String?,
         additionalChars: String?,
     ): ParseReturn? =
-        try {
-            val nip19 = (type + key)
+        (type + key).let { nip19 ->
+            entityAt(type.lowercase(), nip19, 0, nip19.length)?.let { ParseReturn(it, nip19, additionalChars) }
+        }
 
-            when (type.lowercase()) {
-                "nsec1" -> Bech32.decodeBytesOrNull(nip19, "nsec")?.let { NSec.parse(it) }
-                "npub1" -> Bech32.decodeBytesOrNull(nip19, "npub")?.let { NPub.parse(it) }
-                "note1" -> Bech32.decodeBytesOrNull(nip19, "note")?.let { NNote.parse(it) }
-                "nprofile1" -> Bech32.decodeBytesOrNull(nip19, "nprofile")?.let { NProfile.parse(it) }
-                "nevent1" -> Bech32.decodeBytesOrNull(nip19, "nevent")?.let { NEvent.parse(it) }
-                "nrelay1" -> Bech32.decodeBytesOrNull(nip19, "nrelay")?.let { NRelay.parse(it) }
-                "naddr1" -> Bech32.decodeBytesOrNull(nip19, "naddr")?.let { NAddress.parse(it) }
-                "nembed1" -> Bech32.decodeBytesOrNull(nip19, "nembed")?.let { NEmbed.parse(it) }
+    /**
+     * The entity spelled by `s[start, end)`, whose prefix is [lowerType] (lowercase, with its `1`),
+     * or null. Decodes in place, so the content scan allocates nothing for a candidate that turns out
+     * not to be an entity.
+     */
+    private fun entityAt(
+        lowerType: String,
+        s: String,
+        start: Int,
+        end: Int,
+    ): Entity? =
+        try {
+            when (lowerType) {
+                "nsec1" -> Bech32.decodeBytesOrNull(s, "nsec", start, end)?.let { NSec.parse(it) }
+                "npub1" -> Bech32.decodeBytesOrNull(s, "npub", start, end)?.let { NPub.parse(it) }
+                "note1" -> Bech32.decodeBytesOrNull(s, "note", start, end)?.let { NNote.parse(it) }
+                "nprofile1" -> Bech32.decodeBytesOrNull(s, "nprofile", start, end)?.let { NProfile.parse(it) }
+                "nevent1" -> Bech32.decodeBytesOrNull(s, "nevent", start, end)?.let { NEvent.parse(it) }
+                "nrelay1" -> Bech32.decodeBytesOrNull(s, "nrelay", start, end)?.let { NRelay.parse(it) }
+                "naddr1" -> Bech32.decodeBytesOrNull(s, "naddr", start, end)?.let { NAddress.parse(it) }
+                "nembed1" -> Bech32.decodeBytesOrNull(s, "nembed", start, end)?.let { NEmbed.parse(it) }
                 else -> null
-            }?.let {
-                ParseReturn(it, nip19, additionalChars)
             }
         } catch (e: Throwable) {
             // the entity parsers can still throw (an nembed's gzip or JSON)
-            Log.d("NIP19 Parser") { "Issue trying to Decode NIP19 $key: ${e.message}" }
+            Log.d("NIP19 Parser") { "Issue trying to Decode NIP19 ${s.substring(start, end)}: ${e.message}" }
             null
         }
 
@@ -247,7 +259,7 @@ object Nip19Parser {
         fixed58Prefixes: Array<String>,
         variablePrefixes: Array<String>,
         standaloneOnly: Boolean = false,
-        action: (type: String, key: String, additionalChars: String) -> Unit,
+        action: (prefix: String, start: Int, dataEnd: Int, end: Int) -> Unit,
     ) {
         var i = 0
         val len = content.length
@@ -279,11 +291,7 @@ object Nip19Parser {
                     val dataEnd = dataStart + 58
                     if (dataEnd <= len && allBech32(content, dataStart, dataEnd)) {
                         end = endOfTrailing(content, dataEnd)
-                        action(
-                            content.substring(i, dataStart),
-                            content.substring(dataStart, dataEnd),
-                            content.substring(dataEnd, end),
-                        )
+                        action(prefix, i, dataEnd, end)
                     }
                     break
                 }
@@ -297,11 +305,7 @@ object Nip19Parser {
                         // `+` needs at least one payload char.
                         if (dataEnd > dataStart) {
                             end = endOfTrailing(content, dataEnd)
-                            action(
-                                content.substring(i, dataStart),
-                                content.substring(dataStart, dataEnd),
-                                content.substring(dataEnd, end),
-                            )
+                            action(prefix, i, dataEnd, end)
                         }
                         break
                     }
@@ -334,8 +338,15 @@ object Nip19Parser {
         return c.isLetterOrDigit() || c == '.' || c == '-' || c == '_'
     }
 
-    /** The entity is a domain label — `npub1….blossom.band` — so it names a host, not a person. */
-    private fun isDomainLabel(additionalChars: String): Boolean = additionalChars.length > 1 && additionalChars[0] == '.' && additionalChars[1].isLetterOrDigit()
+    /**
+     * The entity ending at [dataEnd] is a domain label — `npub1….blossom.band` — so it names a host,
+     * not a person. [end] is the end of the trailing non-space run after it.
+     */
+    private fun isDomainLabelAt(
+        content: String,
+        dataEnd: Int,
+        end: Int,
+    ): Boolean = end - dataEnd > 1 && content[dataEnd] == '.' && content[dataEnd + 1].isLetterOrDigit()
 
     private fun allBech32(
         content: String,
@@ -364,8 +375,8 @@ object Nip19Parser {
      */
     fun parseAll(content: String): List<Entity> {
         val returningList = mutableListOf<Entity>()
-        forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { type, key, additionalChars ->
-            parseComponents(type, key, additionalChars)?.entity?.let { returningList.add(it) }
+        forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
+            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
         }
         return returningList
     }
@@ -377,9 +388,9 @@ object Nip19Parser {
      */
     fun parseAllStandalone(content: String): List<Entity> {
         val returningList = mutableListOf<Entity>()
-        forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { type, key, additionalChars ->
-            if (!isDomainLabel(additionalChars)) {
-                parseComponents(type, key, additionalChars)?.entity?.let { returningList.add(it) }
+        forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { prefix, start, dataEnd, end ->
+            if (!isDomainLabelAt(content, dataEnd, end)) {
+                entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
             }
         }
         return returningList
@@ -388,8 +399,8 @@ object Nip19Parser {
     /** Same scan as [parseAll], restricted to the event-ish entities. */
     fun parseAllEvents(content: String): List<Entity> {
         val returningList = mutableListOf<Entity>()
-        forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { type, key, additionalChars ->
-            parseComponents(type, key, additionalChars)?.entity?.let { returningList.add(it) }
+        forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
+            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
         }
         return returningList
     }

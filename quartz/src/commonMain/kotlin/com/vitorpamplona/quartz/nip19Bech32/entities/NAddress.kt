@@ -103,7 +103,7 @@ data class NAddress(
             pubKeyHex: String,
             dTag: String,
             relay: NormalizedRelayUrl?,
-        ): String = createOrNull(kind, pubKeyHex, dTag, relay) ?: throw dTagTooLong(dTag)
+        ): String = createOrNull(kind, pubKeyHex, dTag, relay) ?: throw unencodable(pubKeyHex, dTag)
 
         /**
          * @throws IllegalArgumentException when [dTag] is over 255 bytes in UTF-8, which NIP-19's
@@ -114,12 +114,13 @@ data class NAddress(
             pubKeyHex: String,
             dTag: String,
             relays: List<NormalizedRelayUrl>,
-        ): String = createOrNull(kind, pubKeyHex, dTag, relays) ?: throw dTagTooLong(dTag)
+        ): String = createOrNull(kind, pubKeyHex, dTag, relays) ?: throw unencodable(pubKeyHex, dTag)
 
         /**
          * The `naddr1…` of this address, or null when [dTag] is over 255 bytes in UTF-8: no naddr
          * can hold it (its TLV length is one byte), and encoding the length wrapped used to give a
-         * string that no client could decode. Relay hints over 255 bytes are left out.
+         * string that no client could decode. Also null for a [pubKeyHex] of odd length or over 255
+         * bytes. Relay hints over 255 bytes are left out.
          */
         fun createOrNull(
             kind: Int,
@@ -152,10 +153,16 @@ data class NAddress(
             relays: List<NormalizedRelayUrl>,
         ): String? = encode(kind, pubKeyHex, dTag, null, relays, NOSTR_URI_PREFIX)
 
-        private fun dTagTooLong(dTag: String) =
-            IllegalArgumentException(
-                "d-tag is ${TlvWriter.utf8Length(dTag)} bytes; an naddr holds at most ${TlvBuilder.MAX_VALUE_SIZE}",
-            )
+        private fun unencodable(
+            pubKeyHex: String,
+            dTag: String,
+        ) = IllegalArgumentException(
+            if (!TlvWriter.hexFits(pubKeyHex)) {
+                "Invalid pubkey hex $pubKeyHex"
+            } else {
+                "d-tag is ${TlvWriter.utf8Length(dTag)} bytes; an naddr holds at most ${TlvBuilder.MAX_VALUE_SIZE}"
+            },
+        )
 
         private fun encode(
             kind: Int,
@@ -167,6 +174,7 @@ data class NAddress(
         ): String? {
             val dTagLength = TlvWriter.utf8Length(dTag)
             if (!TlvWriter.fits(dTagLength)) return null
+            if (!TlvWriter.hexFits(pubKeyHex)) return null
 
             // a blank relay url is skipped, as addStringIfNotBlank did
             var size = TlvWriter.stringSize(dTagLength) + TlvWriter.hexSize(pubKeyHex) + TlvWriter.INT32_SIZE

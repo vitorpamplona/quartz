@@ -107,7 +107,7 @@ data class NEvent(
             relays: List<NormalizedRelayUrl>,
         ): String = encode(idHex, author, kind, null, relays, NOSTR_URI_PREFIX)
 
-        /** Relay hints too long for a TLV record (over 255 bytes) are left out. */
+        /** Relay hints too long for a TLV record (over 255 bytes) and an unencodable author are left out. */
         private fun encode(
             idHex: String,
             author: String?,
@@ -119,14 +119,16 @@ data class NEvent(
             var size = TlvWriter.hexSize(idHex)
             if (relay != null) size += TlvWriter.optionalStringSize(relay.url)
             for (i in relays.indices) size += TlvWriter.optionalStringSize(relays[i].url)
-            if (author != null) size += TlvWriter.hexSize(author)
+            // the author is a hint: one that cannot be a record (odd or over 255 bytes) is left out
+            val authorFits = author != null && TlvWriter.hexFits(author)
+            if (authorFits) size += TlvWriter.hexSize(author)
             if (kind != null) size += TlvWriter.INT32_SIZE
 
             val tlv = TlvWriter(size)
             tlv.hex(TlvTypes.SPECIAL.id, idHex)
             if (relay != null) tlv.optionalString(TlvTypes.RELAY.id, relay.url)
             for (i in relays.indices) tlv.optionalString(TlvTypes.RELAY.id, relays[i].url)
-            if (author != null) tlv.hex(TlvTypes.AUTHOR.id, author)
+            if (authorFits) tlv.hex(TlvTypes.AUTHOR.id, author)
             if (kind != null) tlv.int32(TlvTypes.KIND.id, kind)
 
             return Bech32.encodeBytes("nevent", tlv.buffer, Bech32.Encoding.Bech32, prefix)

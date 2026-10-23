@@ -44,7 +44,7 @@ internal class TlvWriter(
         buffer[pos++] = (hex.length / 2).toByte()
         var i = 0
         while (i < hex.length) {
-            buffer[pos++] = ((Bech32.hexNibble(hex, i) shl 4) or Bech32.hexNibble(hex, i + 1)).toByte()
+            buffer[pos++] = Bech32.hexByte(hex, i)
             i += 2
         }
     }
@@ -57,13 +57,19 @@ internal class TlvWriter(
     ) {
         buffer[pos++] = type
         buffer[pos++] = utf8Length.toByte()
-        if (utf8Length == s.length) {
-            // all ASCII: one byte per char
-            for (i in s.indices) buffer[pos++] = s[i].code.toByte()
-        } else {
-            val bytes = s.encodeToByteArray()
-            bytes.copyInto(buffer, pos)
-            pos += bytes.size
+        // ASCII is copied char by char. The length alone can't tell: on the JVM a lone surrogate
+        // also encodes to one byte (`?`), and only the encoder knows which byte that is.
+        val start = pos
+        for (i in s.indices) {
+            val c = s[i].code
+            if (c >= 0x80) {
+                val bytes = s.encodeToByteArray()
+                check(bytes.size == utf8Length) { "utf8Length disagrees with encodeToByteArray for a ${s.length}-char string" }
+                bytes.copyInto(buffer, start)
+                pos = start + bytes.size
+                return
+            }
+            buffer[pos++] = c.toByte()
         }
     }
 
@@ -98,6 +104,9 @@ internal class TlvWriter(
             return 2 + hex.length / 2
         }
 
+        /** True when [hex] can be written as one record: even length, at most 255 bytes. */
+        fun hexFits(hex: String) = hex.length and 1 == 0 && fits(hex.length / 2)
+
         fun stringSize(utf8Length: Int) = 2 + utf8Length
 
         /**
@@ -114,8 +123,12 @@ internal class TlvWriter(
         fun fits(byteLength: Int) = byteLength <= TlvBuilder.MAX_VALUE_SIZE
 
         /**
-         * The UTF-8 length of [s] without encoding it, the same count `encodeToByteArray()` gives:
-         * an unpaired surrogate becomes the 3-byte replacement character.
+         * The number of bytes `encodeToByteArray()` writes for [s], counted without encoding it.
+         *
+         * An unpaired surrogate is the one char the platforms disagree on (1 byte, `?`, on the JVM
+         * and Android; 3 bytes, U+FFFD, on Native), so a string holding one defers to the encoder
+         * itself: the size pass and the write must agree to the byte, or the record's length claims
+         * bytes that were never written.
          */
         fun utf8Length(s: String): Int {
             var n = 0
@@ -129,6 +142,7 @@ internal class TlvWriter(
                         n += 4
                         i++
                     }
+                    c in 0xD800..0xDFFF -> return s.encodeToByteArray().size
                     else -> n += 3
                 }
                 i++

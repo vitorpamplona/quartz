@@ -78,10 +78,11 @@ class Bech32SinglePassTest {
     }
 
     @Test
-    fun encodeHexRejectsBadHex() {
+    fun encodeHexReadsBadHexLikeHexDecode() {
         assertFailsWith<IllegalArgumentException> { Bech32.encodeHex("npub", "abc") }
-        assertFailsWith<IllegalArgumentException> { Bech32.encodeHex("npub", "zz") }
-        assertFailsWith<IllegalArgumentException> { Bech32.encodeHex("npub", "a\u00e9") }
+        assertEquals(Bech32.encodeBytes("npub", Hex.decode("zz"), Bech32.Encoding.Bech32), Bech32.encodeHex("npub", "zz"))
+        assertEquals(Bech32.encodeBytes("npub", Hex.decode("a\u00e9"), Bech32.Encoding.Bech32), Bech32.encodeHex("npub", "a\u00e9"))
+        assertEquals("nostr:" + Bech32.encodeHex("npub", "0g"), Bech32.encodeHex("npub", "0g", "nostr:"))
     }
 
     @Test

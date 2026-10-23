@@ -161,12 +161,18 @@ object Bech32 {
     @Suppress("NOTHING_TO_INLINE")
     inline fun isDataChar(c: Char): Boolean = c.code < DATA_CHARS_SIZE && DATA_CHARS[c.code]
 
-    /** One BCH polymod step: shift [chk] by 5 bits, fold in [v] and reduce by the generators. */
+    /**
+     * One BCH polymod step: shift [chk] by 5 bits, fold in [v] and reduce by the generators.
+     *
+     * Masking the table index to 5 bits keeps it in range when a caller of the 5-bit API ([polymod],
+     * [decode]) hands in a value outside `0..31` (an invalid char maps to -1): the generator test
+     * only ever looked at bits 25..29, which is exactly what the mask keeps.
+     */
     @Suppress("NOTHING_TO_INLINE")
     private inline fun step(
         chk: Int,
         v: Int,
-    ): Int = ((chk and 0x1ffffff) shl 5) xor v xor GEN_TABLE[chk ushr 25]
+    ): Int = ((chk and 0x1ffffff) shl 5) xor v xor GEN_TABLE[(chk ushr 25) and 31]
 
     fun expand(hrp: String): Array<Int5> {
         val half = hrp.length + 1
@@ -309,7 +315,12 @@ object Bech32 {
      * into a `ByteArray` first: the path behind `npub`, `nsec` and `note`, whose keys and ids are
      * held as hex. [prefix] is written in front, as in [encodeBytes].
      *
-     * @throws IllegalArgumentException when [hex] has an odd length or a non-hex character.
+     * Like [com.vitorpamplona.quartz.utils.Hex.decode], it does not validate: a non-hex char is
+     * read as nibble -1 and encodes garbage instead of throwing, because keys reach here from tags
+     * that are only length-checked and are encoded while rendering. Check with `Hex.isHex` first
+     * when the input is untrusted and garbage matters.
+     *
+     * @throws IllegalArgumentException when [hex] has an odd length.
      */
     public fun encodeHex(
         hrp: String,
@@ -327,7 +338,10 @@ object Bech32 {
         var acc = 0
         var bits = 0
         for (i in hex.indices) {
-            acc = (acc shl 4) or hexNibble(hex, i)
+            val nibble = hexNibble(hex, i)
+            // a non-hex char: encode the bytes Hex.decode would have produced (rare, so restart)
+            if (nibble < 0) return encodeBytes(hrp, hexToBytes(hex), Encoding.Bech32, prefix)
+            acc = (acc shl 4) or nibble
             bits += 4
             if (bits >= 5) {
                 bits -= 5
@@ -347,18 +361,25 @@ object Bech32 {
         return out.decodeToString()
     }
 
-    /** The nibble of `hex[i]`, or throws [IllegalArgumentException] when it is not a hex digit. */
+    /** The nibble of `hex[i]`, or -1 when it is not a hex digit. */
     internal fun hexNibble(
         hex: String,
         i: Int,
     ): Int {
         val code = hex[i].code
-        val v = if (code < 128) HEX_NIBBLE[code] else -1
-        require(v >= 0) { "Invalid hex $hex" }
-        return v
+        return if (code < 128) HEX_NIBBLE[code] else -1
     }
 
-    private fun hexToBytes(hex: String): ByteArray = ByteArray(hex.length / 2) { ((hexNibble(hex, it * 2) shl 4) or hexNibble(hex, it * 2 + 1)).toByte() }
+    /**
+     * The byte at `hex[i, i + 2)`, composed exactly as `Hex.decode` does, so a non-hex char (-1)
+     * gives the same garbage byte it always gave rather than an exception.
+     */
+    internal fun hexByte(
+        hex: String,
+        i: Int,
+    ): Byte = ((hexNibble(hex, i) shl 4) or hexNibble(hex, i + 1)).toByte()
+
+    private fun hexToBytes(hex: String): ByteArray = ByteArray(hex.length / 2) { hexByte(hex, it * 2) }
 
     private fun writeHeader(
         out: ByteArray,
