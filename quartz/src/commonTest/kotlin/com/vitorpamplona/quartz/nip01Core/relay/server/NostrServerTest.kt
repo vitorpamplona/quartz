@@ -198,9 +198,9 @@ class NostrServerTest {
             val collector = MessageCollector()
             val c1 = server.connect(collector.sendCallback)
 
-            val dTag = arrayOf(arrayOf("d", "post"))
-            val lowerId = testEvent(id = hexId(4), kind = 30023, createdAt = 5000L, tags = dTag)
-            val higherId = testEvent(id = hexId(5), kind = 30023, createdAt = 5000L, tags = dTag)
+            val dTag = arrayOf(arrayOf("d", "kp"))
+            val lowerId = testEvent(id = hexId(4), kind = 30443, createdAt = 5000L, tags = dTag)
+            val higherId = testEvent(id = hexId(5), kind = 30443, createdAt = 5000L, tags = dTag)
             c1.insert(lowerId)
             c1.insert(higherId)
 
@@ -209,7 +209,7 @@ class NostrServerTest {
             assertTrue(okMessages[1].contains(",false,"), "tie loser was not stored, so it must not be acked, got ${okMessages[1]}")
             assertTrue(okMessages[1].contains(RejectionReason.PREFIX_REPLACED))
 
-            val stored = store.query<Event>(Filter(kinds = listOf(30023)))
+            val stored = store.query<Event>(Filter(kinds = listOf(30443)))
             assertEquals(listOf(lowerId.id), stored.map { it.id }, "lowest id wins the tie")
 
             server.close()

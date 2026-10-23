@@ -4,12 +4,15 @@ Quartz is the Nostr protocol library behind [Amethyst](https://github.com/vitorp
 a Kotlin Multiplatform library for JVM, Android, iOS, macOS and Linux, published to Maven Central
 as `com.vitorpamplona.quartz:quartz`. It holds implementations of Nostr specifications and the
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
-them: `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
-NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`. A new protocol over Nostr belongs here as a package, unless it
-brings a heavy engine most clients won't use: the two MLS bindings left for their own libraries,
-[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot, MLS over Nostr) and
-[cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (MLS over an MCP coordinator), so Quartz
-carries no MLS engine. Both depend on Quartz; Quartz must never depend on them.
+them: `marmot/` (MLS over Nostr, `mipXX`: event classes, tags and content codecs only),
+`contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
+NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`. A new protocol over Nostr belongs here as a package. Every
+event class stays here, so any client or relay parses and stores every kind typed; a protocol's
+heavy engine does not. The MLS bindings' engines and clients are their own libraries,
+[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot) and
+[cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (cordn, which has no event kinds), so
+Quartz carries no MLS engine: nothing here may import `com.vitorpamplona.mls`. Both depend on
+Quartz; Quartz must never depend on them.
 
 The code lived in the Amethyst repo until it moved here, the same way the crypto primitives moved
 to [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp). Amethyst, its desktop app, the `amy`
@@ -42,9 +45,6 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
 crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`); secp256k1 stays here. To change it
 alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest`.
-
-A library that defines its own event kinds (marmot-kmp does) registers an `EventBuilder` per kind
-in `EventFactory.factories` instead of adding a branch to `EventFactory`, so Quartz never imports it.
 
 ## Rules
 

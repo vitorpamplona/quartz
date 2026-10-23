@@ -4,9 +4,9 @@ A Nostr library for Kotlin Multiplatform: JVM, Android, iOS, macOS and Linux. Qu
 event classes, tags and builders for the NIPs, signing (secp256k1) and NIP-04/NIP-44 encryption,
 a relay client with subscriptions, paging, publish-and-confirm, NIP-45 counts and NIP-77 sync, a
 SQLite event store with NIP-50 search, and the server side to run a relay on. It also carries
-whole protocol families built on Nostr: ContextVM, Concord, OpenAgents and Buzz. The MLS
-bindings live in their own libraries on top of Quartz:
-[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot) and
+whole protocol families built on Nostr: Marmot's events (MLS over Nostr), ContextVM, Concord,
+OpenAgents and Buzz. The MLS engines live in their own libraries on top of Quartz:
+[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot groups) and
 [cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (cordn).
 
 It is the protocol layer of [Amethyst](https://github.com/vitorpamplona/amethyst), its desktop

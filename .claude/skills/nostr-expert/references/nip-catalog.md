@@ -127,6 +127,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `feedDefinition/` | FeedDefinitionEvent 31890 |
 | `kinds/` | (no event kinds: tags/utilities) |
 | `lightning/` | (no event kinds: tags/utilities) |
+| `marmot/` | LegacyKeyPackageEvent 443, WelcomeEvent 444, GroupEvent 445, NotificationRequestEvent 446, TokenRequestEvent 447, TokenListEvent 448, TokenRemovalEvent 449, PushOwnerProof 451, KeyPackageRelayListEvent 10051, KeyPackageEvent 30443 |
 | `openagents/` | ExtensionReleaseEvent 3184, CapabilityDiscoveryEvent 30180, ExtensionListingEvent 30184 |
 | `podcasts/` | (no event kinds: tags/utilities) |
 
