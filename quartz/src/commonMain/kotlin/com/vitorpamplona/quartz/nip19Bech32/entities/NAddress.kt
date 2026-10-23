@@ -20,20 +20,18 @@
  */
 package com.vitorpamplona.quartz.nip19Bech32.entities
 
-import addHex
-import addInt
-import addString
-import addStringIfNotBlank
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip19Bech32.TlvTypes
-import com.vitorpamplona.quartz.nip19Bech32.bech32.bechToBytes
-import com.vitorpamplona.quartz.nip19Bech32.tlv.Tlv
+import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
 import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvBuilder
-import com.vitorpamplona.quartz.nip19Bech32.toNAddress
+import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvWriter
+import com.vitorpamplona.quartz.nip19Bech32.tlv.forEachTlvRecord
+import com.vitorpamplona.quartz.nip19Bech32.tlv.readInt32
+import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.internIfPossible
 
 @Immutable
 data class NAddress(
@@ -52,10 +50,10 @@ data class NAddress(
                 val key = naddr.removePrefix("nostr:")
 
                 if (key.startsWith("naddr")) {
-                    return parse(key.bechToBytes())
+                    return Bech32.decodeBytesOrNull(key, "naddr")?.let { parse(it) }
                 }
             } catch (e: Throwable) {
-                Log.w("NAddress") { "Issue trying to Decode NIP19 $this: ${e.message}" }
+                Log.w("NAddress", "Issue trying to Decode NIP19 $naddr", e)
             }
 
             return null
@@ -64,54 +62,137 @@ data class NAddress(
         fun parse(bytes: ByteArray): NAddress? {
             if (bytes.isEmpty()) return null
 
-            val tlv = Tlv.parse(bytes)
+            // One pass over the records, reading each value in place. Only the first d-tag,
+            // author and kind count, as with Tlv.firstAs*; every relay is kept.
+            var dTag: String? = null
+            var author: String? = null
+            var kindSeen = false
+            var kind: Int? = null
+            var relays: ArrayList<NormalizedRelayUrl>? = null
+            forEachTlvRecord(bytes) { type, from, to ->
+                when (type) {
+                    TlvTypes.SPECIAL.id -> if (dTag == null) dTag = bytes.decodeToString(from, to)
+                    TlvTypes.RELAY.id -> relays = addRelayHint(relays, bytes, from, to)
+                    TlvTypes.AUTHOR.id -> if (author == null) author = Hex.encode(bytes, from, to).internIfPossible()
+                    TlvTypes.KIND.id ->
+                        if (!kindSeen) {
+                            kindSeen = true
+                            if (to - from == 4) kind = readInt32(bytes, from)
+                        }
+                }
+            }
 
-            val d = tlv.firstAsString(TlvTypes.SPECIAL.id) ?: ""
-            val relay = tlv.asStringList(TlvTypes.RELAY.id) ?: emptyList()
-            val author = tlv.firstAsHex(TlvTypes.AUTHOR.id) ?: return null
-            val kind = tlv.firstAsInt(TlvTypes.KIND.id) ?: return null
+            val pubKey = author ?: return null
+            val k = kind ?: return null
 
             // x-only 32-byte pubkey only, as in NPub.parse: a 33-byte compressed key would
             // flow into `a` tags and filters that strict relays reject. The TLV kind is a raw
             // uint32 read as a signed Int, so 0xFFFFFFFF arrives as -1; NIP-01 kinds are 0..65535.
-            if (author.length != 64) return null
-            if (kind !in 0..65535) return null
+            if (pubKey.length != 64) return null
+            if (k !in 0..65535) return null
 
-            return NAddress(kind, author, d, relay.mapNotNull { RelayUrlNormalizer.normalizeHintOrNull(it) })
+            return NAddress(k, pubKey, dTag ?: "", relays ?: emptyList())
         }
 
+        /**
+         * @throws IllegalArgumentException when [dTag] is over 255 bytes in UTF-8, which NIP-19's
+         * one-byte TLV length cannot hold. Use [createOrNull] for d-tags from untrusted events.
+         */
         fun create(
             kind: Int,
             pubKeyHex: String,
             dTag: String,
             relay: NormalizedRelayUrl?,
-        ): String =
-            TlvBuilder()
-                .apply {
-                    addString(TlvTypes.SPECIAL, dTag)
-                    if (relay != null) {
-                        addStringIfNotBlank(TlvTypes.RELAY, relay.url)
-                    }
-                    addHex(TlvTypes.AUTHOR, pubKeyHex)
-                    addInt(TlvTypes.KIND, kind)
-                }.build()
-                .toNAddress()
+        ): String = createOrNull(kind, pubKeyHex, dTag, relay) ?: throw unencodable(pubKeyHex, dTag)
 
+        /**
+         * @throws IllegalArgumentException when [dTag] is over 255 bytes in UTF-8, which NIP-19's
+         * one-byte TLV length cannot hold. Use [createOrNull] for d-tags from untrusted events.
+         */
         fun create(
             kind: Int,
             pubKeyHex: String,
             dTag: String,
             relays: List<NormalizedRelayUrl>,
-        ): String =
-            TlvBuilder()
-                .apply {
-                    addString(TlvTypes.SPECIAL, dTag)
-                    relays.forEach {
-                        addStringIfNotBlank(TlvTypes.RELAY, it.url)
-                    }
-                    addHex(TlvTypes.AUTHOR, pubKeyHex)
-                    addInt(TlvTypes.KIND, kind)
-                }.build()
-                .toNAddress()
+        ): String = createOrNull(kind, pubKeyHex, dTag, relays) ?: throw unencodable(pubKeyHex, dTag)
+
+        /**
+         * The `naddr1…` of this address, or null when [dTag] is over 255 bytes in UTF-8: no naddr
+         * can hold it (its TLV length is one byte), and encoding the length wrapped used to give a
+         * string that no client could decode. Also null for a [pubKeyHex] of odd length or over 255
+         * bytes. Relay hints over 255 bytes are left out.
+         */
+        fun createOrNull(
+            kind: Int,
+            pubKeyHex: String,
+            dTag: String,
+            relay: NormalizedRelayUrl?,
+        ): String? = encode(kind, pubKeyHex, dTag, relay, emptyList(), "")
+
+        /** [createOrNull] for a list of relay hints. */
+        fun createOrNull(
+            kind: Int,
+            pubKeyHex: String,
+            dTag: String,
+            relays: List<NormalizedRelayUrl>,
+        ): String? = encode(kind, pubKeyHex, dTag, null, relays, "")
+
+        /** `nostr:naddr1…`, built in one buffer, or null as in [createOrNull]. */
+        fun createNostrUriOrNull(
+            kind: Int,
+            pubKeyHex: String,
+            dTag: String,
+            relay: NormalizedRelayUrl?,
+        ): String? = encode(kind, pubKeyHex, dTag, relay, emptyList(), NOSTR_URI_PREFIX)
+
+        /** `nostr:naddr1…`, built in one buffer, or null as in [createOrNull]. */
+        fun createNostrUriOrNull(
+            kind: Int,
+            pubKeyHex: String,
+            dTag: String,
+            relays: List<NormalizedRelayUrl>,
+        ): String? = encode(kind, pubKeyHex, dTag, null, relays, NOSTR_URI_PREFIX)
+
+        private fun unencodable(
+            pubKeyHex: String,
+            dTag: String,
+        ) = IllegalArgumentException(
+            if (!TlvWriter.hexFits(pubKeyHex)) {
+                "Invalid pubkey hex $pubKeyHex"
+            } else {
+                "d-tag is ${TlvWriter.utf8Length(dTag)} bytes; an naddr holds at most ${TlvBuilder.MAX_VALUE_SIZE}"
+            },
+        )
+
+        private fun encode(
+            kind: Int,
+            pubKeyHex: String,
+            dTag: String,
+            relay: NormalizedRelayUrl?,
+            relays: List<NormalizedRelayUrl>,
+            prefix: String,
+        ): String? {
+            val dTagLength = TlvWriter.utf8Length(dTag)
+            if (!TlvWriter.fits(dTagLength)) return null
+            if (!TlvWriter.hexFits(pubKeyHex)) return null
+
+            // a blank relay url is skipped, as addStringIfNotBlank did
+            var size = TlvWriter.stringSize(dTagLength) + TlvWriter.hexSize(pubKeyHex) + TlvWriter.INT32_SIZE
+            if (relay != null && relay.url.isNotBlank()) size += TlvWriter.optionalStringSize(relay.url)
+            for (i in relays.indices) {
+                if (relays[i].url.isNotBlank()) size += TlvWriter.optionalStringSize(relays[i].url)
+            }
+
+            val tlv = TlvWriter(size)
+            tlv.string(TlvTypes.SPECIAL.id, dTag, dTagLength)
+            if (relay != null && relay.url.isNotBlank()) tlv.optionalString(TlvTypes.RELAY.id, relay.url)
+            for (i in relays.indices) {
+                if (relays[i].url.isNotBlank()) tlv.optionalString(TlvTypes.RELAY.id, relays[i].url)
+            }
+            tlv.hex(TlvTypes.AUTHOR.id, pubKeyHex)
+            tlv.int32(TlvTypes.KIND.id, kind)
+
+            return Bech32.encodeBytes("naddr", tlv.buffer, Bech32.Encoding.Bech32, prefix)
+        }
     }
 }

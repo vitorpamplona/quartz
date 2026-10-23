@@ -20,11 +20,16 @@
  */
 package com.vitorpamplona.quartz.nip21UriScheme
 
+import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip19Bech32.toNIP19
+import com.vitorpamplona.quartz.nip19Bech32.entities.NAddress
+import com.vitorpamplona.quartz.nip19Bech32.entities.NEvent
 
-fun Event.toNostrUri(relayHint: NormalizedRelayUrl? = null): String = "nostr:${toNIP19(relayHint)}"
+/** `nostr:` + [com.vitorpamplona.quartz.nip19Bech32.toNIP19], built in one buffer. */
+fun Event.toNostrUri(relayHint: NormalizedRelayUrl? = null): String =
+    (if (this is AddressableEvent) NAddress.createNostrUriOrNull(kind, pubKey, dTag(), relayHint) else null)
+        ?: NEvent.createNostrUri(id, pubKey, kind, relayHint)
 
-fun EventHintBundle<Event>.toNostrUri(): String = "nostr:${toNEvent()}"
+fun EventHintBundle<Event>.toNostrUri(): String = NEvent.createNostrUri(event.id, event.pubKey, event.kind, relay)

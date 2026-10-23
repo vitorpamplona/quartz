@@ -20,18 +20,15 @@
  */
 package com.vitorpamplona.quartz.nip19Bech32.entities
 
-import addHex
-import addStringIfNotNull
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip19Bech32.TlvTypes
-import com.vitorpamplona.quartz.nip19Bech32.asStringList
-import com.vitorpamplona.quartz.nip19Bech32.firstAsHex
-import com.vitorpamplona.quartz.nip19Bech32.tlv.Tlv
-import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvBuilder
-import com.vitorpamplona.quartz.nip19Bech32.toNProfile
+import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
+import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvWriter
+import com.vitorpamplona.quartz.nip19Bech32.tlv.forEachTlvRecord
+import com.vitorpamplona.quartz.utils.Hex
+import com.vitorpamplona.quartz.utils.internIfPossible
 
 @Immutable
 data class NProfile(
@@ -42,42 +39,62 @@ data class NProfile(
         fun parse(bytes: ByteArray): NProfile? {
             if (bytes.isEmpty()) return null
 
-            val tlv = Tlv.parse(bytes)
-
-            val hex = tlv.firstAsHex(TlvTypes.SPECIAL) ?: return null
-            val relay = tlv.asStringList(TlvTypes.RELAY) ?: emptyList()
+            var hex: String? = null
+            var relays: ArrayList<NormalizedRelayUrl>? = null
+            forEachTlvRecord(bytes) { type, from, to ->
+                when (type) {
+                    TlvTypes.SPECIAL.id -> if (hex == null) hex = Hex.encode(bytes, from, to).internIfPossible()
+                    TlvTypes.RELAY.id -> relays = addRelayHint(relays, bytes, from, to)
+                }
+            }
 
             // x-only 32-byte pubkey only (64 hex chars). Reject a 33-byte compressed
             // key or any other malformed length — see NPub.parse for why it matters.
-            if (hex.length != 64) return null
+            val pubKey = hex ?: return null
+            if (pubKey.length != 64) return null
 
-            return NProfile(hex, relay.mapNotNull { RelayUrlNormalizer.normalizeHintOrNull(it) })
+            return NProfile(pubKey, relays ?: emptyList())
         }
 
         fun create(
             authorPubKeyHex: String,
             relay: NormalizedRelayUrl?,
-        ): String =
-            TlvBuilder()
-                .apply {
-                    addHex(TlvTypes.SPECIAL, authorPubKeyHex)
-                    if (relay != null) {
-                        addStringIfNotNull(TlvTypes.RELAY, relay.url)
-                    }
-                }.build()
-                .toNProfile()
+        ): String = encode(authorPubKeyHex, relay, emptyList(), "")
 
         fun create(
             authorPubKeyHex: String,
             relays: List<NormalizedRelayUrl>,
-        ): String =
-            TlvBuilder()
-                .apply {
-                    addHex(TlvTypes.SPECIAL, authorPubKeyHex)
-                    relays.forEach {
-                        addStringIfNotNull(TlvTypes.RELAY, it.url)
-                    }
-                }.build()
-                .toNProfile()
+        ): String = encode(authorPubKeyHex, null, relays, "")
+
+        /** `nostr:nprofile1…`, built in one buffer. */
+        fun createNostrUri(
+            authorPubKeyHex: String,
+            relay: NormalizedRelayUrl?,
+        ): String = encode(authorPubKeyHex, relay, emptyList(), NOSTR_URI_PREFIX)
+
+        /** `nostr:nprofile1…`, built in one buffer. */
+        fun createNostrUri(
+            authorPubKeyHex: String,
+            relays: List<NormalizedRelayUrl>,
+        ): String = encode(authorPubKeyHex, null, relays, NOSTR_URI_PREFIX)
+
+        /** Relay hints too long for a TLV record (over 255 bytes) are left out. */
+        private fun encode(
+            authorPubKeyHex: String,
+            relay: NormalizedRelayUrl?,
+            relays: List<NormalizedRelayUrl>,
+            prefix: String,
+        ): String {
+            var size = TlvWriter.hexSize(authorPubKeyHex)
+            if (relay != null) size += TlvWriter.optionalStringSize(relay.url)
+            for (i in relays.indices) size += TlvWriter.optionalStringSize(relays[i].url)
+
+            val tlv = TlvWriter(size)
+            tlv.hex(TlvTypes.SPECIAL.id, authorPubKeyHex)
+            if (relay != null) tlv.optionalString(TlvTypes.RELAY.id, relay.url)
+            for (i in relays.indices) tlv.optionalString(TlvTypes.RELAY.id, relays[i].url)
+
+            return Bech32.encodeBytes("nprofile", tlv.buffer, Bech32.Encoding.Bech32, prefix)
+        }
     }
 }

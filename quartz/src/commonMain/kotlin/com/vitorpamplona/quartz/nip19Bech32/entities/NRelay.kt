@@ -22,7 +22,7 @@ package com.vitorpamplona.quartz.nip19Bech32.entities
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip19Bech32.TlvTypes
-import com.vitorpamplona.quartz.nip19Bech32.tlv.Tlv
+import com.vitorpamplona.quartz.nip19Bech32.tlv.forEachTlvRecord
 
 @Immutable
 data class NRelay(
@@ -32,9 +32,14 @@ data class NRelay(
         fun parse(bytes: ByteArray): NRelay? {
             if (bytes.isEmpty()) return null
 
-            val relayUrl = Tlv.parse(bytes).asStringList(TlvTypes.SPECIAL.id) ?: return null
+            var relays: ArrayList<String>? = null
+            forEachTlvRecord(bytes) { type, from, to ->
+                if (type == TlvTypes.SPECIAL.id) {
+                    (relays ?: ArrayList<String>(1).also { relays = it }).add(bytes.decodeToString(from, to))
+                }
+            }
 
-            return NRelay(relayUrl)
+            return relays?.let { NRelay(it) }
         }
     }
 }

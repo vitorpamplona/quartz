@@ -305,6 +305,23 @@ object Hex {
         return out.concatToString()
     }
 
+    /** Encodes `input[from, to)` as a lower-case hex string, without copying the range out first. */
+    fun encode(
+        input: ByteArray,
+        from: Int,
+        to: Int,
+    ): String {
+        val table = byteToHex
+        val out = CharArray((to - from) * 2)
+        var outIdx = 0
+        for (i in from until to) {
+            val chars = table[input[i].toInt() and 0xFF]
+            out[outIdx++] = (chars shr 8).toChar()
+            out[outIdx++] = (chars and 0xFF).toChar()
+        }
+        return out.concatToString()
+    }
+
     /**
      * Packs 16 hex chars starting at [offset] into a single [Long] (big-endian:
      * the first char becomes the most-significant nibble). No allocations, no

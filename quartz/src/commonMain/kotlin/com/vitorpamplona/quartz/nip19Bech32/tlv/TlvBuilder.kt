@@ -27,10 +27,18 @@ import com.vitorpamplona.quartz.utils.ByteArrayOutputStream
 class TlvBuilder {
     val outputStream = ByteArrayOutputStream(100)
 
+    /**
+     * @throws IllegalArgumentException when [byteArray] is longer than [MAX_VALUE_SIZE]: the
+     * length is a single byte, and writing `size.toByte()` used to wrap it (300 -> 44), leaving a
+     * string no decoder can read back.
+     */
     private fun add(
         type: Byte,
         byteArray: ByteArray,
     ) {
+        require(byteArray.size <= MAX_VALUE_SIZE) {
+            "TLV value of type $type is ${byteArray.size} bytes; the length field holds at most $MAX_VALUE_SIZE"
+        }
         outputStream.write(type)
         outputStream.write(byteArray.size.toByte())
         outputStream.write(byteArray)
@@ -76,10 +84,15 @@ class TlvBuilder {
     ) = data?.let { addInt(type, it) }
 
     fun build(): ByteArray = outputStream.toByteArray()
+
+    companion object {
+        /** The largest value a TLV record can hold: its length is one unsigned byte. */
+        const val MAX_VALUE_SIZE = 255
+    }
 }
 
 fun Int.to32BitByteArray(): ByteArray {
     val bytes = ByteArray(4)
-    (0..3).forEach { bytes[3 - it] = ((this ushr (8 * it)) and 0xFFFF).toByte() }
+    (0..3).forEach { bytes[3 - it] = (this ushr (8 * it)).toByte() }
     return bytes
 }
