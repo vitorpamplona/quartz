@@ -21,21 +21,15 @@
 package com.vitorpamplona.quartz.marmot.mip00KeyPackages
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.mls.components.AppDataDictionary
-import com.vitorpamplona.mls.components.ComponentsList
-import com.vitorpamplona.mls.messages.MlsKeyPackage
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.AppComponentsTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.MlsProposalsTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.utils.TimeUtils
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Marmot KeyPackage Event (MIP-00) — kind 30443.
@@ -114,64 +108,11 @@ class KeyPackageEvent(
             initializer()
         }
 
-        /**
-         * Build the event from the KeyPackage itself, deriving every id-list
-         * tag from the bytes it advertises.
-         *
-         * The tags duplicate metadata that is already inside the KeyPackage, so
-         * writing them by hand is writing a second source of truth — and MDK
-         * rejects a KeyPackage whose `mls_extensions` tag "does not exactly
-         * match decoded KeyPackage metadata". Adding one leaf capability and
-         * forgetting the tag is enough to make every one of our KeyPackages
-         * unusable, which is exactly what happened.
-         *
-         * `app_components` lists the Marmot registry ids only. The
-         * `app_components` component itself (`0x0001`) and the other upstream
-         * MLS-extensions component ids live below `0x8000` and are not app
-         * components being advertised.
-         */
-        @OptIn(ExperimentalEncodingApi::class)
-        fun buildCurrentProfileFrom(
-            keyPackage: MlsKeyPackage,
-            dTagSlot: String,
-            clientName: String? = null,
-            createdAt: Long = TimeUtils.now(),
-            initializer: TagArrayBuilder<KeyPackageEvent>.() -> Unit = {},
-        ) = buildCurrentProfile(
-            keyPackageBase64 = Base64.encode(KeyPackageUtils.frameKeyPackage(keyPackage)),
-            dTagSlot = dTagSlot,
-            keyPackageRef = keyPackage.reference().toHexKey(),
-            appComponentIds = advertisedAppComponents(keyPackage).map(::idHex),
-            ciphersuite = idHex(keyPackage.cipherSuite),
-            mlsExtensionIds =
-                keyPackage.leafNode.capabilities.extensions
-                    .map(::idHex),
-            mlsProposalIds =
-                keyPackage.leafNode.capabilities.proposals
-                    .map(::idHex),
-            clientName = clientName,
-            createdAt = createdAt,
-            initializer = initializer,
-        )
-
         /** `0x`-prefixed lowercase hex of a 16-bit id, zero-padded to four digits. */
         fun idHex(id: Int): String {
             val hex = id.toString(16)
             return "0x" + "0".repeat(4 - hex.length) + hex
         }
-
-        /** Marmot app-component ids the leaf advertises, from its `app_components` component. */
-        private fun advertisedAppComponents(keyPackage: MlsKeyPackage): List<Int> =
-            try {
-                val dictionary = AppDataDictionary.fromExtensionsOrEmpty(keyPackage.leafNode.extensions)
-                val list = dictionary[ComponentsList.APP_COMPONENTS_ID] ?: return emptyList()
-                ComponentsList.decode(list).filter { it >= MARMOT_COMPONENT_RANGE_START }
-            } catch (_: Exception) {
-                emptyList()
-            }
-
-        /** Marmot's own component registry starts here; lower ids are upstream MLS-extensions ones. */
-        private const val MARMOT_COMPONENT_RANGE_START = 0x8000
 
         /** MIP-era builder, kept for legacy groups already on disk. */
         fun build(

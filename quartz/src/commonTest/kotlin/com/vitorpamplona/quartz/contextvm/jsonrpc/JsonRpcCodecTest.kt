@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
  * `CVM-CORE-01`: the JSON-RPC layer round-trips every message class faithfully,
  * and rejects payloads that are not well-formed JSON-RPC 2.0.
  *
- * Rule ids come from `quartz/plans/2026-09-17-cordn-interop.md` §6.5. When a CEP
+ * Rule ids come from `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp §6.5. When a CEP
  * revises, the failing test names say what changed.
  */
 class JsonRpcCodecTest {

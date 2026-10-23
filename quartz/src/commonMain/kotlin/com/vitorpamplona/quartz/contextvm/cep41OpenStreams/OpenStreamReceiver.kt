@@ -84,7 +84,7 @@ class OpenStreamException(
 /**
  * Receives one CEP-41 open-ended stream, keyed by its `progressToken`.
  *
- * Rules are §6.5 `CVM-41-*` in `quartz/plans/2026-09-17-cordn-interop.md`.
+ * Rules are §6.5 `CVM-41-*` in `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp.
  *
  * @param requireAccept true in stateless bootstrap, where the peer must wait for
  *   our `accept` before its first chunk.

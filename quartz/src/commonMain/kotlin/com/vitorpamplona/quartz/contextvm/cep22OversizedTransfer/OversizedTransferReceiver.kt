@@ -82,7 +82,7 @@ class OversizedTransferException(
  * Receives one CEP-22 bounded transfer, keyed by its `progressToken`.
  *
  * The rules this enforces are §6.5 `CVM-22-*` in
- * `quartz/plans/2026-09-17-cordn-interop.md`. Two are worth stating here because
+ * `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp. Two are worth stating here because
  * they shape the design:
  *
  *  - **Nothing is surfaced upward before validation succeeds.** The reassembled

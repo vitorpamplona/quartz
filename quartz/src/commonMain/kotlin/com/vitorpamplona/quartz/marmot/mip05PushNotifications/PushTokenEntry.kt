@@ -211,7 +211,7 @@ data class PushRemovalEntry(
 }
 
 /** Hex helpers that hold the spec to LOWERCASE, which [com.vitorpamplona.quartz.utils.Hex] deliberately does not. */
-internal object PushHex {
+object PushHex {
     fun isLower(
         value: String,
         length: Int,

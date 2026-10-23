@@ -4,8 +4,10 @@ A Nostr library for Kotlin Multiplatform: JVM, Android, iOS, macOS and Linux. Qu
 event classes, tags and builders for the NIPs, signing (secp256k1) and NIP-04/NIP-44 encryption,
 a relay client with subscriptions, paging, publish-and-confirm, NIP-45 counts and NIP-77 sync, a
 SQLite event store with NIP-50 search, and the server side to run a relay on. It also carries
-whole protocol families built on Nostr: Marmot (MLS over Nostr), cordn, ContextVM, Concord,
-OpenAgents and Buzz.
+whole protocol families built on Nostr: Marmot's events (MLS over Nostr), ContextVM, Concord,
+OpenAgents and Buzz. The MLS engines live in their own libraries on top of Quartz:
+[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot groups) and
+[cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (cordn).
 
 It is the protocol layer of [Amethyst](https://github.com/vitorpamplona/amethyst), its desktop
 app, the `amy` CLI and the `geode` relay.
@@ -161,8 +163,7 @@ to `onPause` methods.
 
 ## Dependencies
 
-Crypto primitives come from [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp), MLS from
-[mls-kmp](https://github.com/vitorpamplona/mls-kmp), secp256k1 from
+Crypto primitives come from [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp), secp256k1 from
 [secp256k1-kmp](https://github.com/ACINQ/secp256k1-kmp) and NIP-77 from
 [negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp). On the JVM and Android, Jackson
 parses events and OkHttp is the bundled WebSocket transport.
@@ -178,8 +179,8 @@ parses events and OkHttp is the bundled WebSocket transport.
 ./gradlew :quartz:iosSimulatorArm64Test   # macOS only
 ```
 
-To work on crypto-kmp or mls-kmp alongside Quartz, point Gradle at a local checkout:
-`./gradlew -PcryptoKmpDir=../crypto-kmp -PmlsKmpDir=../mls-kmp :quartz:jvmTest`. To try a Quartz
+To work on crypto-kmp alongside Quartz, point Gradle at a local checkout:
+`./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest`. To try a Quartz
 change in Amethyst, build Amethyst with `-PquartzDir=../quartz`.
 
 [AGENTS.md](AGENTS.md) has the project rules, for people and coding agents alike.

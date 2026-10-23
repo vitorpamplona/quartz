@@ -5,7 +5,7 @@ ephemeral events whose `content` is a JSON-RPC message, gift-wrapped per CEP-4.
 
 A general MCP-over-Nostr implementation, not a client for any one server. It
 exists because Amethyst needs to talk to [cordn](https://cordn.net)
-coordinators (see `quartz/plans/2026-09-17-cordn-interop.md`), but nothing in it
+coordinators (see `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp), but nothing in it
 is cordn-specific.
 
 It lives in quartz for the same reason `marmot/` and `concord/` do: it is a
@@ -55,7 +55,7 @@ calls rather than mechanics:
   obligation to inject it — a key constant and fixture behaviour, not a
   subsystem.
 - **`transfer/ProgressEnvelope`** stays cross-cutting because CEP-22 and CEP-41
-  share that framing; it is the `marmot/foundation/` analogue.
+  share that framing; it is the analogue of Marmot's `foundation/` (in marmot-kmp).
 - **`core/`, `jsonrpc/`, `transport/`, `mcp/`** keep names because the core draft
   spec is not a CEP and has no number to carry.
 
