@@ -40,8 +40,8 @@ class KiteReaderRetentionTest {
     fun aFailedDecodeDropsAHugeBuffer() {
         val huge = """{"pubkey":"a","content":"${"\\n".repeat(200_000)}\x"}"""
         assertFailsWith<IllegalArgumentException> { KiteReader.readEvent(huge) }
-        val sb = field("sb") as StringBuilder?
-        assertTrue(sb == null || sb.capacity() < 100_000, "decode buffer of ${sb?.capacity()} chars kept")
+        val cb = field("cb") as CharArray?
+        assertTrue(cb == null || cb.size < 100_000, "decode buffer of ${cb?.size} chars kept")
     }
 
     @Test

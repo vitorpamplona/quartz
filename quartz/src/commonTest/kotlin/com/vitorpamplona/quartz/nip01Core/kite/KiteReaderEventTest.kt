@@ -238,12 +238,17 @@ class KiteReaderEventTest {
     }
 
     @Test
-    fun matchesKeysByTheirText() {
+    fun matchesKeysByLengthAndEnds() {
+        // An escaped key is decoded and matched exactly.
         assertEquals(id, read(event().replace("\"id\":", "\"\\u0069d\":")).id)
         // "jE" has the same String.hashCode as "id"; it is not the id.
         assertEquals("", read(event().replace("\"id\":", "\"jE\":")).id)
         assertEquals("", read(event().replace("\"sig\":", "\"sih\":")).sig)
-        assertFailsWith<IllegalArgumentException> { read(event().replace("\"pubkey\":", "\"pubKey\":")) }
+        // Same length, first and last char: taken as the key. Only a malformed event spells it so.
+        assertEquals(pubkey, read(event().replace("\"pubkey\":", "\"pubKey\":")).pubKey)
+        assertEquals(pubkey, read(event().replace("\"pubkey\":", "\"pudkey\":")).pubKey)
+        // A quote inside a key is still invalid JSON, not a longer key.
+        assertFailsWith<IllegalArgumentException> { read(event().replace("\"pubkey\":", "\"pub\"ey\":")) }
     }
 
     @Test

@@ -49,12 +49,15 @@ import kotlin.reflect.KClass
  * Every type follows what Quartz's Jackson deserializers accept and build (`EventDeserializer`,
  * `RumorDeserializer`, `MessageDeserializer`, `CommandDeserializer`, `ManualFilterDeserializer`,
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
- * lenient fields. It follows the JSON grammar everywhere, including values it skips, and never
- * accepts a frame Jackson rejects. It is stricter only where Jackson builds garbage or depends
- * on token order: a non-string `id`, `pubkey` or `sig`, or a `content` other than a string or
- * `null` (which reads as absent, where Jackson made it the text "null"); an array or object inside a
- * tag, or where a frame element should be a string or number; a missing closing bracket is
- * rejected by both. Keys are matched by their text, where `EventDeserializer` matched hashes.
+ * lenient fields. It follows the JSON grammar everywhere, including values it skips. It is
+ * stricter where Jackson builds garbage or depends on token order: a non-string `id`, `pubkey`
+ * or `sig`, or a `content` other than a string or `null` (which reads as absent, where Jackson
+ * made it the text "null"); an array or object inside a tag, or where a frame element should be
+ * a string or number; a missing closing bracket is rejected by both. It is looser in one place:
+ * an event key is recognized by its length and its first and last characters (an escaped key
+ * by its decoded text), so a misspelled `"pubKey"` reads as `pubkey` where Jackson, matching
+ * hashes, skipped it. Only a malformed event spells a key so, and the event is still checked by
+ * its id and signature; reading the whole key cost 4 to 7% of the parse.
  * Every failure is an [IllegalArgumentException].
  *
  * A reader holds the cursor and scratch buffers, so one parse at a time uses it. On JVM and
@@ -79,7 +82,7 @@ internal class KiteReader {
     private var frameClosed = false
 
     private var inUse = false
-    private var sb: StringBuilder? = null
+    private var cb: CharArray? = null
     private var tagScratch: Array<String?>? = null
     private var tagsScratch: Array<Array<String>?>? = null
     private var skipStack: BooleanArray? = null
@@ -111,7 +114,7 @@ internal class KiteReader {
             // Don't let one huge event pin its buffers to the thread, whether or not it parsed.
             if ((tagsScratch?.size ?: 0) > MAX_KEPT_TAGS) tagsScratch = null
             if ((tagScratch?.size ?: 0) > MAX_KEPT_TAGS) tagScratch = null
-            if ((sb?.length ?: 0) > MAX_KEPT_CHARS) sb = null
+            if ((cb?.size ?: 0) > MAX_KEPT_CHARS) cb = null
         }
     }
 
@@ -386,18 +389,28 @@ internal class KiteReader {
         if (q < 0) fail("unexpected end of input in a field name")
         if (escapeAtOrAfter(start) < q) return fieldOf(readStringBody())
         i = q + 1
+        return fieldAt(start, q)
+    }
+
+    /** Which event key spans [start] to [q] (its closing quote), by length, first and last char. */
+    private fun fieldAt(
+        start: Int,
+        q: Int,
+    ): Int {
+        val first = s[start]
+        val last = s[q - 1]
         return when (q - start) {
-            2 -> if (s[start] == 'i' && s[start + 1] == 'd') F_ID else F_OTHER
-            3 -> if (s.startsWith("sig", start)) F_SIG else F_OTHER
+            2 -> if (first == 'i' && last == 'd') F_ID else F_OTHER
+            3 -> if (first == 's' && last == 'g') F_SIG else F_OTHER
             4 ->
                 when {
-                    s.startsWith("kind", start) -> F_KIND
-                    s.startsWith("tags", start) -> F_TAGS
+                    first == 'k' && last == 'd' -> F_KIND
+                    first == 't' && last == 's' -> F_TAGS
                     else -> F_OTHER
                 }
-            6 -> if (s.startsWith("pubkey", start)) F_PUBKEY else F_OTHER
-            7 -> if (s.startsWith("content", start)) F_CONTENT else F_OTHER
-            10 -> if (s.startsWith("created_at", start)) F_CREATED_AT else F_OTHER
+            6 -> if (first == 'p' && last == 'y') F_PUBKEY else F_OTHER
+            7 -> if (first == 'c' && last == 't') F_CONTENT else F_OTHER
+            10 -> if (first == 'c' && last == 't') F_CREATED_AT else F_OTHER
             else -> F_OTHER
         }
     }
@@ -430,30 +443,56 @@ internal class KiteReader {
             i = q + 1
             return s.substring(start, q)
         }
+        return readEscapedBody(start, q, esc0)
+    }
 
+    /**
+     * [readStringBody]'s escape path, kept out of it so the common case stays small enough for
+     * C2 to inline at every call site (a hot method over 325 bytes of bytecode never is).
+     */
+    private fun readEscapedBody(
+        start: Int,
+        q: Int,
+        esc0: Int,
+    ): String {
         // Escapes: decode run by run. [quote] and [esc] are the next quote and backslash at or
         // after the cursor, each searched again only once the cursor passes it, so a value with
         // thousands of escapes is still read in one pass.
-        val sb = sb ?: StringBuilder(256).also { sb = it }
-        sb.setLength(0)
+        // Runs are bulk-copied into [cb] (getChars on the JVM) and escapes written in place, then
+        // one String is built: StringBuilder.append(String, from, to) copies char by char.
+        var buf = cb ?: CharArray(256).also { cb = it }
+        var len = 0
         var quote = q
         var esc = esc0
         var from = start
         while (esc < quote) {
-            sb.appendRange(s, from, esc)
+            buf = room(buf, len + (esc - from) + 1)
+            s.toCharArray(buf, len, from, esc)
+            len += esc - from
             i = esc
-            sb.append(readEscape())
+            buf[len++] = readEscape()
             from = i
             if (quote < i) quote = quoteAfter(i).also { if (it < 0) fail("unexpected end of input in a string") }
             esc = s.indexOf('\\', i).let { if (it < 0) n else it }
         }
-        sb.appendRange(s, from, quote)
+        buf = room(buf, len + (quote - from))
+        s.toCharArray(buf, len, from, quote)
+        len += quote - from
         i = quote + 1
         nextEscape = esc
-        val value = sb.toString()
+        val value = buf.concatToString(0, len)
         // Don't let one huge value pin its buffer to the thread.
-        if (sb.length > MAX_KEPT_CHARS) this.sb = null
+        if (buf.size > MAX_KEPT_CHARS) cb = null
         return value
+    }
+
+    /** [buf] if it holds [needed] chars, else a copy at least twice as big, kept as [cb]. */
+    private fun room(
+        buf: CharArray,
+        needed: Int,
+    ): CharArray {
+        if (needed <= buf.size) return buf
+        return buf.copyOf(maxOf(needed, buf.size * 2)).also { cb = it }
     }
 
     /** Decodes the escape at the cursor (a backslash) and moves past it. */
@@ -528,8 +567,42 @@ internal class KiteReader {
         return if (neg) -v else v
     }
 
+    /**
+     * A plain non-negative integer of up to 18 digits at the cursor (a timestamp, a kind), read in
+     * one pass, or -1, cursor unmoved, for anything else (a sign, a fraction, an exponent, a
+     * leading zero, more digits), which then takes the exact-grammar path.
+     */
+    private fun plainDigits(): Long {
+        var k = i
+        if (k >= n) return -1
+        val first = s[k]
+        if (first == '0') {
+            val next = if (k + 1 < n) s[k + 1] else ' '
+            if (next in '0'..'9' || next == '.' || next == 'e' || next == 'E') return -1
+            i = k + 1
+            return 0
+        }
+        if (first !in '1'..'9') return -1
+        var v = 0L
+        val limit = minOf(n, k + 18)
+        while (k < limit) {
+            val c = s[k]
+            if (c !in '0'..'9') break
+            v = v * 10 + (c - '0')
+            k++
+        }
+        if (k < n) {
+            val c = s[k]
+            if (c in '0'..'9' || c == '.' || c == 'e' || c == 'E') return -1
+        }
+        i = k
+        return v
+    }
+
     /** A JSON number as a long. Like Jackson's longValue: a fraction is truncated, out of range fails. */
     internal fun readLong(): Long {
+        val plain = plainDigits()
+        if (plain >= 0) return plain
         val start = i
         if (!scanNumber()) {
             if (i - start <= 18) return digitsValue(start)
@@ -542,6 +615,11 @@ internal class KiteReader {
 
     /** A JSON number as an int. Like Jackson's intValue: a fraction is truncated, out of range fails. */
     internal fun readInt(): Int {
+        val plain = plainDigits()
+        if (plain >= 0) {
+            if (plain > Int.MAX_VALUE) fail("number out of range of int")
+            return plain.toInt()
+        }
         val start = i
         if (!scanNumber()) {
             val v = if (i - start <= 18) digitsValue(start) else s.substring(start, i).toLongOrNull() ?: fail("number out of range of int")
