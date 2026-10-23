@@ -5,11 +5,13 @@ ephemeral events whose `content` is a JSON-RPC message, gift-wrapped per CEP-4.
 
 A general MCP-over-Nostr implementation, not a client for any one server. It
 exists because Amethyst needs to talk to [cordn](https://cordn.net)
-coordinators (see `quartz/plans/2026-09-17-cordn-interop.md`), but nothing in it
+coordinators (see `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp), but nothing in it
 is cordn-specific.
 
-It lives in quartz for the same reason `marmot/` and `concord/` do: it is a
-Nostr specification family, and quartz is where those go. The CEPs are to
+It lives in quartz for the same reason `concord/` does: it is a Nostr
+specification family, and quartz is where those go. (The MLS bindings, Marmot and
+cordn, are their own libraries, vitorpamplona/marmot-kmp and vitorpamplona/cordn-kmp,
+so that clients using neither don't carry an MLS engine.) The CEPs are to
 ContextVM what NIPs are to Nostr core — the package layout mirrors them the way
 `nipXX` packages mirror NIPs.
 
@@ -44,7 +46,7 @@ named failures rather than as silent divergence.
 ### Why the packages are named this way
 
 Each CEP gets its own `cepNNName/` package, the way `quartz` uses `nipXX` and
-`marmot` uses `mipXX`: a spec number in the path is what makes "is this rule
+Marmot uses `mipXX`: a spec number in the path is what makes "is this rule
 implemented, and where" answerable without grep. Four placements are judgment
 calls rather than mechanics:
 
@@ -55,7 +57,7 @@ calls rather than mechanics:
   obligation to inject it — a key constant and fixture behaviour, not a
   subsystem.
 - **`transfer/ProgressEnvelope`** stays cross-cutting because CEP-22 and CEP-41
-  share that framing; it is the `marmot/foundation/` analogue.
+  share that framing; it is the analogue of Marmot's `foundation/`.
 - **`core/`, `jsonrpc/`, `transport/`, `mcp/`** keep names because the core draft
   spec is not a CEP and has no number to carry.
 

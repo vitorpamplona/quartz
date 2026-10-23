@@ -192,15 +192,6 @@ import com.vitorpamplona.quartz.experimental.walletScrutiny.verification.BuildVe
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.experimental.zapstore.identityProof.IdentityProofEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageRelayListEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.LegacyKeyPackageEvent
-import com.vitorpamplona.quartz.marmot.mip02Welcome.WelcomeEvent
-import com.vitorpamplona.quartz.marmot.mip03GroupMessages.GroupEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.NotificationRequestEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenListEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenRemovalEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenRequestEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
@@ -502,8 +493,14 @@ import com.vitorpamplona.quartz.nipXXPushNotifications.registration.PushRegistra
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 
-interface EventBuilder {
+/**
+ * Builds an event of one kind. A library that defines its own event classes registers one per
+ * kind in [EventFactory.factories], so `EventFactory.create` returns the typed class instead of a
+ * bare [Event]. Marmot does this from `com.vitorpamplona.marmot.MarmotEvents.register()`.
+ */
+fun interface EventBuilder {
     fun build(
         id: HexKey,
         pubKey: HexKey,
@@ -516,7 +513,12 @@ interface EventBuilder {
 
 class EventFactory {
     companion object {
-        val factories: MutableMap<Int, EventBuilder> = mutableMapOf()
+        /**
+         * Builders a library registered for kinds Quartz has no class for. Concurrent because
+         * registration can run on whatever thread first touches the library while relay threads
+         * are already parsing.
+         */
+        val factories = ConcurrentMap<Int, EventBuilder>()
 
         fun <T : Event> create(
             id: HexKey,
@@ -914,15 +916,6 @@ class EventFactory {
                 MusicPlaylistEvent.KIND -> MusicPlaylistEvent(id, pubKey, createdAt, tags, content, sig)
                 MusicTrackEvent.KIND -> MusicTrackEvent(id, pubKey, createdAt, tags, content, sig)
                 MuteListEvent.KIND -> MuteListEvent(id, pubKey, createdAt, tags, content, sig)
-                KeyPackageEvent.KIND -> KeyPackageEvent(id, pubKey, createdAt, tags, content, sig)
-                KeyPackageRelayListEvent.KIND -> KeyPackageRelayListEvent(id, pubKey, createdAt, tags, content, sig)
-                LegacyKeyPackageEvent.KIND -> LegacyKeyPackageEvent(id, pubKey, createdAt, tags, content, sig)
-                WelcomeEvent.KIND -> WelcomeEvent(id, pubKey, createdAt, tags, content, sig)
-                GroupEvent.KIND -> GroupEvent(id, pubKey, createdAt, tags, content, sig)
-                NotificationRequestEvent.KIND -> NotificationRequestEvent(id, pubKey, createdAt, tags, content, sig)
-                TokenRequestEvent.KIND -> TokenRequestEvent(id, pubKey, createdAt, tags, content, sig)
-                TokenListEvent.KIND -> TokenListEvent(id, pubKey, createdAt, tags, content, sig)
-                TokenRemovalEvent.KIND -> TokenRemovalEvent(id, pubKey, createdAt, tags, content, sig)
                 NamedSiteEvent.KIND -> NamedSiteEvent(id, pubKey, createdAt, tags, content, sig)
                 NappletSnapshotEvent.KIND -> NappletSnapshotEvent(id, pubKey, createdAt, tags, content, sig)
                 RootNappletEvent.KIND -> RootNappletEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1171,7 +1164,7 @@ class EventFactory {
          * builder registered later is still seen.
          */
         fun isKnownKind(kind: Int): Boolean {
-            if (kind in factories) return true
+            if (factories[kind] != null) return true
             if (kind !in 0..MAX_CACHED_KIND) return isCompiledInKind(kind)
             return when (knownKindCache[kind]) {
                 KIND_KNOWN -> true

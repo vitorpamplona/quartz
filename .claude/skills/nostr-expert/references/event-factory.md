@@ -10,7 +10,7 @@ Shape (verbatim structure):
 ```kotlin
 class EventFactory {
     companion object {
-        val factories: MutableMap<Int, EventBuilder> = mutableMapOf()   // runtime registrations
+        val factories = ConcurrentMap<Int, EventBuilder>()   // runtime registrations
 
         fun <T : Event> create(id, pubKey, createdAt, kind, tags, content, sig): T =
             when (kind) {
@@ -25,6 +25,11 @@ class EventFactory {
     }
 }
 ```
+
+`factories` is for kinds Quartz does not own: a library on top of Quartz registers an
+`EventBuilder` (a `fun interface`, so `EventBuilder(::MyEvent)` works) per kind at startup.
+marmot-kmp's `MarmotEvents.register()` is the example; until it runs, those kinds parse as
+plain `Event`. Quartz's own kinds always get a branch in `create`.
 
 Some kinds pick their class from tags (kinds 38000 and 30301 have nested `when`s that
 fall back to `UnrecognizedKind…Event`). Unknown kinds round-trip as plain `Event`.

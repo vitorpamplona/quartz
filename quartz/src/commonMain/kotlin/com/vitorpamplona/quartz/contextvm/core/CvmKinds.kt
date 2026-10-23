@@ -27,7 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.isEphemeral
  * Nostr event kinds used by ContextVM.
  *
  * Implemented from the ContextVM specification and its CEPs, not from any
- * reference SDK source. See `quartz/plans/2026-09-17-cordn-interop.md` §6-§7
+ * reference SDK source. See `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp §6-§7
  * for the sourcing rule and the revision this targets.
  */
 object CvmKinds {

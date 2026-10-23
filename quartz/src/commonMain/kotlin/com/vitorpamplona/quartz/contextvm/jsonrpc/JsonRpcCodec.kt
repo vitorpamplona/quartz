@@ -35,7 +35,7 @@ import kotlinx.serialization.json.longOrNull
  * Decoding is deliberately strict. ContextVM's only framing is "the content is a
  * JSON-RPC message", so a malformed payload has to be rejected here or it becomes
  * a confusing failure several layers up. Every rejection below is a rule in
- * `quartz/plans/2026-09-17-cordn-interop.md` §6.5 (`CVM-CORE-*`) and has a test.
+ * `cordn/plans/2026-09-17-cordn-interop.md` in vitorpamplona/cordn-kmp §6.5 (`CVM-CORE-*`) and has a test.
  */
 object JsonRpcCodec {
     private const val JSONRPC = "jsonrpc"

@@ -34,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
 import com.vitorpamplona.quartz.nip40Expiration.ExpirationTag
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
+import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.currentCoroutineContext
@@ -109,6 +110,19 @@ open class GiftWrapEvent(
             Log.d("GiftWrapEvent") { "Couldn't Decrypt the content " + this.toNostrUri() }
             null
         }
+
+    /**
+     * Peels both NIP-59 layers, kind:1059 wrap → kind:13 [SealEvent] → the rumor, where
+     * [unwrapOrNull] peels only the wrap.
+     *
+     * If the inner content isn't a [SealEvent] (malformed, or a future variant that wraps a
+     * rumor directly), the unwrapped event is returned as-is so callers can still route on
+     * kind. Either step failing returns null.
+     */
+    suspend fun unwrapAndUnsealOrNull(signer: NostrSigner): Event? {
+        val inner = unwrapOrNull(signer) ?: return null
+        return if (inner is SealEvent) inner.unsealOrNull(signer) else inner
+    }
 
     private suspend fun plainContent(signer: NostrSigner): String {
         if (content.isEmpty()) return ""

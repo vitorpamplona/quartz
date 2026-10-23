@@ -105,15 +105,6 @@ import com.vitorpamplona.quartz.experimental.walletScrutiny.assetBundle.AssetBun
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.experimental.zapstore.identityProof.IdentityProofEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageRelayListEvent
-import com.vitorpamplona.quartz.marmot.mip00KeyPackages.LegacyKeyPackageEvent
-import com.vitorpamplona.quartz.marmot.mip02Welcome.WelcomeEvent
-import com.vitorpamplona.quartz.marmot.mip03GroupMessages.GroupEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.NotificationRequestEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenListEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenRemovalEvent
-import com.vitorpamplona.quartz.marmot.mip05PushNotifications.TokenRequestEvent
 import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip03Timestamp.OtsEvent
@@ -613,13 +604,20 @@ object KindNames {
             ChatEvent.KIND to KindName("Relay Chat", "C7"),
             ThreadEvent.KIND to KindName("Thread", "7D"),
             AppDataEvent.KIND to KindName("App Data", "78"),
-            LegacyKeyPackageEvent.KIND to KindName("MLS KeyPackage (Legacy)", null),
-            WelcomeEvent.KIND to KindName("MLS Welcome", null),
-            GroupEvent.KIND to KindName("MLS Group Message", null),
-            NotificationRequestEvent.KIND to KindName("MLS Notification Request", null),
-            TokenRequestEvent.KIND to KindName("MLS Token Request", null),
-            TokenListEvent.KIND to KindName("MLS Token List", null),
-            TokenRemovalEvent.KIND to KindName("MLS Token Removal", null),
+            // Marmot (vitorpamplona/marmot-kmp): LegacyKeyPackageEvent
+            443 to KindName("MLS KeyPackage (Legacy)", null),
+            // Marmot (vitorpamplona/marmot-kmp): WelcomeEvent
+            444 to KindName("MLS Welcome", null),
+            // Marmot (vitorpamplona/marmot-kmp): GroupEvent
+            445 to KindName("MLS Group Message", null),
+            // Marmot (vitorpamplona/marmot-kmp): NotificationRequestEvent
+            446 to KindName("MLS Notification Request", null),
+            // Marmot (vitorpamplona/marmot-kmp): TokenRequestEvent
+            447 to KindName("MLS Token Request", null),
+            // Marmot (vitorpamplona/marmot-kmp): TokenListEvent
+            448 to KindName("MLS Token List", null),
+            // Marmot (vitorpamplona/marmot-kmp): TokenRemovalEvent
+            449 to KindName("MLS Token Removal", null),
             BidEvent.KIND to KindName("Marketplace Bid", "15"),
             BidConfirmationEvent.KIND to KindName("Bid Confirmation", "15"),
             LiveActivitiesRaidEvent.KIND to KindName("Live Raid", "53"),
@@ -701,7 +699,8 @@ object KindNames {
             EncryptionKeyListEvent.KIND to KindName("Encryption Keys", null),
             EncryptionKeyRequestEvent.KIND to KindName("Encryption Key Request", null),
             EncryptionKeyTransferEvent.KIND to KindName("Encryption Key Transfer", null),
-            KeyPackageRelayListEvent.KIND to KindName("MLS KeyPackage Relays", null),
+            // Marmot (vitorpamplona/marmot-kmp): KeyPackageRelayListEvent
+            10051 to KindName("MLS KeyPackage Relays", null),
             FavoriteAlgoFeedsListEvent.KIND to KindName("Favorite Feeds", "51"),
             FavoriteFollowSetsListEvent.KIND to KindName("Favorite Follow Sets", "51"),
             GoodWikiAuthorListEvent.KIND to KindName("Wiki Authors", "51"),
@@ -751,7 +750,8 @@ object KindNames {
             AddressableListHeaderEvent.KIND to KindName("Editable Decentralized List", null),
             ListItemEvent.KIND to KindName("Decentralized List Item", null),
             AddressableListItemEvent.KIND to KindName("Editable Decentralized List Item", null),
-            KeyPackageEvent.KIND to KindName("MLS KeyPackage", null),
+            // Marmot (vitorpamplona/marmot-kmp): KeyPackageEvent
+            30443 to KindName("MLS KeyPackage", null),
             GitRepositoryStateEvent.KIND to KindName("Git Repo State", "34"),
             FeedDefinitionEvent.KIND to KindName("Feed Definition", null),
             SoftwareApplicationEvent.KIND to KindName("Software Application", "82"),

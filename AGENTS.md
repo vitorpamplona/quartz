@@ -4,9 +4,12 @@ Quartz is the Nostr protocol library behind [Amethyst](https://github.com/vitorp
 a Kotlin Multiplatform library for JVM, Android, iOS, macOS and Linux, published to Maven Central
 as `com.vitorpamplona.quartz:quartz`. It holds implementations of Nostr specifications and the
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
-them: `marmot/` (MLS over Nostr, `mipXX`), `cordn/` (MLS over an MCP coordinator, `specXX`),
-`contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
-NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`. A new protocol over Nostr belongs here as a package.
+them: `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
+NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`. A new protocol over Nostr belongs here as a package, unless it
+brings a heavy engine most clients won't use: the two MLS bindings left for their own libraries,
+[marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot, MLS over Nostr) and
+[cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (MLS over an MCP coordinator), so Quartz
+carries no MLS engine. Both depend on Quartz; Quartz must never depend on them.
 
 The code lived in the Amethyst repo until it moved here, the same way the crypto primitives moved
 to [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp). Amethyst, its desktop app, the `amy`
@@ -28,8 +31,7 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
     it into their own skills folder; it isn't loaded here). Update it, and `quartz/CLIENT.md`,
     when the public API changes, and compile any code you add to either.
   - `quartz/plans/`: design docs, `YYYY-MM-DD-<slug>.md`; finished ones go to `plans/archive/`.
-  - `quartz/tools/`: test-vector generators (cordn, mdk); `quartz/interop/`,
-    `quartz/benchmarks/`: interop and native benchmark scripts.
+  - `quartz/benchmarks/`: native benchmark scripts.
 - `quartz/src/jvmAndroidTest/kotlin/com/vitorpamplona/quartz/testing/`: the in-process test
   relay (`TestRelay`, `InProcessRelays`, `RelayClientTest`, `SyntheticEvents`, `preload`,
   `collectUntilEose`). Relay-client tests run against it, with no socket and no network.
@@ -38,9 +40,11 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
   source sets). Amethyst keeps the same file for `commons`/`commonsUI`: change both.
 
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
-crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`); secp256k1 stays here. MLS is
-vitorpamplona/mls-kmp (`libs.mls.kmp`). To change either alongside quartz, build a local checkout:
-`./gradlew -PcryptoKmpDir=../crypto-kmp -PmlsKmpDir=../mls-kmp :quartz:jvmTest`.
+crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`); secp256k1 stays here. To change it
+alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest`.
+
+A library that defines its own event kinds (marmot-kmp does) registers an `EventBuilder` per kind
+in `EventFactory.factories` instead of adding a branch to `EventFactory`, so Quartz never imports it.
 
 ## Rules
 

@@ -4,7 +4,7 @@
 (NIP-CAP capabilities, NIP-EXT extension packages, and the shared contracts
 they rest on). These are OpenAgents' own draft kind assignments, not upstream
 NIPs, which is why they live here as a family rather than as `nipXX`
-packages — the same reason `contextvm/` and `marmot/` do. Sub-packages are
+packages — the same reason `contextvm/` and `concord/` do. Sub-packages are
 named after the OpenAgents NIP mnemonic, the way `nip85TrustedAssertions` is
 after its number.
 
