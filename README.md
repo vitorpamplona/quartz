@@ -41,9 +41,10 @@ targets: [
 ]
 ```
 
-Kotlin reaches Swift through Objective-C, so a few names change: top-level and extension functions
-sit on a class named after their file (`HexKeyKt.toHexKey(bytes)`), default arguments must be
-passed explicitly, and `suspend` functions become `async`. The Swift package starts with the first
+Kotlin reaches Swift through Objective-C, so a few names change: an extension on a Kotlin class
+becomes a method (`keyPair.pubKey.toHexKey()`), top-level functions and extensions on `String`
+or numbers sit on a class named after their file (`HexKeyKt.hexToByteArray("…")`), default
+arguments must be passed explicitly, and `suspend` functions become `async`. The Swift package starts with the first
 release after 2.3.0.
 
 ### Snapshots (JitPack)
