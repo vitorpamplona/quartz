@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Whether ContextVM messages must be encrypted.
@@ -65,7 +66,8 @@ enum class GiftWrapMode {
 /** Thrown when a gift wrap cannot be produced or trusted. */
 class CvmEncryptionException(
     message: String,
-) : IllegalStateException(message)
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
 
 /**
  * CEP-4 and CEP-19 message encryption.
@@ -206,15 +208,17 @@ class CvmGiftWrap(
         val json =
             try {
                 signer.nip44Decrypt(giftWrap.content, giftWrap.pubKey)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                throw CvmEncryptionException("could not decrypt gift wrap: ${e.message}")
+                throw CvmEncryptionException("could not decrypt gift wrap: ${e.message}", e)
             }
 
         val inner =
             try {
                 OptimizedJsonMapper.fromJson(json)
             } catch (e: Exception) {
-                throw CvmEncryptionException("gift wrap did not contain an event: ${e.message}")
+                throw CvmEncryptionException("gift wrap did not contain an event: ${e.message}", e)
             }
 
         if (!inner.verify()) {
