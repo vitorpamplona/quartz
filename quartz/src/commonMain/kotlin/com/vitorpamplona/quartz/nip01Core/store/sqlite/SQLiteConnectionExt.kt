@@ -83,10 +83,20 @@ inline fun <T> SQLiteConnection.transaction(body: SQLiteConnection.() -> T): T {
         }
         throw e
     }
-    // Commit is intentionally outside the catch: if COMMIT fails SQLite
-    // has already finalized the transaction state, so we must not also
-    // try to ROLLBACK on top of it.
-    execSQL("END TRANSACTION")
+    // A failed COMMIT does not always end the transaction: SQLITE_BUSY and
+    // a deferred constraint leave it open, and a writer connection left
+    // inside it fails every later BEGIN. SQLite's advice is an explicit
+    // ROLLBACK, which errors harmlessly when the failure already rolled back.
+    try {
+        execSQL("END TRANSACTION")
+    } catch (e: Throwable) {
+        try {
+            execSQL("ROLLBACK TRANSACTION")
+        } catch (rollbackError: Throwable) {
+            e.addSuppressed(rollbackError)
+        }
+        throw e
+    }
     return result
 }
 
