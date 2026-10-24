@@ -799,7 +799,7 @@ class SQLiteEventStore(
                     // delta-free (see newDeltaOrNull).
                     val scan = queryBuilder.snapshotIdsForNegentropy(listOf(Filter()), db, maxEntries)
                     if (scan.size <= maxEntries) {
-                        index.rebuild(scan)
+                        index.rebuild(scan, maxEntries)
                     }
                 }
             }

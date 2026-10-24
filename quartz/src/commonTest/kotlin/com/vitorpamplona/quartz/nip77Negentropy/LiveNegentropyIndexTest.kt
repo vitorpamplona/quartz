@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.utils.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
@@ -44,6 +45,20 @@ class LiveNegentropyIndexTest {
     private fun IStorage.toEntries(): List<IdAndTime> = map { IdAndTime(it.timestamp, it.id.toHexString()) }
 
     private fun contentOf(index: LiveNegentropyIndex): List<IdAndTime> = assertNotNull(index.sealedSnapshot(Int.MAX_VALUE)).toEntries()
+
+    @Test
+    fun growingPastTheRebuildCapDropsTheIndex() {
+        // An index built under a serve cap can never answer once it outgrows it,
+        // so maintaining it past the cap would only cost heap and write-path work.
+        val index = LiveNegentropyIndex()
+        index.rebuild(listOf(entry(10), entry(20)), maxEntries = 3)
+        index.insert(entry(30))
+        assertTrue(index.isPopulated())
+
+        index.insert(entry(40))
+        assertFalse(index.isPopulated())
+        assertEquals(0, index.size())
+    }
 
     @Test
     fun answersNothingUntilRebuilt() {
