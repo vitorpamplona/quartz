@@ -342,12 +342,16 @@ suspend fun INostrClient.publishAndCollectResults(
                                         // about. A no-op when the relay is still there, which is
                                         // the ordinary case.
                                         ensureInPool(result.relay)
-                                        // Ignore the accumulated backoff — this is a user-visible
-                                        // publish waiting on it, not a background refresh.
-                                        resetBackoff()
-                                        // Only redials what is down: a full reconnect would tear down
-                                        // every healthy socket in the pool for one relay's hang-up.
-                                        reconnect(onlyIfChanged = true, ignoreRetryDelays = true)
+                                        // Forgive this relay's accumulated backoff — this is a
+                                        // user-visible publish waiting on it, not a background
+                                        // refresh. Only this relay's: every other relay keeps its
+                                        // wait, so one hang-up never wakes the relays the pool
+                                        // parked (an unresolvable host waits minutes).
+                                        resetBackoff(result.relay)
+                                        // Only redials what is down and due: a full reconnect would
+                                        // tear down every healthy socket in the pool, and ignoring
+                                        // retry delays would dial every parked relay too.
+                                        reconnect(onlyIfChanged = true)
                                     }
 
                                     if (untilFirstAccept && receivedResults[result.relay]?.accepted == true) break

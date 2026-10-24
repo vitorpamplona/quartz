@@ -36,7 +36,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
@@ -109,6 +112,60 @@ class PublishRetriesTransportFailureTest {
             }
         }
     }
+
+    /**
+     * The retry used to clear the backoff of every relay in the pool and redial
+     * them all, so one relay hanging up mid-publish woke every relay the pool had
+     * parked, including the ones held off for minutes (unresolvable hosts).
+     */
+    @Test
+    fun aRetryRedialsOnlyTheRelayThatHungUp() =
+        runBlocking {
+            val parked = RelayUrlNormalizer.normalizeOrNull("wss://gone.example.com/")!!
+            val parkedDials = AtomicInteger(0)
+            val hangsUp = HangsUpOnFirstEvent(hub, dropFirstConnections = 1)
+            val builder =
+                object : WebsocketBuilder {
+                    override fun build(
+                        url: NormalizedRelayUrl,
+                        out: WebSocketListener,
+                    ): WebSocket {
+                        if (url != parked) return hangsUp.build(url, out)
+                        return object : WebSocket {
+                            override fun needsReconnect() = false
+
+                            override fun connect() {
+                                parkedDials.incrementAndGet()
+                                // Name resolution failed: the pool parks the relay for minutes.
+                                out.onFailure(UnknownHostException("gone.example.com"), null, null)
+                            }
+
+                            override fun disconnect() {}
+
+                            override fun send(msg: String) = false
+                        }
+                    }
+                }
+            val client = NostrClient(builder, scope)
+            client.keepConnected(parked)
+            withTimeout(5_000) { while (parkedDials.get() == 0) delay(20) }
+            delay(500)
+            val dialsBefore = parkedDials.get()
+
+            val event = NostrSignerInternal(KeyPair()).sign(TextNoteEvent.build("one relay hangs up"))
+            val results =
+                client.publishAndCollectResults(
+                    event = event,
+                    relayList = setOf(InProcessRelays.DEFAULT_URL),
+                    timeoutInSeconds = 20,
+                )
+            assertTrue(results.values.single().accepted)
+            assertTrue(hangsUp.eventFramesSeen.get() >= 2, "the hung-up relay is retried")
+            delay(500)
+
+            assertEquals(dialsBefore, parkedDials.get(), "the parked relay keeps its backoff")
+            client.disconnect()
+        }
 
     @Test
     fun aDisconnectBeforeTheOkIsRetriedAndSucceeds() =
