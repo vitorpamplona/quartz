@@ -442,7 +442,7 @@ class LiveEventStore(
         }
 
         val generation = writeGeneration.load()
-        val key = filters.joinToString(" ") { it.toJson() } + " cap=$maxEntries"
+        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries"
         val now = TimeUtils.now()
 
         val cached = snapshotCache.load()
