@@ -53,6 +53,34 @@ class Nip30Test {
         )
     }
 
+    private fun rendered(list: List<CustomEmoji.Renderable>) =
+        list.map {
+            when (it) {
+                is CustomEmoji.TextType -> it.text
+                is CustomEmoji.ImageUrlType -> "img:${it.url}"
+                else -> error("unexpected $it")
+            }
+        }
+
+    @Test()
+    fun unknownShortcodeStaysAsText() {
+        val tags = mapOf(":wave:" to "http://wave")
+
+        val result = CustomEmoji.assembleAnnotatedList("a :nope: b :wave:", tags)
+
+        assertEquals(listOf("a ", ":nope:", " b ", "img:http://wave"), rendered(result!!))
+    }
+
+    @Test()
+    fun timeBeforeAnEmojiKeepsItsDigits() {
+        val tags = mapOf(":wave:" to "http://wave")
+
+        val result = CustomEmoji.assembleAnnotatedList("at 10:30:00 :wave:", tags)
+
+        assertEquals("at 10:30:00 ", rendered(result!!).dropLast(1).joinToString(""))
+        assertEquals("img:http://wave", rendered(result).last())
+    }
+
     @Test()
     fun parseEmojiInverted() {
         val tags = mapOf(":soapbox:" to "http://soapbox")

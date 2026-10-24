@@ -100,9 +100,9 @@ class CustomEmoji {
                     if (url != null) {
                         finalList.add(ImageUrlType(url))
                     } else {
-                        if (word.isNotEmpty()) {
-                            finalList.add(TextType(word))
-                        }
+                        // Not one of the event's emojis (an unknown shortcode, or a time like
+                        // 10:30:00): keep the `:code:` itself as text.
+                        finalList.add(TextType(emojiNamesInOrder[index]))
                     }
                 }
                 index++
