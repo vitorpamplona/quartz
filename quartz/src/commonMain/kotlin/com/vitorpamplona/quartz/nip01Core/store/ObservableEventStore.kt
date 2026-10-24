@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.store
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isEphemeral
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -184,6 +185,21 @@ class ObservableEventStore(
         filters: List<Filter>,
         onEach: (T) -> Unit,
     ) = inner.query(filters, onEach)
+
+    // Reads and index maintenance: forwarded so the inner store's own implementations run
+    // (the interface defaults decode every row, and report no deferred FTS backlog, which
+    // would leave new events out of NIP-50 search). None of them changes an event, so none
+    // emits a [StoreChange].
+    override suspend fun rawQuery(
+        filters: List<Filter>,
+        onEach: (RawEvent) -> Unit,
+    ) = inner.rawQuery(filters, onEach)
+
+    override suspend fun authorsMissingOutbox(): List<HexKey> = inner.authorsMissingOutbox()
+
+    override val needsFtsCatchUp: Boolean get() = inner.needsFtsCatchUp
+
+    override suspend fun ftsCatchUp(batchSize: Int): Boolean = inner.ftsCatchUp(batchSize)
 
     override suspend fun count(filter: Filter): Int = inner.count(filter)
 

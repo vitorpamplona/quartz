@@ -20,12 +20,15 @@
  */
 package com.vitorpamplona.quartz.nip01Core.cache.interning
 
+import com.vitorpamplona.negentropy.storage.IStorage
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.FtsReindexProgress
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
+import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 
 /**
  * Decorator that canonicalises every [Event] returned by the inner
@@ -91,6 +94,16 @@ class InterningEventStore(
         for (e in accepted) interner.intern(e)
     }
 
+    // Forwarded so the inner store's group commit and outcome classification apply: the
+    // interface default inserts one transaction per event and reports every refusal as Failed.
+    override suspend fun batchInsert(events: List<Event>): List<IEventStore.InsertOutcome> {
+        val outcomes = inner.batchInsert(events)
+        outcomes.forEachIndexed { i, outcome ->
+            if (outcome == IEventStore.InsertOutcome.Accepted) interner.intern(events[i])
+        }
+        return outcomes
+    }
+
     @Suppress("UNCHECKED_CAST")
     override suspend fun <T : Event> query(filter: Filter): List<T> = inner.query<T>(filter).map { interner.intern(it) as T }
 
@@ -109,6 +122,12 @@ class InterningEventStore(
         onEach: (T) -> Unit,
     ) = inner.query<T>(filters) { onEach(interner.intern(it) as T) }
 
+    // Storage-form rows never become Events, so there is nothing to intern.
+    override suspend fun rawQuery(
+        filters: List<Filter>,
+        onEach: (RawEvent) -> Unit,
+    ) = inner.rawQuery(filters, onEach)
+
     override suspend fun count(filter: Filter): Int = inner.count(filter)
 
     override suspend fun count(filters: List<Filter>): Int = inner.count(filters)
@@ -118,6 +137,14 @@ class InterningEventStore(
         maxEntries: Int?,
         onProgress: ((collected: Int) -> Unit)?,
     ): List<IdAndTime> = inner.snapshotIdsForNegentropy(filters, maxEntries, onProgress)
+
+    override suspend fun authorsMissingOutbox(): List<HexKey> = inner.authorsMissingOutbox()
+
+    override suspend fun liveNegentropySnapshot(maxEntries: Int): IStorage? = inner.liveNegentropySnapshot(maxEntries)
+
+    override val needsFtsCatchUp: Boolean get() = inner.needsFtsCatchUp
+
+    override suspend fun ftsCatchUp(batchSize: Int): Boolean = inner.ftsCatchUp(batchSize)
 
     override suspend fun delete(filter: Filter) = inner.delete(filter)
 
