@@ -397,7 +397,7 @@ mavenPublishing {
 
     pom {
         name = "Quartz: Nostr Library for Kotlin Multiplatform"
-        description = "Nostr library ported to Kotlin/Multiplatform for JVM, Android, iOS & Linux"
+        description = "Nostr protocol library for Kotlin Multiplatform: JVM, Android, iOS, macOS and Linux"
         inceptionYear = "2025"
         url = "https://github.com/vitorpamplona/quartz/"
         licenses {
@@ -410,13 +410,18 @@ mavenPublishing {
             developer {
                 id = "vitorpamplona"
                 name = "Vitor Pamplona"
-                url = "http://vitorpamplona.com"
+                url = "https://vitorpamplona.com"
                 email = "vitor@vitorpamplona.com"
             }
         }
         scm {
             url = "https://github.com/vitorpamplona/quartz/"
-            connection = "https://github.com/vitorpamplona/quartz.git"
+            connection = "scm:git:https://github.com/vitorpamplona/quartz.git"
+            developerConnection = "scm:git:ssh://git@github.com/vitorpamplona/quartz.git"
+        }
+        issueManagement {
+            system = "GitHub"
+            url = "https://github.com/vitorpamplona/quartz/issues"
         }
     }
 }
