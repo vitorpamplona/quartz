@@ -56,14 +56,15 @@ interface RemoteCalendar {
     ): Timestamp
 }
 
+/** A calendar for resolvers that cannot reach an OpenTimestamps calendar server: every call fails. */
 object EmptyRemoteCalendar : RemoteCalendar {
     override suspend fun submit(
         url: String,
         digest: ByteArray,
-    ) = TODO("Not yet implemented")
+    ): Timestamp = throw UnsupportedOperationException("No OpenTimestamps calendar configured")
 
     override suspend fun getTimestamp(
         url: String,
         commitment: ByteArray,
-    ) = TODO("Not yet implemented")
+    ): Timestamp = throw UnsupportedOperationException("No OpenTimestamps calendar configured")
 }

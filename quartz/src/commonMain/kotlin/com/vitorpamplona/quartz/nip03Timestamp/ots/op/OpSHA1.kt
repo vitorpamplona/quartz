@@ -44,14 +44,12 @@ class OpSHA1 : OpCrypto() {
 
     public override fun digestLength(): Int = 20
 
-    override fun call(msg: ByteArray): ByteArray = super.call(msg)
-
     companion object {
         val TAG: Byte = 0x02
 
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpCrypto.deserializeFromTag(ctx, tag)
+        ): Op = OpCrypto.deserializeFromTag(ctx, tag)
     }
 }

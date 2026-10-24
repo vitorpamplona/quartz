@@ -54,7 +54,16 @@ class OtsEvent(
 
     fun otsByteArray(): ByteArray = decodeOtsState(content)
 
-    suspend fun verifyState(resolver: OtsResolver): VerificationState = digestEventId()?.let { verify(otsByteArray(), it, resolver) } ?: VerificationState.Error("Digest Not found")
+    suspend fun verifyState(resolver: OtsResolver): VerificationState {
+        val digest = digestEventId() ?: return VerificationState.Error("Digest Not found")
+        val otsState =
+            try {
+                otsByteArray()
+            } catch (e: IllegalArgumentException) {
+                return VerificationState.Error("OTS content is not Base64: " + e.message)
+            }
+        return verify(otsState, digest, resolver)
+    }
 
     suspend fun verify(resolver: OtsResolver): Long? = (verifyState(resolver) as? VerificationState.Verified)?.verifiedTime
 

@@ -21,7 +21,7 @@
 package com.vitorpamplona.quartz.nip03Timestamp.ots.op
 
 import com.vitorpamplona.quartz.nip03Timestamp.ots.StreamDeserializationContext
-import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.nip03Timestamp.ots.exceptions.DeserializationException
 
 /**
  * Operations that act on a single message.
@@ -37,7 +37,7 @@ abstract class OpUnary : Op() {
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? =
+        ): Op =
             when (tag) {
                 OpSHA1.TAG -> {
                     OpSHA1()
@@ -56,9 +56,7 @@ abstract class OpUnary : Op() {
                 }
 
                 else -> {
-                    Log.e("OpenTimestamp") { "Unknown operation tag: $tag" }
-
-                    null // TODO: Is this OK? Won't it blow up later? Better to throw?
+                    throw DeserializationException("Unknown operation tag: 0x" + tag.toHexString())
                 }
             }
     }

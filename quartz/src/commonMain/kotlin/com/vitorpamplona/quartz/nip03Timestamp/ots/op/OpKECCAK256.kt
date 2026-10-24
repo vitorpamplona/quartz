@@ -41,7 +41,7 @@ class OpKECCAK256 : OpCrypto() {
 
     override fun digestLength(): Int = digest.getDigestSize()
 
-    override fun call(msg: ByteArray): ByteArray {
+    override fun doCall(msg: ByteArray): ByteArray {
         digest.update(msg, 0, msg.size)
         val hash = ByteArray(digest.getDigestSize())
         digest.doFinal(hash, 0)
@@ -55,6 +55,6 @@ class OpKECCAK256 : OpCrypto() {
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpCrypto.deserializeFromTag(ctx, tag)
+        ): Op = OpCrypto.deserializeFromTag(ctx, tag)
     }
 }

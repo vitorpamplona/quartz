@@ -40,8 +40,9 @@ interface BitcoinExplorer {
     suspend fun blockHash(height: Int): String
 }
 
+/** An explorer for resolvers that cannot reach the Bitcoin chain: every lookup fails. */
 object EmptyBitcoinExplorer : BitcoinExplorer {
-    override suspend fun block(hash: String) = TODO("Not yet implemented")
+    override suspend fun block(hash: String): BlockHeader = throw UnsupportedOperationException("No Bitcoin explorer configured")
 
-    override suspend fun blockHash(height: Int) = TODO("Not yet implemented")
+    override suspend fun blockHash(height: Int): String = throw UnsupportedOperationException("No Bitcoin explorer configured")
 }

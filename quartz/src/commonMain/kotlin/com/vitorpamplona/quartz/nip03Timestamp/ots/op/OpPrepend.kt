@@ -35,7 +35,7 @@ class OpPrepend(
 
     override fun tagName(): String = "prepend"
 
-    public override fun call(msg: ByteArray): ByteArray = this.arg + msg
+    override fun doCall(msg: ByteArray): ByteArray = this.arg + msg
 
     companion object {
         val TAG: Byte = 0xf1.toByte()
@@ -44,6 +44,6 @@ class OpPrepend(
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpBinary.deserializeFromTag(ctx, tag)
+        ): Op = OpBinary.deserializeFromTag(ctx, tag)
     }
 }

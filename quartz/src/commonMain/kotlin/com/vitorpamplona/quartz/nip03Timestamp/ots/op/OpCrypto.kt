@@ -36,7 +36,7 @@ abstract class OpCrypto internal constructor() : OpUnary() {
 
     abstract fun digestLength(): Int
 
-    override fun call(msg: ByteArray): ByteArray {
+    override fun doCall(msg: ByteArray): ByteArray {
         // For Sha1 & Sha256 use java.security.MessageDigest library
         val digest = DigestInstance(this.hashLibName())
         val hash = digest.digest(msg)
@@ -76,6 +76,6 @@ abstract class OpCrypto internal constructor() : OpUnary() {
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpUnary.deserializeFromTag(ctx, tag)
+        ): Op = OpUnary.deserializeFromTag(ctx, tag)
     }
 }

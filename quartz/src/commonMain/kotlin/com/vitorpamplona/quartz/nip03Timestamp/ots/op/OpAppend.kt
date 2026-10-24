@@ -35,7 +35,7 @@ class OpAppend(
 
     override fun tagName(): String = "append"
 
-    public override fun call(msg: ByteArray): ByteArray = msg + this.arg
+    override fun doCall(msg: ByteArray): ByteArray = msg + this.arg
 
     companion object {
         val TAG: Byte = 0xf0.toByte()
@@ -44,6 +44,6 @@ class OpAppend(
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpBinary.deserializeFromTag(ctx, tag)
+        ): Op = OpBinary.deserializeFromTag(ctx, tag)
     }
 }

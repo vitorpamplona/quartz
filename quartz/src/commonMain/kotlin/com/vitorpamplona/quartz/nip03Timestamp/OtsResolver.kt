@@ -103,7 +103,17 @@ class OtsResolver(
     suspend fun verify(
         otsFile: ByteArray,
         data: ByteArray,
-    ): VerificationState = verify(DetachedTimestampFile.deserialize(otsFile), data)
+    ): VerificationState {
+        // The file usually comes from a relay: a malformed one is a failed verification, not a crash.
+        val detachedOts =
+            try {
+                DetachedTimestampFile.deserialize(otsFile)
+            } catch (e: Exception) {
+                Log.w("OpenTimeStamps", "Invalid OTS file", e)
+                return VerificationState.Error("Invalid OTS file: " + (e.message ?: e::class.simpleName))
+            }
+        return verify(detachedOts, data)
+    }
 
     /**
      * Verifies an OpenTimestamps proof against the original data.

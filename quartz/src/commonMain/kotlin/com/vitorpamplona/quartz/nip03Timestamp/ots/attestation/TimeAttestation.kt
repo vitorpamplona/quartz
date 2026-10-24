@@ -43,19 +43,22 @@ abstract class TimeAttestation : Comparable<TimeAttestation> {
         ctx.writeVarbytes(ctxPayload.output)
     }
 
-    open fun serializePayload(ctx: StreamSerializationContext) {
-        // TODO: Is this intentional?
-    }
+    /** Writes the attestation's payload; an attestation that carries none writes nothing. */
+    open fun serializePayload(ctx: StreamSerializationContext) {}
 
-    override fun compareTo(other: TimeAttestation): Int {
+    /** Orders by tag first, then by [compareSameTag], so attestations of different types never meet in a cast. */
+    final override fun compareTo(other: TimeAttestation): Int {
         val deltaTag = Utils.compare(this.tag(), other.tag())
 
         return if (deltaTag == 0) {
-            this.compareTo(other)
+            compareSameTag(other)
         } else {
             deltaTag
         }
     }
+
+    /** Compares with an attestation that has the same tag, and so the same type. */
+    protected abstract fun compareSameTag(other: TimeAttestation): Int
 
     companion object {
         const val TAG_SIZE: Int = 8
