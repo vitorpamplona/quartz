@@ -62,8 +62,9 @@ data class ChessGameChallenge(
         }
     }
 
-    // Legacy compatibility - gameId is now derived from start event ID after signing
-    @Deprecated("gameId is determined after event creation", ReplaceWith("startEventId"))
+    // Legacy compatibility - gameId is now derived from start event ID after signing.
+    // A challenge has no start event id yet: the getter returns the nonce, and so does the quick-fix.
+    @Deprecated("gameId is determined after event creation; this returns the challenge nonce", ReplaceWith("nonce"))
     val gameId: String get() = nonce
 }
 
