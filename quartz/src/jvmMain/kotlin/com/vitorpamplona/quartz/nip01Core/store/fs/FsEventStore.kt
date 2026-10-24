@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.FtsReindexProgress
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
+import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.DefaultIndexingStrategy
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.IndexingStrategy
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.TagNameValueHasher
@@ -40,6 +41,7 @@ import com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 import com.vitorpamplona.quartz.utils.EventFactory
 import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlinx.coroutines.CancellationException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -103,15 +105,40 @@ open class FsEventStore(
     // Insert
     // ------------------------------------------------------------------
 
-    override suspend fun insert(event: Event) =
+    /**
+     * Writes [event]. A refused event (expired, deleted, vanished,
+     * outranked by a stored replaceable, or already stored) is dropped
+     * without an error; [batchInsert] says which of these happened.
+     */
+    override suspend fun insert(event: Event) {
         lockManager.withWriteLock {
             insertLocked(event)
         }
+    }
 
-    private fun insertLocked(event: Event) {
-        if (event.kind.isEphemeral()) return
-        if (isAlreadyExpired(event)) return
-        if (isBlockedByTombstone(event)) return
+    /**
+     * Writes each event in order under one write lock and reports what
+     * happened to it with the same outcomes as `SQLiteEventStore`: a relay
+     * turns them into OK frames and fans out only the accepted ones.
+     */
+    override suspend fun batchInsert(events: List<Event>): List<IEventStore.InsertOutcome> =
+        lockManager.withWriteLock {
+            events.map { event ->
+                try {
+                    insertLocked(event)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    IEventStore.InsertOutcome.Failed(e.message ?: e::class.simpleName ?: RejectionReason.INSERT_FAILED)
+                }
+            }
+        }
+
+    private fun insertLocked(event: Event): IEventStore.InsertOutcome {
+        // Ephemeral events are accepted but never stored (NIP-01), as in SQLite.
+        if (event.kind.isEphemeral()) return IEventStore.InsertOutcome.Accepted
+        if (isAlreadyExpired(event)) return IEventStore.InsertOutcome.Rejected(RejectionReason.EXPIRED)
+        tombstoneRejection(event)?.let { return IEventStore.InsertOutcome.Rejected(it) }
 
         val slot = slots.slotPathFor(event)
         val existingSlot = slot?.let { slots.readSlot(it) }
@@ -125,7 +152,11 @@ open class FsEventStore(
             // (later createdAt, or same createdAt with the lexically smaller
             // id). Matches the ReplaceableModule / AddressableModule trigger
             // condition in SQLite.
-            return
+            return if (existingSlot.id == event.id) {
+                IEventStore.InsertOutcome.Rejected(RejectionReason.DUPLICATE)
+            } else {
+                IEventStore.InsertOutcome.Rejected(RejectionReason.REPLACED)
+            }
         }
 
         val canonical = layout.canonical(event.id)
@@ -138,7 +169,7 @@ open class FsEventStore(
             }
             if (event is DeletionRequestEvent) processDeletion(event, canonical)
             if (event is RequestToVanishEvent) processVanish(event, canonical)
-            return
+            return IEventStore.InsertOutcome.Rejected(RejectionReason.DUPLICATE)
         }
 
         Files.createDirectories(canonical.parent)
@@ -151,7 +182,7 @@ open class FsEventStore(
                 // A concurrent writer won the race. Canonical is immutable
                 // so the other copy is equivalent — drop our tmp and return.
                 Files.deleteIfExists(tmp)
-                return
+                return IEventStore.InsertOutcome.Rejected(RejectionReason.DUPLICATE)
             }
             Files.setLastModifiedTime(canonical, FileTime.from(event.createdAt, TimeUnit.SECONDS))
             indexer.link(event, canonical)
@@ -164,6 +195,7 @@ open class FsEventStore(
             Files.deleteIfExists(tmp)
             throw t
         }
+        return IEventStore.InsertOutcome.Accepted
     }
 
     /**
@@ -195,24 +227,24 @@ open class FsEventStore(
      * owner_hash`. Addr tombstones additionally enforce the
      * `event.createdAt <= cutoff` window.
      */
-    private fun isBlockedByTombstone(event: Event): Boolean {
+    private fun tombstoneRejection(event: Event): String? {
         val ownerPubKey = indexer.ownerPubKey(event)
         val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
-        if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return true
+        if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return RejectionReason.DELETED
         if (event is AddressableEvent && event.kind.isAddressable()) {
             val cutoff = tombstones.addrTombstoneCutoff(event.kind, event.pubKey, event.dTag())
-            if (cutoff != null && event.createdAt <= cutoff) return true
+            if (cutoff != null && event.createdAt <= cutoff) return RejectionReason.DELETED
         }
         if (event.kind.isReplaceable()) {
             val cutoff = tombstones.addrTombstoneCutoff(event.kind, event.pubKey, "")
-            if (cutoff != null && event.createdAt <= cutoff) return true
+            if (cutoff != null && event.createdAt <= cutoff) return RejectionReason.DELETED
         }
         // NIP-62: any event whose owner has an active vanish request with
         // createdAt >= event.createdAt is rejected. Owner is the recipient
         // for GiftWrap, matching SQLite's `pubkey_owner_hash`.
         val vanishCutoff = tombstones.vanishCutoff(indexer.ownerHash(event))
-        if (vanishCutoff != null && event.createdAt <= vanishCutoff) return true
-        return false
+        if (vanishCutoff != null && event.createdAt <= vanishCutoff) return RejectionReason.VANISHED
+        return null
     }
 
     /**
@@ -271,7 +303,9 @@ open class FsEventStore(
         lockManager.withWriteLock {
             val txn =
                 object : IEventStore.ITransaction {
-                    override fun insert(event: Event) = insertLocked(event)
+                    override fun insert(event: Event) {
+                        insertLocked(event)
+                    }
                 }
             txn.body()
         }
