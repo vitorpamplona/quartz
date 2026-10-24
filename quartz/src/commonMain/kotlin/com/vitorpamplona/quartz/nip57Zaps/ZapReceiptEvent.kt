@@ -128,17 +128,13 @@ class ZapReceiptEvent(
     /** NIP-57's uppercase `P`: the zap sender, as the zap service copied it from the request. */
     fun zapSender(): HexKey? = tags.firstNotNullOfOrNull(ZapSenderTag::parseKey)
 
+    // A malformed option is someone else's bad data, not an error worth a log line per receipt.
     override fun zappedPollOption(): Int? =
-        try {
-            zapRequest
-                ?.tags
-                ?.firstOrNull { it.size > 1 && it[0] == PollOptionTag.TAG_NAME }
-                ?.get(1)
-                ?.toInt()
-        } catch (e: Exception) {
-            Log.e("ZapReceiptEvent", "ZappedPollOption failed to parse", e)
-            null
-        }
+        zapRequest
+            ?.tags
+            ?.firstOrNull { it.size > 1 && it[0] == PollOptionTag.TAG_NAME }
+            ?.get(1)
+            ?.toIntOrNull()
 
     /** The embedded request's author: the sender, or the throwaway key of an anonymous/private zap. Null when not a valid key. */
     override fun zappedRequestAuthor(): String? = zapRequest?.pubKey?.takeIf { it.length == 64 && Hex.isHex64(it) }
