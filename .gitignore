@@ -13,3 +13,9 @@ local.properties
 captures
 .externalNativeBuild
 .cxx
+
+# Swift smoke test: CI copies a built framework in; SwiftPM build output.
+swift/QuartzKitSmoke/QuartzKit.xcframework
+swift/QuartzKitSmoke/.build
+.build
+.swiftpm

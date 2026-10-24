@@ -24,8 +24,27 @@ dependencies {
 |---|---|
 | JVM | Java 17 |
 | Android | minSdk 26 |
-| Apple | iosArm64, iosSimulatorArm64, macosArm64 |
+| Apple | iosArm64, iosSimulatorArm64, macosArm64 (Kotlin), iOS 15 / macOS 12 (Swift) |
 | Linux | linuxX64 |
+
+### Swift Package Manager
+
+Swift apps get Quartz as the `QuartzKit` framework. In Xcode, use File > Add Package
+Dependencies and enter `https://github.com/vitorpamplona/quartz`, or add it to `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/vitorpamplona/quartz", from: "<version>"),
+],
+targets: [
+    .target(name: "MyApp", dependencies: [.product(name: "QuartzKit", package: "quartz")]),
+]
+```
+
+Kotlin reaches Swift through Objective-C, so a few names change: top-level and extension functions
+sit on a class named after their file (`HexKeyKt.toHexKey(bytes)`), default arguments must be
+passed explicitly, and `suspend` functions become `async`. The Swift package starts with the first
+release after 2.3.0.
 
 ### Snapshots (JitPack)
 

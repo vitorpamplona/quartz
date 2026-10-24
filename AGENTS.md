@@ -146,7 +146,12 @@ Both agents read the same rules, skills and checks, laid out like Amethyst's:
 
 ## Releasing
 
-Bump `VERSION_NAME` in `gradle.properties`, then push a `v<version>` tag. The `create-release.yml`
-workflow runs the Apple tests on macOS, then the checks, publishes to Maven Central and opens the
-GitHub release. It needs `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and
-`SIGNING_PASSWORD`, the same secrets as crypto-kmp and quic-kmp.
+Run the `Release` workflow (`release.yml`) from the Actions tab on `main`, with the version.
+Don't bump `VERSION_NAME` or push a tag by hand: Swift Package Manager reads `Package.swift` at
+the tag, so it must already name that release's `QuartzKit.xcframework.zip` and checksum. The
+workflow runs the checks and the Apple tests, builds the XCFramework on macOS, commits
+`VERSION_NAME` and `Package.swift` with `tools/release/prepare-release.sh`, tags `v<version>`,
+pushes both to `main`, opens the GitHub release with the zip and publishes to Maven Central.
+GitHub Actions must be allowed to push to `main`. If only the `maven` job fails, re-run it: it
+publishes from the tag. It needs `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY`
+and `SIGNING_PASSWORD`, the same secrets as crypto-kmp and quic-kmp.

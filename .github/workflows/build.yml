@@ -133,7 +133,7 @@ jobs:
   test-apple:
     needs: build
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -166,6 +166,17 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
             :quartz:iosSimulatorArm64Test \
             :quartz:compileTestKotlinIosArm64
+
+      # Swift Package Manager users get QuartzKit.xcframework (see Package.swift). Build its debug
+      # variant (the release one is an optimized link that takes many minutes here) and run a
+      # Swift program against it, so a framework Swift can't import or call fails the PR.
+      - name: Swift smoke test
+        run: |
+          ./gradlew \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            :quartz:assembleQuartzKitDebugXCFramework
+          cp -R quartz/build/XCFrameworks/debug/QuartzKit.xcframework swift/QuartzKitSmoke/
+          swift run --package-path swift/QuartzKitSmoke
 
       - name: iOS Test Report
         uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
