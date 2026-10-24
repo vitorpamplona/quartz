@@ -225,6 +225,9 @@ class NostrClient(
         refreshConnection
             .debounce(200)
             .onEach {
+                // A reconnect requested just before disconnect() lands after it: dialing then
+                // would reopen every relay of a client the host just put down.
+                if (!isActive()) return@onEach
                 if (it.onlyIfChanged) {
                     relayPool.reconnectIfNeedsTo(it.ignoreRetryDelays)
                 } else {
