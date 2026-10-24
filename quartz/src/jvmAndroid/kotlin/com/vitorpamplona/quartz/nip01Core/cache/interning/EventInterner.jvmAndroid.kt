@@ -22,20 +22,40 @@ package com.vitorpamplona.quartz.nip01Core.cache.interning
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * JVM/Android actual: ConcurrentHashMap of WeakReference, pre-sized
- * for the expected hot working set. Dead entries are reclaimed
- * lazily on access (see [intern] and [get]) — when a weak ref's
- * referent has been GC'd, the map slot is removed atomically and
- * replaced if a fresh event takes its place.
+ * for the expected hot working set. When the GC collects an event, its
+ * reference lands on [collected], and the next [intern], [get] or [size]
+ * removes that map entry. Reclaiming only on a later access to the same
+ * id kept an entry (the id string, the reference, the map node) for every
+ * event ever interned and never asked for again.
  */
 actual class EventInterner {
-    private val cache = ConcurrentHashMap<HexKey, WeakReference<Event>>(INITIAL_CAPACITY, LOAD_FACTOR)
+    private val collected = ReferenceQueue<Event>()
+
+    /** A weak reference that remembers its id, so the queue can say which entry died. */
+    private class Ref(
+        val id: HexKey,
+        event: Event,
+        queue: ReferenceQueue<Event>,
+    ) : WeakReference<Event>(event, queue)
+
+    private val cache = ConcurrentHashMap<HexKey, Ref>(INITIAL_CAPACITY, LOAD_FACTOR)
+
+    /** Removes the entries whose events were collected; a replaced entry stays put. */
+    private fun dropCollected() {
+        while (true) {
+            val ref = collected.poll() as Ref? ?: return
+            cache.remove(ref.id, ref)
+        }
+    }
 
     actual fun intern(event: Event): Event {
+        dropCollected()
         // Fast path: existing canonical is still alive.
         cache[event.id]?.get()?.let { return it }
 
@@ -44,7 +64,7 @@ actual class EventInterner {
         // (resolving the rare case where their ref was already GC'd
         // by retrying through the slow path).
         while (true) {
-            val ref = WeakReference(event)
+            val ref = Ref(event.id, event, collected)
             val existing = cache.putIfAbsent(event.id, ref)
             if (existing == null) return event
             val canonical = existing.get()
@@ -55,6 +75,7 @@ actual class EventInterner {
     }
 
     actual fun get(id: HexKey): Event? {
+        dropCollected()
         val ref = cache[id] ?: return null
         val event = ref.get()
         if (event != null) return event
@@ -63,7 +84,10 @@ actual class EventInterner {
         return null
     }
 
-    actual fun size(): Int = cache.size
+    actual fun size(): Int {
+        dropCollected()
+        return cache.size
+    }
 
     actual fun clear() {
         cache.clear()

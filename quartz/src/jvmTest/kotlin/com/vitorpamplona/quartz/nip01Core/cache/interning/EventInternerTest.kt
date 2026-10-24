@@ -125,6 +125,21 @@ class EventInternerTest {
     }
 
     @Test
+    fun collectedEventsLeaveNoEntryEvenWhenNeverAskedForAgain() {
+        // Unlike draftChurnDoesNotLeak, nothing calls get() on these ids: the map must
+        // shed their entries on its own once the events are collected.
+        for (i in 0 until 2_000) {
+            interner.intern(signer.sign(TextNoteEvent.build("once-$i", createdAt = 2_000L + i)))
+        }
+        for (i in 0..40) {
+            System.gc()
+            Thread.sleep(20)
+            if (interner.size() <= 5) break
+        }
+        assertTrue(interner.size() <= 5, "expected collected events to leave the map, got ${interner.size()}")
+    }
+
+    @Test
     fun defaultInstanceIsShared() {
         val a = signer.sign(TextNoteEvent.build("hello", createdAt = 100))
         val canonical = EventInterner.Default.intern(a)
