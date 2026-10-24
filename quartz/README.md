@@ -83,7 +83,7 @@ class FeedViewModel(
     val notesFeed = NotesFeed(db, client)
 
     val feed = notesFeed
-        .flow
+        .notes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProjectionState.Loading)
 
     fun send(text: String, signer: NostrSigner) {
@@ -116,13 +116,13 @@ fun main() {
         Window(onCloseRequest = ::exitApplication, state = state, title = "Nostr Kind 1 Demo") {
             MaterialTheme {
                 val viewModel = remember {
-                    FeedViewModel(AppGraph.db, AppGraph.client, AppGraph.signer)
+                    FeedViewModel(AppGraph.db, AppGraph.client)
                 }
 
                 val noteState by viewModel.feed.collectAsStateWithLifecycle()
-                when (noteState) {
+                when (val state = noteState) {
                     is ProjectionState.Loading -> LoadingFeed()
-                    is ProjectionState.Loaded -> Feed(noteState.items)
+                    is ProjectionState.Loaded -> Feed(state.items)
                 }
             }
         }

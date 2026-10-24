@@ -115,7 +115,7 @@ class SearchEventSource(private val backend: SearchApi) : EventSource {
 fun main() {
     val server = EventSourceServer(
         source = SearchEventSource(searchApi),
-        policyBuilder = { FullAuthPolicy(relay) }, // optional NIP-42 gating
+        policyBuilder = { VerifyPolicy + FullAuthPolicy(relay) }, // optional NIP-42 gating
     )
 
     embeddedServer(Netty, port = 7777) {
@@ -189,10 +189,14 @@ val server = NostrServer(store, policyBuilder = { EmptyPolicy })
 val server = NostrServer(
     store = store,
     policyBuilder = {
-        FullAuthPolicy(relay = "wss://myrelay.example.com/".normalizeRelayUrl()!!)
+        VerifyPolicy + FullAuthPolicy(relay = "wss://myrelay.example.com/".normalizeRelayUrl()!!)
     },
 )
 ```
+
+Always stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's challenge, relay
+and timestamp but not its signature, and a `policyBuilder` replaces the default `VerifyPolicy`.
+On its own, anyone can AUTH as any pubkey, and EVENTs with bad signatures are stored.
 
 `FullAuthPolicy` already implements the full NIP-42 challenge/verify handshake — you should not re-implement it. To bridge auth to an external system (e.g. exchange the verified event for a backend JWT), override the `suspend` `authorize` hook. It runs after the NIP-42 checks pass (and after the rest of the policy chain approves), and the pubkey is recorded only once it returns — so it can do network/disk I/O, and throwing from it rejects the login (`OK false`) with the connection left unauthenticated (nothing was committed).
 
@@ -363,7 +367,7 @@ val limits = RelayLimits(
     authRequired = true,
 )
 
-val server = NostrServer(store, policyBuilder = { FullAuthPolicy(relay) }, limits = limits)
+val server = NostrServer(store, policyBuilder = { VerifyPolicy + FullAuthPolicy(relay) }, limits = limits)
 ```
 
 All of it is enforced by a single `LimitsPolicy` (which the server prepends to

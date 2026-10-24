@@ -1,6 +1,7 @@
 import com.vanniktech.maven.publish.KotlinMultiplatform
 import com.vanniktech.maven.publish.SourcesJar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
@@ -49,34 +50,27 @@ kotlin {
         }
     }
 
-    // For iOS targets, this is also where you should
-    // configure native binary output. For more information, see:
-    // https://kotlinlang.org/docs/multiplatform-build-native-binaries.html#build-xcframeworks
+    // QuartzKit.xcframework is what Swift Package Manager users get: Package.swift at the repo root
+    // points at the zip the release workflow attaches to each GitHub release. Dynamic, so the
+    // framework carries every native library it links (secp256k1, SQLite) and a Swift app links
+    // nothing else. `assembleQuartzKitReleaseXCFramework` builds it; macOS only.
+    val quartzKit = XCFramework("QuartzKit")
+    val appleVersion = project.findProperty("VERSION_NAME")?.toString() ?: "0.0.0"
 
-    // A step-by-step guide on how to include this library in an XCode
-    // project can be found here:
-    // https://developer.android.com/kotlin/multiplatform/migrate
-    val xcfName = "quartz-kmpKit"
-
-    iosArm64 {
-        binaries.framework {
-            baseName = xcfName
-            isStatic = true
+    listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "QuartzKit"
+            isStatic = false
             binaryOption("bundleId", "com.vitorpamplona.quartz")
-        }
-    }
-
-    iosSimulatorArm64 {
-        binaries.framework {
-            baseName = xcfName
-            isStatic = true
-            binaryOption("bundleId", "com.vitorpamplona.quartz")
+            binaryOption("bundleShortVersionString", appleVersion)
+            binaryOption("bundleVersion", appleVersion)
+            // Lets Swift call Quartz's suspend functions from any thread, not just the main one.
+            binaryOption("objcExportSuspendFunctionLaunchThreadRestriction", "none")
+            quartzKit.add(this)
         }
     }
 
     linuxX64()
-
-    macosArm64()
 
     // This makes sure that the resource file directory is visible for iOS tests.
     val rootDir = "${projectDir.path}/src/commonTest/resources"
@@ -397,7 +391,7 @@ mavenPublishing {
 
     pom {
         name = "Quartz: Nostr Library for Kotlin Multiplatform"
-        description = "Nostr library ported to Kotlin/Multiplatform for JVM, Android, iOS & Linux"
+        description = "Nostr protocol library for Kotlin Multiplatform: JVM, Android, iOS, macOS and Linux"
         inceptionYear = "2025"
         url = "https://github.com/vitorpamplona/quartz/"
         licenses {
@@ -410,13 +404,18 @@ mavenPublishing {
             developer {
                 id = "vitorpamplona"
                 name = "Vitor Pamplona"
-                url = "http://vitorpamplona.com"
+                url = "https://vitorpamplona.com"
                 email = "vitor@vitorpamplona.com"
             }
         }
         scm {
             url = "https://github.com/vitorpamplona/quartz/"
-            connection = "https://github.com/vitorpamplona/quartz.git"
+            connection = "scm:git:https://github.com/vitorpamplona/quartz.git"
+            developerConnection = "scm:git:ssh://git@github.com/vitorpamplona/quartz.git"
+        }
+        issueManagement {
+            system = "GitHub"
+            url = "https://github.com/vitorpamplona/quartz/issues"
         }
     }
 }

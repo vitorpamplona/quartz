@@ -20,6 +20,7 @@ TASKS=(
     :quartz:verifyKmpPurity
     :quartz:compileCommonMainKotlinMetadata
     :quartz:compileAppleMainKotlinMetadata
+    :quartz:compileAndroidHostTest
     :quartz:jvmTest
 )
 

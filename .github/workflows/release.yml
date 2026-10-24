@@ -1,0 +1,243 @@
+name: Release
+
+# Run from the Actions tab on main, with the version to release. Swift Package Manager reads
+# Package.swift at the release tag, so that file must already name the release's
+# QuartzKit.xcframework.zip and its checksum when the tag is cut. The workflow therefore builds
+# the framework first, then commits VERSION_NAME and Package.swift, tags that commit v<version>,
+# pushes both, creates the GitHub release with the zip, and publishes to Maven Central.
+#
+# Pushing the release commit to main needs GitHub Actions allowed to push there (a bypass in
+# the branch ruleset when main is protected). If Maven Central fails after the tag is pushed,
+# re-run the failed `maven` job: it publishes from the tag.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, X.Y.Z (no leading v)'
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the version and branch
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run the release from main, not $GITHUB_REF"
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z, got '$VERSION'"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/v$VERSION"; then
+            echo "::error::v$VERSION is already tagged"
+            exit 1
+          fi
+
+  check:
+    needs: check-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Linter (gradle)
+        run: |
+          ./gradlew spotlessCheck \
+            :quartz:verifyKmpPurity \
+            :quartz:compileCommonMainKotlinMetadata \
+            :quartz:compileAppleMainKotlinMetadata \
+            :quartz:compileAndroidHostTest
+
+      - name: Check
+        run: ./gradlew :quartz:jvmTest :quartz:linuxX64Test
+
+      - name: Build (gradle)
+        run: ./gradlew :quartz:assemble
+
+  test-apple:
+    needs: check-version
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Test iOS
+        run: |
+          ./gradlew \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            :quartz:iosSimulatorArm64Test \
+            :quartz:compileTestKotlinIosArm64
+
+  # The release XCFramework is three optimized Kotlin/Native links, the slowest step of a
+  # release on the 3-core macOS runner; it runs alongside the tests.
+  xcframework:
+    needs: check-version
+    runs-on: macos-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Build QuartzKit.xcframework
+        run: |
+          ./gradlew \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            -PVERSION_NAME="$VERSION" \
+            :quartz:assembleQuartzKitReleaseXCFramework
+
+      - name: Smoke test it from Swift
+        run: |
+          cp -R quartz/build/XCFrameworks/release/QuartzKit.xcframework swift/QuartzKitSmoke/
+          swift run --package-path swift/QuartzKitSmoke
+
+      - name: Zip and checksum
+        run: |
+          cd quartz/build/XCFrameworks/release
+          ditto -c -k --sequesterRsrc --keepParent QuartzKit.xcframework "$GITHUB_WORKSPACE/QuartzKit.xcframework.zip"
+          cd "$GITHUB_WORKSPACE"
+          swift package compute-checksum QuartzKit.xcframework.zip > QuartzKit.xcframework.zip.sha256
+          cat QuartzKit.xcframework.zip.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: QuartzKit.xcframework
+          path: |
+            QuartzKit.xcframework.zip
+            QuartzKit.xcframework.zip.sha256
+          if-no-files-found: error
+
+  tag:
+    needs: [check, test-apple, xcframework]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: QuartzKit.xcframework
+
+      - name: Commit and tag the release
+        run: |
+          tools/release/prepare-release.sh "$VERSION" "$(cat QuartzKit.xcframework.zip.sha256)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(release): v$VERSION" -- gradle.properties Package.swift
+          git tag "v$VERSION"
+          # Fails without a force if main moved since the release started: the tag must sit on
+          # the commit these jobs tested. Run the release again from the new main.
+          git push origin "HEAD:refs/heads/main"
+          git push origin "v$VERSION"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: v${{ inputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            QuartzKit.xcframework.zip
+            QuartzKit.xcframework.zip.sha256
+
+  # Apple klibs cross-compile on Linux; only Apple test and framework binaries need a Mac.
+  maven:
+    needs: tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Publish
+        run: ./gradlew :quartz:publishAllPublicationsToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_VERSION_NAME: ${{ inputs.version }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}

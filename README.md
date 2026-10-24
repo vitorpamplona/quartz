@@ -14,7 +14,7 @@ app, the `amy` CLI and the `geode` relay.
 
 ## Install
 
-```kotlin
+```kotlin build.gradle.kts
 dependencies {
     implementation("com.vitorpamplona.quartz:quartz:<version>")
 }
@@ -24,8 +24,28 @@ dependencies {
 |---|---|
 | JVM | Java 17 |
 | Android | minSdk 26 |
-| Apple | iosArm64, iosSimulatorArm64, macosArm64 |
+| Apple | iosArm64, iosSimulatorArm64, macosArm64 (Kotlin), iOS 15 / macOS 12 (Swift) |
 | Linux | linuxX64 |
+
+### Swift Package Manager
+
+Swift apps get Quartz as the `QuartzKit` framework. In Xcode, use File > Add Package
+Dependencies and enter `https://github.com/vitorpamplona/quartz`, or add it to `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/vitorpamplona/quartz", from: "<version>"),
+],
+targets: [
+    .target(name: "MyApp", dependencies: [.product(name: "QuartzKit", package: "quartz")]),
+]
+```
+
+Kotlin reaches Swift through Objective-C, so a few names change: an extension on a Kotlin class
+becomes a method (`keyPair.pubKey.toHexKey()`), top-level functions and extensions on `String`
+or numbers sit on a class named after their file (`HexKeyKt.hexToByteArray("…")`), default
+arguments must be passed explicitly, and `suspend` functions become `async`. The Swift package starts with the first
+release after 2.3.0.
 
 ### Snapshots (JitPack)
 
@@ -33,7 +53,7 @@ Tagged releases go to Maven Central. To test an unreleased fix straight from `ma
 [JitPack](https://jitpack.io/#vitorpamplona/quartz), which builds the library on demand from any git
 ref:
 
-```kotlin
+```kotlin build.gradle.kts
 repositories {
     maven { url = uri("https://jitpack.io") }
 }
@@ -62,26 +82,30 @@ guaranteed stable.
 Manage logged in users with the `KeyPair` class
 
 ```kt
-val keyPair = KeyPair() // creates a random key
-val keyPair = KeyPair("hex...".hexToByteArray())
-val keyPair = KeyPair("nsec1...".bechToBytes())
-val keyPair = KeyPair(Nip06().privateKeyFromMnemonic("<mnemonic>"))
-val readOnly = KeyPair(pubKey = "hex...".hexToByteArray())
-val readOnly = KeyPair(pubKey = "npub1...".bechToBytes())
+val random = KeyPair() // creates a random key
+val fromHex = KeyPair("hex...".hexToByteArray())
+val fromNsec = KeyPair("nsec1...".bechToBytes())
+val fromMnemonic = KeyPair(Nip06().privateKeyFromMnemonic("<mnemonic>"))
+val readOnlyFromHex = KeyPair(pubKey = "hex...".hexToByteArray())
+val readOnlyFromNpub = KeyPair(pubKey = "npub1...".bechToBytes())
 ```
 
 Create signers that can be Internal, when you have the private key or a read-only public key,
-or External, when it is controlled by Amber in NIP-55.
+or External, when it is controlled by Amber in NIP-55 (Android only).
 
 Use either the `NostrSignerInternal` or `NostrSignerExternal` class:
 
 ```kt
 val signer = NostrSignerInternal(keyPair)
-val amberSigner = NostrSignerExternal(
-    pubKey = keyPair.pubKey.toHexKey(),
-    packageName = signerPackageName, // Amber package name
-    contentResolver = appContext.contentResolver,
-)
+```
+
+```kt
+val amberSigner =
+    NostrSignerExternal(
+        pubKey = keyPair.pubKey.toHexKey(),
+        packageName = signerPackageName, // Amber package name
+        contentResolver = appContext.contentResolver,
+    )
 ```
 
 Create a single `NostrClient` for the entire application and control which relays it will access by
@@ -99,63 +123,73 @@ val socketBuilder = BasicOkHttpWebSocket.Builder { url -> rootClient }
 val client = NostrClient(socketBuilder, appScope)
 ```
 
-If you want to auth, given a logged-in `signer`:
+To answer NIP-42 AUTH challenges, given a logged-in `signer`. The lambda receives the relay asking,
+the template to sign and whether the user may be prompted (`interactive`):
 
 ```kt
-val authCoordinator = RelayAuthenticator(client, appScope) { authTemplate ->
-    listOf(
-        // for each signed-in user, return an event
-        signer.sign(authTemplate)
-    )
-}
+val authCoordinator =
+    RelayAuthenticator(client, appScope) { relay, authTemplate, interactive ->
+        listOf(
+            // for each signed-in user, return an event
+            signer.sign(authTemplate),
+        )
+    }
 ```
 
 To make a request subscription simply do:
 
 ```kt
-val metadataSub = client.req(
-    relay = "wss://nos.lol",
-    filter = Filter(
-        kinds = listOf(MetadataEvent.KIND),
-        authors = listOf(signer.pubkey)
-    )
-) { event ->
-    /* consume event */
-}
+val metadataSub =
+    client.subscribe(
+        relay = "wss://nos.lol",
+        filter =
+            Filter(
+                kinds = listOf(MetadataEvent.KIND),
+                authors = listOf(signer.pubKey),
+            ),
+    ) { event ->
+        // consume event
+    }
 ```
 
 The client will add the relay to the pool, connect to it and start receiving events. The
 `metadataSub` will be active until you call `metadataSub.close()`. If the client disconnects
 and reconnects, the sub will be active again.
 
-To manage subscriptions that change over time, the simplest approach is to build mutable
-subscriptions with a filters lambda that you can change at will.
+To manage subscriptions that change over time, pass a filters lambda instead. It returns the
+filters to send to each relay, and is read again every time you refresh the subscription.
 
 ```kt
-val metadataSub = client.req(
-    filters = {
-        // Let's say you have a list of users that need to be rendered
-        val users = pubkeysSeeingInTheScreen()
-        // And a cache repository with their outbox relays
-        val outboxRelays = outboxRelays(users)
+val metadataSub =
+    client.subscribe(
+        filters = {
+            // Let's say you have a list of users that need to be rendered
+            val users = pubkeysSeeingInTheScreen()
+            // And a cache repository with their outbox relays
+            val outboxRelays = outboxRelays(users)
 
-        val filters = listOf(
-            Filter(
-                kinds = listOf(MetadataEvent.KIND),
-                authors = users
-            )
-        )
+            val filters =
+                listOf(
+                    Filter(
+                        kinds = listOf(MetadataEvent.KIND),
+                        authors = users,
+                    ),
+                )
 
-        outboxRelays.associateWith { filters }
+            outboxRelays.associateWith { filters }
+        },
+    ) { event ->
+        // consume event
     }
-) { event ->
-    /* consume event */
-}
 ```
 
-In that way, you can simply call `metadataSub.updateFilter()` when you need to update
-subscriptions to all relays. Or call `metadataSub.close()` to stop the sub
-without deleting it.
+Call `metadataSub.refresh()` when the users or relays change: it runs the lambda again and updates
+the subscription on every relay. Call `metadataSub.close()` to stop it.
+
+For one-shot work (fetch a set of events and stop, page past a relay's limit, publish and wait for
+the relay's `OK`, NIP-45 counts, NIP-77 sync), use the extensions listed in
+[One-shot relay operations](quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/README.md)
+instead of writing a subscribe-and-collect loop.
 
 When your app goes to the background, you can use NostrClient's `connect` and `disconnect`
 methods to stop all communication to relays. Add the `connect` to your `onResume` and `disconnect`

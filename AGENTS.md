@@ -30,6 +30,11 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
     `androidDeviceTest`, `nativeTest`, `appleTest`, `iosTest`, `linuxTest`).
   - `quartz/README.md` (client architecture), `quartz/CLIENT.md` (API guide),
     `quartz/RELAY.md` (running a relay on quartz's server code).
+  - The root `README.md`'s Kotlin blocks are compiled: `ReadmeSnippetsTest` (in
+    `jvmAndroidTest/.../quartz/docs/`) fails unless each one appears in `ReadmeSamples.kt` beside
+    it or, for Android-only code, `androidHostTest/.../docs/ReadmeAndroidSamples.kt`. Change the
+    sample first, run `spotlessApply`, then copy it into the README. Mark a Gradle script block
+    ```` ```kotlin build.gradle.kts ```` so the test skips it.
   - `quartz/agent-skill/quartz/`: a skill for *other* projects that depend on Quartz (they copy
     it into their own skills folder; it isn't loaded here). Update it, and `quartz/CLIENT.md`,
     when the public API changes, and compile any code you add to either.
@@ -86,7 +91,8 @@ it before stating it: write the failing case first, watch it fail, then explain.
 `LiveNegentropyIndexStoreTest` x1). Run it explicitly when touching relay-server or store code.
 
 Before pushing, the pre-push hook runs `spotlessCheck`, `verifyKmpPurity`, the common and Apple
-metadata compiles and `jvmTest`, the same list as CI's build job.
+metadata compiles, `compileAndroidHostTest` (it holds the Android README samples) and `jvmTest`,
+the same list as CI's build job.
 
 ## Dependency licensing
 
@@ -140,7 +146,12 @@ Both agents read the same rules, skills and checks, laid out like Amethyst's:
 
 ## Releasing
 
-Bump `VERSION_NAME` in `gradle.properties`, then push a `v<version>` tag. The `create-release.yml`
-workflow runs the Apple tests on macOS, then the checks, publishes to Maven Central and opens the
-GitHub release. It needs `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and
-`SIGNING_PASSWORD`, the same secrets as crypto-kmp and quic-kmp.
+Run the `Release` workflow (`release.yml`) from the Actions tab on `main`, with the version.
+Don't bump `VERSION_NAME` or push a tag by hand: Swift Package Manager reads `Package.swift` at
+the tag, so it must already name that release's `QuartzKit.xcframework.zip` and checksum. The
+workflow runs the checks and the Apple tests, builds the XCFramework on macOS, commits
+`VERSION_NAME` and `Package.swift` with `tools/release/prepare-release.sh`, tags `v<version>`,
+pushes both to `main`, opens the GitHub release with the zip and publishes to Maven Central.
+GitHub Actions must be allowed to push to `main`. If only the `maven` job fails, re-run it: it
+publishes from the tag. It needs `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY`
+and `SIGNING_PASSWORD`, the same secrets as crypto-kmp and quic-kmp.
