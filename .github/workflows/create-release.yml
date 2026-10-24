@@ -68,7 +68,8 @@ jobs:
           ./gradlew spotlessCheck \
             :quartz:verifyKmpPurity \
             :quartz:compileCommonMainKotlinMetadata \
-            :quartz:compileAppleMainKotlinMetadata
+            :quartz:compileAppleMainKotlinMetadata \
+            :quartz:compileAndroidHostTest
 
       - name: Check
         run: ./gradlew :quartz:jvmTest :quartz:linuxX64Test

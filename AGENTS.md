@@ -30,6 +30,11 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
     `androidDeviceTest`, `nativeTest`, `appleTest`, `iosTest`, `linuxTest`).
   - `quartz/README.md` (client architecture), `quartz/CLIENT.md` (API guide),
     `quartz/RELAY.md` (running a relay on quartz's server code).
+  - The root `README.md`'s Kotlin blocks are compiled: `ReadmeSnippetsTest` (in
+    `jvmAndroidTest/.../quartz/docs/`) fails unless each one appears in `ReadmeSamples.kt` beside
+    it or, for Android-only code, `androidHostTest/.../docs/ReadmeAndroidSamples.kt`. Change the
+    sample first, run `spotlessApply`, then copy it into the README. Mark a Gradle script block
+    ```` ```kotlin build.gradle.kts ```` so the test skips it.
   - `quartz/agent-skill/quartz/`: a skill for *other* projects that depend on Quartz (they copy
     it into their own skills folder; it isn't loaded here). Update it, and `quartz/CLIENT.md`,
     when the public API changes, and compile any code you add to either.
@@ -86,7 +91,8 @@ it before stating it: write the failing case first, watch it fail, then explain.
 `LiveNegentropyIndexStoreTest` x1). Run it explicitly when touching relay-server or store code.
 
 Before pushing, the pre-push hook runs `spotlessCheck`, `verifyKmpPurity`, the common and Apple
-metadata compiles and `jvmTest`, the same list as CI's build job.
+metadata compiles, `compileAndroidHostTest` (it holds the Android README samples) and `jvmTest`,
+the same list as CI's build job.
 
 ## Dependency licensing
 
