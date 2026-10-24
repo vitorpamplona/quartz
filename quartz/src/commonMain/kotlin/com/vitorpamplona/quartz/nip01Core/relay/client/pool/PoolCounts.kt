@@ -32,11 +32,15 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CountCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class PoolCounts {
     private var queries = LargeCache<String, Map<NormalizedRelayUrl, List<Filter>>>()
     val relays = MutableStateFlow(setOf<NormalizedRelayUrl>())
+
+    /** Serializes [updateRelays]' read-compute-emit, as in [PoolRequests]: the last emit has seen every change. */
+    private val relaysLock = PlatformLock()
 
     /**
      * **Invariant: LIVE queries only** -- a row exists only while [queries] still wants
@@ -60,13 +64,18 @@ class PoolCounts {
     fun activeQueryCount(): Int = relayState.size()
 
     private fun updateRelays() {
-        val myRelays = mutableSetOf<NormalizedRelayUrl>()
-        queries.forEach { queryId, perRelayFilters ->
-            myRelays.addAll(perRelayFilters.keys)
-        }
+        relaysLock.lock()
+        try {
+            val myRelays = mutableSetOf<NormalizedRelayUrl>()
+            queries.forEach { queryId, perRelayFilters ->
+                myRelays.addAll(perRelayFilters.keys)
+            }
 
-        if (relays.value != myRelays) {
-            relays.tryEmit(myRelays)
+            if (relays.value != myRelays) {
+                relays.tryEmit(myRelays)
+            }
+        } finally {
+            relaysLock.unlock()
         }
     }
 
@@ -245,7 +254,7 @@ class PoolCounts {
 
     fun destroy() {
         relayState.clear()
-        relays.tryEmit(emptySet())
         queries.clear()
+        updateRelays()
     }
 }
