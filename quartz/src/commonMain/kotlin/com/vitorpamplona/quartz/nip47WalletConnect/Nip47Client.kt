@@ -20,9 +20,11 @@
  */
 package com.vitorpamplona.quartz.nip47WalletConnect
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
@@ -224,13 +226,29 @@ class Nip47Client(
 
     /**
      * Decrypts and parses a response event from the wallet.
+     *
+     * Throws [IllegalArgumentException] unless [event] is signed by the wallet: relays deliver
+     * events unverified, and a response authored by anyone else (even one this client can
+     * decrypt) could fake a payment's success.
      */
-    suspend fun parseResponse(event: NwcResponseEvent): Response = event.decrypt(signer)
+    suspend fun parseResponse(event: NwcResponseEvent): Response {
+        requireFromWallet(event)
+        return event.decrypt(signer)
+    }
 
     /**
-     * Decrypts and parses a notification event from the wallet.
+     * Decrypts and parses a notification event from the wallet. Throws [IllegalArgumentException]
+     * unless [event] is signed by the wallet, as [parseResponse] does.
      */
-    suspend fun parseNotification(event: NwcNotificationEvent): Notification = event.decryptNotification(signer)
+    suspend fun parseNotification(event: NwcNotificationEvent): Notification {
+        requireFromWallet(event)
+        return event.decryptNotification(signer)
+    }
+
+    private fun requireFromWallet(event: Event) {
+        require(event.pubKey == walletPubKeyHex) { "NWC event ${event.id} is from ${event.pubKey}, not the wallet $walletPubKeyHex" }
+        require(event.verify()) { "NWC event ${event.id} has a bad id or signature" }
+    }
 
     // --- Filter helpers ---
 
