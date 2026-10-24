@@ -86,9 +86,8 @@ it before stating it: write the failing case first, watch it fail, then explain.
 ./gradlew :quartz:iosSimulatorArm64Test         # macOS only
 ```
 
-`:quartz:testAndroidHostTest` (~3.9k tests, its own `androidHostTest` source set) is not run by
-`test`, the pre-push hook or CI: it has 4 known failures (`NostrServerTest` x3,
-`LiveNegentropyIndexStoreTest` x1). Run it explicitly when touching relay-server or store code.
+`:quartz:testAndroidHostTest` (~5.8k tests, its own `androidHostTest` source set) is not run by
+`test`, the pre-push hook or CI. Run it explicitly when touching relay-server or store code.
 
 Before pushing, the pre-push hook runs `spotlessCheck`, `verifyKmpPurity`, the common and Apple
 metadata compiles, `compileAndroidHostTest` (it holds the Android README samples) and `jvmTest`,
