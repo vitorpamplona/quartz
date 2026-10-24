@@ -54,16 +54,32 @@ class Nip98AuthVerifier(
     private val toleranceSeconds: Long = 60,
 ) {
     /**
-     * Recently-accepted event ids → expiry epoch second. Bounded to
-     * [MAX_REPLAY_ENTRIES] (insertion-order eviction); each entry expires
+     * Recently-accepted event ids → expiry epoch second. Each entry expires
      * after `2 × toleranceSeconds` (twice the accepted window so a token
      * can't be reused by an attacker who buffers across the boundary).
+     *
+     * Bounded per author, not globally: [seenByAuthor] caps each pubkey at
+     * [MAX_REPLAY_ENTRIES] and evicts that pubkey's own oldest ids. A global
+     * cap let any key holder flush everyone's ids with a burst of its own
+     * tokens and then replay a captured one.
      *
      * Guarded by [seenLock] so the eviction sweep + insertion are
      * atomic. We use a coroutine [Mutex] so the type works in KMP
      * commonMain (no `synchronized` block).
      */
-    private val seenEventIds: LinkedHashMap<String, Long> = LinkedHashMap()
+    private val seenEventIds: HashMap<String, Long> = HashMap()
+
+    /** Accepted ids in insertion order, which is expiry order: the sweep pops from the front. */
+    private val expiryOrder: ArrayDeque<Seen> = ArrayDeque()
+
+    /** Each author's live ids, oldest first, for the per-author cap. */
+    private val seenByAuthor: HashMap<HexKey, ArrayDeque<String>> = HashMap()
+
+    private class Seen(
+        val id: String,
+        val author: HexKey,
+        val expiry: Long,
+    )
 
     private val seenLock = Mutex()
 
@@ -131,30 +147,35 @@ class Nip98AuthVerifier(
         // request that would otherwise have failed signature/url/etc.
         val expiry = nowSec + 2 * toleranceSeconds
         seenLock.withLock {
-            // Evict expired entries while we hold the lock. Insertion
-            // order (LinkedHashMap default) tracks expiry order
-            // because every entry's expiry = now + 2·tolerance, so
-            // the first non-expired entry guarantees no later entry
-            // is expired either.
-            val it = seenEventIds.entries.iterator()
-            while (it.hasNext()) {
-                if (it.next().value <= nowSec) it.remove() else break
+            // Evict expired entries while we hold the lock. Insertion order
+            // tracks expiry order because every entry's expiry = now + 2·tolerance,
+            // so the first non-expired entry guarantees no later entry is expired.
+            while (expiryOrder.isNotEmpty() && expiryOrder.first().expiry <= nowSec) {
+                forget(expiryOrder.removeFirst())
             }
-            if (seenEventIds.put(event.id, expiry) != null) {
+            if (seenEventIds.containsKey(event.id)) {
                 return Result.Malformed("replay: this NIP-98 token has already been used")
             }
-            // Cap entries: drop oldest by insertion order. Equivalent to
-            // the JDK LinkedHashMap.removeEldestEntry hook we used before,
-            // but works in KMP commonMain.
-            while (seenEventIds.size > MAX_REPLAY_ENTRIES) {
-                val eldest = seenEventIds.keys.iterator()
-                if (!eldest.hasNext()) break
-                eldest.next()
-                eldest.remove()
+            seenEventIds[event.id] = expiry
+            expiryOrder.addLast(Seen(event.id, event.pubKey, expiry))
+            val authorIds = seenByAuthor.getOrPut(event.pubKey) { ArrayDeque() }
+            authorIds.addLast(event.id)
+            // Cap this author only: a flood can push out its own ids, never another author's.
+            while (authorIds.size > MAX_REPLAY_ENTRIES) {
+                seenEventIds.remove(authorIds.removeFirst())
             }
         }
 
         return Result.Verified(event.pubKey)
+    }
+
+    /** Drops an expired entry, unless the per-author cap already dropped it. */
+    private fun forget(seen: Seen) {
+        if (seenEventIds[seen.id] != seen.expiry) return
+        seenEventIds.remove(seen.id)
+        val authorIds = seenByAuthor[seen.author] ?: return
+        authorIds.remove(seen.id)
+        if (authorIds.isEmpty()) seenByAuthor.remove(seen.author)
     }
 
     sealed interface Result {
@@ -173,10 +194,9 @@ class Nip98AuthVerifier(
         const val SCHEME = "Nostr "
 
         /**
-         * Cap on the in-memory replay-cache size. With a 60s tolerance
-         * an attacker would need to push >MAX/120 verified requests per
-         * second (one new id per ~120 ms) to evict legitimate entries.
-         * 1024 is generous for an admin endpoint.
+         * Live replay-cache entries kept per author. A pubkey past it loses its
+         * own oldest ids, never another author's. 1024 is generous for an
+         * admin endpoint (one request every ~120 ms for the whole window).
          */
         const val MAX_REPLAY_ENTRIES = 1024
     }

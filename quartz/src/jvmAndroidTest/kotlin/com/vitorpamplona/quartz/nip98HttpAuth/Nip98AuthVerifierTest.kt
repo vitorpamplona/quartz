@@ -131,4 +131,47 @@ class Nip98AuthVerifierTest {
             assertTrue(r.reason.contains("kind"))
         }
     }
+
+    @Test
+    fun aUsedTokenIsRejectedAsAReplay() {
+        runBlocking {
+            val (_, header) = signedToken("http://x/admin", "GET")
+            assertIs<Nip98AuthVerifier.Result.Verified>(verifier.verify(header, "GET", "http://x/admin", null))
+            assertIs<Nip98AuthVerifier.Result.Malformed>(verifier.verify(header, "GET", "http://x/admin", null))
+        }
+    }
+
+    @Test
+    fun anotherKeysFloodCannotEvictAUsedToken() {
+        runBlocking {
+            val (_, victim) = signedToken("http://x/admin", "GET")
+            assertIs<Nip98AuthVerifier.Result.Verified>(verifier.verify(victim, "GET", "http://x/admin", null))
+
+            val flooder = NostrSignerSync(KeyPair())
+            repeat(Nip98AuthVerifier.MAX_REPLAY_ENTRIES + 1) {
+                val template = HTTPAuthorizationEvent.build("http://x/admin", "GET", createdAt = 1_000L) { add(arrayOf("n", "$it")) }
+                verifier.verify(flooder.sign(template).toAuthToken(), "GET", "http://x/admin", null)
+            }
+
+            assertIs<Nip98AuthVerifier.Result.Malformed>(verifier.verify(victim, "GET", "http://x/admin", null))
+        }
+    }
+
+    @Test
+    fun expiredIdsAreDropped() {
+        runBlocking {
+            var clock = 1_000L
+            val verifier = Nip98AuthVerifier(now = { clock })
+            val signer = NostrSignerSync(KeyPair())
+            val (_, first) = signedToken("http://x/", "GET", signer = signer, createdAt = 1_000L)
+            assertIs<Nip98AuthVerifier.Result.Verified>(verifier.verify(first, "GET", "http://x/", null))
+
+            // Past the first id's expiry (2 × the 60s tolerance), a fresh token sweeps it out
+            // and the first one can't come back: its created_at is now out of tolerance.
+            clock = 1_200L
+            val (_, second) = signedToken("http://x/", "GET", signer = signer, createdAt = 1_200L)
+            assertIs<Nip98AuthVerifier.Result.Verified>(verifier.verify(second, "GET", "http://x/", null))
+            assertIs<Nip98AuthVerifier.Result.Malformed>(verifier.verify(first, "GET", "http://x/", null))
+        }
+    }
 }
