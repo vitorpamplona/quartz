@@ -112,8 +112,9 @@ suspend fun <T, K> collectSuccessfulOperationsReturning(
  * to complete within a default 15-second timeout.
  *
  * If the timeout is reached, it returns the results of all tasks that successfully completed by then
- * and cancels any tasks that are still running. Tasks that completed with an exception are not
- * included in the returned list.
+ * and cancels any tasks that are still running. A task that throws fails the whole call (structured
+ * concurrency cancels the others and rethrows): a caller that wants the other results despite a
+ * failure must catch inside [runRequestFor] and return null.
  *
  * @param tasks A list of suspending functions, each returning a value of type [T].
  * @return A list containing the results of tasks that successfully completed within the timeout.

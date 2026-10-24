@@ -154,11 +154,24 @@ class OpenTimestamps(
         timestamp: Timestamp,
         calendarUrls: MutableList<String>,
     ): Timestamp {
-        val responses =
+        // One calendar that is down must not sink the stamp: mapNotNullAsync fails as a whole
+        // when any task throws, so each submission catches its own failure. Only when every
+        // calendar fails does the stamp fail, with the first calendar's error.
+        val outcomes =
             mapNotNullAsync(calendarUrls) { calendarUrl ->
                 Log.i("OpenTimestamps") { "Submitting to remote calendar $calendarUrl" }
-                calendar.submit(calendarUrl, timestamp.digest)
+                try {
+                    Result.success(calendar.submit(calendarUrl, timestamp.digest))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w("OpenTimestamps", "Calendar $calendarUrl failed", e)
+                    Result.failure(e)
+                }
             }
+
+        val responses = outcomes.mapNotNull { it.getOrNull() }
+        if (responses.isEmpty()) outcomes.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { throw it }
 
         responses.forEach {
             timestamp.merge(it)
