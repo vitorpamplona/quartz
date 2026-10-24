@@ -809,4 +809,60 @@ class NostrServerAuthTest {
 
             server.close()
         }
+
+    // -- NIP-70: protected events ------------------------------------------------
+
+    private suspend fun authenticate(
+        session: RelaySession,
+        collector: MessageCollector,
+        author: String,
+    ) {
+        val challenge = (OptimizedJsonMapper.fromJsonToMessage(collector.messages[0]) as AuthMessage).challenge
+        session.receive(authJson(authEvent(challenge = challenge, pubKey = author)))
+        collector.messages.clear()
+    }
+
+    @Test
+    fun protectedEventFromAnUnauthenticatedConnectionNeedsAuth() =
+        runTest {
+            val server = createServer(UnconfinedTestDispatcher(testScheduler), policyBuilder = { EmptyPolicy })
+            val collector = MessageCollector()
+            val session = server.connect(collector.sendCallback)
+
+            session.insert(testEvent(tags = arrayOf(arrayOf("-"))))
+
+            val ok = collector.rawMessagesContaining("OK").single()
+            assertTrue(ok.contains(",false,\"auth-required:"), ok)
+            server.close()
+        }
+
+    @Test
+    fun protectedEventFromItsAuthenticatedAuthorIsAccepted() =
+        runTest {
+            val server = createServer(UnconfinedTestDispatcher(testScheduler))
+            val collector = MessageCollector()
+            val session = server.connect(collector.sendCallback)
+            authenticate(session, collector, author = pubkey)
+
+            session.insert(testEvent(tags = arrayOf(arrayOf("-"))))
+
+            val ok = collector.rawMessagesContaining("OK").single()
+            assertTrue(ok.contains(",true,"), ok)
+            server.close()
+        }
+
+    @Test
+    fun protectedEventFromSomeoneElseIsRestricted() =
+        runTest {
+            val server = createServer(UnconfinedTestDispatcher(testScheduler))
+            val collector = MessageCollector()
+            val session = server.connect(collector.sendCallback)
+            authenticate(session, collector, author = pubkey2)
+
+            session.insert(testEvent(tags = arrayOf(arrayOf("-"))))
+
+            val ok = collector.rawMessagesContaining("OK").single()
+            assertTrue(ok.contains(",false,\"restricted:"), ok)
+            server.close()
+        }
 }

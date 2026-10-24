@@ -43,6 +43,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
+import com.vitorpamplona.quartz.nip70ProtectedEvts.isProtected
 import com.vitorpamplona.quartz.nip77Negentropy.NegCloseCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegMsgCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegOpenCmd
@@ -276,6 +277,14 @@ class RelaySession(
         val result = policy.accept(cmd)
         if (result is PolicyResult.Rejected) {
             send(OkMessage(cmd.event.id, false, result.reason, result.params))
+            return
+        }
+
+        // NIP-70: a protected event may only be published by its author, authenticated over
+        // NIP-42. That is the spec's required default, so it holds whatever the policy.
+        if (cmd.event.tags.isProtected() && cmd.event.pubKey !in authenticatedUsers) {
+            val prefix = if (authenticatedUsers.isEmpty()) MachineReadablePrefix.AUTH_REQUIRED else MachineReadablePrefix.RESTRICTED
+            send(OkMessage.rejected(cmd.event.id, prefix, "this event may only be published by its author"))
             return
         }
 
