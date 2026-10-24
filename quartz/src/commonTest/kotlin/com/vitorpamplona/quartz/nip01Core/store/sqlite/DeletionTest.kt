@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip01Core.store.sqlite
 
 import androidx.sqlite.SQLiteException
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
@@ -552,5 +553,56 @@ class DeletionTest : BaseDBTest() {
 
             db.insert(newer)
             db.assertQuery(newer, Filter(ids = listOf(newer.id)))
+        }
+
+    // Kinds EventFactory doesn't model parse as plain Events; the store must still file them by
+    // their kind's class, or NIP-09 address deletions and re-insert blocking miss them.
+    private val unmodeledAddressable = 35555
+    private val unmodeledReplaceable = 19997
+
+    private fun deleteAddress(
+        kind: Int,
+        dTag: String,
+        createdAt: Long,
+    ) = signer.sign<Event>(
+        createdAt,
+        DeletionRequestEvent.KIND,
+        arrayOf(arrayOf("a", "$kind:${signer.pubKey}:$dTag"), arrayOf("k", "$kind")),
+        "",
+    )
+
+    @Test
+    fun unmodeledAddressableKindIsDeletedByAddressAndBlocked() =
+        forEachDB { db ->
+            val v1 = signer.sign<Event>(100, unmodeledAddressable, arrayOf(arrayOf("d", "x")), "v1")
+            db.insert(v1)
+
+            db.insert(deleteAddress(unmodeledAddressable, "x", 200))
+
+            db.assertQuery(null, Filter(ids = listOf(v1.id)))
+            assertFailsWith<SQLiteException> { db.insert(v1) }
+        }
+
+    @Test
+    fun unmodeledAddressableKindKeepsOnlyTheNewestVersion() =
+        forEachDB { db ->
+            val v1 = signer.sign<Event>(100, unmodeledAddressable, arrayOf(arrayOf("d", "x")), "v1")
+            val v2 = signer.sign<Event>(200, unmodeledAddressable, arrayOf(arrayOf("d", "x")), "v2")
+            db.insert(v1)
+            db.insert(v2)
+
+            db.assertQuery(v2, Filter(kinds = listOf(unmodeledAddressable)))
+        }
+
+    @Test
+    fun unmodeledReplaceableKindDeletionBlocksReinsert() =
+        forEachDB { db ->
+            val v1 = signer.sign<Event>(100, unmodeledReplaceable, emptyArray(), "v1")
+            db.insert(v1)
+
+            db.insert(deleteAddress(unmodeledReplaceable, "", 200))
+
+            db.assertQuery(null, Filter(ids = listOf(v1.id)))
+            assertFailsWith<SQLiteException> { db.insert(v1) }
         }
 }

@@ -124,11 +124,13 @@ version stored; newest wins; ties broken by lowest id; older re-inserts blocked 
 such.
 
 **STORE-W02 — addressable supersession.** Same as W01 with unique index
-`(kind, pubkey, d_tag)` over `30000 ≤ kind < 40000`. Nuance: `d_tag` is populated from the
-*parsed* event class (`AddressableEvent.dTag()`); an addressable-range kind whose class doesn't
-parse as `AddressableEvent` stores `d_tag NULL`, and SQLite treats NULLs as distinct in unique
-indexes — such events don't supersede each other. An event with no `d` tag parses as `dTag() = ""`
-(empty string), which *does* dedupe normally.
+`(kind, pubkey, d_tag)` over `30000 ≤ kind < 40000`. `d_tag` is filed by kind, not by parsed
+class (`storeDTag()` in `nip01Core/store/sqlite/StoreDTag.kt`): an addressable kind that
+`EventFactory` doesn't model still stores its `d` tag (`""` when absent), so it supersedes, is
+deleted by address (D02) and is blocked on re-insert (D04) like a modeled one; an unmodeled
+replaceable kind stores `""` and gets an `a`-hash the same way. Rows written before this rule
+(`d_tag NULL` for unmodeled addressable kinds) keep their NULL, which SQLite treats as distinct in
+unique indexes, so newer versions don't displace them.
 
 **STORE-W03 — ephemeral events are never stored but are acked as accepted.**
 `insert()` returns silently and `batchInsert` reports `Accepted` for `20000 ≤ kind < 30000`

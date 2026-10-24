@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip01Core.store.sqlite
 
 import androidx.sqlite.SQLiteConnection
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
-import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.store.owner
@@ -219,8 +218,8 @@ class EventIndexesModule(
             stmt.bindText(5, OptimizedJsonMapper.toJson(event.tags))
             stmt.bindText(6, event.content)
             stmt.bindText(7, event.sig)
-            if (event is AddressableEvent) {
-                val dTag = event.dTag()
+            val dTag = event.storeDTag()
+            if (dTag != null) {
                 stmt.bindText(8, dTag)
                 stmt.bindLong(9, eventOwnerHash)
                 stmt.bindLong(10, eTagHash)
