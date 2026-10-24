@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
@@ -93,9 +94,18 @@ open class GiftWrapEvent(
 
     override fun isContentEncoded() = true
 
+    /**
+     * Decrypts the wrap and returns the event inside, a seal or a signed NIP-AC event.
+     *
+     * Throws when the inner event's id or signature doesn't verify. The wrap's own key is
+     * throwaway, so the inner signature is the only proof of who sent it: without this check
+     * anyone could wrap an event claiming any author, and its id could shadow a real event.
+     */
     suspend fun unwrapThrowing(signer: NostrSigner): Event {
         val giftStr = plainContent(signer)
         val gift = fromJson(giftStr)
+
+        if (!gift.verify()) throw IllegalArgumentException("Gift wrap $id holds an event with a bad id or signature")
 
         innerEventId = gift.id
 
