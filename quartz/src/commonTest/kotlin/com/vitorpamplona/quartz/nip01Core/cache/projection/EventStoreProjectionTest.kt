@@ -458,6 +458,42 @@ class EventStoreProjectionTest {
             assertEquals(foreign.id, after[0].value.id)
         }
 
+    /** STORE-F10: the store deletes nothing for an empty filter, so the projection keeps everything. */
+    @Test
+    fun deleteWithAnEmptyFilterKeepsEverySlot() =
+        runBlocking {
+            observable.insert(signer.sign(TextNoteEvent.build("a", createdAt = 100)))
+            observable.insert(signer.sign(TextNoteEvent.build("b", createdAt = 200)))
+
+            val projection = projectionOf<Event>(Filter(kinds = listOf(TextNoteEvent.KIND)))
+            projection.awaitLoaded()
+
+            observable.delete(Filter())
+            delay(200)
+
+            assertEquals(2, projection.awaitLoaded().size)
+            assertEquals(2, store.count(Filter(kinds = listOf(TextNoteEvent.KIND))))
+        }
+
+    /** A delete with a limit removes the newest N in the store; the projection drops the same N. */
+    @Test
+    fun deleteWithALimitDropsWhatTheStoreDropped() =
+        runBlocking {
+            val a = signer.sign(TextNoteEvent.build("a", createdAt = 100))
+            val b = signer.sign(TextNoteEvent.build("b", createdAt = 200))
+            observable.insert(a)
+            observable.insert(b)
+
+            val projection = projectionOf<Event>(Filter(kinds = listOf(TextNoteEvent.KIND)))
+            projection.awaitLoaded()
+
+            observable.delete(Filter(kinds = listOf(TextNoteEvent.KIND), limit = 1))
+
+            val after = projection.awaitItems { it.size == 1 }
+            assertEquals(a.id, after[0].value.id)
+            assertEquals(1, store.count(Filter(kinds = listOf(TextNoteEvent.KIND))))
+        }
+
     @Test
     fun limitIsEnforcedOnInsertOverflow() =
         runBlocking {

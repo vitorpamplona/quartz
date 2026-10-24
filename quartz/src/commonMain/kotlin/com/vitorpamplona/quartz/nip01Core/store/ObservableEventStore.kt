@@ -197,14 +197,30 @@ class ObservableEventStore(
 
     override suspend fun liveNegentropySnapshot(maxEntries: Int) = inner.liveNegentropySnapshot(maxEntries)
 
-    override suspend fun delete(filter: Filter) {
-        inner.delete(filter)
-        _changes.emit(StoreChange.DeleteByFilter(listOf(filter)))
-    }
+    override suspend fun delete(filter: Filter) = delete(listOf(filter))
 
+    /**
+     * Projections apply a [StoreChange.DeleteByFilter] with [Filter.match], so the filters it
+     * carries must select exactly what the store deleted. Two kinds don't: an empty filter, which
+     * the store skips (STORE-F10) but [Filter.match] matches everything with, and a filter with a
+     * `limit` or a search term, of which the store deletes the newest N or the full-text matches
+     * while [Filter.match] ignores both. Empty filters are dropped, and limited or search filters
+     * are first resolved to the ids they select; the store then deletes exactly those ids.
+     */
     override suspend fun delete(filters: List<Filter>) {
-        inner.delete(filters)
-        _changes.emit(StoreChange.DeleteByFilter(filters))
+        val nonEmpty = filters.filterNot { it.isEmpty() }
+        val (exact, resolve) = nonEmpty.partition { it.limit == null && it.search.isNullOrBlank() }
+        val resolvedIds =
+            if (resolve.isEmpty()) {
+                emptyList()
+            } else {
+                inner.query<Event>(resolve).map { it.id }.chunked(DELETE_IDS_PER_FILTER) { Filter(ids = it.toList()) }
+            }
+        val deletion = exact + resolvedIds
+        if (deletion.isEmpty()) return
+
+        inner.delete(deletion)
+        _changes.emit(StoreChange.DeleteByFilter(deletion))
     }
 
     override suspend fun deleteExpiredEvents() {
@@ -229,4 +245,9 @@ class ObservableEventStore(
     ): FtsReindexProgress = inner.reindexFullTextSearch(resumeFrom, batchSize)
 
     override fun close() = inner.close()
+
+    companion object {
+        /** Ids per resolved delete filter, well under SQLite's bound-parameter limit. */
+        private const val DELETE_IDS_PER_FILTER = 500
+    }
 }
