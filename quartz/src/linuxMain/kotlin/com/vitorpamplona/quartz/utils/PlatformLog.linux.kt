@@ -20,52 +20,54 @@
  */
 package com.vitorpamplona.quartz.utils
 
+import kotlinx.cinterop.ExperimentalForeignApi
+import platform.posix.fflush
+import platform.posix.fputs
+import platform.posix.stderr
+
+/**
+ * Logs to stderr, like the JVM sink: stdout belongs to the program, and a CLI
+ * that prints JSON or pipes events must not get log lines mixed into it.
+ */
+@OptIn(ExperimentalForeignApi::class)
 actual object PlatformLog {
-    actual fun w(
+    private fun log(
+        level: String,
         tag: String,
         message: String,
         throwable: Throwable?,
     ) {
-        if (throwable != null) {
-            println("WARN: [$tag] $message. Throwable: $throwable CAUSE ${throwable.cause}")
-        } else {
-            println("WARN: [$tag] $message")
-        }
+        val line =
+            if (throwable != null) {
+                "$level: [$tag] $message. Throwable: $throwable CAUSE ${throwable.cause}\n"
+            } else {
+                "$level: [$tag] $message\n"
+            }
+        fputs(line, stderr)
+        fflush(stderr)
     }
+
+    actual fun w(
+        tag: String,
+        message: String,
+        throwable: Throwable?,
+    ) = log("WARN", tag, message, throwable)
 
     actual fun e(
         tag: String,
         message: String,
         throwable: Throwable?,
-    ) {
-        if (throwable != null) {
-            println("ERROR: [$tag] $message. Throwable: $throwable CAUSE ${throwable.cause}")
-        } else {
-            println("ERROR: [$tag] $message")
-        }
-    }
+    ) = log("ERROR", tag, message, throwable)
 
     actual fun d(
         tag: String,
         message: String,
         throwable: Throwable?,
-    ) {
-        if (throwable != null) {
-            println("DEBUG: [$tag] $message. Throwable: $throwable CAUSE ${throwable.cause}")
-        } else {
-            println("DEBUG: [$tag] $message")
-        }
-    }
+    ) = log("DEBUG", tag, message, throwable)
 
     actual fun i(
         tag: String,
         message: String,
         throwable: Throwable?,
-    ) {
-        if (throwable != null) {
-            println("INFO: [$tag] $message. Throwable: $throwable CAUSE ${throwable.cause}")
-        } else {
-            println("INFO: [$tag] $message")
-        }
-    }
+    ) = log("INFO", tag, message, throwable)
 }
