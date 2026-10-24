@@ -396,10 +396,15 @@ class Url(
 
     companion object {
         private const val DEFAULT_SCHEME = "https"
+
+        // ws and wss share http's and https's default ports (RFC 6455), so `wss://x:443`
+        // normalizes to the same relay as `wss://x`.
         private val SCHEME_PORT_MAP: Map<String, Int> =
             mapOf(
                 "http" to 80,
                 "https" to 443,
+                "ws" to 80,
+                "wss" to 443,
                 "ftp" to 21,
             )
     }

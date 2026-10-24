@@ -385,11 +385,12 @@ class RelayUrlNormalizer {
             if (rawUrl.length < 4) return null
             if (rawUrl.contains("%00")) return null
 
-            // Trim trailing %20 (percent-encoded spaces from malformed event data).
-            // The endsWith gate keeps the hot path allocation-free: trimEnd would
-            // copy the string for ANY url merely ending in '%', '2' or '0' — which
-            // includes every port ending in zero ("wss://host:3030").
-            val url = if (rawUrl.endsWith("%20")) rawUrl.trimEnd('%', '2', '0') else rawUrl
+            // Trim trailing %20 (percent-encoded spaces from malformed event data), whole
+            // "%20" units only: trimEnd('%', '2', '0') also ate the digits before them, turning
+            // "wss://host:8080%20" into port 808. The endsWith gate keeps the hot path
+            // allocation-free.
+            var url = rawUrl
+            while (url.endsWith("%20")) url = url.dropLast(3)
             if (url.length < 4) return null
 
             // Reject URLs with %20 in the middle — these are garbage
