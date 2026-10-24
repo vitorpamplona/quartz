@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
@@ -216,17 +217,32 @@ class NostrClient(
     class Reconnect(
         val onlyIfChanged: Boolean,
         val ignoreRetryDelays: Boolean,
-    )
+    ) {
+        /** The request that does both: a full reconnect wins over a routine one, and so does ignoring retry delays. */
+        fun mergedWith(other: Reconnect) =
+            Reconnect(
+                onlyIfChanged = onlyIfChanged && other.onlyIfChanged,
+                ignoreRetryDelays = ignoreRetryDelays || other.ignoreRetryDelays,
+            )
+    }
 
     val refreshConnection = MutableStateFlow(Reconnect(false, false))
+
+    /**
+     * Every [reconnect] since the debounce last fired, merged. The debounce only delivers
+     * the last value, so without this a routine `reconnect(true)` from a subscribe landing
+     * within 200 ms of a full reconnect (a network change) would replace it.
+     */
+    private val pendingReconnect = MutableStateFlow<Reconnect?>(null)
 
     @OptIn(FlowPreview::class)
     val debouncingConnection =
         refreshConnection
             .debounce(200)
-            .onEach {
-                if (it.onlyIfChanged) {
-                    relayPool.reconnectIfNeedsTo(it.ignoreRetryDelays)
+            .onEach { emitted ->
+                val request = pendingReconnect.getAndUpdate { null } ?: emitted
+                if (request.onlyIfChanged) {
+                    relayPool.reconnectIfNeedsTo(request.ignoreRetryDelays)
                 } else {
                     relayPool.disconnect()
                     relayPool.connect()
@@ -313,7 +329,10 @@ class NostrClient(
         onlyIfChanged: Boolean,
         ignoreRetryDelays: Boolean,
     ) {
-        refreshConnection.tryEmit(Reconnect(onlyIfChanged, ignoreRetryDelays))
+        val request = Reconnect(onlyIfChanged, ignoreRetryDelays)
+        pendingReconnect.update { it?.mergedWith(request) ?: request }
+        // Only a trigger for the debounce: what runs is the merged pendingReconnect.
+        refreshConnection.tryEmit(request)
     }
 
     override fun resetBackoff() {
