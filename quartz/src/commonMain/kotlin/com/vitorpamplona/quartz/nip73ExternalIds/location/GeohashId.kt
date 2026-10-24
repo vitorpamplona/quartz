@@ -48,7 +48,8 @@ class GeohashId(
             value: String,
         ): Boolean {
             ensure(encoded.startsWith(PREFIX_COLON)) { return false }
-            return encoded.indexOf(value, PREFIX_COLON.length) > 0
+            // A cell matches itself and every cell that encloses it (a shorter geohash prefix).
+            return toScope(encoded.substring(PREFIX_COLON.length)).startsWith(toScope(value))
         }
 
         fun parse(encoded: String): String? {

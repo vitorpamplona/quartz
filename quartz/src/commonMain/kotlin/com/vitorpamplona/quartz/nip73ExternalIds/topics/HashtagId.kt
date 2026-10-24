@@ -49,7 +49,7 @@ class HashtagId(
         ): Boolean {
             ensure(encoded.length > 1) { return false }
             ensure(encoded[0] == KIND_CHR) { return false }
-            return encoded.indexOf(value, 1) > 0
+            return encoded.length == value.length + 1 && encoded.regionMatches(1, value, 0, value.length, ignoreCase = true)
         }
 
         fun parse(encoded: String): String? =

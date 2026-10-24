@@ -49,7 +49,7 @@ class PodcastFeedId(
             value: String,
         ): Boolean {
             ensure(encoded.startsWith(PREFIX_COLON)) { return false }
-            return encoded.indexOf(value, PREFIX_COLON.length) > 0
+            return toScope(encoded.substring(PREFIX_COLON.length)) == toScope(value)
         }
 
         fun parse(encoded: String): String? {
