@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.utils
 
-actual fun BigDecimal.toPlainStringValue(): String = toString()
+actual fun BigDecimal.toPlainStringValue(): String = toPlainString()
 
 actual fun BigDecimal.toLongValue(): Long = toLong()
 
 actual fun BigDecimal.toDoubleValue(): Double = toDouble()
 
-actual fun BigDecimal.compareToValue(other: BigDecimal): Int = toDouble().compareTo(other.toDouble())
+actual fun BigDecimal.compareToValue(other: BigDecimal): Int = compareValue(other)
