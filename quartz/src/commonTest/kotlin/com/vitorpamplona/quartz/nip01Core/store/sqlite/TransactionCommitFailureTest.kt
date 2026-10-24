@@ -45,11 +45,17 @@ class TransactionCommitFailureTest {
             db.transaction { execSQL("INSERT INTO parent VALUES (1)") }
             assertEquals(
                 1,
-                db.prepare("SELECT count(*) FROM parent").use { it.step(); it.getInt(0) },
+                db.prepare("SELECT count(*) FROM parent").use {
+                    it.step()
+                    it.getInt(0)
+                },
             )
             assertEquals(
                 0,
-                db.prepare("SELECT count(*) FROM child").use { it.step(); it.getInt(0) },
+                db.prepare("SELECT count(*) FROM child").use {
+                    it.step()
+                    it.getInt(0)
+                },
             )
         } finally {
             db.close()
