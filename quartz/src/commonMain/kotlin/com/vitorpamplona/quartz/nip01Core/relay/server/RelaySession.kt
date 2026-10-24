@@ -43,6 +43,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
+import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
 import com.vitorpamplona.quartz.nip70ProtectedEvts.isProtected
 import com.vitorpamplona.quartz.nip77Negentropy.NegCloseCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegMsgCmd
@@ -272,6 +273,13 @@ class RelaySession(
                 send(handled)
                 return
             }
+        }
+
+        // NIP-42: relays MUST NOT broadcast kind 22242. It belongs in an AUTH message; stored or
+        // fanned out as an EVENT it would reach every subscriber.
+        if (cmd.event.kind == RelayAuthEvent.KIND) {
+            send(OkMessage.rejected(cmd.event.id, MachineReadablePrefix.INVALID, "AUTH events go in an AUTH message, not EVENT"))
+            return
         }
 
         val result = policy.accept(cmd)

@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
+import com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -214,6 +215,16 @@ class LiveEventStore(
     }
 
     /**
+     * The filters a REQ keeps following after EOSE. A NIP-50 search ranks a stored result set,
+     * and [Filter.match] can't evaluate search terms against a new event: registered as-is, a
+     * search filter received every event its other fields matched. A filter with a search term
+     * is answered from the store only; an extensions-only search is no constraint (as in the
+     * store) and stays live. An empty result must not be registered: the index treats an empty
+     * list as "matches everything".
+     */
+    private fun liveFilters(filters: List<Filter>): List<Filter> = filters.filter { it.strippingSearchExtensions().search.isNullOrBlank() }
+
+    /**
      * Runs [block] with a [StoreQueryContext] carrying the connection's
      * NIP-42-authenticated pubkeys, so observer-relative stores can read
      * the caller's identity from the coroutine context. Skipped entirely
@@ -262,15 +273,16 @@ class LiveEventStore(
         // and after EOSE the set is released so every live event forwards.
         val seen = SeenIds()
 
+        val live = liveFilters(filters)
         val sub =
             LiveSubscription(
-                filters = filters,
+                filters = live,
                 deliver = { event, _ ->
                     if (!seen.isDuplicate(event.id)) onEach(event)
                 },
             )
 
-        index.register(filters, sub)
+        if (live.isNotEmpty()) index.register(live, sub)
         try {
             withCallerIdentity(ctx) {
                 store.query<Event>(filters) { event ->
@@ -311,15 +323,16 @@ class LiveEventStore(
         drainFtsIfSearching(filters)
         val seen = SeenIds()
 
+        val live = liveFilters(filters)
         val sub =
             LiveSubscription(
-                filters = filters,
+                filters = live,
                 deliver = { event, body ->
                     if (!seen.isDuplicate(event.id)) onEachLive(event, body)
                 },
             )
 
-        index.register(filters, sub)
+        if (live.isNotEmpty()) index.register(live, sub)
         try {
             withCallerIdentity(ctx) {
                 store.rawQuery(filters) { raw ->

@@ -506,4 +506,58 @@ class NostrServerTest {
 
             server.close()
         }
+
+    // -- Live delivery of search and AUTH events -------------------------------
+
+    @Test
+    fun liveSearchSubscriptionDoesNotReceiveEveryNewEvent() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val server = createServer(dispatcher, EventStore(null))
+            val reader = MessageCollector()
+            val c1 = server.connect(reader.sendCallback)
+            val c2 = server.connect(MessageCollector().sendCallback)
+
+            c1.receive("""["REQ","s",{"search":"bitcoin"}]""")
+            c2.insert(EventFactory.create(hexId(1), pubkey, 100L, 1, emptyArray(), "coffee time", sig))
+
+            assertTrue(reader.messages.none { it.startsWith("[\"EVENT\",\"s\"") }, "a search for bitcoin got: ${reader.messages}")
+            server.close()
+        }
+
+    @Test
+    fun extensionsOnlySearchStaysLive() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val server = createServer(dispatcher, EventStore(null))
+            val reader = MessageCollector()
+            val c1 = server.connect(reader.sendCallback)
+            val c2 = server.connect(MessageCollector().sendCallback)
+
+            // An extensions-only search is no constraint, live or stored.
+            c1.receive("""["REQ","s",{"kinds":[1],"search":"language:en"}]""")
+            c2.insert(EventFactory.create(hexId(1), pubkey, 100L, 1, emptyArray(), "coffee time", sig))
+
+            assertEquals(1, reader.messages.count { it.startsWith("[\"EVENT\",\"s\"") })
+            server.close()
+        }
+
+    @Test
+    fun authEventSentAsEventIsRejectedAndNotBroadcast() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val server = createServer(dispatcher)
+            val reader = MessageCollector()
+            val writer = MessageCollector()
+            val c1 = server.connect(reader.sendCallback)
+            val c2 = server.connect(writer.sendCallback)
+
+            c1.receive("""["REQ","s",{"kinds":[22242]}]""")
+            c2.insert(testEvent(hexId(1), kind = 22242))
+
+            assertTrue(reader.messages.none { it.startsWith("[\"EVENT\",\"s\"") }, "kind 22242 was broadcast")
+            val ok = writer.rawMessagesContaining("OK").single()
+            assertTrue(ok.contains(",false,\"invalid:"), ok)
+            server.close()
+        }
 }
