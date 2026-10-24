@@ -44,7 +44,9 @@ import kotlin.coroutines.CoroutineContext
  * fed through a group-commit [IngestQueue].
  *
  * @param store The [IEventStore] backing this relay.
- * @param policyBuilder Controls requirements for relay commands.
+ * @param policyBuilder Controls requirements for relay commands. It replaces the default
+ *   [VerifyPolicy], and nothing else checks EVENT or AUTH signatures, so keep it in the chain
+ *   (`VerifyPolicy + YourPolicy`) unless [parallelVerify] is on.
  * @param parallelVerify When `true`, Schnorr verification runs in
  *   parallel inside the [IngestQueue] (one async per event, dispatched
  *   on `Dispatchers.Default`) rather than serially on the WS pump

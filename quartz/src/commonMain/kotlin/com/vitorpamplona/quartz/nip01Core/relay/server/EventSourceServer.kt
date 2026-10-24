@@ -45,7 +45,7 @@ import kotlin.coroutines.CoroutineContext
  * ```
  * val server = EventSourceServer(
  *     source = SearchEventSource(searchApi),
- *     policyBuilder = { FullAuthPolicy(relay) }, // optional NIP-42 gating
+ *     policyBuilder = { VerifyPolicy + FullAuthPolicy(relay) }, // optional NIP-42 gating
  * )
  *
  * // per WebSocket connection:
@@ -59,8 +59,9 @@ import kotlin.coroutines.CoroutineContext
  * @param source Produces the events that answer each REQ.
  * @param policyBuilder Builds a fresh [IRelayPolicy] per connection. Defaults to
  *   [EmptyPolicy] (accept REQ/COUNT, no signature verification — appropriate for
- *   a read-only relay). Pass a [com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy]
- *   to gate access behind NIP-42.
+ *   a read-only relay). Pass `VerifyPolicy + FullAuthPolicy(relay)` to gate access behind
+ *   NIP-42: [com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy] does not
+ *   check the AUTH event's signature, so on its own anyone can AUTH as any pubkey.
  * @param parentContext Parent coroutine context for all subscriptions.
  * @param negentropySettings NIP-77 tuning. Negentropy is effectively a no-op
  *   here (the snapshot is empty) but the setting is plumbed for symmetry.
