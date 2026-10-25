@@ -469,7 +469,6 @@ object Bdhke {
         return KeyCodec.serializeUncompressed(x, y)
     }
 
-
     /** Negate a point by flipping its affine Y. Returns null on infinity. */
     private fun negate(p: MutablePoint): MutablePoint? {
         val x = Fe4()
