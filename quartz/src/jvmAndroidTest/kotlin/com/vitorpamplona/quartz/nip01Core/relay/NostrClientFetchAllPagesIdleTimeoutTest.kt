@@ -151,6 +151,46 @@ class NostrClientFetchAllPagesIdleTimeoutTest {
         }
 
     /**
+     * Time the CONSUMER spends in `onEvent` is not the relay going silent. A
+     * caller whose handler suspends on its own backpressure (a full ingest
+     * queue) for longer than the idle window used to have the page ended as
+     * idle under it — the walk then re-asked from its cursor and the relay
+     * served the same events again, which for a mirror under a burst meant
+     * re-downloading the burst it was already too busy to take. The window
+     * now measures the relay alone: it does not run while the handler does.
+     */
+    @Test
+    fun aSlowConsumerDoesNotEndThePageAsIdle() =
+        runBlocking {
+            val client = ScriptedClient()
+            val feeder =
+                launch {
+                    // The relay is prompt: three events and an EOSE inside 100ms.
+                    // Only the consumer is slow.
+                    delay(50)
+                    repeat(3) { i -> client.listener!!.onEvent(event(3 - i, createdAt = 100L - i), false, relay, null) }
+                    client.listener!!.onEose(relay, null)
+                }
+
+            val got = mutableListOf<Event>()
+            val total =
+                client.fetchAllPages(
+                    relay = relay,
+                    filters = listOf(Filter(kinds = listOf(1), limit = 3)),
+                    idleTimeoutMs = 300,
+                ) {
+                    // Blocked on the first event for well over the idle window.
+                    if (got.isEmpty()) delay(900)
+                    got.add(it)
+                }
+            feeder.join()
+
+            assertEquals(3, total.downloaded, "every event the relay sent is delivered")
+            assertEquals(3, got.size)
+            assertEquals(1, client.subscribeCount, "one page: a consumer's own wait must not end it as idle and re-ask the relay")
+        }
+
+    /**
      * Documents why [fetchAllPages] has no wall-clock ceiling — nor should any
      * accessory: a hard bound composes at the call site as `withTimeoutOrNull`.
      *

@@ -49,11 +49,44 @@ internal class IdleClock {
     @Volatile
     private var lastNanos = 0L
 
+    /** True while the CALLER's handler runs ([holding]): the clock stands still. */
+    @Volatile
+    private var held = false
+
     fun bump() {
         lastNanos = start.elapsedNow().inWholeNanoseconds
     }
 
-    fun elapsedMs(): Long = (start.elapsedNow().inWholeNanoseconds - lastNanos) / 1_000_000
+    /**
+     * Run [block] — the caller's own handler for something the relay sent —
+     * with the clock stopped, and count it as activity when it returns.
+     *
+     * The window measures the RELAY's silence, and time spent in the caller's
+     * handler is not that: a handler that suspends on its own backpressure (a
+     * mirror's full ingest queue) for longer than the window used to have the
+     * page ended as idle under it, so the walk re-asked from its cursor and
+     * downloaded again what the relay had already sent. Nothing is lost by not
+     * timing it: the walk cannot move on while a handler holds the event in
+     * flight anyway (it waits for the handler before it reads the page), so the
+     * only thing the timeout could do there was misreport a busy consumer as a
+     * silent relay.
+     *
+     * Not re-entrant: callers run their handler one at a time (the paging walk
+     * under its per-page lock). The release is ordered for the driver thread: the
+     * bump is written before [held] clears, so a reader that sees the clock
+     * running again also sees the fresh mark.
+     */
+    inline fun <T> holding(block: () -> T): T {
+        held = true
+        try {
+            return block()
+        } finally {
+            bump()
+            held = false
+        }
+    }
+
+    fun elapsedMs(): Long = if (held) 0 else (start.elapsedNow().inWholeNanoseconds - lastNanos) / 1_000_000
 }
 
 /**

@@ -855,7 +855,10 @@ internal suspend fun INostrClient.walkPages(
                                     }
                                     if (atLeastOne) {
                                         try {
-                                            onEvent(event)
+                                            // The clock stands still while the caller's handler
+                                            // runs: its own backpressure is not this relay going
+                                            // silent (see [IdleClock.holding]).
+                                            clock.holding { onEvent(event) }
                                         } catch (e: Throwable) {
                                             // Not handed on: forgotten, so a copy sent again on this page (a
                                             // reconnect re-serving it) is delivered instead of taken for a repeat.
