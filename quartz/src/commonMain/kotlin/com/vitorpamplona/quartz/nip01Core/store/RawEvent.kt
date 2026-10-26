@@ -56,12 +56,21 @@ class RawEvent(
         )
 
     /**
-     * An upper bound, for an unescaped [content], on what [appendJsonObjectTo]
-     * writes: presize a builder with it and the append never grows the buffer,
-     * which would copy the whole frame. A sixteenth of [content] covers its
-     * usual escapes (newlines and quotes).
+     * An upper bound on what [appendJsonObjectTo] writes: presize a builder with
+     * it and the append never grows the buffer, which would copy the whole
+     * frame. [content]'s escapes are counted, not guessed: a kind 0's content
+     * is itself JSON, about one char in six a quote.
      */
-    internal fun jsonObjectLengthEstimate(): Int = JSON_OBJECT_OVERHEAD + jsonTags.length + content.length + content.length / 16
+    internal fun jsonObjectLengthEstimate(): Int {
+        var escapes = 0
+        for (ch in content) {
+            when {
+                ch == '"' || ch == '\\' || ch == '\n' || ch == '\r' || ch == '\t' || ch == '\b' || ch == '\u000C' -> escapes += 1
+                ch < ' ' -> escapes += 5
+            }
+        }
+        return JSON_OBJECT_OVERHEAD + jsonTags.length + content.length + escapes
+    }
 
     /**
      * Appends this event as a NIP-01 JSON object, reusing the stored

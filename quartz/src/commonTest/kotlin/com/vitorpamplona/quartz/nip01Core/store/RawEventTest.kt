@@ -34,7 +34,7 @@ class RawEventTest {
 
     @Test
     fun estimateBoundsTheWrittenObject() {
-        for (event in listOf(raw(""), raw("gm"), raw("x".repeat(5000)), raw("a line of a note, and a break at its end\n".repeat(40)), raw("été 你好"), raw("", createdAt = 0, kind = 1))) {
+        for (event in listOf(raw(""), raw("gm"), raw("x".repeat(5000)), raw("a line of a note, and a break at its end\n".repeat(40)), raw("hello\nworld \"quoted\" \\ ".repeat(40)), raw("\u0001\u0002 bell \u0007 \u001f".repeat(20)), raw("""{"name":"ann","display_name":"Ann","about":"builds relays","picture":"https://x.example/a.png","nip05":"ann@x.example","lud16":"ann@x.example"}"""), raw("été 你好"), raw("", createdAt = 0, kind = 1))) {
             assertTrue(written(event) <= event.jsonObjectLengthEstimate(), "wrote ${written(event)}, estimated ${event.jsonObjectLengthEstimate()}")
         }
     }
