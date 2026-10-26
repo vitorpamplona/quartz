@@ -36,8 +36,8 @@ import kotlin.concurrent.atomics.incrementAndFetch
  * arrives once per matching subscription AND once per connected relay
  * (production measurements: 14–57% duplicate frames; see
  * `quartz/plans/2026-07-02-nostrclient-receiver-perf.md`). Each duplicate
- * costs a full JSON parse (~3–30µs depending on event size) even though the
- * client already holds the parsed [Event]. This decoder scans the frame for
+ * costs a full JSON parse (~2µs a frame on the recorded startup capture, more
+ * for long events) even though the client already holds the parsed [Event]. This decoder scans the frame for
  * the event id (~0.3µs), and on a cache hit synthesizes the [EventMessage]
  * from the cached [Event] with the *frame's own* subscription id — so every
  * subscription still receives its delivery, per-relay bookkeeping still
