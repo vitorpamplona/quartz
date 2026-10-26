@@ -54,8 +54,10 @@ class StatementCachingConnection(
      * Ceiling on retained statements across all SQL strings. Query SQL
      * embeds one `?` per filter element, so shape variety is
      * client-controlled — without a cap a long-lived relay connection would
-     * accumulate native handles without bound. Once full, unseen SQL (or an
-     * extra concurrent copy of a cached SQL) just prepares uncached. 512
+     * accumulate native handles without bound. Once full, a new SQL string
+     * (or an extra concurrent copy of a cached one) evicts the least
+     * recently used SQL with no checked-out handle, and prepares uncached
+     * only when every cached handle is in use. 512
      * covers the write path's fixed set, the recurring single-shot filter
      * shapes, and a few hundred concurrent per-stream merge cursors.
      */
@@ -63,14 +65,17 @@ class StatementCachingConnection(
 ) : SQLiteConnection by delegate {
     // One reusable pool per SQL string. Several entries of the same pool may
     // be checked out simultaneously (the merge path); a `prepare` reuses the
-    // first free entry, grows the pool while under the global cap, and only
-    // then falls back to an uncached statement.
-    private val cache = HashMap<String, ArrayList<CachedStatement>>()
+    // first free entry, grows the pool while under the global cap (evicting
+    // idle SQL to get there), and only then falls back to an uncached
+    // statement. Iteration order is recency: a hit moves its SQL to the end,
+    // so the first entries are the least recently used.
+    private val cache = LinkedHashMap<String, ArrayList<CachedStatement>>()
     private var cachedCount = 0
 
     override fun prepare(sql: String): SQLiteStatement {
-        val pool = cache[sql]
+        val pool = cache.remove(sql)
         if (pool != null) {
+            cache[sql] = pool
             for (i in pool.indices) {
                 val stmt = pool[i]
                 if (!stmt.checkedOut) {
@@ -81,19 +86,38 @@ class StatementCachingConnection(
             }
             // Every pooled handle for this SQL is in use — grow if the global
             // budget allows, else serve an uncached statement.
-            if (cachedCount >= maxCachedStatements) return delegate.prepare(sql)
+            if (!makeRoom(keep = sql)) return delegate.prepare(sql)
             return CachedStatement(delegate.prepare(sql)).also {
                 it.checkedOut = true
                 pool.add(it)
                 cachedCount++
             }
         }
-        if (cachedCount >= maxCachedStatements) return delegate.prepare(sql)
+        if (!makeRoom(keep = sql)) return delegate.prepare(sql)
         return CachedStatement(delegate.prepare(sql)).also {
             it.checkedOut = true
             cache[sql] = arrayListOf(it)
             cachedCount++
         }
+    }
+
+    /**
+     * Frees one slot under [maxCachedStatements] by finalizing the least
+     * recently used SQL whose handles are all idle. Returns false when the
+     * cache is full of checked-out handles (or [keep]'s own).
+     */
+    private fun makeRoom(keep: String): Boolean {
+        if (cachedCount < maxCachedStatements) return true
+        val iterator = cache.entries.iterator()
+        while (iterator.hasNext()) {
+            val (sql, pool) = iterator.next()
+            if (sql == keep || pool.any { it.checkedOut }) continue
+            pool.forEach { runCatching { it.finalizeStatement() } }
+            cachedCount -= pool.size
+            iterator.remove()
+            if (cachedCount < maxCachedStatements) return true
+        }
+        return false
     }
 
     override fun close() {

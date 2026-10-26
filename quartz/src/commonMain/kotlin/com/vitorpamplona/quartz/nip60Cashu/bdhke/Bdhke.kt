@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.utils.secp256k1.MutablePoint
 import com.vitorpamplona.quartz.utils.secp256k1.ScalarN
 import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
 import com.vitorpamplona.quartz.utils.secp256k1.U256
+import fr.acinq.secp256k1.Secp256k1 as LibSecp256k1
 
 /**
  * Blind Diffie-Hellman Key Exchange (BDHKE) — the cryptographic primitive
@@ -47,8 +48,15 @@ import com.vitorpamplona.quartz.utils.secp256k1.U256
  * Bob cannot link `B_` to `(secret, C)` because the blinding factor `r` is
  * private to Alice — hence "blind" signatures and the privacy property of
  * ecash. See NUT-00 for the full security argument.
+ *
+ * Every multiplication by a secret scalar (the blinding factor `r`, the mint
+ * key `a`, the DLEQ nonce) runs on libsecp256k1, which is constant-time. The
+ * pure-Kotlin curve code in `utils.secp256k1` is variable-time by design, so it
+ * only handles public values here: hash-to-curve and DLEQ verification.
  */
 object Bdhke {
+    private val libsecp = LibSecp256k1.get()
+
     /** Cashu hash-to-curve domain separator (NUT-00). */
     private val DOMAIN_SEPARATOR = "Secp256k1_HashToCurve_Cashu_".encodeToByteArray()
 
@@ -111,16 +119,9 @@ object Bdhke {
         require(r.size == 32) { "Blinding factor must be 32 bytes" }
         require(Secp256k1.secKeyVerify(r)) { "Invalid blinding factor" }
 
-        val y = hashToCurve(secret)
-        val rg = MutablePoint()
-        val rScalar = Fe4()
-        U256.fromBytesInto(rScalar, r, 0)
-        ECPoint.mulG(rg, rScalar)
-
-        val out = MutablePoint()
-        ECPoint.addPoints(out, y, rg)
-
-        return toCompressed(out)
+        val y = hashToCurveCompressed(secret)
+        val rg = libsecp.pubkeyCreate(r)
+        return libsecp.pubKeyCompress(libsecp.pubKeyCombine(arrayOf(y, rg)))
     }
 
     /**
@@ -128,8 +129,7 @@ object Bdhke {
      *
      *   C = C_ - r·K
      *
-     * Implemented as `C_ + (-r·K)` since we don't expose point subtraction
-     * directly. `-r·K` is computed by negating the scalar: `(n - r)·K`.
+     * Implemented as `C_ + (-(r·K))`: libsecp256k1 has no point subtraction.
      *
      * @param blindSignature 33-byte compressed `C_` returned by the mint.
      * @param r 32-byte blinding factor used in [blind].
@@ -143,33 +143,11 @@ object Bdhke {
         mintPubKey: ByteArray,
     ): ByteArray {
         require(r.size == 32) { "Blinding factor must be 32 bytes" }
+        require(isValidPoint(blindSignature)) { "Invalid blind signature" }
+        require(isValidPoint(mintPubKey)) { "Invalid mint public key" }
 
-        val cTickX = Fe4()
-        val cTickY = Fe4()
-        require(KeyCodec.parsePublicKey(blindSignature, cTickX, cTickY)) { "Invalid blind signature" }
-        val cTick = MutablePoint().also { it.setAffine(cTickX, cTickY) }
-
-        val kx = Fe4()
-        val ky = Fe4()
-        require(KeyCodec.parsePublicKey(mintPubKey, kx, ky)) { "Invalid mint public key" }
-        val k = MutablePoint().also { it.setAffine(kx, ky) }
-
-        // r·K, then negate Y to get -r·K
-        val rScalar = Fe4()
-        U256.fromBytesInto(rScalar, r, 0)
-        val rk = MutablePoint()
-        ECPoint.mul(rk, k, rScalar)
-
-        // Convert to affine first, then negate Y.
-        val rkX = Fe4()
-        val rkY = Fe4()
-        require(ECPoint.toAffine(rk, rkX, rkY)) { "rK is point at infinity" }
-        FieldP.neg(rkY, rkY)
-        val negRk = MutablePoint().also { it.setAffine(rkX, rkY) }
-
-        val out = MutablePoint()
-        ECPoint.addPoints(out, cTick, negRk)
-        return toCompressed(out)
+        val negRk = libsecp.pubKeyNegate(libsecp.pubKeyTweakMul(mintPubKey, r))
+        return libsecp.pubKeyCompress(libsecp.pubKeyCombine(arrayOf(blindSignature, negRk)))
     }
 
     /**
@@ -185,7 +163,7 @@ object Bdhke {
     fun sign(
         blindedMessage: ByteArray,
         mintPrivKey: ByteArray,
-    ): ByteArray = Secp256k1.pubKeyTweakMul(blindedMessage, mintPrivKey)
+    ): ByteArray = libsecp.pubKeyCompress(libsecp.pubKeyTweakMul(blindedMessage, mintPrivKey))
 
     /**
      * Mint-side proof verification — Bob checks `C == a·Y`.
@@ -201,9 +179,7 @@ object Bdhke {
         unblindedSignature: ByteArray,
         mintPrivKey: ByteArray,
     ): Boolean {
-        val y = hashToCurve(secret)
-        val yCompressed = toCompressed(y)
-        val expected = Secp256k1.pubKeyTweakMul(yCompressed, mintPrivKey)
+        val expected = sign(hashToCurveCompressed(secret), mintPrivKey)
         return expected.contentEquals(unblindedSignature)
     }
 
@@ -393,25 +369,15 @@ object Bdhke {
         r: ByteArray,
         mintPubKey: ByteArray,
     ): ByteArray {
-        val cX = Fe4()
-        val cY = Fe4()
-        require(KeyCodec.parsePublicKey(c, cX, cY)) { "Invalid C" }
-        val cPoint = MutablePoint().also { it.setAffine(cX, cY) }
+        require(isValidPoint(c)) { "Invalid C" }
+        require(isValidPoint(mintPubKey)) { "Invalid mint public key" }
 
-        val kx = Fe4()
-        val ky = Fe4()
-        require(KeyCodec.parsePublicKey(mintPubKey, kx, ky)) { "Invalid mint public key" }
-        val k = MutablePoint().also { it.setAffine(kx, ky) }
-
-        val rScalar = Fe4()
-        U256.fromBytesInto(rScalar, r, 0)
-        val rk = MutablePoint()
-        ECPoint.mul(rk, k, rScalar)
-
-        val out = MutablePoint()
-        ECPoint.addPoints(out, cPoint, rk)
-        return toCompressed(out)
+        val rk = libsecp.pubKeyTweakMul(mintPubKey, r)
+        return libsecp.pubKeyCompress(libsecp.pubKeyCombine(arrayOf(c, rk)))
     }
+
+    /** Whether [compressed] parses as a point on the curve; public data, so the Kotlin parser is fine. */
+    private fun isValidPoint(compressed: ByteArray): Boolean = KeyCodec.parsePublicKey(compressed, Fe4(), Fe4())
 
     /**
      * Mint-side NUT-12 DLEQ-signing — produces `(C', e, s)` for the given
@@ -428,24 +394,14 @@ object Bdhke {
         require(rPrime.size == 32) { "DLEQ nonce must be 32 bytes" }
         require(Secp256k1.secKeyVerify(rPrime)) { "Invalid DLEQ nonce" }
 
+        require(isValidPoint(blindedMessage)) { "Invalid B'" }
         val cTick = sign(blindedMessage, mintPrivKey)
 
-        val rPrimeScalar = Fe4()
-        U256.fromBytesInto(rPrimeScalar, rPrime, 0)
-
-        val r1 = MutablePoint().also { ECPoint.mulG(it, rPrimeScalar) }
-        val r1Uncompressed = toUncompressedOrNull(r1) ?: error("R1 is at infinity")
-
-        val bX = Fe4()
-        val bY = Fe4()
-        require(KeyCodec.parsePublicKey(blindedMessage, bX, bY)) { "Invalid B'" }
-        val bPoint = MutablePoint().also { it.setAffine(bX, bY) }
-        val r2 = MutablePoint().also { ECPoint.mul(it, bPoint, rPrimeScalar) }
-        val r2Uncompressed = toUncompressedOrNull(r2) ?: error("R2 is at infinity")
-
-        // pubkeyCreate returns 65-byte uncompressed — exactly what
+        // libsecp256k1 returns 65-byte uncompressed points — exactly what
         // NUT-12 wants in the hash input. Don't compress.
-        val aUncompressed = Secp256k1.pubkeyCreate(mintPrivKey)
+        val r1Uncompressed = libsecp.pubkeyCreate(rPrime)
+        val r2Uncompressed = libsecp.pubKeyTweakMul(blindedMessage, rPrime)
+        val aUncompressed = libsecp.pubkeyCreate(mintPrivKey)
         val cUncompressed = compressedToUncompressed(cTick) ?: error("Invalid C' from sign()")
 
         // See [verifyDleq] for the hash format. Uncompressed (65-byte)
@@ -458,13 +414,7 @@ object Bdhke {
         val e = sha256(hashInput)
 
         // s = r' + e*k mod n
-        val eScalar = Fe4()
-        U256.fromBytesInto(eScalar, e, 0)
-        val kScalar = Fe4()
-        U256.fromBytesInto(kScalar, mintPrivKey, 0)
-        val ek = ScalarN.mul(eScalar, kScalar)
-        val sScalar = ScalarN.add(rPrimeScalar, ek)
-        val s = U256.toBytes(sScalar)
+        val s = libsecp.privKeyTweakAdd(libsecp.privKeyTweakMul(mintPrivKey, e), rPrime)
 
         return Triple(cTick, e, s)
     }
@@ -519,14 +469,7 @@ object Bdhke {
         return KeyCodec.serializeUncompressed(x, y)
     }
 
-    /** Non-throwing variant for verification paths — infinity → null instead of crash. */
-    private fun toCompressedOrNull(p: MutablePoint): ByteArray? {
-        val x = Fe4()
-        val y = Fe4()
-        return if (ECPoint.toAffine(p, x, y)) KeyCodec.serializeCompressed(x, y) else null
-    }
-
-    /** Negate a point via the affine-Y flip pattern used in [unblind]. Returns null on infinity. */
+    /** Negate a point by flipping its affine Y. Returns null on infinity. */
     private fun negate(p: MutablePoint): MutablePoint? {
         val x = Fe4()
         val y = Fe4()

@@ -22,10 +22,7 @@ package com.vitorpamplona.quartz.nip01Core.cache.interning
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.store.FtsReindexProgress
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
-import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 
 /**
  * Decorator that canonicalises every [Event] returned by the inner
@@ -41,7 +38,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
  * val observable = ObservableEventStore(cached)
  * ```
  *
- * Writes ([insert] / [transaction]) forward to the inner store and,
+ * Writes ([insert] / [batchInsert] / [transaction]) forward to the inner store and,
  * on success, register the accepted event with the interner. The
  * caller's instance becomes canonical for that id (so a later read
  * of the same id returns the same `===` reference, until the weak
@@ -53,8 +50,9 @@ import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
  * Reads ([query]) pipe results through `interner.intern`, returning
  * canonical instances for ids that have a live cached entry.
  *
- * Out-of-band removals (`delete*`, `deleteExpiredEvents`) pass
- * through unchanged.
+ * Every other member (removals, counts, raw reads, negentropy, FTS
+ * maintenance) goes to the inner store by delegation, so its own
+ * implementation is never replaced by an [IEventStore] default.
  *
  * The default [interner] is [EventInterner.Default]; pass a fresh
  * instance for tests or any context that needs isolation.
@@ -62,14 +60,22 @@ import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 class InterningEventStore(
     private val inner: IEventStore,
     private val interner: EventInterner = EventInterner.Default,
-) : IEventStore {
-    override val relay: NormalizedRelayUrl? get() = inner.relay
-
+) : IEventStore by inner {
     override suspend fun insert(event: Event) {
         inner.insert(event)
         // Inner accepted (didn't throw) — register the canonical
         // instance so subsequent reads share the same reference.
         interner.intern(event)
+    }
+
+    override suspend fun batchInsert(events: List<Event>): List<IEventStore.InsertOutcome> {
+        // The inner batch keeps its group commit and its per-row outcomes;
+        // only the events it accepted become canonical.
+        val outcomes = inner.batchInsert(events)
+        for (i in events.indices) {
+            if (outcomes[i] is IEventStore.InsertOutcome.Accepted) interner.intern(events[i])
+        }
+        return outcomes
     }
 
     override suspend fun transaction(body: IEventStore.ITransaction.() -> Unit) {
@@ -108,29 +114,4 @@ class InterningEventStore(
         filters: List<Filter>,
         onEach: (T) -> Unit,
     ) = inner.query<T>(filters) { onEach(interner.intern(it) as T) }
-
-    override suspend fun count(filter: Filter): Int = inner.count(filter)
-
-    override suspend fun count(filters: List<Filter>): Int = inner.count(filters)
-
-    override suspend fun snapshotIdsForNegentropy(
-        filters: List<Filter>,
-        maxEntries: Int?,
-        onProgress: ((collected: Int) -> Unit)?,
-    ): List<IdAndTime> = inner.snapshotIdsForNegentropy(filters, maxEntries, onProgress)
-
-    override suspend fun delete(filter: Filter) = inner.delete(filter)
-
-    override suspend fun delete(filters: List<Filter>) = inner.delete(filters)
-
-    override suspend fun deleteExpiredEvents() = inner.deleteExpiredEvents()
-
-    override suspend fun reindexFullTextSearch() = inner.reindexFullTextSearch()
-
-    override suspend fun reindexFullTextSearch(
-        resumeFrom: String?,
-        batchSize: Int,
-    ): FtsReindexProgress = inner.reindexFullTextSearch(resumeFrom, batchSize)
-
-    override fun close() = inner.close()
 }

@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip01Core.store
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.isEphemeral
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.channels.BufferOverflow
@@ -44,12 +43,14 @@ import kotlinx.coroutines.flow.asSharedFlow
  *   still emit. Already-expired ephemerals are silently dropped.
  * - [delete] and [deleteExpiredEvents] also emit so projections drop
  *   the matching slots in memory.
+ * - Every other member (queries, counts, negentropy snapshots, FTS
+ *   maintenance) goes to [inner] by delegation, so a store's own
+ *   implementation is never replaced by an [IEventStore] default. None of
+ *   them change an event, so none emits.
  */
 class ObservableEventStore(
     val inner: IEventStore,
-) : IEventStore {
-    override val relay: NormalizedRelayUrl? get() = inner.relay
-
+) : IEventStore by inner {
     private val _changes =
         MutableSharedFlow<StoreChange>(
             replay = 0,
@@ -171,32 +172,6 @@ class ObservableEventStore(
         for (e in accepted) _changes.emit(StoreChange.Insert(e))
     }
 
-    override suspend fun <T : Event> query(filter: Filter): List<T> = inner.query(filter)
-
-    override suspend fun <T : Event> query(filters: List<Filter>): List<T> = inner.query(filters)
-
-    override suspend fun <T : Event> query(
-        filter: Filter,
-        onEach: (T) -> Unit,
-    ) = inner.query(filter, onEach)
-
-    override suspend fun <T : Event> query(
-        filters: List<Filter>,
-        onEach: (T) -> Unit,
-    ) = inner.query(filters, onEach)
-
-    override suspend fun count(filter: Filter): Int = inner.count(filter)
-
-    override suspend fun count(filters: List<Filter>): Int = inner.count(filters)
-
-    override suspend fun snapshotIdsForNegentropy(
-        filters: List<Filter>,
-        maxEntries: Int?,
-        onProgress: ((collected: Int) -> Unit)?,
-    ): List<IdAndTime> = inner.snapshotIdsForNegentropy(filters, maxEntries, onProgress)
-
-    override suspend fun liveNegentropySnapshot(maxEntries: Int) = inner.liveNegentropySnapshot(maxEntries)
-
     override suspend fun delete(filter: Filter) {
         inner.delete(filter)
         _changes.emit(StoreChange.DeleteByFilter(listOf(filter)))
@@ -217,16 +192,4 @@ class ObservableEventStore(
         inner.deleteExpiredEvents()
         _changes.emit(StoreChange.DeleteExpired(asOf))
     }
-
-    // Pure index maintenance: it rewrites the FTS index without adding,
-    // removing, or changing any event, so there is nothing for
-    // projections to observe and no [StoreChange] is emitted.
-    override suspend fun reindexFullTextSearch() = inner.reindexFullTextSearch()
-
-    override suspend fun reindexFullTextSearch(
-        resumeFrom: String?,
-        batchSize: Int,
-    ): FtsReindexProgress = inner.reindexFullTextSearch(resumeFrom, batchSize)
-
-    override fun close() = inner.close()
 }

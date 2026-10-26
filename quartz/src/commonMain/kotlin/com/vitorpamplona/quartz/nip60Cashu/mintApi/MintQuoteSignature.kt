@@ -22,7 +22,7 @@ package com.vitorpamplona.quartz.nip60Cashu.mintApi
 
 import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+import fr.acinq.secp256k1.Secp256k1
 
 /**
  * NUT-20 mint-quote signing.
@@ -59,7 +59,8 @@ object MintQuoteSignature {
         require(signingPrivkey.size == 32) { "Signing key must be 32 bytes" }
         val msg = buildSigningPayload(quoteId, blindedMessageHexes)
         val hash = sha256(msg)
-        return Secp256k1.signSchnorr(hash, signingPrivkey, auxrand = null).toHexKey()
+        // A secret key: libsecp256k1 signs in constant time, unlike the pure-Kotlin curve code.
+        return Secp256k1.get().signSchnorr(hash, signingPrivkey, null).toHexKey()
     }
 
     /**

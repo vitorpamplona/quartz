@@ -21,22 +21,99 @@
 package com.vitorpamplona.quartz.kinds
 
 import com.vitorpamplona.quartz.buzz.aeEngrams.EngramEvent
+import com.vitorpamplona.quartz.buzz.agentProfiles.AgentProfileEvent
 import com.vitorpamplona.quartz.buzz.amTurnMetrics.AgentTurnMetricEvent
 import com.vitorpamplona.quartz.buzz.aoObserver.ObserverFrameEvent
+import com.vitorpamplona.quartz.buzz.apPersonas.PersonaEvent
 import com.vitorpamplona.quartz.buzz.arArtifacts.ArtifactEvent
+import com.vitorpamplona.quartz.buzz.arArtifacts.ArtifactRemovalEvent
 import com.vitorpamplona.quartz.buzz.audit.AuditEntryEvent
 import com.vitorpamplona.quartz.buzz.cwChannelWindow.ThreadWindowBoundsEvent
 import com.vitorpamplona.quartz.buzz.cwChannelWindow.WindowBoundsEvent
+import com.vitorpamplona.quartz.buzz.dm.DmAddMemberEvent
+import com.vitorpamplona.quartz.buzz.dm.DmCreatedEvent
+import com.vitorpamplona.quartz.buzz.dm.DmHideEvent
+import com.vitorpamplona.quartz.buzz.dm.DmOpenEvent
+import com.vitorpamplona.quartz.buzz.dvDmVisibility.DmVisibilityEvent
 import com.vitorpamplona.quartz.buzz.erReminders.EventReminderEvent
+import com.vitorpamplona.quartz.buzz.forum.ForumCommentEvent
+import com.vitorpamplona.quartz.buzz.forum.ForumPostEvent
+import com.vitorpamplona.quartz.buzz.forum.ForumVoteEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleEndedEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleGuidelinesEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleLivenessEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleParticipantJoinedEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleParticipantLeftEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleReactionEvent
+import com.vitorpamplona.quartz.buzz.huddles.HuddleStartedEvent
+import com.vitorpamplona.quartz.buzz.iaIdentityArchival.ArchiveRequestEvent
+import com.vitorpamplona.quartz.buzz.iaIdentityArchival.ArchivedIdentitiesListEvent
+import com.vitorpamplona.quartz.buzz.iaIdentityArchival.ArchivedIdentityEvent
+import com.vitorpamplona.quartz.buzz.iaIdentityArchival.UnarchiveRequestEvent
+import com.vitorpamplona.quartz.buzz.iaIdentityArchival.UnarchivedIdentityEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobAcceptedEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobCancelEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobErrorEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobProgressEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobRequestEvent
+import com.vitorpamplona.quartz.buzz.jobs.JobResultEvent
 import com.vitorpamplona.quartz.buzz.managedAgents.ManagedAgentEvent
+import com.vitorpamplona.quartz.buzz.moderation.ModerationBanEvent
+import com.vitorpamplona.quartz.buzz.moderation.ModerationResolveReportEvent
+import com.vitorpamplona.quartz.buzz.moderation.ModerationTimeoutEvent
+import com.vitorpamplona.quartz.buzz.moderation.ModerationUntimeoutEvent
+import com.vitorpamplona.quartz.buzz.moderation.ProductFeedbackEvent
+import com.vitorpamplona.quartz.buzz.mpProjects.ProjectEvent
+import com.vitorpamplona.quartz.buzz.notifications.MemberAddedNotificationEvent
+import com.vitorpamplona.quartz.buzz.notifications.MemberRemovedNotificationEvent
 import com.vitorpamplona.quartz.buzz.pairing.PairingEvent
 import com.vitorpamplona.quartz.buzz.plPushLease.PushLeaseEvent
+import com.vitorpamplona.quartz.buzz.presence.PresenceUpdateEvent
+import com.vitorpamplona.quartz.buzz.presence.TypingIndicatorEvent
+import com.vitorpamplona.quartz.buzz.relayAdmin.RelayAdminAddMemberEvent
+import com.vitorpamplona.quartz.buzz.relayAdmin.RelayAdminChangeRoleEvent
+import com.vitorpamplona.quartz.buzz.relayAdmin.RelayAdminRemoveMemberEvent
+import com.vitorpamplona.quartz.buzz.stream.CanvasEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessageBookmarkedEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessageDiffEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessageEditEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessagePinnedEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessageScheduledEvent
+import com.vitorpamplona.quartz.buzz.stream.StreamMessageV2Event
+import com.vitorpamplona.quartz.buzz.stream.StreamReminderEvent
+import com.vitorpamplona.quartz.buzz.stream.SystemMessageEvent
 import com.vitorpamplona.quartz.buzz.stream.sidecars.ChannelSummaryEvent
 import com.vitorpamplona.quartz.buzz.stream.sidecars.PresenceSnapshotEvent
+import com.vitorpamplona.quartz.buzz.teamCatalog.TeamCatalogEvent
+import com.vitorpamplona.quartz.buzz.teams.TeamEvent
+import com.vitorpamplona.quartz.buzz.workflow.ApprovalDenyEvent
+import com.vitorpamplona.quartz.buzz.workflow.ApprovalGrantEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowApprovalDeniedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowApprovalGrantedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowApprovalRequestedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowCancelledEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowCompletedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowDefEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowFailedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowStepCompletedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowStepFailedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowStepStartedEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowTriggerEvent
+import com.vitorpamplona.quartz.buzz.workflow.WorkflowTriggeredEvent
+import com.vitorpamplona.quartz.buzz.wpWorkspaceProfile.SetWorkspaceProfileEvent
 import com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityListEvent
 import com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityListFragmentEvent
+import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChatEditEvent
+import com.vitorpamplona.quartz.concord.cord03Channels.ConcordTimerNoticeEvent
+import com.vitorpamplona.quartz.concord.cord04Roles.control.ControlEditionEvent
 import com.vitorpamplona.quartz.concord.cord05Invites.ConcordInviteListEvent
 import com.vitorpamplona.quartz.concord.cord05Invites.bundle.ConcordInviteBundleEvent
+import com.vitorpamplona.quartz.contextvm.cep06Announcements.CvmServerAnnouncementEvent
+import com.vitorpamplona.quartz.contextvm.cep06Announcements.CvmToolsListEvent
+import com.vitorpamplona.quartz.cyberspace.CyberspaceBagEvent
+import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoAvatarEvent
+import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoObjectEvent
+import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoShardEvent
 import com.vitorpamplona.quartz.experimental.agora.FundraiserEvent
 import com.vitorpamplona.quartz.experimental.attestations.attestation.AttestationEvent
 import com.vitorpamplona.quartz.experimental.attestations.proficiency.AttestorProficiencyEvent
@@ -46,6 +123,7 @@ import com.vitorpamplona.quartz.experimental.audio.header.AudioHeaderEvent
 import com.vitorpamplona.quartz.experimental.audio.track.AudioTrackEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdDetectionEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdexEvent
+import com.vitorpamplona.quartz.experimental.bitchat.geohash.GeohashChatEvent
 import com.vitorpamplona.quartz.experimental.citations.ExternalCitationEvent
 import com.vitorpamplona.quartz.experimental.citations.HardcopyCitationEvent
 import com.vitorpamplona.quartz.experimental.citations.PromptCitationEvent
@@ -146,6 +224,7 @@ import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupAdminsEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMembersEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMetadataEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupParticipantsEvent
+import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupPinnedEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupRolesEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.moderation.CreateGroupEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.moderation.DeleteGroupEvent
@@ -154,6 +233,7 @@ import com.vitorpamplona.quartz.nip29RelayGroups.moderation.GroupDeleteEventEven
 import com.vitorpamplona.quartz.nip29RelayGroups.moderation.GroupEditMetadataEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.moderation.GroupPutUserEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.moderation.GroupRemoveUserEvent
+import com.vitorpamplona.quartz.nip29RelayGroups.moderation.GroupUpdatePinListEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.request.GroupJoinRequestEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.request.GroupLeaveRequestEvent
 import com.vitorpamplona.quartz.nip30CustomEmoji.pack.EmojiPackEvent
@@ -179,6 +259,10 @@ import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestUpdateEvent
 import com.vitorpamplona.quartz.nip34Git.reply.GitReplyEvent
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.state.GitRepositoryStateEvent
+import com.vitorpamplona.quartz.nip34Git.status.GitStatusAppliedEvent
+import com.vitorpamplona.quartz.nip34Git.status.GitStatusClosedEvent
+import com.vitorpamplona.quartz.nip34Git.status.GitStatusDraftEvent
+import com.vitorpamplona.quartz.nip34Git.status.GitStatusOpenEvent
 import com.vitorpamplona.quartz.nip35Torrents.TorrentCommentEvent
 import com.vitorpamplona.quartz.nip35Torrents.TorrentEvent
 import com.vitorpamplona.quartz.nip37Drafts.DraftWrapEvent
@@ -319,6 +403,7 @@ import com.vitorpamplona.quartz.nip90Dvms.contentDiscoveryRequest.DvmContentDisc
 import com.vitorpamplona.quartz.nip90Dvms.contentDiscoveryResponse.DvmContentDiscoveryResponseEvent
 import com.vitorpamplona.quartz.nip90Dvms.contentSearch.DvmContentSearchRequestEvent
 import com.vitorpamplona.quartz.nip90Dvms.contentSearch.DvmContentSearchResponseEvent
+import com.vitorpamplona.quartz.nip90Dvms.dvmHeartbeat.DvmHeartbeatEvent
 import com.vitorpamplona.quartz.nip90Dvms.eventCount.DvmEventCountRequestEvent
 import com.vitorpamplona.quartz.nip90Dvms.eventCount.DvmEventCountResponseEvent
 import com.vitorpamplona.quartz.nip90Dvms.eventPowDelegation.DvmEventPowDelegationRequestEvent
@@ -803,6 +888,92 @@ object KindNames {
             ExtensionReleaseEvent.KIND to KindName("Agent Extension Release", null),
             ChannelSummaryEvent.KIND to KindName("Channel Summary", null),
             PresenceSnapshotEvent.KIND to KindName("Presence Snapshot", null),
+            GitStatusOpenEvent.KIND to KindName("Git Status Open", "34"),
+            GitStatusAppliedEvent.KIND to KindName("Git Status Applied", "34"),
+            GitStatusClosedEvent.KIND to KindName("Git Status Closed", "34"),
+            GitStatusDraftEvent.KIND to KindName("Git Status Draft", "34"),
+            ConcordTimerNoticeEvent.KIND to KindName("Concord Timer Notice", null),
+            ConcordChatEditEvent.KIND to KindName("Concord Chat Edit", null),
+            ControlEditionEvent.KIND to KindName("Control Edition", null),
+            SnoShardEvent.KIND to KindName("SNO Shard", null),
+            ArchivedIdentityEvent.KIND to KindName("Archived Identity", null),
+            UnarchivedIdentityEvent.KIND to KindName("Unarchived Identity", null),
+            GroupUpdatePinListEvent.KIND to KindName("Group Update Pin List", "29"),
+            RelayAdminAddMemberEvent.KIND to KindName("Relay Admin Add Member", null),
+            RelayAdminRemoveMemberEvent.KIND to KindName("Relay Admin Remove Member", null),
+            RelayAdminChangeRoleEvent.KIND to KindName("Relay Admin Change Role", null),
+            SetWorkspaceProfileEvent.KIND to KindName("Set Workspace Profile", null),
+            ArchiveRequestEvent.KIND to KindName("Archive Request", null),
+            UnarchiveRequestEvent.KIND to KindName("Unarchive Request", null),
+            ModerationBanEvent.KIND to KindName("Moderation Ban", null),
+            ModerationTimeoutEvent.KIND to KindName("Moderation Timeout", null),
+            ModerationUntimeoutEvent.KIND to KindName("Moderation Untimeout", null),
+            ModerationResolveReportEvent.KIND to KindName("Moderation Resolve Report", null),
+            AgentProfileEvent.KIND to KindName("Agent Profile", null),
+            CvmServerAnnouncementEvent.KIND to KindName("CVM Server Announcement", null),
+            CvmToolsListEvent.KIND to KindName("CVM Tools List", null),
+            SnoAvatarEvent.KIND to KindName("SNO Avatar", null),
+            DvmHeartbeatEvent.KIND to KindName("DVM Heartbeat", "90"),
+            ArchivedIdentitiesListEvent.KIND to KindName("Archived Identities List", null),
+            GeohashChatEvent.KIND to KindName("Geohash Chat", null),
+            PresenceUpdateEvent.KIND to KindName("Presence Update", null),
+            TypingIndicatorEvent.KIND to KindName("Typing Indicator", null),
+            NwcNotificationEvent.LEGACY_KIND to KindName("NWC Notification (legacy NIP-04)", "47"),
+            HuddleReactionEvent.KIND to KindName("Huddle Reaction", null),
+            PersonaEvent.KIND to KindName("Persona", null),
+            TeamEvent.KIND to KindName("Team", null),
+            TeamCatalogEvent.KIND to KindName("Team Catalog", null),
+            WorkflowDefEvent.KIND to KindName("Workflow Definition", null),
+            ProjectEvent.KIND to KindName("Project", null),
+            DmVisibilityEvent.KIND to KindName("DM Visibility", null),
+            CyberspaceBagEvent.KIND to KindName("Cyberspace Bag", null),
+            SnoObjectEvent.KIND to KindName("SNO Object", null),
+            GroupPinnedEvent.KIND to KindName("Group Pinned", "29"),
+            StreamMessageV2Event.KIND to KindName("Stream Message v2", null),
+            StreamMessageEditEvent.KIND to KindName("Stream Message Edit", null),
+            StreamMessagePinnedEvent.KIND to KindName("Stream Message Pinned", null),
+            StreamMessageBookmarkedEvent.KIND to KindName("Stream Message Bookmarked", null),
+            StreamMessageScheduledEvent.KIND to KindName("Stream Message Scheduled", null),
+            StreamReminderEvent.KIND to KindName("Stream Reminder", null),
+            StreamMessageDiffEvent.KIND to KindName("Stream Message Diff", null),
+            SystemMessageEvent.KIND to KindName("System Message", null),
+            CanvasEvent.KIND to KindName("Canvas", null),
+            DmCreatedEvent.KIND to KindName("DM Created", null),
+            DmOpenEvent.KIND to KindName("DM Open", null),
+            DmAddMemberEvent.KIND to KindName("DM Add Member", null),
+            DmHideEvent.KIND to KindName("DM Hide", null),
+            ProductFeedbackEvent.KIND to KindName("Product Feedback", null),
+            JobRequestEvent.KIND to KindName("Job Request", null),
+            JobAcceptedEvent.KIND to KindName("Job Accepted", null),
+            JobProgressEvent.KIND to KindName("Job Progress", null),
+            JobResultEvent.KIND to KindName("Job Result", null),
+            JobCancelEvent.KIND to KindName("Job Cancel", null),
+            JobErrorEvent.KIND to KindName("Job Error", null),
+            MemberAddedNotificationEvent.KIND to KindName("Member Added Notification", null),
+            MemberRemovedNotificationEvent.KIND to KindName("Member Removed Notification", null),
+            ForumPostEvent.KIND to KindName("Forum Post", null),
+            ForumVoteEvent.KIND to KindName("Forum Vote", null),
+            ForumCommentEvent.KIND to KindName("Forum Comment", null),
+            ArtifactRemovalEvent.KIND to KindName("Artifact Removal", null),
+            WorkflowTriggeredEvent.KIND to KindName("Workflow Triggered", null),
+            WorkflowStepStartedEvent.KIND to KindName("Workflow Step Started", null),
+            WorkflowStepCompletedEvent.KIND to KindName("Workflow Step Completed", null),
+            WorkflowStepFailedEvent.KIND to KindName("Workflow Step Failed", null),
+            WorkflowCompletedEvent.KIND to KindName("Workflow Completed", null),
+            WorkflowFailedEvent.KIND to KindName("Workflow Failed", null),
+            WorkflowCancelledEvent.KIND to KindName("Workflow Cancelled", null),
+            WorkflowApprovalRequestedEvent.KIND to KindName("Workflow Approval Requested", null),
+            WorkflowApprovalGrantedEvent.KIND to KindName("Workflow Approval Granted", null),
+            WorkflowApprovalDeniedEvent.KIND to KindName("Workflow Approval Denied", null),
+            WorkflowTriggerEvent.KIND to KindName("Workflow Trigger", null),
+            ApprovalGrantEvent.KIND to KindName("Approval Grant", null),
+            ApprovalDenyEvent.KIND to KindName("Approval Deny", null),
+            HuddleStartedEvent.KIND to KindName("Huddle Started", null),
+            HuddleParticipantJoinedEvent.KIND to KindName("Huddle Participant Joined", null),
+            HuddleParticipantLeftEvent.KIND to KindName("Huddle Participant Left", null),
+            HuddleEndedEvent.KIND to KindName("Huddle Ended", null),
+            HuddleLivenessEvent.KIND to KindName("Huddle Liveness", null),
+            HuddleGuidelinesEvent.KIND to KindName("Huddle Guidelines", null),
         )
 
     fun infoFor(kind: Int): KindName? = names[kind]

@@ -49,27 +49,22 @@ abstract class Op : Comparable<Op> {
 
     /**
      * Apply the operation to a message.
-     * Raises MsgValueError if the message value is invalid, such as it being
-     * too long, or it causing the result to be too long.
      *
      * @param msg The message.
      * @return the msg after the operation has been applied
+     * @throws IllegalArgumentException if the message or the result is longer than
+     * [MAX_MSG_LENGTH] / [MAX_RESULT_LENGTH]: an OTS file from a relay is untrusted, and
+     * these limits are what bound the memory a verification path can take.
      */
-    open fun call(msg: ByteArray): ByteArray {
-        if (msg.size > MAX_MSG_LENGTH) {
-            Log.e("OpenTimestamp", "Error : Message too long;")
-            return byteArrayOf() // TODO: Is this OK? Won't it blow up later? Better to throw?
-        }
-
-        val r = this.call(msg)
-
-        if (r.size > MAX_RESULT_LENGTH) {
-            Log.e("OpenTimestamp", "Error : Result too long;")
-            // TODO: Is it OK to just log and carry on? Won't it blow up later? Better to throw?
-        }
-
-        return r
+    fun call(msg: ByteArray): ByteArray {
+        require(msg.size <= MAX_MSG_LENGTH) { "OTS op message too long: ${msg.size} > $MAX_MSG_LENGTH" }
+        val result = doCall(msg)
+        require(result.size <= MAX_RESULT_LENGTH) { "OTS op result too long: ${result.size} > $MAX_RESULT_LENGTH" }
+        return result
     }
+
+    /** The operation itself; [call] checks the length limits around it. */
+    protected abstract fun doCall(msg: ByteArray): ByteArray
 
     override fun compareTo(other: Op): Int = this.tag() - other.tag()
 
@@ -120,7 +115,7 @@ abstract class Op : Comparable<Op> {
          * @return The subclass Operation.
          */
         @Throws(DeserializationException::class)
-        fun deserialize(ctx: StreamDeserializationContext): Op? {
+        fun deserialize(ctx: StreamDeserializationContext): Op {
             val tag = ctx.readBytes(1)[0]
 
             return deserializeFromTag(ctx, tag)
@@ -137,7 +132,7 @@ abstract class Op : Comparable<Op> {
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? {
+        ): Op {
             if (tag == OpAppend.TAG) {
                 return OpAppend.deserializeFromTag(ctx, tag)
             } else if (tag == OpPrepend.TAG) {
@@ -151,11 +146,7 @@ abstract class Op : Comparable<Op> {
             } else if (tag == OpKECCAK256.TAG) {
                 return OpKECCAK256.deserializeFromTag(ctx, tag)
             } else {
-                Log.e(
-                    "OpenTimestamp",
-                    "Unknown operation tag: " + tag + " 0x" + tag.toHexString(),
-                )
-                return null // TODO: Is this OK? Won't it blow up later? Better to throw?
+                throw DeserializationException("Unknown operation tag: 0x" + tag.toHexString())
             }
         }
     }

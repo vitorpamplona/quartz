@@ -66,6 +66,9 @@ class LiveNegentropyIndex {
     /** False until the first [rebuild], and after any [invalidate]. */
     private var populated = false
 
+    /** The serve cap given to the last [rebuild]; outgrowing it drops the index. */
+    private var maxEntries = Int.MAX_VALUE
+
     /** Bumped on every mutation; keys the memoized snapshot. */
     private var generation = 0L
 
@@ -125,12 +128,21 @@ class LiveNegentropyIndex {
      * and marks it populated. This is the recovery path after boot or
      * [invalidate] — one store scan, then incremental maintenance
      * resumes.
+     *
+     * [maxEntries] is the largest set the caller will ever serve: an
+     * [insert] that grows the index past it drops the index instead, since
+     * [sealedSnapshot] could never answer again and keeping it current would
+     * cost heap and write-path work for nothing.
      */
-    fun rebuild(snapshot: List<IdAndTime>) {
+    fun rebuild(
+        snapshot: List<IdAndTime>,
+        maxEntries: Int = Int.MAX_VALUE,
+    ) {
         val sorted = ArrayList(snapshot)
         sorted.sortWith(::compare)
         locked {
             entries = sorted
+            this.maxEntries = maxEntries
             populated = true
             generation++
             cachedSnapshot = null
@@ -164,8 +176,9 @@ class LiveNegentropyIndex {
             // the invalidate path instead: the index rebuilds in one O(n log n)
             // pass on the next NEG-OPEN, so backfill costs O(1) per event here.
             // Near-tail live traffic (created_at ≈ now, the common case) stays
-            // on the cheap incremental insert.
-            if (entries.size - insertionPoint > REBUILD_THRESHOLD) {
+            // on the cheap incremental insert. Outgrowing the serve cap drops
+            // it too: past the cap no snapshot is ever served from it.
+            if (entries.size >= maxEntries || entries.size - insertionPoint > REBUILD_THRESHOLD) {
                 entries = ArrayList()
                 populated = false
                 generation++

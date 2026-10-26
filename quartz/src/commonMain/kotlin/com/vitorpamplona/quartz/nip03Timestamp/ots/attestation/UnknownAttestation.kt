@@ -43,7 +43,7 @@ class UnknownAttestation internal constructor(
 
     override fun toString(): String = "UnknownAttestation " + this.tag().toHexKey() + ' ' + this.payload.toHexKey()
 
-    override fun compareTo(other: TimeAttestation): Int {
+    override fun compareSameTag(other: TimeAttestation): Int {
         val ota = other as UnknownAttestation
 
         return Utils.compare(this.payload, ota.payload)

@@ -28,7 +28,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.Log
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
@@ -125,7 +124,6 @@ private const val RECONNECTED = "\u0000publish-retry-reconnected"
  * waiting out the slowest relay. The other relays still get the event — the pool delivers it
  * regardless — only the wait for their answers is skipped.
  */
-@OptIn(DelicateCoroutinesApi::class)
 suspend fun INostrClient.publishAndConfirm(
     event: Event,
     relayList: Set<NormalizedRelayUrl>,
@@ -143,7 +141,6 @@ suspend fun INostrClient.publishAndConfirm(
  * blaming relays that merely never answered. Prefer
  * [publishAndCollectResults] when the caller can surface the reasons.
  */
-@OptIn(DelicateCoroutinesApi::class)
 suspend fun INostrClient.publishAndConfirmDetailed(
     event: Event,
     relayList: Set<NormalizedRelayUrl>,
@@ -162,7 +159,6 @@ suspend fun INostrClient.publishAndConfirmDetailed(
  * With [untilFirstAccept] the wait ends at the first `OK true`; relays that had
  * not answered by then are reported as `no response within timeout`.
  */
-@OptIn(DelicateCoroutinesApi::class)
 suspend fun INostrClient.publishAndCollectResults(
     event: Event,
     relayList: Set<NormalizedRelayUrl>,
@@ -342,12 +338,16 @@ suspend fun INostrClient.publishAndCollectResults(
                                         // about. A no-op when the relay is still there, which is
                                         // the ordinary case.
                                         ensureInPool(result.relay)
-                                        // Ignore the accumulated backoff — this is a user-visible
-                                        // publish waiting on it, not a background refresh.
-                                        resetBackoff()
-                                        // Only redials what is down: a full reconnect would tear down
-                                        // every healthy socket in the pool for one relay's hang-up.
-                                        reconnect(onlyIfChanged = true, ignoreRetryDelays = true)
+                                        // Forgive this relay's accumulated backoff — this is a
+                                        // user-visible publish waiting on it, not a background
+                                        // refresh. Only this relay's: every other relay keeps its
+                                        // wait, so one hang-up never wakes the relays the pool
+                                        // parked (an unresolvable host waits minutes).
+                                        resetBackoff(result.relay)
+                                        // Only redials what is down and due: a full reconnect would
+                                        // tear down every healthy socket in the pool, and ignoring
+                                        // retry delays would dial every parked relay too.
+                                        reconnect(onlyIfChanged = true)
                                     }
 
                                     if (untilFirstAccept && receivedResults[result.relay]?.accepted == true) break

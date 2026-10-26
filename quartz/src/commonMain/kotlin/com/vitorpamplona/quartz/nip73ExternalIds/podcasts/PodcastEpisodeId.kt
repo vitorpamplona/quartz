@@ -36,7 +36,7 @@ class PodcastEpisodeId(
     override fun hint() = hint
 
     companion object {
-        const val KIND = "podcast:item:guid:guid"
+        const val KIND = "podcast:item:guid"
         const val PREFIX_COLON = "podcast:item:guid:"
 
         fun toScope(guid: String) = PREFIX_COLON + guid
@@ -48,7 +48,7 @@ class PodcastEpisodeId(
             value: String,
         ): Boolean {
             ensure(encoded.startsWith(PREFIX_COLON)) { return false }
-            return encoded.indexOf(value, PREFIX_COLON.length) > 0
+            return toScope(encoded.substring(PREFIX_COLON.length)) == toScope(value)
         }
 
         fun parse(encoded: String): String? {

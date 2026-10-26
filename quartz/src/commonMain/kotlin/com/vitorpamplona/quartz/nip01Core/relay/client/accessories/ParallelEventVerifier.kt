@@ -33,6 +33,7 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 
 /**
  * Client-side batched Schnorr verification, off the relay receiver coroutine.
@@ -97,8 +98,12 @@ class ParallelEventVerifier<C>(
 
     private val incoming = Channel<Pending<C>>(capacity)
 
+    // Written only by the drain coroutine, read from anywhere.
+    @Volatile
     var verifiedCount: Long = 0
         private set
+
+    @Volatile
     var invalidCount: Long = 0
         private set
 
@@ -180,7 +185,7 @@ class ParallelEventVerifier<C>(
                 }
             } catch (e: Throwable) {
                 // a misbehaving callback must not kill the drain loop
-                Log.w("ParallelEventVerifier") { "callback threw for ${pending.event.id}: ${e.message}" }
+                Log.w("ParallelEventVerifier", "callback threw for ${pending.event.id}", e)
             }
         }
     }

@@ -25,7 +25,6 @@ import com.vitorpamplona.quartz.nip03Timestamp.ots.StreamSerializationContext
 import com.vitorpamplona.quartz.nip03Timestamp.ots.Utils.compare
 import com.vitorpamplona.quartz.nip03Timestamp.ots.exceptions.DeserializationException
 import com.vitorpamplona.quartz.utils.Hex.encode
-import com.vitorpamplona.quartz.utils.Log
 
 /**
  * Operations that act on a message and a single argument.
@@ -66,7 +65,7 @@ abstract class OpBinary(
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? {
+        ): Op {
             val arg = ctx.readVarbytes(MAX_RESULT_LENGTH, 1)
 
             if (tag == OpAppend.TAG) {
@@ -74,11 +73,7 @@ abstract class OpBinary(
             } else if (tag == OpPrepend.TAG) {
                 return OpPrepend(arg)
             } else {
-                Log.e(
-                    "OpenTimestamp",
-                    "Unknown operation tag: " + tag + " 0x" + tag.toHexString(),
-                )
-                return null // TODO: Is this OK? Won't it blow up later? Better to throw?
+                throw DeserializationException("Unknown operation tag: 0x" + tag.toHexString())
             }
         }
     }

@@ -63,7 +63,7 @@ class BitcoinBlockHeaderAttestation(
 
     override fun toString(): String = "BitcoinBlockHeaderAttestation(" + this.height + ")"
 
-    override fun compareTo(other: TimeAttestation): Int {
+    override fun compareSameTag(other: TimeAttestation): Int {
         val ob = other as BitcoinBlockHeaderAttestation
 
         return this.height - ob.height

@@ -38,14 +38,12 @@ class OpSHA256 : OpCrypto() {
 
     override fun digestLength(): Int = 32
 
-    override fun call(msg: ByteArray): ByteArray = super.call(msg)
-
     companion object {
         val TAG: Byte = 0x08
 
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpCrypto.deserializeFromTag(ctx, tag)
+        ): Op = OpCrypto.deserializeFromTag(ctx, tag)
     }
 }

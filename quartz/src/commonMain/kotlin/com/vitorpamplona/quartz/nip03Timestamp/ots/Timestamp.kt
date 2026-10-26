@@ -143,11 +143,11 @@ class Timestamp(
         val allAttestations = this.allAttestations()
 
         if (allAttestations.isEmpty()) {
-            throw Exception()
+            throw IllegalStateException("Cannot shrink a timestamp without attestations")
         } else if (allAttestations.size == 1) {
             return allAttestations.values.iterator().next()
         } else if (this.ops.isEmpty()) {
-            throw Exception() // TODO: Need a descriptive exception string here
+            throw IllegalStateException("Cannot shrink a timestamp with several attestations and no operations")
         }
 
         // Fore >1 attestations :
@@ -631,7 +631,7 @@ class Timestamp(
                 self.attestations.add(attestation)
             } else {
                 val op = Op.deserializeFromTag(ctx, tag)
-                val result = op!!.call(initialMsg)
+                val result = op.call(initialMsg)
 
                 val stamp: Timestamp = deserialize(ctx, result)
                 self.ops.put(op, stamp)

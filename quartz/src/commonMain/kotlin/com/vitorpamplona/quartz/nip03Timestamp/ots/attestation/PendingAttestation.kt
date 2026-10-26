@@ -57,7 +57,7 @@ class PendingAttestation(
 
     override fun toString(): String = "PendingAttestation(\'" + uri.decodeToString() + "\')"
 
-    override fun compareTo(other: TimeAttestation): Int {
+    override fun compareSameTag(other: TimeAttestation): Int {
         val opa = other as PendingAttestation
 
         return compare(this.uri, opa.uri)

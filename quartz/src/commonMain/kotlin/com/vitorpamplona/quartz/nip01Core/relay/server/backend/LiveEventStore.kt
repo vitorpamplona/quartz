@@ -85,14 +85,16 @@ class LiveEventStore(
     )
 
     /**
-     * Replay-dedupe set for one REQ. During the historical replay the
-     * store's ids are [record]ed here so the concurrent live path can
-     * drop an event the replay also emitted; after EOSE the set is
+     * Replay-dedupe set for one REQ. Until EOSE both the historical replay
+     * and the concurrent live path claim each id here with [firstSighting]
+     * and only the first claim delivers, whichever path gets there first:
+     * an event accepted mid-replay may reach the live path before the
+     * replay's snapshot reads it, or after. After EOSE the set is
      * [release]d and the live path forwards everything.
      *
-     * Written from the replay coroutine and read from the [ingest]
+     * Claimed from both the replay coroutine and the [ingest]
      * drain coroutine (via `fanout`), so every access takes a tiny spin
-     * lock — [locked] is `inline`, so the per-row `record` / `isDuplicate`
+     * lock — [locked] is `inline`, so the per-row `firstSighting`
      * calls allocate no closure. The backing `HashSet` is created empty
      * up front (so the register-before-replay race guarantee holds) but
      * the JVM defers its table allocation to the first `add`, so a
@@ -115,11 +117,8 @@ class LiveEventStore(
             }
         }
 
-        fun record(id: String) {
-            locked { ids?.add(id) }
-        }
-
-        fun isDuplicate(id: String): Boolean = locked { ids?.contains(id) ?: false }
+        /** True the first time [id] is seen, and always once released. */
+        fun firstSighting(id: String): Boolean = locked { ids?.add(id) ?: true }
 
         fun release() {
             locked { ids = null }
@@ -258,7 +257,7 @@ class LiveEventStore(
         // event accepted mid-replay would slip past the live path entirely
         // — same race the previous SharedFlow-based implementation closed
         // with `onSubscription`), and [SeenIds] bridges the two coroutines:
-        // the replay records ids here, the live `deliver` drops duplicates,
+        // each path claims ids here and only the first claim delivers,
         // and after EOSE the set is released so every live event forwards.
         val seen = SeenIds()
 
@@ -266,7 +265,7 @@ class LiveEventStore(
             LiveSubscription(
                 filters = filters,
                 deliver = { event, _ ->
-                    if (!seen.isDuplicate(event.id)) onEach(event)
+                    if (seen.firstSighting(event.id)) onEach(event)
                 },
             )
 
@@ -274,8 +273,7 @@ class LiveEventStore(
         try {
             withCallerIdentity(ctx) {
                 store.query<Event>(filters) { event ->
-                    seen.record(event.id)
-                    onEach(event)
+                    if (seen.firstSighting(event.id)) onEach(event)
                 }
             }
             onEose()
@@ -315,7 +313,7 @@ class LiveEventStore(
             LiveSubscription(
                 filters = filters,
                 deliver = { event, body ->
-                    if (!seen.isDuplicate(event.id)) onEachLive(event, body)
+                    if (seen.firstSighting(event.id)) onEachLive(event, body)
                 },
             )
 
@@ -323,8 +321,7 @@ class LiveEventStore(
         try {
             withCallerIdentity(ctx) {
                 store.rawQuery(filters) { raw ->
-                    seen.record(raw.id)
-                    onEachStored(raw)
+                    if (seen.firstSighting(raw.id)) onEachStored(raw)
                 }
             }
             onEose()
@@ -429,7 +426,7 @@ class LiveEventStore(
         }
 
         val generation = writeGeneration.load()
-        val key = filters.joinToString(" ") { it.toJson() } + " cap=$maxEntries"
+        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries"
         val now = TimeUtils.now()
 
         val cached = snapshotCache.load()

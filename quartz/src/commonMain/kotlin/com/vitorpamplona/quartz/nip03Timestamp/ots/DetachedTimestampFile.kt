@@ -141,7 +141,9 @@ class DetachedTimestampFile(
             ctx.assertMagic(HEADER_MAGIC)
             ctx.readVaruint()
 
-            val fileHashOp = Op.deserialize(ctx) as OpCrypto
+            val fileHashOp =
+                Op.deserialize(ctx) as? OpCrypto
+                    ?: throw DeserializationException("The file hash op must be a hash operation")
             val fileHash = ctx.readBytes(fileHashOp.digestLength())
             val timestamp = Timestamp.deserialize(ctx, fileHash)
 

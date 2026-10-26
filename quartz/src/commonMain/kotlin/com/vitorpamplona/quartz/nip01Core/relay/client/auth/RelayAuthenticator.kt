@@ -41,6 +41,7 @@ import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -104,6 +105,13 @@ class RelayAuthenticator(
      */
     val signWithAllLoggedInUsers: suspend (relay: NormalizedRelayUrl, EventTemplate<RelayAuthEvent>, interactive: Boolean) -> List<RelayAuthEvent>,
 ) : IAuthStatus {
+    /**
+     * Parent of every signing coroutine, under the host's [scope]. [destroy] cancels it so an
+     * AUTH still waiting on the signer never goes out afterwards, without cancelling [scope]
+     * itself, which the host may share with everything else.
+     */
+    private val signingJob = SupervisorJob(scope.coroutineContext[Job])
+
     // Connection callbacks fire on the per-relay OkHttp dispatcher thread, so
     // this state is mutated concurrently — LargeCache wraps a platform-tuned
     // concurrent map (ConcurrentSkipListMap on jvmAndroid, StripedHashMap on native).
@@ -185,7 +193,7 @@ class RelayAuthenticator(
         // an AUTH that was about to be signed.
         status?.signingStarted()
         publishSnapshot(relay.url)
-        scope.launch {
+        scope.launch(signingJob) {
             // Relay auth is automatic and not user-initiated. Signing can fail in
             // benign, expected ways — e.g. an external NIP-55 signer prompt that the
             // user ignores surfaces as SignerExceptions.TimedOutException. Those must
@@ -319,5 +327,6 @@ class RelayAuthenticator(
         Log.d("RelayAuthenticator", "Destroy, Unsubscribe")
         client.removeConnectionListener(clientListener)
         client.removeAuthResponder(this)
+        signingJob.cancel()
     }
 }

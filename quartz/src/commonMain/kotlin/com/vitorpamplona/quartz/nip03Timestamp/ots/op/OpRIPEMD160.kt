@@ -39,7 +39,7 @@ class OpRIPEMD160 : OpCrypto() {
 
     override fun digestLength(): Int = 20
 
-    override fun call(msg: ByteArray): ByteArray {
+    override fun doCall(msg: ByteArray): ByteArray {
         val digest = RIPEMD160Digest()
         digest.update(msg, 0, msg.size)
         val hash = ByteArray(digest.getDigestSize())
@@ -54,6 +54,6 @@ class OpRIPEMD160 : OpCrypto() {
         fun deserializeFromTag(
             ctx: StreamDeserializationContext,
             tag: Byte,
-        ): Op? = OpCrypto.deserializeFromTag(ctx, tag)
+        ): Op = OpCrypto.deserializeFromTag(ctx, tag)
     }
 }

@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -71,6 +72,14 @@ class PoolRequests(
     private val desiredSubs = LargeCache<String, Map<NormalizedRelayUrl, List<Filter>>>()
     private val desiredSubListeners = LargeCache<String, SubscriptionListener>()
     val desiredRelays = MutableStateFlow(setOf<NormalizedRelayUrl>())
+
+    /**
+     * Serializes [updateRelays]' read-compute-emit. Every change lands in [desiredSubs]
+     * before its [updateRelays] runs, so whichever call emits last has read every change
+     * made before it. Without the lock a snapshot taken before a concurrent change could
+     * be emitted after it, and the pool would drop a relay a live subscription needs.
+     */
+    private val desiredRelaysLock = PlatformLock()
 
     /**
      * Relay states map what we think the relay is doing
@@ -130,17 +139,22 @@ class PoolRequests(
         // drops it here so the pool disconnects — closing the idle socket rather than keeping
         // it open with every REQ suppressed. This is per-filter/capability, so a search-only
         // relay stays connected as long as some sub carries a search filter for it.
-        val myRelays = mutableSetOf<NormalizedRelayUrl>()
-        desiredSubs.forEach { sub, perRelayFilters ->
-            perRelayFilters.forEach { (relay, filters) ->
-                if (!relayRefusals.shouldSuppress(relay, filters)) {
-                    myRelays.add(relay)
+        desiredRelaysLock.lock()
+        try {
+            val myRelays = mutableSetOf<NormalizedRelayUrl>()
+            desiredSubs.forEach { sub, perRelayFilters ->
+                perRelayFilters.forEach { (relay, filters) ->
+                    if (!relayRefusals.shouldSuppress(relay, filters)) {
+                        myRelays.add(relay)
+                    }
                 }
             }
-        }
 
-        if (desiredRelays.value != myRelays) {
-            desiredRelays.tryEmit(myRelays)
+            if (desiredRelays.value != myRelays) {
+                desiredRelays.tryEmit(myRelays)
+            }
+        } finally {
+            desiredRelaysLock.unlock()
         }
     }
 
@@ -715,6 +729,6 @@ class PoolRequests(
         relayState.clear()
         desiredSubs.clear()
         desiredSubListeners.clear()
-        desiredRelays.tryEmit(emptySet())
+        updateRelays()
     }
 }
