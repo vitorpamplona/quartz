@@ -69,6 +69,9 @@ internal suspend fun <T> Channel<T>.receiveWithinIdle(
     idleMs: Long,
 ): T? {
     if (idleMs <= 0) return receive()
+    // An item already queued is activity, and taking it arms no timer: a busy stream's
+    // replies are nearly always waiting, and a timeout per reply was most of its garbage.
+    tryReceive().getOrNull()?.let { return it }
     while (true) {
         val remaining = idleMs - clock.elapsedMs()
         if (remaining <= 0) return null

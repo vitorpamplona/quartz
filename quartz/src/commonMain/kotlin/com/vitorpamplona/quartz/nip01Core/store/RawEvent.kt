@@ -56,6 +56,23 @@ class RawEvent(
         )
 
     /**
+     * An upper bound on what [appendJsonObjectTo] writes: presize a builder with
+     * it and the append never grows the buffer, which would copy the whole
+     * frame. [content]'s escapes are counted, not guessed: a kind 0's content
+     * is itself JSON, about one char in six a quote.
+     */
+    internal fun jsonObjectLengthEstimate(): Int {
+        var escapes = 0
+        for (ch in content) {
+            when {
+                ch == '"' || ch == '\\' || ch == '\n' || ch == '\r' || ch == '\t' || ch == '\b' || ch == '\u000C' -> escapes += 1
+                ch < ' ' -> escapes += 5
+            }
+        }
+        return JSON_OBJECT_OVERHEAD + jsonTags.length + content.length + escapes
+    }
+
+    /**
      * Appends this event as a NIP-01 JSON object, reusing the stored
      * strings verbatim: `id`/`pubkey`/`sig` are validated hex, [jsonTags]
      * is already JSON; only [content] needs string escaping.
@@ -81,6 +98,9 @@ class RawEvent(
     }
 
     companion object {
+        /** The keys, punctuation, the three hex fields, a 19-digit `created_at` and a 10-digit `kind`. */
+        private const val JSON_OBJECT_OVERHEAD = 7 + 64 + 12 + 64 + 15 + 19 + 8 + 10 + 8 + 11 + 2 + 8 + 128 + 2
+
         fun fromEvent(event: Event) =
             RawEvent(
                 id = event.id,
