@@ -27,10 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
-import com.vitorpamplona.quartz.nip46RemoteSigner.kite.readBunkerObject
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.reflect.KClass
@@ -39,14 +35,14 @@ import kotlin.reflect.KClass
  * Reads what travels over a Nostr WebSocket straight off the frame's `String`: relay messages
  * ([readMessage]), client commands ([readCommand]), and the events, rumors and event lists inside
  * them. About twice as fast as Jackson on events, with ~40% less garbage. [OptimizedJsonMapper]
- * reads through it when [JsonEngine.KITE] is selected.
+ * reads events, relay traffic, filters, rumors and templates through it on every target.
  *
  * It finds the end of every string value with `String.indexOf('"')`, an intrinsic on HotSpot
  * and ART, and tracks the next backslash in the frame (also found with `indexOf`), so a value
  * without escapes is one `substring`. Event keys are matched by length and characters, never
  * built. Only values with escapes are decoded, run by run, into a reused char buffer.
  *
- * Every type follows what Quartz's Jackson deserializers accept and build (`EventDeserializer`,
+ * Every type follows what Quartz's former Jackson deserializers accepted and built (`EventDeserializer`,
  * `RumorDeserializer`, `MessageDeserializer`, `CommandDeserializer`, `ManualFilterDeserializer`,
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
  * lenient fields. It follows the JSON grammar everywhere, including values it skips, but for one
@@ -934,19 +930,6 @@ internal class KiteReader {
                 }
             }
 
-        /** A NIP-46 request or response; see [readBunkerObject]. */
-        fun readBunkerMessage(json: String): BunkerMessage = acquire().run { parse(json) { readBunkerObject() } }
-
-        fun readBunkerRequest(json: String): BunkerRequest = readBunkerMessage(json) as? BunkerRequest ?: throw IllegalArgumentException("not a NIP-46 request")
-
-        fun readBunkerResponse(json: String): BunkerResponse = readBunkerMessage(json) as? BunkerResponse ?: throw IllegalArgumentException("not a NIP-46 response")
-
-        /** Runs [read] on [json] with this thread's reader, for formats read outside this package. */
-        internal fun <T> read(
-            json: String,
-            read: KiteReader.() -> T,
-        ): T = acquire().run { parse(json) { read() } }
-
         /** A tag array on its own. */
         fun readTagArray(json: String): TagArray = acquire().run { parse(json) { readTagArray() } }
 
@@ -981,8 +964,5 @@ internal fun readKnownType(
         Command::class -> KiteReader.readCommand(json)
         Rumor::class -> KiteReader.readRumor(json)
         EventTemplate::class -> KiteReader.readEventTemplate(json)
-        BunkerMessage::class -> KiteReader.readBunkerMessage(json)
-        BunkerRequest::class -> KiteReader.readBunkerRequest(json)
-        BunkerResponse::class -> KiteReader.readBunkerResponse(json)
         else -> null
     }

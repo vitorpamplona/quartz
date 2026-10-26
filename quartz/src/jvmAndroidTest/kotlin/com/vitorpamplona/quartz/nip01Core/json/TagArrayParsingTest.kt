@@ -18,9 +18,10 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip01Core.jackson
+package com.vitorpamplona.quartz.nip01Core.json
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -29,14 +30,14 @@ import kotlin.test.assertNull
 import kotlin.test.fail
 
 /** Tags must be an array of arrays of scalars; anything else fails instead of being read past. */
-class TagArrayDeserializerTest {
+class TagArrayParsingTest {
     private val pk = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
     private fun event(tags: String) = """{"id":"ab","pubkey":"$pk","created_at":1,"kind":1,"tags":$tags,"content":"x","sig":"cd"}"""
 
     private fun rejects(
         json: String,
-        parse: (String) -> Any = JacksonMapper::fromJson,
+        parse: (String) -> Any = OptimizedJsonMapper::fromJson,
     ) {
         try {
             parse(json)
@@ -50,7 +51,7 @@ class TagArrayDeserializerTest {
     fun malformedTagsAreRejected() {
         for (tags in listOf("{}", """{"a":["b"]}""", "null", "5", "\"t\"", "true", "[{}]", """[{"a":1}]""", "[\"a\"]", "[null]", "[5]", """[["a",{}]]""", """[["a",["b"]]]""", "[[[]]]")) {
             rejects(event(tags))
-            rejects("""["EVENT","s",${event(tags)}]""", JacksonMapper::fromJsonToMessage)
+            rejects("""["EVENT","s",${event(tags)}]""", OptimizedJsonMapper::fromJsonToMessage)
         }
         assertNull(Event.fromJsonOrNull(event("{}")))
     }
@@ -58,28 +59,28 @@ class TagArrayDeserializerTest {
     @Test
     fun malformedTagsAreRejectedInTemplatesRumorsAndTagArrays() {
         for (tags in listOf("{}", "null", "[{}]", """[["a",{}]]""")) {
-            rejects("""{"created_at":1,"kind":1,"tags":$tags,"content":"x"}""", JacksonMapper::fromJsonToEventTemplate)
-            rejects("""{"pubkey":"$pk","created_at":1,"kind":1,"tags":$tags,"content":"x"}""", JacksonMapper::fromJsonToRumor)
+            rejects("""{"created_at":1,"kind":1,"tags":$tags,"content":"x"}""", OptimizedJsonMapper::fromJsonToEventTemplate)
+            rejects("""{"pubkey":"$pk","created_at":1,"kind":1,"tags":$tags,"content":"x"}""", OptimizedJsonMapper::fromJsonToRumor)
         }
         for (tags in listOf("{}", "[{}]", """[["a",{}]]""", "[\"a\"]", "[[[]]]")) {
-            rejects(tags, JacksonMapper::fromJsonToTagArray)
+            rejects(tags, OptimizedJsonMapper::fromJsonToTagArray)
         }
     }
 
     @Test
     fun wellFormedTagsReadAsBefore() {
-        val e = JacksonMapper.fromJson(event("""[["e","x","","root"],["t"],[],["p",null,1,true,-2.5]]"""))
+        val e = OptimizedJsonMapper.fromJson(event("""[["e","x","","root"],["t"],[],["p",null,1,true,-2.5]]"""))
         assertEquals(4, e.tags.size)
         assertContentEquals(arrayOf("e", "x", "", "root"), e.tags[0])
         assertContentEquals(arrayOf("t"), e.tags[1])
         assertContentEquals(emptyArray(), e.tags[2])
         assertContentEquals(arrayOf("p", "", "1", "true", "-2.5"), e.tags[3])
-        assertEquals(0, JacksonMapper.fromJson(event("[]")).tags.size)
+        assertEquals(0, OptimizedJsonMapper.fromJson(event("[]")).tags.size)
 
-        val frame = JacksonMapper.fromJsonToMessage("""["EVENT","s",${event("""[["t","nostr"]]""")}]""") as EventMessage
+        val frame = OptimizedJsonMapper.fromJsonToMessage("""["EVENT","s",${event("""[["t","nostr"]]""")}]""") as EventMessage
         assertContentEquals(arrayOf("t", "nostr"), frame.event.tags[0])
 
-        val tags = JacksonMapper.fromJsonToTagArray("""[["a","b"],["c"]]""")
+        val tags = OptimizedJsonMapper.fromJsonToTagArray("""[["a","b"],["c"]]""")
         assertContentEquals(arrayOf("a", "b"), tags[0])
         assertContentEquals(arrayOf("c"), tags[1])
     }

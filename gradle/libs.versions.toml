@@ -10,7 +10,6 @@ coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
 cryptoKmp = "2.0.0"
 espressoCore = "3.7.0"
-jackson = "2.22.4"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
 kotlinxCollectionsImmutable = "0.5.2"
@@ -37,7 +36,6 @@ androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "s
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 androidx-sqlite-bundled-jvm = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 crypto = { module = "com.vitorpamplona.crypto:crypto", version.ref = "cryptoKmp" }
-jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlin" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }

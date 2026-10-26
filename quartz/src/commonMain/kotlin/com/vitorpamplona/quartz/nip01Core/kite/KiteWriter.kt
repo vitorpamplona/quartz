@@ -28,19 +28,14 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
-import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
-import com.vitorpamplona.quartz.nip46RemoteSigner.kite.bunkerRequest
-import com.vitorpamplona.quartz.nip46RemoteSigner.kite.bunkerResponse
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 
 /**
  * Quartz's own JSON writer for what it puts on a WebSocket (events, tags, rumors, filters,
  * every relay message and client command) and for the NIP-01 id hash, the twin of
- * [KiteReader]. [OptimizedJsonMapper] and the id hash write through it when
- * [JsonEngine.KITE] is selected.
+ * [KiteReader]. [OptimizedJsonMapper] and the id hash write through it on every target.
  *
- * The output is byte-identical to the Jackson serializers it mirrors, including their
+ * The output is byte-identical to the Jackson serializers Quartz used before, including their
  * escaping, which is wider than NIP-01's: `"`, `\` and the short forms `\b \f \n \r \t`, every
  * other char below 0x20 as `\u00XX` in uppercase hex, everything else (DEL, U+2028, `/`,
  * non-ASCII) as is. Two modes share that rule:
@@ -539,13 +534,6 @@ class KiteWriter internal constructor() {
                 sb.append('}')
             }
 
-        fun toJson(request: BunkerRequest): String = acquire().text { bunkerRequest(request) }
-
-        fun toJson(response: BunkerResponse): String = acquire().text { bunkerResponse(response) }
-
-        /** Runs [write] with this thread's writer and returns the text, for formats written outside this package. */
-        internal fun write(write: KiteWriter.() -> Unit): String = acquire().text(write)
-
         /** The event laid out for people to read; see [KitePretty]. */
         fun toPrettyJson(event: Event): String = KitePretty.format(toJson(event))
 
@@ -573,8 +561,6 @@ class KiteWriter internal constructor() {
                 is Filter -> toJson(value)
                 is Rumor -> toJson(value)
                 is EventTemplate<*> -> toJson(value)
-                is BunkerRequest -> toJson(value)
-                is BunkerResponse -> toJson(value)
                 is Message -> toJsonOrNull(value)
                 is Command -> toJsonOrNull(value)
                 else -> null

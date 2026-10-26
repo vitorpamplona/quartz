@@ -20,82 +20,119 @@
  */
 package com.vitorpamplona.quartz.nip55AndroidSigner
 
-import com.fasterxml.jackson.core.json.JsonReadFeature
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.JavaType
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.module.SimpleModule
-import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.databind.node.ObjectNode
-import com.vitorpamplona.quartz.nip01Core.core.JsonEngine
-import com.vitorpamplona.quartz.nip01Core.jackson.InliningTagArrayPrettyPrinter
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResultJsonDeserializer
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResultJsonSerializer
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.PermissionDeserializer
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.PermissionSerializer
-import com.vitorpamplona.quartz.nip55AndroidSigner.kite.Nip55Kite
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
+/**
+ * NIP-55's JSON: the permission list a client sends a signer app, and the results a signer
+ * returns for a batch of requests. Signer apps are other people's software, so reads are
+ * lenient the way Quartz's earlier Jackson reader was: unknown fields are skipped, `package`,
+ * `result`, `event` and `id` count only when they are strings, `rejected` only when it is a
+ * boolean, and a permission's `type` and `kind` are coerced from whatever scalar they hold.
+ * A permission's `"kind": null` reads as no kind. Malformed JSON throws [IllegalArgumentException].
+ */
 object JsonMapperNip55 {
-    val defaultMapper: ObjectMapper =
-        ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            .enable(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature())
-            .setDefaultPrettyPrinter(InliningTagArrayPrettyPrinter())
-            .registerModule(
-                SimpleModule()
-                    .addDeserializer(IntentResult::class.java, IntentResultJsonDeserializer())
-                    .addSerializer(IntentResult::class.java, IntentResultJsonSerializer())
-                    .addDeserializer(Permission::class.java, PermissionDeserializer())
-                    .addSerializer(Permission::class.java, PermissionSerializer()),
-            )
+    fun fromJsonToPermission(json: String): Permission = permission(Json.parseToJsonElement(json))
+
+    fun fromJsonToPermissionArray(json: String): Array<Permission> = array(Json.parseToJsonElement(json)).map(::permission).toTypedArray()
+
+    fun fromJsonToIntentResult(json: String): IntentResult = intentResult(Json.parseToJsonElement(json))
+
+    fun fromJsonToIntentResultList(json: String): List<IntentResult> = array(Json.parseToJsonElement(json)).map(::intentResult)
+
+    /** `{"type":"sign_event","kind":1}`; `kind` is written as `null` when the permission has none. */
+    fun toJson(permission: Permission): String = permissionElement(permission).toString()
+
+    fun toJson(permissions: List<Permission>): String = JsonArray(permissions.map(::permissionElement)).toString()
+
+    /** The result's set fields, in declaration order. */
+    fun toJson(result: IntentResult): String =
+        buildJsonObject {
+            result.`package`?.let { put("package", it) }
+            result.result?.let { put("result", it) }
+            result.event?.let { put("event", it) }
+            result.id?.let { put("id", it) }
+            result.rejected?.let { put("rejected", it) }
+        }.toString()
+
+    private fun permissionElement(permission: Permission) =
+        buildJsonObject {
+            put("type", permission.type?.code)
+            put("kind", permission.kind)
+        }
+
+    private fun array(element: JsonElement): JsonArray = element as? JsonArray ?: throw IllegalArgumentException("expected an array")
+
+    private fun permission(element: JsonElement): Permission {
+        val fields = element as? JsonObject ?: throw IllegalArgumentException("expected an object")
+        val type = fields["type"] ?: throw IllegalArgumentException("a permission without a type")
+        return Permission(CommandType.parse(asText(type)), fields["kind"]?.let(::asIntOrNull))
+    }
+
+    private fun intentResult(element: JsonElement): IntentResult {
+        val fields = element as? JsonObject ?: throw IllegalArgumentException("expected an object")
+        return IntentResult(
+            `package` = stringOrNull(fields["package"])?.intern(),
+            result = stringOrNull(fields["result"]),
+            event = stringOrNull(fields["event"]),
+            id = stringOrNull(fields["id"])?.intern(),
+            rejected = (fields["rejected"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull,
+        )
+    }
+
+    private fun stringOrNull(element: JsonElement?): String? = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    /** A scalar's text (`null` for JSON null), "" for an object or array. */
+    private fun asText(element: JsonElement): String =
+        when (element) {
+            is JsonNull -> "null"
+            is JsonPrimitive -> element.content
+            else -> ""
+        }
 
     /**
-     * Four named entry points instead of one `inline fun <reified T> fromJsonTo`.
-     *
-     * The generic version resolved T through a TypeReference, which reads its type
-     * argument back off an anonymous subclass's generic superclass. R8 in full mode
-     * does not keep that: on device it throws
-     *
-     *   IllegalArgumentException: Internal error: TypeReference constructed without
-     *   actual type information
-     *
-     * and because these JavaTypes are built in <clinit>, a single failure poisons the
-     * whole object — every later touch comes back as NoClassDefFoundError. That is
-     * what took out JacksonMapper on the first minified build; this file carries the
-     * identical pattern and only escaped because NIP-55 needs an external signer
-     * installed to reach.
-     *
-     * `T::class.java` cannot stand in for all four: List<IntentResult> erases to List
-     * and every element comes back a LinkedHashMap. TypeFactory takes Class objects
-     * directly and keeps the element type, so there is nothing left for R8 to erase.
+     * A permission's kind from whatever it holds: null stays null; a number keeps the low 32
+     * bits of an integer or truncates a fraction; a string of digits is that int (0 when out of
+     * range), else a number truncated, else 0; true is 1; false, an object or an array is 0.
      */
-    val permissionType: JavaType = defaultMapper.typeFactory.constructType(Permission::class.java)
+    private fun asIntOrNull(element: JsonElement): Int? =
+        when {
+            element is JsonNull -> {
+                null
+            }
 
-    val permissionArrayType: JavaType = defaultMapper.typeFactory.constructArrayType(Permission::class.java)
+            element !is JsonPrimitive -> {
+                0
+            }
 
-    val intentResultType: JavaType = defaultMapper.typeFactory.constructType(IntentResult::class.java)
+            element.isString -> {
+                val text = element.content.trim()
+                val digits = text.removePrefix("-").removePrefix("+")
+                if (digits.isNotEmpty() && digits.all { it in '0'..'9' }) {
+                    text.toIntOrNull() ?: 0
+                } else {
+                    text.toDoubleOrNull()?.toInt() ?: 0
+                }
+            }
 
-    val intentResultListType: JavaType = defaultMapper.typeFactory.constructCollectionType(List::class.java, IntentResult::class.java)
+            element.booleanOrNull != null -> {
+                if (element.booleanOrNull == true) 1 else 0
+            }
 
-    fun fromJsonToPermission(json: String): Permission = if (JsonEngine.isKite) Nip55Kite.fromJsonToPermission(json) else defaultMapper.readValue(json, permissionType)
-
-    fun fromJsonToPermissionArray(json: String): Array<Permission> = if (JsonEngine.isKite) Nip55Kite.fromJsonToPermissionArray(json) else defaultMapper.readValue(json, permissionArrayType)
-
-    fun fromJsonToIntentResult(json: String): IntentResult = if (JsonEngine.isKite) Nip55Kite.fromJsonToIntentResult(json) else defaultMapper.readValue(json, intentResultType)
-
-    fun fromJsonToIntentResultList(json: String): List<IntentResult> = if (JsonEngine.isKite) Nip55Kite.fromJsonToIntentResultList(json) else defaultMapper.readValue(json, intentResultListType)
-
-    fun toJson(permission: Permission): String = if (JsonEngine.isKite) Nip55Kite.toJson(permission) else defaultMapper.writeValueAsString(permission)
-
-    fun toJson(permissions: List<Permission>): String = if (JsonEngine.isKite) Nip55Kite.toJson(permissions) else defaultMapper.writeValueAsString(permissions)
-
-    fun toJson(result: IntentResult): String = if (JsonEngine.isKite) Nip55Kite.toJson(result) else defaultMapper.writeValueAsString(result)
-
-    fun toJson(event: ArrayNode): String = defaultMapper.writeValueAsString(event)
-
-    fun toJson(event: ObjectNode?): String = defaultMapper.writeValueAsString(event)
-
-    fun toJson(value: Any): String = defaultMapper.writeValueAsString(value)
+            else -> {
+                element.longOrNull?.toInt() ?: element.doubleOrNull?.toInt() ?: 0
+            }
+        }
 }

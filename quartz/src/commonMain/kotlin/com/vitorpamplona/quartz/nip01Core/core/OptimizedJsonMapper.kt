@@ -20,36 +20,58 @@
  */
 package com.vitorpamplona.quartz.nip01Core.core
 
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.nip01Core.kite.readKnownType
+import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 interface OptimizedSerializable
 
-expect object OptimizedJsonMapper {
-    fun fromJson(json: String): Event
+/**
+ * Quartz's JSON, the same on every target.
+ *
+ * What travels in bulk goes through Kite, Quartz's own Nostr reader and writer
+ * ([KiteReader], [KiteWriter]): events, relay messages, client commands, filters, tags,
+ * rumors and event templates. Everything else that implements [OptimizedSerializable]
+ * (NIP-46, NIP-47, CLINK, …) goes through kotlinx.serialization ([KotlinSerializationMapper]).
+ *
+ * Malformed input throws [IllegalArgumentException] from either path.
+ */
+object OptimizedJsonMapper {
+    fun fromJson(json: String): Event = KiteReader.readEvent(json)
 
-    fun toJson(event: Event): String
+    fun toJson(event: Event): String = KiteWriter.toJson(event)
 
-    fun fromJsonToMessage(json: String): Message
+    fun fromJsonToMessage(json: String): Message = KiteReader.readMessage(json)
 
-    fun fromJsonToCommand(json: String): Command
+    fun fromJsonToCommand(json: String): Command = KiteReader.readCommand(json)
 
-    fun fromJsonToTagArray(json: String): Array<Array<String>>
+    fun fromJsonToTagArray(json: String): Array<Array<String>> = KiteReader.readTagArray(json)
 
-    fun fromJsonToEventTemplate(json: String): EventTemplate<Event>
+    fun fromJsonToEventTemplate(json: String): EventTemplate<Event> = KiteReader.readEventTemplate(json)
 
-    fun fromJsonToEventList(json: String): List<Event>
+    fun fromJsonToEventList(json: String): List<Event> = KiteReader.readEventList(json)
 
-    fun fromJsonToRumor(json: String): Rumor
+    fun fromJsonToRumor(json: String): Rumor = KiteReader.readRumor(json)
 
-    fun toJson(tags: Array<Array<String>>): String
+    fun toJson(tags: Array<Array<String>>): String = KiteWriter.toJson(tags)
 
-    inline fun <reified T : OptimizedSerializable> fromJsonTo(json: String): T
+    inline fun <reified T : OptimizedSerializable> fromJsonTo(json: String): T {
+        readKnownType(T::class, json)?.let { return it as T }
+        return try {
+            KotlinSerializationMapper.fromJsonTo<T>(json)
+        } catch (e: SerializationException) {
+            throw IllegalArgumentException(e.message, e)
+        }
+    }
 
-    fun toJson(value: OptimizedSerializable): String
+    fun toJson(value: OptimizedSerializable): String = KiteWriter.toJsonOrNull(value) ?: KotlinSerializationMapper.toJson(value)
 }
 
 object JsonMapper {

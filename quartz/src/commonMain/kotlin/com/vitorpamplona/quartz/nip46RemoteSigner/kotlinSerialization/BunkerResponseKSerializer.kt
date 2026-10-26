@@ -71,7 +71,7 @@ object BunkerResponseKSerializer : KSerializer<BunkerResponse> {
     }
 
     fun deserializeFromElement(jsonObject: JsonObject): BunkerResponse {
-        val id = jsonObject["id"]!!.jsonPrimitive.content
+        val id = requiredText(jsonObject, "id")
         val result = jsonObject["result"]?.let { if (it is JsonNull) null else it.jsonPrimitive.content }
         val error = jsonObject["error"]?.let { if (it is JsonNull) null else it.jsonPrimitive.content }
 
