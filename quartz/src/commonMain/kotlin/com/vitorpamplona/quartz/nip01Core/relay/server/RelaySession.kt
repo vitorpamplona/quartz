@@ -465,7 +465,7 @@ class RelaySession(
                                 // NIP-67 probe: the one extra row it asked for is counted, not sent.
                                 if (probe == null || probe.onStored()) {
                                     sendRaw(
-                                        buildString(framePrefix.length + raw.jsonTags.length + raw.content.length + 256) {
+                                        buildString(framePrefix.length + raw.jsonObjectLengthEstimate() + 1) {
                                             append(framePrefix)
                                             raw.appendJsonObjectTo(this)
                                             append(']')
