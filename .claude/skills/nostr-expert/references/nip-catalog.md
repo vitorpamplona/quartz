@@ -165,7 +165,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `experimental/notifications/` | WakeUpEvent 23903 |
 | `experimental/postingStreak/` | PostingStreakEvent 13473 |
 | `experimental/predictionMarkets/` | PredictionMarketEvent 38000 |
-| `experimental/pressstr/` | EbookEvent 33953 |
+| `experimental/pressstr/` | EbookEvent 33953, MagazineEvent 34609, MagazineIssueEvent 39731 |
 | `experimental/profileGallery/` | ProfileGalleryEntryEvent 1163 |
 | `experimental/profileTheme/` | ActiveProfileThemeEvent 16767, ThemeDefinitionEvent 36767 |
 | `experimental/ps1saves/` | Ps1SaveEvent 38192 |

@@ -223,6 +223,7 @@ object SearchableKinds {
             34236, // AddressableShortVideoEvent
             34259, // EntityRatingEvent
             34550, // CommunityDefinitionEvent
+            34609, // MagazineEvent
             35128, // NamedSiteEvent
             35129, // NamedNappletEvent
             36767, // ThemeDefinitionEvent
@@ -239,6 +240,7 @@ object SearchableKinds {
             39092, // MediaStarterPackEvent
             39307, // TextTrackEvent
             39701, // WebBookmarkEvent
+            39731, // MagazineIssueEvent
             39998, // AddressableListHeaderEvent
             39999, // AddressableListItemEvent
             40002, // StreamMessageV2Event

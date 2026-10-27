@@ -172,6 +172,8 @@ import com.vitorpamplona.quartz.experimental.notifications.wake.WakeUpEvent
 import com.vitorpamplona.quartz.experimental.postingStreak.PostingStreakEvent
 import com.vitorpamplona.quartz.experimental.predictionMarkets.PredictionMarketEvent
 import com.vitorpamplona.quartz.experimental.pressstr.ebook.EbookEvent
+import com.vitorpamplona.quartz.experimental.pressstr.issue.MagazineIssueEvent
+import com.vitorpamplona.quartz.experimental.pressstr.magazine.MagazineEvent
 import com.vitorpamplona.quartz.experimental.profileGallery.ProfileGalleryEntryEvent
 import com.vitorpamplona.quartz.experimental.profileTheme.active.ActiveProfileThemeEvent
 import com.vitorpamplona.quartz.experimental.profileTheme.definition.ThemeDefinitionEvent
@@ -775,6 +777,8 @@ class EventFactory {
                 EncryptionKeyTransferEvent.KIND -> EncryptionKeyTransferEvent(id, pubKey, createdAt, tags, content, sig)
                 DraftWrapEvent.KIND -> DraftWrapEvent(id, pubKey, createdAt, tags, content, sig)
                 EbookEvent.KIND -> EbookEvent(id, pubKey, createdAt, tags, content, sig)
+                MagazineEvent.KIND -> MagazineEvent(id, pubKey, createdAt, tags, content, sig)
+                MagazineIssueEvent.KIND -> MagazineIssueEvent(id, pubKey, createdAt, tags, content, sig)
                 EmojiPackEvent.KIND -> EmojiPackEvent(id, pubKey, createdAt, tags, content, sig)
                 StickerPackEvent.KIND -> StickerPackEvent(id, pubKey, createdAt, tags, content, sig)
                 EmojiListEvent.KIND -> EmojiListEvent(id, pubKey, createdAt, tags, content, sig)

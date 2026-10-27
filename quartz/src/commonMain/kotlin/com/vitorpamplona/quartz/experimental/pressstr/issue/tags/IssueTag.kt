@@ -18,25 +18,28 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.experimental.pressstr.ebook.tags
+package com.vitorpamplona.quartz.experimental.pressstr.issue.tags
 
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
-/** `["size", "1905250"]`: the file size in bytes, read as a `Long` since a scanned book can pass 2 GB. */
-class SizeTag {
+/**
+ * `["issue", "May 2024"]`: which issue this is, free-form. Publishers write a number (`7`), a
+ * date (`2024-Q1`) or a season (`Spring 2025`), so it is a label, never parsed as a number.
+ */
+class IssueTag {
     companion object {
-        const val TAG_NAME = "size"
+        const val TAG_NAME = "issue"
 
         fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
-        fun parse(tag: Array<String>): Long? {
+        fun parse(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotEmpty()) { return null }
-            return tag[1].toLongOrNull()
+            return tag[1]
         }
 
-        fun assemble(sizeInBytes: Long) = arrayOf(TAG_NAME, sizeInBytes.toString())
+        fun assemble(issue: String) = arrayOf(TAG_NAME, issue)
     }
 }

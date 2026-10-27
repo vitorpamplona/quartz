@@ -18,28 +18,21 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.experimental.pressstr.ebook.tags
+package com.vitorpamplona.quartz.experimental.pressstr.magazine
 
-import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.utils.ensure
+import com.vitorpamplona.quartz.experimental.pressstr.tags.LanguageTag
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
+import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
+import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
+import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
 
-/**
- * `["l", "en"]`: the book's language as a bare ISO-639-1 code. NIP-32 spells a label with a
- * namespace in position 2; PressStr leaves it out, so this reads position 1 and ignores the rest.
- */
-class LanguageTag {
-    companion object {
-        const val TAG_NAME = "l"
+fun TagArrayBuilder<MagazineEvent>.title(title: String) = addUnique(TitleTag.assemble(title))
 
-        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+fun TagArrayBuilder<MagazineEvent>.image(url: String) = addUnique(ImageTag.assemble(url))
 
-        fun parse(tag: Array<String>): String? {
-            ensure(tag.has(1)) { return null }
-            ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].isNotEmpty()) { return null }
-            return tag[1]
-        }
+fun TagArrayBuilder<MagazineEvent>.summary(summary: String) = addUnique(SummaryTag.assemble(summary))
 
-        fun assemble(iso639: String) = arrayOf(TAG_NAME, iso639)
-    }
-}
+fun TagArrayBuilder<MagazineEvent>.website(url: String) = addUnique(UrlTag.assemble(url))
+
+fun TagArrayBuilder<MagazineEvent>.language(iso639: String) = addUnique(LanguageTag.assemble(iso639))

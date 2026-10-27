@@ -18,29 +18,25 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.experimental.pressstr.ebook.tags
+package com.vitorpamplona.quartz.experimental.pressstr.tags
 
 import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.nipB7Blossom.BlossomUri
 import com.vitorpamplona.quartz.utils.ensure
 
-/**
- * `["blossom", "blossom:<sha256>.<ext>?xs=…&as=…&sz=…"]`: the file as a BUD-10 URI, naming the
- * servers that hold it and who uploaded it. Not in the PressStr spec, but its client writes one.
- */
-class BlossomTag {
+/** `["size", "1905250"]`: the file size in bytes, read as a `Long` since a scanned book can pass 2 GB. */
+class SizeTag {
     companion object {
-        const val TAG_NAME = "blossom"
+        const val TAG_NAME = "size"
 
         fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
-        fun parse(tag: Array<String>): BlossomUri? {
+        fun parse(tag: Array<String>): Long? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotEmpty()) { return null }
-            return BlossomUri.parse(tag[1])
+            return tag[1].toLongOrNull()
         }
 
-        fun assemble(uri: BlossomUri) = arrayOf(TAG_NAME, uri.toUriString())
+        fun assemble(sizeInBytes: Long) = arrayOf(TAG_NAME, sizeInBytes.toString())
     }
 }

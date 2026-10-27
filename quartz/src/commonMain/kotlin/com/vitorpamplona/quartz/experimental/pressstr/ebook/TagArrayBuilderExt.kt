@@ -20,10 +20,10 @@
  */
 package com.vitorpamplona.quartz.experimental.pressstr.ebook
 
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.BlossomTag
 import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.IsbnTag
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.LanguageTag
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.SizeTag
+import com.vitorpamplona.quartz.experimental.pressstr.tags.BlossomTag
+import com.vitorpamplona.quartz.experimental.pressstr.tags.LanguageTag
+import com.vitorpamplona.quartz.experimental.pressstr.tags.SizeTag
 import com.vitorpamplona.quartz.experimental.publications.tags.AuthorTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag

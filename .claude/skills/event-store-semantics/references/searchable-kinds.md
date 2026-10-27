@@ -4,7 +4,7 @@ Every concrete `SearchableEvent` implementor in Quartz, with the exact `indexabl
 expression. **Update this file in the same PR as any change to the searchable set or to an
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
-Counts: 208 concrete classes covering 208 kind values (`GitStatusEvent` spans 4 kinds;
+Counts: 210 concrete classes covering 210 kind values (`GitStatusEvent` spans 4 kinds;
 kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps and kinds 30405 / 30406 with Shopstr — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
@@ -180,6 +180,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 34236 | AddressableShortVideoEvent | nip71Video | inherited `AddressableVideoEvent`: `(listOfNotNull(title(), content) + segmentTitles())` NL |
 | 34259 | EntityRatingEvent | experimental/ratings | `content` |
 | 34550 | CommunityDefinitionEvent | nip72ModCommunities/definition | `listOfNotNull(name(), description(), rules(), content)` NL |
+| 34609 | MagazineEvent | experimental/pressstr/magazine | `listOfNotNull(title(), summary(), content)` NL |
 | 35128 | NamedSiteEvent | nip5aStaticWebsites | `listOfNotNull(title(), description())` NL |
 | 35129 | NamedNappletEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL |
 | 36767 | ThemeDefinitionEvent | experimental/profileTheme/definition | `listOfNotNull(title(), description())` NL (never the colors, fonts or URLs) |
@@ -198,6 +199,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 39092 | MediaStarterPackEvent | nip51Lists/mediaStarterPack | `listOfNotNull(title(), description())` NL |
 | 39307 | TextTrackEvent | nip71Video/textTrack | `if (WebVttText.hasCues(content)) WebVttText.cueText(content) else content` — `cueText` is each cue's payload lines (NL) with tags removed and character references decoded; no header, timings, cue settings, ids, `NOTE`/`STYLE`/`REGION` blocks. Content with no `-->` timing line is not a caption file and is indexed as written |
 | 39701 | WebBookmarkEvent | nipB0WebBookmarks | `(listOfNotNull(title(), description()) + hashtags())` NL |
+| 39731 | MagazineIssueEvent | experimental/pressstr/issue | `listOfNotNull(title(), issue(), summary(), content)` NL — `issue` is the free-form label (`7`, `May 2024`) |
 | 39998 | AddressableListHeaderEvent | experimental/decentralizedLists/header | same as 9998 |
 | 39999 | AddressableListItemEvent | experimental/decentralizedLists/item | same as 9998 |
 | 40002 | StreamMessageV2Event | buzz/stream | `content` |
