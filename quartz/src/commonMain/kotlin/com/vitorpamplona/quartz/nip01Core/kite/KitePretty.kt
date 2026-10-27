@@ -34,7 +34,10 @@ package com.vitorpamplona.quartz.nip01Core.kite
 object KitePretty {
     private const val INDENT = "  "
 
-    /** [json] (any valid JSON text) re-indented; whitespace between tokens is dropped first. */
+    /**
+     * [json] (any valid JSON text) re-indented; whitespace between tokens is dropped first.
+     * A `}`, `]` or `,` outside any container throws [IllegalArgumentException].
+     */
     fun format(json: String): String {
         val out = StringBuilder(json.length + json.length / 4)
         // Per open container: whether it is an object, and how many values or entries it holds.
@@ -101,6 +104,7 @@ object KitePretty {
                 }
 
                 '}' -> {
+                    requireOpen(depth, i)
                     depth--
                     if (counts[depth] > 0) newline(depth) else out.append(' ')
                     out.append('}')
@@ -108,6 +112,7 @@ object KitePretty {
                 }
 
                 ']' -> {
+                    requireOpen(depth, i)
                     depth--
                     if (counts[depth] > 0 && depth < 2) newline(depth)
                     out.append(']')
@@ -120,6 +125,7 @@ object KitePretty {
                 }
 
                 ',' -> {
+                    requireOpen(depth, i)
                     out.append(',')
                     val d = depth - 1
                     if (isObject[d]) {
@@ -144,6 +150,11 @@ object KitePretty {
         }
         return out.toString()
     }
+
+    private fun requireOpen(
+        depth: Int,
+        at: Int,
+    ) = require(depth > 0) { "unbalanced JSON at offset $at" }
 
     private const val MAX_DEPTH = 1000
     private const val STOPS = ",:]} \t\n\r"

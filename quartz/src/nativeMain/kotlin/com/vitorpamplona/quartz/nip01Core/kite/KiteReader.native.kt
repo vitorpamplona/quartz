@@ -20,5 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip01Core.kite
 
-// Native keeps no reader per thread: every parse gets a fresh one.
-internal actual fun threadKiteReader(): KiteReader? = null
+import kotlin.native.concurrent.ThreadLocal
+
+// One reader per thread, as the JVM's ThreadLocal gives, so its buffers outlive a parse.
+@ThreadLocal
+private val threadReader = KiteReader()
+
+internal actual fun threadKiteReader(): KiteReader? = threadReader

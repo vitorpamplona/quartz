@@ -59,6 +59,12 @@ class RemoteSignerManager(
     private val pending = LargeCache<String, Channel<BunkerResponse>>()
 
     suspend fun newResponse(responseEvent: NostrConnectEvent) {
+        // Only the remote signer answers. Anyone can p-tag us, and re-signing the signer's
+        // ciphertext, or echoing our own request back, would otherwise still decrypt.
+        if (responseEvent.pubKey != remoteKey) {
+            Log.d("NIP46") { "ignoring a kind-${responseEvent.kind} from ${responseEvent.pubKey}, not the remote signer" }
+            return
+        }
         val decryptedJson = signer.decrypt(responseEvent.content, remoteKey)
         val bunkerResponse = OptimizedJsonMapper.fromJsonTo<BunkerResponse>(decryptedJson)
 

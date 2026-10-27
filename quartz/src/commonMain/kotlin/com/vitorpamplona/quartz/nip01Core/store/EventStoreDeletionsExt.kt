@@ -42,10 +42,13 @@ private fun addressValue(event: Event): String {
  * actually apply to what the relay holds, and nothing else (not other deletions by the
  * same author). Covers every way a stored deletion can reach an event:
  *
- *  - **NIP-09, id-based** — a kind-5 with an `e` tag naming a server event's id.
- *  - **NIP-09, address-based** — a kind-5 with an `a` tag naming a server event's
- *    addressable/replaceable coordinate, at or after that event's `created_at`
- *    (NIP-09 only deletes `created_at <= deletion.created_at`).
+ *  - **NIP-09, id-based** — a kind-5 by a server event's author with an `e` tag naming
+ *    that event's id.
+ *  - **NIP-09, address-based** — a kind-5 by a server event's author with an `a` tag
+ *    naming that event's addressable/replaceable coordinate, at or after that event's
+ *    `created_at` (NIP-09 only deletes `created_at <= deletion.created_at`).
+ *
+ * A kind-5 signed by anyone else covers nothing: NIP-09 lets only an author delete.
  *  - **NIP-62 vanish** — a kind-62 by a server event's author, targeting [relay] (its
  *    `relay` tags name the URL or `ALL_RELAYS`), issued after that event (a vanish
  *    deletes `created_at < vanish.created_at`).
@@ -67,17 +70,24 @@ suspend fun deletionsCovering(
     if (events.isEmpty()) return emptyList()
     val covering = LinkedHashMap<HexKey, Event>()
 
-    // 1. id-based NIP-09: a kind-5 `e`-tagging an event's id.
-    query(Filter(kinds = listOf(DeletionRequestEvent.KIND), tags = mapOf("e" to events.map { it.id })))
-        .forEach { covering[it.id] = it }
+    // NIP-09: only an event's author can delete it, so a kind-5 by anyone else covers nothing.
+    val authors = events.mapTo(HashSet()) { it.pubKey }.toList()
+
+    // 1. id-based NIP-09: a kind-5 `e`-tagging the id of one of its author's events.
+    val byId = events.associateBy { it.id }
+    query(Filter(kinds = listOf(DeletionRequestEvent.KIND), authors = authors, tags = mapOf("e" to events.map { it.id })))
+        .forEach { del ->
+            if (del.tags.any { it.size > 1 && it[0] == "e" && byId[it[1]]?.pubKey == del.pubKey }) covering[del.id] = del
+        }
 
     // 2. address-based NIP-09: a kind-5 `a`-tagging an event's coordinate, cutoff-checked.
     val byAddress = events.filter { it.kind.isAddressable() || it.kind.isReplaceable() }.groupBy(::addressValue)
     if (byAddress.isNotEmpty()) {
-        query(Filter(kinds = listOf(DeletionRequestEvent.KIND), tags = mapOf("a" to byAddress.keys.toList())))
+        query(Filter(kinds = listOf(DeletionRequestEvent.KIND), authors = authors, tags = mapOf("a" to byAddress.keys.toList())))
             .forEach { del ->
                 if (del !is DeletionRequestEvent) return@forEach
                 for (addr in del.deleteAddresses()) {
+                    if (addr.pubKeyHex != del.pubKey) continue
                     val hit = byAddress[addr.toValue()] ?: continue
                     if (hit.any { it.createdAt <= del.createdAt }) {
                         covering[del.id] = del
@@ -88,7 +98,7 @@ suspend fun deletionsCovering(
     }
 
     // 3. NIP-62 vanish: a kind-62 by an event's author, targeting this relay, issued after it.
-    query(Filter(kinds = listOf(RequestToVanishEvent.KIND), authors = events.mapTo(HashSet()) { it.pubKey }.toList()))
+    query(Filter(kinds = listOf(RequestToVanishEvent.KIND), authors = authors))
         .forEach { vanish ->
             if (vanish !is RequestToVanishEvent || !vanish.shouldVanishFrom(relay)) return@forEach
             if (events.any { it.pubKey == vanish.pubKey && it.createdAt < vanish.createdAt }) covering[vanish.id] = vanish

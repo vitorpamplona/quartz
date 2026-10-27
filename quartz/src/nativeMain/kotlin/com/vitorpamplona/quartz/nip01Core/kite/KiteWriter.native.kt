@@ -21,9 +21,13 @@
 package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.crypto.sha2.sha256
+import kotlin.native.concurrent.ThreadLocal
 
-// Native keeps no writer per thread: every write gets a fresh one.
-internal actual fun threadKiteWriter(): KiteWriter? = null
+// One writer per thread, as the JVM's ThreadLocal gives, so its buffers outlive a write.
+@ThreadLocal
+private val threadWriter = KiteWriter()
+
+internal actual fun threadKiteWriter(): KiteWriter? = threadWriter
 
 internal actual fun copyAsciiInto(
     s: String,

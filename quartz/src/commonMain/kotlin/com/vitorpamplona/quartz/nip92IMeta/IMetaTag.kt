@@ -56,8 +56,9 @@ class IMetaTag(
         private fun parseIMeta(tags: Array<String>): Map<String, List<String>> {
             val propertiesByKey = mutableMapOf<String, MutableList<String>>()
 
-            tags.forEach { tag ->
-                val parts = tag.split(" ", limit = 2)
+            // Index 0 is the tag name, not a "key value" pair.
+            for (k in 1 until tags.size) {
+                val parts = tags[k].split(" ", limit = 2)
                 when (parts.size) {
                     2 -> propertiesByKey.getOrPut(parts[0], { mutableListOf() }).add(parts[1])
                     1 -> propertiesByKey.getOrPut(parts[0], { mutableListOf() }).add("")

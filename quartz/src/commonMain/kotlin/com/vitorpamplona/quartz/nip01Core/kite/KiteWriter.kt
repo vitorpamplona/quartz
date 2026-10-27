@@ -56,9 +56,9 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
  * loop for control chars; in UTF-8 mode each run of printable ASCII goes through
  * [copyAsciiInto] in one call and only the chars between runs are encoded one by one.
  *
- * Not thread-safe. On the JVM and Android each thread reuses its own (see
- * [threadKiteWriter]), so the buffers are allocated once per thread, not once per write;
- * a nested write on the same thread, and every write on native, gets a fresh one.
+ * Not thread-safe. Each thread reuses its own (see [threadKiteWriter]: a ThreadLocal on the
+ * JVM and Android, @ThreadLocal on native), so the buffers are allocated once per thread, not
+ * once per write; a nested write on the same thread gets a fresh one.
  */
 class KiteWriter internal constructor() {
     private var inUse = false

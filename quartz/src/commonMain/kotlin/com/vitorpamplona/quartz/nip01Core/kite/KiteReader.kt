@@ -65,10 +65,10 @@ import kotlin.reflect.KClass
  * input, so a long value costs only its length.
  * Every failure is an [IllegalArgumentException].
  *
- * A reader holds the cursor and scratch buffers, so one parse at a time uses it. On JVM and
- * Android each thread reuses its own (see [threadKiteReader]), so the decode buffer and
- * tag scratch are allocated once per thread, not once per event; a nested parse on the same
- * thread, and every parse on native, gets a fresh one.
+ * A reader holds the cursor and scratch buffers, so one parse at a time uses it. Each thread
+ * reuses its own (see [threadKiteReader]: a ThreadLocal on JVM and Android, @ThreadLocal on
+ * native), so the decode buffer and tag scratch are allocated once per thread, not once per
+ * event; a nested parse on the same thread gets a fresh one.
  */
 internal class KiteReader {
     internal var s = ""
