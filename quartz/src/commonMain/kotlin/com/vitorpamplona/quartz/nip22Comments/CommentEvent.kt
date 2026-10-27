@@ -238,7 +238,12 @@ class CommentEvent(
 
     fun replyingToAddressId(): String? = replyAddressIds().lastOrNull() ?: rootAddressIds().lastOrNull()
 
-    override fun replyingToAddressOrEvent(): HexKey? = replyingToAddressId() ?: replyingTo()
+    /** The parent (lowercase `a`, then `e`), else the root (uppercase `A`, then `E`). */
+    override fun replyingToAddressOrEvent(): HexKey? =
+        replyAddressIds().lastOrNull()
+            ?: replyEventIds().lastOrNull()
+            ?: rootAddressIds().lastOrNull()
+            ?: rootEventIds().lastOrNull()
 
     override fun tagsWithoutCitations(): List<String> {
         val rootAddress = rootAddressIds()
