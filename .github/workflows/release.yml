@@ -1,15 +1,23 @@
 name: Release
 
-# Run from the Actions tab on main, with the version to release. Swift Package Manager reads
-# Package.swift at the release tag, so that file must already name the release's
-# QuartzKit.xcframework.zip and its checksum when the tag is cut. The workflow therefore builds
-# the framework first, then commits VERSION_NAME and Package.swift, tags that commit v<version>,
-# pushes both, creates the GitHub release with the zip, and publishes to Maven Central.
+# Releases v<VERSION_NAME> when a push to main changes VERSION_NAME in gradle.properties to a
+# version that is not tagged yet: merging a PR that sets VERSION_NAME=X.Y.Z releases X.Y.Z. It can
+# also be run from the Actions tab on main, with the version to release.
+#
+# Don't push the tag by hand. Swift Package Manager reads Package.swift at the release tag, so
+# that file must already name the release's QuartzKit.xcframework.zip and its checksum when the
+# tag is cut. The workflow therefore builds the framework first, then commits Package.swift (and
+# VERSION_NAME, for a run from the Actions tab), tags that commit v<version>, pushes both,
+# creates the GitHub release with the zip, and publishes to Maven Central.
 #
 # Pushing the release commit to main needs GitHub Actions allowed to push there (a bypass in
-# the branch ruleset when main is protected). If Maven Central fails after the tag is pushed,
-# re-run the failed `maven` job: it publishes from the tag.
+# the branch ruleset when main is protected). That push does not start this workflow again:
+# pushes made with GITHUB_TOKEN start no workflows, and the tag exists by then anyway. If Maven
+# Central fails after the tag is pushed, re-run the failed `maven` job: it publishes from the tag.
 on:
+  push:
+    branches: [main]
+    paths: [gradle.properties]
   workflow_dispatch:
     inputs:
       version:
@@ -24,30 +32,61 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  VERSION: ${{ inputs.version }}
-
 jobs:
+  # Decides whether this run releases, and which version. From the Actions tab, a bad or already
+  # tagged version is an error. On a push, the run releases only when VERSION_NAME changed to an
+  # untagged X.Y.Z; any other edit to gradle.properties ends here without releasing.
   check-version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
       - name: Check the version and branch
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          BEFORE: ${{ github.event.before }}
         run: |
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "::error::Run the release from main, not $GITHUB_REF"
             exit 1
           fi
+          versionIn() { sed -n 's/^VERSION_NAME=//p' | tr -d '[:space:]'; }
+          skip() {
+            echo "::notice::$1"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(versionIn < gradle.properties)"
+            git fetch --quiet --depth=1 origin "$BEFORE" || true
+            PREVIOUS="$( (git show "$BEFORE:gradle.properties" 2>/dev/null || true) | versionIn)"
+            [[ "$VERSION" != "$PREVIOUS" ]] || skip "VERSION_NAME is still $VERSION: nothing to release"
+          fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || skip "VERSION_NAME=$VERSION is not X.Y.Z: not released"
             echo "::error::version must be X.Y.Z, got '$VERSION'"
             exit 1
           fi
           if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/v$VERSION"; then
+            [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || skip "v$VERSION is already tagged: nothing to release"
             echo "::error::v$VERSION is already tagged"
             exit 1
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
 
   check:
     needs: check-version
+    if: needs.check-version.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -86,6 +125,7 @@ jobs:
 
   test-apple:
     needs: check-version
+    if: needs.check-version.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 45
 
@@ -119,8 +159,11 @@ jobs:
   # release on the 3-core macOS runner; it runs alongside the tests.
   xcframework:
     needs: check-version
+    if: needs.check-version.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -170,10 +213,12 @@ jobs:
           if-no-files-found: error
 
   tag:
-    needs: [check, test-apple, xcframework]
+    needs: [check-version, check, test-apple, xcframework]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -199,7 +244,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: v${{ inputs.version }}
+          tag_name: v${{ env.VERSION }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
@@ -208,15 +253,17 @@ jobs:
 
   # Apple klibs cross-compile on Linux; only Apple test and framework binaries need a Mac.
   maven:
-    needs: tag
+    needs: [check-version, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
 
     steps:
       - name: Checkout the release tag
         uses: actions/checkout@v7
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ env.VERSION }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6.1.0
@@ -236,7 +283,7 @@ jobs:
       - name: Publish
         run: ./gradlew :quartz:publishAllPublicationsToMavenCentral --no-configuration-cache
         env:
-          ORG_GRADLE_PROJECT_VERSION_NAME: ${{ inputs.version }}
+          ORG_GRADLE_PROJECT_VERSION_NAME: ${{ env.VERSION }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_PRIVATE_KEY }}
