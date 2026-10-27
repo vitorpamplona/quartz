@@ -37,6 +37,7 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.signer.NostrSignerRemote
 import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapTemplateConversion
+import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.mapNotNullAsync
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -60,8 +61,9 @@ class NIP17Factory {
 
     /**
      * Phase one of a split wrap build: signs one seal per recipient using
-     * [signer]. This is the only step that talks to the user's signer
-     * (external signers must prompt in the user's interaction context);
+     * [signer], each dated at random up to two days in the past (NIP-17).
+     * This is the only step that talks to the user's signer (external
+     * signers must prompt in the user's interaction context);
      * the remaining wrap step ([wrapSeal]) is pure local CPU work that can
      * run on a background mining worker.
      */
@@ -92,6 +94,7 @@ class NIP17Factory {
                                 encryptTo = next,
                                 expirationDelta = innerExpDelta,
                                 signer = signer,
+                                createdAt = TimeUtils.randomWithTwoDays(),
                             ),
                     )
                 }
@@ -123,6 +126,9 @@ class NIP17Factory {
 
     /**
      * Build one NIP-59 gift wrap per recipient.
+     *
+     * Only the rumor carries the real send time: each seal and each gift wrap gets its own
+     * `created_at`, randomized up to two days in the past, as NIP-17 asks.
      *
      * The rumor (kind 14) `created_at` is implicitly shared across all wraps
      * because [event] is signed once by the caller before the per-recipient
@@ -173,6 +179,7 @@ class NIP17Factory {
                             encryptTo = next,
                             expirationDelta = innerExpDelta,
                             signer = signer,
+                            createdAt = TimeUtils.randomWithTwoDays(),
                         ),
                     recipientPubKey = next,
                     expirationDelta = innerExpDelta,
