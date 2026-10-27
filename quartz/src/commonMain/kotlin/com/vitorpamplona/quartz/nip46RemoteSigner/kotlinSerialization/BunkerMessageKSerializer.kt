@@ -32,7 +32,6 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 object BunkerMessageKSerializer : KSerializer<BunkerMessage> {
     override val descriptor: SerialDescriptor =
@@ -56,8 +55,8 @@ object BunkerMessageKSerializer : KSerializer<BunkerMessage> {
         val isRequest = jsonObject.containsKey("method")
 
         return if (isRequest) {
-            val id = jsonObject["id"]!!.jsonPrimitive.content
-            val method = jsonObject["method"]!!.jsonPrimitive.content
+            val id = requiredText(jsonObject, "id")
+            val method = requiredText(jsonObject, "method")
             val params = BunkerRequestKSerializer.lenientParams(jsonObject["params"])
             BunkerRequestParser.parse(id, method, params)
         } else {

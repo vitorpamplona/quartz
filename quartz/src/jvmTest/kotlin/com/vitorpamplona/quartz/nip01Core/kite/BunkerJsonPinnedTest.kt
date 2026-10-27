@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.kite
 
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerMessage
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
@@ -29,12 +30,13 @@ import kotlin.test.assertEquals
 import kotlin.test.fail
 
 /**
- * NIP-46 messages read and written by Quartz's reader and writer. The pins were recorded while
- * every outcome was also compared with the Jackson (de)serializers they replaced. The only
- * intended difference: a JSON `null` in `id`, `method`, `result` or `error` reads as absent,
- * where Jackson read the text "null".
+ * NIP-46 messages as [OptimizedJsonMapper] reads and writes them (Kite), checked against the
+ * kotlinx serializers in [KotlinSerializationMapper], which must agree. The pins were recorded
+ * while every outcome was also compared with the Jackson (de)serializers Quartz used before. The
+ * only intended difference: a JSON `null` in `id`, `method`, `result` or `error` reads as
+ * absent, where Jackson read the text "null".
  */
-class KiteBunkerPinnedTest {
+class BunkerJsonPinnedTest {
     private fun describe(m: BunkerMessage): String =
         when (m) {
             is BunkerRequest -> "${m::class.simpleName}|${m.id}|${m.method}|${m.params.joinToString("\u00A6")}"
@@ -96,14 +98,21 @@ class KiteBunkerPinnedTest {
     private val broken =
         listOf("", "{", "[]", "\"x\"", """{"id":"1","method":"ping",}""", """{"id":"1","method":"ping"""", """{"method":"ping"}""", """{"result":"ack"}""")
 
-    /** Pins the message read of [input], and checks the [typed] read builds the same. */
+    /** Pins the message read of [input], and checks the [typed] read and kotlinx build the same. */
     private fun compare(
         input: String,
         typed: (String) -> BunkerMessage,
     ) {
-        val r = run { describe(KiteReader.readBunkerMessage(input)) }
+        val r = run { describe(OptimizedJsonMapper.fromJsonTo<BunkerMessage>(input)) }
         readPin.add(r.getOrNull())
         assertEquals(r.getOrNull(), run { describe(typed(input)) }.getOrNull(), input)
+        assertEquals(r.getOrNull(), run { describe(KotlinSerializationMapper.fromJsonTo<BunkerMessage>(input)) }.getOrNull(), "kotlinx: $input")
+    }
+
+    /** Fails unless both Kite and kotlinx reject [input]. */
+    private fun assertRejected(input: String) {
+        if (run { OptimizedJsonMapper.fromJsonTo<BunkerMessage>(input) }.isSuccess) fail("accepted $input")
+        if (run { KotlinSerializationMapper.fromJsonTo<BunkerMessage>(input) }.isSuccess) fail("kotlinx accepted $input")
     }
 
     private val readPin = Pin("bunker reads")
@@ -118,15 +127,13 @@ class KiteBunkerPinnedTest {
             compare(s) { OptimizedJsonMapper.fromJsonTo<BunkerMessage>(it) }
             compare(s) { OptimizedJsonMapper.fromJsonTo<BunkerResponse>(it) }
         }
-        for (s in broken) {
-            if (run { KiteReader.readBunkerMessage(s) }.isSuccess) fail("accepted $s")
-        }
+        for (s in broken) assertRejected(s)
         readPin.check(PIN_READS)
 
         // Every prefix of a real request and response is rejected.
         for (s in listOf(requests[0], requests[1], responses[6])) {
             for (k in s.indices) {
-                if (run { KiteReader.readBunkerMessage(s.substring(0, k)) }.isSuccess) fail("accepted a prefix: ${s.substring(0, k)}")
+                assertRejected(s.substring(0, k))
             }
         }
     }
@@ -134,29 +141,30 @@ class KiteBunkerPinnedTest {
     @Test
     fun anEmptyResultIsARawResponse() {
         // Jackson's deserializer threw StringIndexOutOfBoundsException on it (result[0] of "").
-        assertEquals("BunkerResponse|10||null", describe(KiteReader.readBunkerMessage("""{"id":"10","result":""}""")))
+        assertEquals("BunkerResponse|10||null", describe(OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"10","result":""}""")))
     }
 
     @Test
     fun nullFieldsReadAsAbsent() {
         // Jackson read these nulls as the text "null": the first was an error named "null".
-        assertEquals("BunkerResponsePublicKey|1|$pk|null", describe(KiteReader.readBunkerMessage("""{"id":"1","result":"$pk","error":null}""")))
-        assertEquals("BunkerResponse|2|null|null", describe(KiteReader.readBunkerMessage("""{"id":"2","result":null}""")))
-        assertEquals("BunkerResponseError|3|null|nope", describe(KiteReader.readBunkerMessage("""{"id":"3","result":null,"error":"nope"}""")))
-        if (run { KiteReader.readBunkerMessage("""{"id":null,"result":"ack"}""") }.isSuccess) fail("an id of null")
-        if (run { KiteReader.readBunkerMessage("""{"id":"4","method":null}""") }.isSuccess) fail("a method of null")
+        assertEquals("BunkerResponsePublicKey|1|$pk|null", describe(OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"1","result":"$pk","error":null}""")))
+        assertEquals("BunkerResponse|2|null|null", describe(OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"2","result":null}""")))
+        assertEquals("BunkerResponseError|3|null|nope", describe(OptimizedJsonMapper.fromJsonTo<BunkerMessage>("""{"id":"3","result":null,"error":"nope"}""")))
+        assertRejected("""{"id":null,"result":"ack"}""")
+        assertRejected("""{"id":"4","method":null}""")
     }
 
     @Test
     fun writesAsPinned() {
         val values =
-            requests.map { KiteReader.readBunkerRequest(it) } +
-                responses.map { KiteReader.readBunkerResponse(it) } +
+            requests.map { OptimizedJsonMapper.fromJsonTo<BunkerRequest>(it) } +
+                responses.map { OptimizedJsonMapper.fromJsonTo<BunkerResponse>(it) } +
                 listOf(BunkerResponse("x", null, null), BunkerResponse("y", null, "e\n\"r\""), BunkerRequest("z", "m\u0001", arrayOf("", "\u2028", "\uD83D\uDE00")))
         val pin = Pin("bunker writes")
         for (v in values) {
-            pin.add(KiteWriter.toJsonOrNull(v))
-            assertEquals(OptimizedJsonMapper.toJson(v), KiteWriter.toJsonOrNull(v), describe(v as BunkerMessage))
+            pin.add(OptimizedJsonMapper.toJson(v))
+            assertEquals(KiteWriter.toJsonOrNull(v), OptimizedJsonMapper.toJson(v), describe(v as BunkerMessage))
+            assertEquals(KotlinSerializationMapper.toJson(v), OptimizedJsonMapper.toJson(v), "kotlinx: " + describe(v as BunkerMessage))
         }
         pin.check(PIN_WRITES)
     }

@@ -20,7 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.metadata
 
-import com.vitorpamplona.quartz.nip01Core.jackson.JacksonMapper
+import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -33,10 +33,10 @@ import kotlin.test.assertNull
 
 /**
  * Real kind-0 events collected from relays that used to lose all or part of the
- * profile. Each is checked through **both** wire parsers — Jackson (the
- * JVM/Android [com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper]
- * actual) and kotlinx serialization (the native actual) — because a profile that
- * renders on one platform and not the other is the harder bug to spot.
+ * profile. Each is checked through **both** parsers Quartz carries — Kite (what
+ * [com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper] reads events with)
+ * and kotlinx serialization — because a profile that one reads and the other
+ * drops is the harder bug to spot.
  */
 class MetadataEventWildProfilesTest {
     /** Runs [assertions] against the event as parsed by each of the two mappers. */
@@ -44,7 +44,7 @@ class MetadataEventWildProfilesTest {
         json: String,
         assertions: (label: String, event: MetadataEvent) -> Unit,
     ) {
-        assertions("jackson", JacksonMapper.fromJson(json) as MetadataEvent)
+        assertions("kite", OptimizedJsonMapper.fromJson(json) as MetadataEvent)
         assertions("kotlinx", KotlinSerializationMapper.fromJson(json) as MetadataEvent)
     }
 

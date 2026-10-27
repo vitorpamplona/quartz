@@ -115,7 +115,7 @@ class RawEvent(
         /**
          * Appends [value] as a JSON string literal, quotes included.
          * Minimal spec-compliant escaping (RFC 8259 §7): `"`, `\`, the
-         * short control escapes, and `\u00XX` for the rest of C0.
+         * short control escapes, and `\u00xx` (lowercase, like Kite) for the rest of C0.
          * Everything else — including non-ASCII — passes through raw,
          * which is valid JSON and preserves the exact code points the
          * event id was hashed over.

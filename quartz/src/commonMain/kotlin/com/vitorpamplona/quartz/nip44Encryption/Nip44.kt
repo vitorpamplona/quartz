@@ -51,13 +51,13 @@ object Nip44 {
     ): String {
         require(payload.isNotBlank()) { "Payload must not be blank" }
         return if (payload[0] == '{') {
-            decryptNIP44FromJackson(payload, privateKey, pubKey)
+            decryptNIP44FromJson(payload, privateKey, pubKey)
         } else {
             decryptNIP44FromBase64(payload, privateKey, pubKey)
         }
     }
 
-    private fun decryptNIP44FromJackson(
+    private fun decryptNIP44FromJson(
         json: String,
         privateKey: ByteArray,
         pubKey: ByteArray,

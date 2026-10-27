@@ -183,17 +183,6 @@ kotlin {
                 dependsOn(commonMain.get())
 
                 dependencies {
-                    // Performant Parser of JSONs into Events.
-                    //
-                    // jackson-databind, NOT jackson-module-kotlin: the module exists to bind
-                    // Kotlin classes reflectively off their constructor parameter names, and
-                    // nothing in the app does that any more — every wire format goes through a
-                    // hand-written serializer or kotlinx. Dropping it takes kotlin-reflect with
-                    // it, which is ~1,000 classes of DEX the app never called. `cli` still
-                    // declares the module itself: it genuinely binds its config files
-                    // reflectively, and is never minified.
-                    api(libs.jackson.databind)
-
                     // Websockets API
                     implementation(libs.okhttp)
                     implementation(libs.okhttpCoroutines)
@@ -357,7 +346,8 @@ kotlin {
     }
 }
 
-// iOS purity gate. Jackson and OkHttp are JVM-only and must never appear
+// iOS purity gate. JVM-only libraries (OkHttp, and Jackson should it come back)
+// must never appear
 // in source sets that compile for iOS / native / common targets. The KMP
 // build would eventually fail with an "unresolved reference" if these
 // leaked in, but that requires a macOS runner. This task is a fast Linux
@@ -365,7 +355,7 @@ kotlin {
 //
 // Scope: source sets whose code is compiled for at least one non-JVM
 // target. Excludes jvmAndroid, jvmMain, androidMain (and their tests),
-// where Jackson and OkHttp are legitimately used.
+// where JVM-only libraries such as OkHttp are legitimately used.
 //
 // See gradle/kmp-purity.gradle.kts for the pattern table and checked dirs.
 apply(from = rootProject.file("gradle/kmp-purity.gradle.kts"))

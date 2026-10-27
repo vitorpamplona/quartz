@@ -37,19 +37,19 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 /**
  * Quartz's own JSON writer for what it puts on a WebSocket (events, tags, rumors, filters,
  * every relay message and client command) and for the NIP-01 id hash, the twin of
- * [KiteReader]. [OptimizedJsonMapper] and the id hash write through it when
- * [JsonEngine.KITE] is selected.
+ * [KiteReader]. [OptimizedJsonMapper] and the id hash write through it on every target.
  *
- * The output is byte-identical to the Jackson serializers it mirrors, including their
- * escaping, which is wider than NIP-01's: `"`, `\` and the short forms `\b \f \n \r \t`, every
- * other char below 0x20 as `\u00XX` in uppercase hex, everything else (DEL, U+2028, `/`,
- * non-ASCII) as is. Two modes share that rule:
+ * It escapes like `JSON.stringify`, which is wider than NIP-01's rule: `"`, `\` and the short
+ * forms `\b \f \n \r \t`, every other char below 0x20 as `\u00xx` in lowercase hex, everything
+ * else (DEL, U+2028, `/`, non-ASCII) as is. nostr-tools, NDK, go-nostr, rust-nostr (serde_json),
+ * strfry, the Python and Dart libraries and nostr-sdk-ios all write the same lowercase escapes,
+ * so an event with a control char hashes to the id they compute. (Quartz's former Jackson
+ * serializers wrote uppercase hex, so events Quartz signed with such chars carry ids no one
+ * else, Quartz included now, verifies.) Two modes share that rule:
  *
- * - **Text** ([toJson]) builds a `String`. A lone surrogate is written as is, like Jackson's
- *   string generator.
- * - **UTF-8** (the id hash) writes the bytes SHA-256 reads, like Jackson's UTF-8 generator
- *   with `COMBINE_UNICODE_SURROGATES_IN_UTF8`: a surrogate pair becomes one 4-byte sequence and a
- *   lone surrogate is escaped as `\uXXXX`, so every event hashes to the same id it always did.
+ * - **Text** ([toJson]) builds a `String`. A lone surrogate is written as is.
+ * - **UTF-8** (the id hash) writes the bytes SHA-256 reads: a surrogate pair becomes one 4-byte
+ *   sequence and a lone surrogate is escaped as `\uxxxx`, as `JSON.stringify` does.
  *
  * Each string costs a check and one bulk copy in the common case where it has nothing to
  * escape: in text mode `String.indexOf` (an intrinsic on the JVM) looks for `"` and `\` and a
@@ -485,7 +485,7 @@ class KiteWriter internal constructor() {
         /** While hashing, bytes past this go to the digest instead of a bigger buffer. */
         private const val HASH_CHUNK = 16 * 1024
 
-        private const val HEX = "0123456789ABCDEF"
+        private const val HEX = "0123456789abcdef"
         private const val LONG_MIN = "-9223372036854775808"
         private const val BACKSLASH = '\\'.code.toByte()
 

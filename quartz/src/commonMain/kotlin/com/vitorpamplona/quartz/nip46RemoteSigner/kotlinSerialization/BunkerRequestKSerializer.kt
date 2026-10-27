@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip46RemoteSigner.kotlinSerialization
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestParser
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.descriptors.element
@@ -32,11 +33,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 object BunkerRequestKSerializer : KSerializer<BunkerRequest> {
@@ -71,8 +73,8 @@ object BunkerRequestKSerializer : KSerializer<BunkerRequest> {
     override fun deserialize(decoder: Decoder): BunkerRequest {
         val jsonDecoder = decoder as JsonDecoder
         val jsonObject = jsonDecoder.decodeJsonElement().jsonObject
-        val id = jsonObject["id"]!!.jsonPrimitive.content
-        val method = jsonObject["method"]!!.jsonPrimitive.content
+        val id = requiredText(jsonObject, "id")
+        val method = requiredText(jsonObject, "method")
         val params = lenientParams(jsonObject["params"])
 
         return BunkerRequestParser.parse(id, method, params)
@@ -89,3 +91,9 @@ object BunkerRequestKSerializer : KSerializer<BunkerRequest> {
             ?.toTypedArray()
             ?: emptyArray()
 }
+
+/** A required NIP-46 field's text: a missing, `null` or non-scalar value is a malformed message. */
+internal fun requiredText(
+    jsonObject: JsonObject,
+    key: String,
+): String = (jsonObject[key] as? JsonPrimitive)?.contentOrNull ?: throw SerializationException("NIP-46 message without a $key")

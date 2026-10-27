@@ -504,19 +504,13 @@ Relay responds with:
 | Relay → Client | `["OK", eventId, success, message]` | Publish acknowledgement |
 | Relay → Client | `["NOTICE", message]` | Relay notice |
 
-### JSON engine
+### JSON
 
-Every NIP-01 frame, event, filter, NIP-46 and NIP-55 message goes through `OptimizedJsonMapper`
-(and the event id through `EventHasher`). By default that is Jackson on JVM and Android and
-kotlinx on native. Quartz also has its own engine, Kite (`nip01Core.kite`): a reader and writer
-for Nostr JSON only, the same code on every target, over twice as fast as Jackson on events,
-and byte-identical to it on output. It is opt-in while it is being tested:
-
-```kotlin
-JsonEngine.current = JsonEngine.KITE // or JsonEngine.DEFAULT
-```
-
-The flag is read on every call, so it can change at any time; set it once at startup.
+Quartz's JSON is the same code on every target, behind `OptimizedJsonMapper` (and the event id
+behind `EventHasher`). Kite (`nip01Core.kite`), Quartz's own reader and writer for Nostr JSON,
+handles events, relay messages, client commands, filters, tags, rumors, event templates and the
+NIP-46 and NIP-55 signer messages. Everything else (NIP-47, CLINK, …) goes through
+kotlinx.serialization. There is nothing to configure, and Quartz no longer depends on Jackson.
 
 ## Filters
 

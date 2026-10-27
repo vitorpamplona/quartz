@@ -20,8 +20,16 @@
  */
 package com.vitorpamplona.quartz.nipBCOnchainZaps.chain
 
-import com.vitorpamplona.quartz.nip01Core.jackson.JacksonMapper
 import com.vitorpamplona.quartz.utils.Log
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -212,19 +220,20 @@ class EsploraBackend(
     }
 
     internal fun parseTx(json: String): BitcoinTx {
-        val node = JacksonMapper.mapper.readTree(json)
-        val txid = node["txid"].asText()
-        val status = node["status"]
-        val confirmed = status?.get("confirmed")?.asBoolean() == true
-        val blockHeight = status?.get("block_height")?.asLong()
-        val blockHash = status?.get("block_hash")?.asText()
+        val node = Json.parseToJsonElement(json).obj()
+        val txid = node["txid"].text() ?: throw IllegalArgumentException("tx without a txid")
+        val status = node["status"].objOrNull()
+        val confirmed = status?.get("confirmed").bool()
+        val blockHeight = status?.get("block_height").long()
+        val blockHash = status?.get("block_hash").text()
 
         val outputs =
-            node["vout"].mapIndexed { idx, vout ->
+            node["vout"].array().mapIndexed { idx, element ->
+                val vout = element.obj()
                 BitcoinTxOutput(
                     index = idx,
-                    valueSats = vout["value"].asLong(),
-                    scriptPubKeyHex = vout["scriptpubkey"].asText().lowercase(),
+                    valueSats = vout["value"].long() ?: 0L,
+                    scriptPubKeyHex = (vout["scriptpubkey"].text() ?: "").lowercase(),
                 )
             }
 
@@ -254,21 +263,21 @@ class EsploraBackend(
     internal fun parseAddressTxList(
         json: String,
         address: String,
-    ): List<BitcoinAddressTx> {
-        val node = JacksonMapper.mapper.readTree(json)
-        return node.map { tx ->
-            val txid = tx["txid"].asText()
-            val status = tx["status"]
-            val confirmed = status?.get("confirmed")?.asBoolean() == true
-            val blockHeight = status?.get("block_height")?.asLong()
-            val blockTime = status?.get("block_time")?.asLong()
+    ): List<BitcoinAddressTx> =
+        Json.parseToJsonElement(json).array().map { element ->
+            val tx = element.obj()
+            val txid = tx["txid"].text() ?: throw IllegalArgumentException("tx without a txid")
+            val status = tx["status"].objOrNull()
+            val confirmed = status?.get("confirmed").bool()
+            val blockHeight = status?.get("block_height").long()
+            val blockTime = status?.get("block_time").long()
 
             var spentByMe = 0L
             val incomingCounterparties = LinkedHashSet<String>()
-            tx["vin"]?.forEach { vin ->
-                val prevout = vin["prevout"]
-                val prevAddress = prevout?.get("scriptpubkey_address")?.asText()
-                val value = prevout?.get("value")?.asLong() ?: 0L
+            (tx["vin"] as? JsonArray)?.forEach { vin ->
+                val prevout = vin.objOrNull()?.get("prevout").objOrNull()
+                val prevAddress = prevout?.get("scriptpubkey_address").text()
+                val value = prevout?.get("value").long() ?: 0L
                 if (prevAddress == address) {
                     spentByMe += value
                 } else if (prevAddress != null) {
@@ -278,9 +287,10 @@ class EsploraBackend(
 
             var receivedByMe = 0L
             val outgoingCounterparties = LinkedHashSet<String>()
-            tx["vout"]?.forEach { vout ->
-                val outAddress = vout["scriptpubkey_address"]?.asText()
-                val value = vout["value"]?.asLong() ?: 0L
+            (tx["vout"] as? JsonArray)?.forEach { element ->
+                val vout = element.objOrNull()
+                val outAddress = vout?.get("scriptpubkey_address").text()
+                val value = vout?.get("value").long() ?: 0L
                 if (outAddress == address) {
                     receivedByMe += value
                 } else if (outAddress != null) {
@@ -301,27 +311,25 @@ class EsploraBackend(
                 counterpartyAddresses = counterparties,
             )
         }
-    }
 
-    internal fun parseUtxoList(json: String): List<Utxo> {
-        val node = JacksonMapper.mapper.readTree(json)
-        return node.map { utxo ->
-            val confirmed = utxo["status"]?.get("confirmed")?.asBoolean() == true
+    internal fun parseUtxoList(json: String): List<Utxo> =
+        Json.parseToJsonElement(json).array().map { element ->
+            val utxo = element.obj()
+            val confirmed = utxo["status"].objOrNull()?.get("confirmed").bool()
             Utxo(
-                txid = utxo["txid"].asText(),
-                vout = utxo["vout"].asInt(),
-                valueSats = utxo["value"].asLong(),
+                txid = utxo["txid"].text() ?: throw IllegalArgumentException("utxo without a txid"),
+                vout = utxo["vout"].long()?.toInt() ?: 0,
+                valueSats = utxo["value"].long() ?: 0L,
                 confirmations = if (confirmed) 1 else 0,
             )
         }
-    }
 
     /** mempool.space `/v1/fees/recommended`: `{ fastestFee, halfHourFee, hourFee, minimumFee }`. */
     internal fun parseRecommendedFees(json: String): FeeEstimates {
-        val node = JacksonMapper.mapper.readTree(json)
-        val fast = node["fastestFee"]?.asDouble()
-        val normal = node["halfHourFee"]?.asDouble() ?: fast
-        val slow = node["hourFee"]?.asDouble() ?: node["minimumFee"]?.asDouble() ?: normal
+        val node = Json.parseToJsonElement(json).obj()
+        val fast = node["fastestFee"].double()
+        val normal = node["halfHourFee"].double() ?: fast
+        val slow = node["hourFee"].double() ?: node["minimumFee"].double() ?: normal
 
         if (fast == null) {
             Log.w(logTag) { "fee response missing 'fastestFee': $json" }
@@ -340,9 +348,9 @@ class EsploraBackend(
      * 2-block / 6-block / 144-block targets to the fast / normal / slow tiers.
      */
     internal fun parseFeeEstimates(json: String): FeeEstimates {
-        val node = JacksonMapper.mapper.readTree(json)
+        val node = Json.parseToJsonElement(json).obj()
 
-        fun rate(vararg targets: String): Double? = targets.firstNotNullOfOrNull { node[it]?.asDouble() }
+        fun rate(vararg targets: String): Double? = targets.firstNotNullOfOrNull { node[it].double() }
 
         val fast = rate("1", "2")
         val normal = rate("4", "6", "3")
@@ -358,6 +366,20 @@ class EsploraBackend(
             slowSatPerVbyte = slow ?: normal ?: fast,
         )
     }
+
+    private fun JsonElement.obj(): JsonObject = this as? JsonObject ?: throw IllegalArgumentException("expected a JSON object")
+
+    private fun JsonElement?.objOrNull(): JsonObject? = this as? JsonObject
+
+    private fun JsonElement?.array(): JsonArray = this as? JsonArray ?: throw IllegalArgumentException("expected a JSON array")
+
+    private fun JsonElement?.text(): String? = (this as? JsonPrimitive)?.contentOrNull
+
+    private fun JsonElement?.long(): Long? = (this as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() }
+
+    private fun JsonElement?.double(): Double? = (this as? JsonPrimitive)?.doubleOrNull
+
+    private fun JsonElement?.bool(): Boolean = (this as? JsonPrimitive)?.booleanOrNull == true
 
     companion object {
         const val MEMPOOL_API_URL = "https://mempool.space/api"

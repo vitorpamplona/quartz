@@ -66,8 +66,10 @@ import kotlin.test.fail
  * preimage in text and UTF-8, as tags, as a rumor and inside frames), hand-picked and random
  * strings that need escaping, and every message and command type, each test pinned by a [Pin].
  *
- * The pins were recorded while every output was also compared, byte for byte, with the
- * Jackson serializers the writer replaced.
+ * The pins were first recorded while every output was also compared, byte for byte, with the
+ * Jackson serializers the writer replaced. Those that hold a control char escaped with a hex letter
+ * (0x0B, 0x0E, 0x0F, 0x1A-0x1F) or a lone surrogate were re-recorded when the escapes went lowercase, after the
+ * same events' ids and JSON were compared with Node's `JSON.stringify`.
  */
 class KiteWriterPinnedTest {
     @get:Rule val testName = TestName()
@@ -397,14 +399,14 @@ class KiteWriterPinnedTest {
     }
 
     companion object {
-        /** See [Pin]: recorded while every output was also compared with Jackson. */
+        /** See [Pin] and the class doc for how these were checked. */
         private val PINS =
             mapOf(
                 "everyCapturedEventWritesAsPinned" to "9e5eaceae7542873dc146c65e6d90a835f443a3ab89eb3490b9d3f0ddd01250e",
-                "oddStringsWriteAsPinned" to "04e18de89fa95d22a9f73f09ea2843a2d3a5874fcb8173c31fa764bf6d4ac797",
-                "randomStringsWriteAsPinned" to "8659a51ab78aa485ffbbf486ebdae79d9eda546133e90b294a45da77a5c4191e",
-                "bigEventsGrowAndReleaseTheBuffers" to "c9a492b36f5020abcced842d40ce912c10b056b38b292acc403bf63e7a4c3932",
-                "everyMessageTypeWritesAsPinned" to "58f694b89e08afa1372c740b77173796ad04dcfc45e280af661612c82a8f2baa",
+                "oddStringsWriteAsPinned" to "1f50becb4028270508dd2aa70df77f75b0325ef2ed2d9e52a59baed0113e708d",
+                "randomStringsWriteAsPinned" to "4e0f86a4cc6d7985abd7e1518c0fa5ab8d8345b0a57f630c9d8ba1a2ea14e57c",
+                "bigEventsGrowAndReleaseTheBuffers" to "551830cd9d1f3bfba3000e8ca6697732d6794192acbb50d60280d5429b1ab7ca",
+                "everyMessageTypeWritesAsPinned" to "d863435bb6fc547ba4142a53eea37f4341c2422b6d5773549cd69f2e2e6f9f59",
                 "everyCommandTypeWritesAsPinned" to "ed5ef44394d23eaed7d6877c8454d61bebfe7092cb2db7d11e36e72e8d943bea",
                 "filtersAndRumorsWriteAsPinned" to "ac358d4667a389f04205e5a31bd4114464faafc7869377885a70cd45ebf80ece",
                 "threadsWritingAtOnceDoNotShareState" to "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
