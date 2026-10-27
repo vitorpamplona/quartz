@@ -37,5 +37,7 @@ class UrlTag {
         }
 
         fun assemble(url: String) = arrayOf(TAG_NAME, url)
+
+        fun assemble(urls: List<String>) = urls.map { assemble(it) }
     }
 }

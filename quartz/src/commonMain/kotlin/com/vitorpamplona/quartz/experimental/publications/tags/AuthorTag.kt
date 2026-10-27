@@ -42,5 +42,7 @@ class AuthorTag {
         }
 
         fun assemble(author: String) = arrayOf(TAG_NAME, author)
+
+        fun assemble(authors: List<String>) = authors.map { assemble(it) }
     }
 }
