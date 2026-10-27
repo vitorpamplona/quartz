@@ -390,13 +390,14 @@ object Hex {
     /**
      * True when the hex string [id] encodes exactly the bytes [ourId], compared
      * without allocating a decode buffer. Handy for matching an incoming hex id
-     * against bytes you already hold. Assumes [id] is at least `2 * ourId.size`
-     * chars and lower-case (as produced by [encode]).
+     * against bytes you already hold. False when [id] is not exactly
+     * `2 * ourId.size` chars; expects lower-case hex (as produced by [encode]).
      */
     fun isEqual(
         id: String,
         ourId: ByteArray,
     ): Boolean {
+        if (id.length != ourId.size * 2) return false
         val table = byteToHex
         var charIndex = 0
         for (i in 0 until ourId.size) {
