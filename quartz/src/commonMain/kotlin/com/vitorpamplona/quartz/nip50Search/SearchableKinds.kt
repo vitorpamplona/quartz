@@ -217,6 +217,7 @@ object SearchableKinds {
             33402, // WorkoutTemplateEvent
             33534, // RelayRoleEvent
             33863, // FundraiserEvent
+            33953, // EbookEvent
             34139, // MusicPlaylistEvent
             34235, // AddressableNormalVideoEvent
             34236, // AddressableShortVideoEvent
