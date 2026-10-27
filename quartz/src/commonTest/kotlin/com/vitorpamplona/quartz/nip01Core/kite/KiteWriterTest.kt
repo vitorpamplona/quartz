@@ -80,10 +80,11 @@ class KiteWriterTest {
     }
 
     @Test
-    fun escapesLikeJackson() {
-        // The short forms, every other control char as uppercase \u00XX, and DEL, U+2028 and `/` as is.
+    fun escapesLikeJsonStringify() {
+        // The short forms, every other control char as lowercase \u00xx, and DEL, U+2028 and `/` as is,
+        // like JSON.stringify, serde_json, go-nostr and the other Nostr implementations.
         val e = event("a\u0001\u001F\"\\\n\b\u000C\r\t/\u007F\u2028")
-        val expected = "\"a\\u0001\\u001F\\\"\\\\\\n\\b\\f\\r\\t/\u007F\u2028\""
+        val expected = "\"a\\u0001\\u001f\\\"\\\\\\n\\b\\f\\r\\t/\u007F\u2028\""
         assertEquals(
             "{\"id\":\"${e.id}\",\"pubkey\":\"$pk\",\"created_at\":1,\"kind\":1,\"tags\":[],\"content\":$expected,\"sig\":\"${e.sig}\"}",
             KiteWriter.toJson(e),
@@ -96,11 +97,21 @@ class KiteWriterTest {
     }
 
     @Test
+    fun idMatchesOtherImplementationsForControlChars() {
+        // Pinned from sha256(JSON.stringify(...)) in Node; Python's json.dumps gives the same
+        // id for the first one. A lone surrogate is escaped the way JSON.stringify does it.
+        val tags = arrayOf(arrayOf("t", "\u001b\u007f"))
+        val content = "a\u0001\u001fb 😀 lone "
+        assertEquals("1e5fb2855abe11d9b7550d25ce149d2c7d6c9f493ea2c619ba73ee47f4786611", EventHasher.hashId(pk, 1, 1, tags, content))
+        assertEquals("3a647fbb32d59d7c2bbf929493795822621c21c49bb09022c1935e3691fe87b2", EventHasher.hashId(pk, 1, 1, tags, content + "\uD800"))
+    }
+
+    @Test
     fun surrogatesStayAsIsInTextAndAreEscapedAloneInUtf8() {
         val lone = "x\uD83Dy\uDE00"
         assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", KiteWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
         assertEquals(
-            "[0,\"$pk\",1,1,[],\"x\\uD83Dy\\uDE00\"]".encodeToByteArray().toList(),
+            "[0,\"$pk\",1,1,[],\"x\\ud83dy\\ude00\"]".encodeToByteArray().toList(),
             KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), lone).toList(),
         )
 

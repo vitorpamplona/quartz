@@ -39,14 +39,15 @@ import kotlin.reflect.KClass
  * Reads what travels over a Nostr WebSocket straight off the frame's `String`: relay messages
  * ([readMessage]), client commands ([readCommand]), and the events, rumors and event lists inside
  * them. About twice as fast as Jackson on events, with ~40% less garbage. [OptimizedJsonMapper]
- * reads through it when [JsonEngine.KITE] is selected.
+ * reads events, relay traffic, filters, rumors, templates and NIP-46 messages through it
+ * on every target.
  *
  * It finds the end of every string value with `String.indexOf('"')`, an intrinsic on HotSpot
  * and ART, and tracks the next backslash in the frame (also found with `indexOf`), so a value
  * without escapes is one `substring`. Event keys are matched by length and characters, never
  * built. Only values with escapes are decoded, run by run, into a reused char buffer.
  *
- * Every type follows what Quartz's Jackson deserializers accept and build (`EventDeserializer`,
+ * Every type follows what Quartz's former Jackson deserializers accepted and built (`EventDeserializer`,
  * `RumorDeserializer`, `MessageDeserializer`, `CommandDeserializer`, `ManualFilterDeserializer`,
  * the COUNT and LIMITS readers): the same optional elements, the same defaults and the same
  * lenient fields. It follows the JSON grammar everywhere, including values it skips, but for one

@@ -24,7 +24,7 @@ import java.security.MessageDigest
 
 /**
  * One SHA-256 [MessageDigest] per thread for the event-id hashers that stream bytes into it
- * (Jackson's [HashingByteArrayBuilder] and the Kite writer). `digest()` resets it; a caller that
+ * (the Kite writer). `digest()` resets it; a caller that
  * stops halfway must `reset()` it before the next one on the thread uses it.
  */
 internal val threadLocalSha256: ThreadLocal<MessageDigest> =

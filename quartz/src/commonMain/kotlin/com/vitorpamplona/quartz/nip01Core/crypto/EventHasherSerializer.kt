@@ -21,18 +21,20 @@
 package com.vitorpamplona.quartz.nip01Core.crypto
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.kite.KiteWriter
+import com.vitorpamplona.quartz.utils.Hex
 
 /**
  * This class converts event properties into the JSON and UTF-8 byte array of that json according to NIP-01
  */
-expect object EventHasherSerializer {
+object EventHasherSerializer {
     fun makeJsonForId(
         pubKey: HexKey,
         createdAt: Long,
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): String
+    ): String = KiteWriter.idPreimageJson(pubKey, createdAt, kind, tags, content)
 
     fun fastMakeJsonForId(
         pubKey: HexKey,
@@ -40,7 +42,7 @@ expect object EventHasherSerializer {
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): ByteArray
+    ): ByteArray = KiteWriter.idPreimageBytes(pubKey, createdAt, kind, tags, content)
 
     fun makeJsonForIdHashAndCheck(
         id: HexKey,
@@ -49,5 +51,5 @@ expect object EventHasherSerializer {
         kind: Int,
         tags: Array<Array<String>>,
         content: String,
-    ): Boolean
+    ): Boolean = Hex.isEqual(id, KiteWriter.idHash(pubKey, createdAt, kind, tags, content))
 }

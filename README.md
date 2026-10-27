@@ -199,8 +199,9 @@ to `onPause` methods.
 
 Crypto primitives come from [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp), secp256k1 from
 [secp256k1-kmp](https://github.com/ACINQ/secp256k1-kmp) and NIP-77 from
-[negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp). On the JVM and Android, Jackson
-parses events and OkHttp is the bundled WebSocket transport.
+[negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp). JSON is Quartz's own: Kite reads and
+writes events and relay traffic, and kotlinx.serialization handles everything else. On the JVM and
+Android, OkHttp is the bundled WebSocket transport.
 
 ## Developer Setup
 

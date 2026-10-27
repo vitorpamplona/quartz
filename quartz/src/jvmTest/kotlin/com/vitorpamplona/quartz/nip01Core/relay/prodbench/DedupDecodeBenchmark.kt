@@ -46,12 +46,20 @@ class DedupDecodeBenchmark {
     private fun buildFrames(): List<String> {
         val events =
             (1..UNIQUE_EVENTS).map {
+                // Shaped like the recorded startup capture's notes (median ~570 bytes, 2-3 tags):
+                // escaped and non-ASCII text and a couple of tags are what a full parse spends
+                // its time on. Plain ASCII without tags parses about as fast as the id scan.
                 SyntheticEvents.fakeEvent(
                     idSeed = it,
                     kind = 1,
                     pubKey = SyntheticEvents.hexId(it % 500 + 1),
                     createdAt = it.toLong(),
-                    content = "dedup decode benchmark payload $it ".repeat(6),
+                    content = "dedup \"decode\" benchmark — payload $it 🚀\n".repeat(5),
+                    tags =
+                        arrayOf(
+                            arrayOf("e", SyntheticEvents.hexId(it + 1_000_000), "wss://relay.example.com", "root"),
+                            arrayOf("p", SyntheticEvents.hexId(it % 500 + 1)),
+                        ),
                 )
             }
         return buildList {
