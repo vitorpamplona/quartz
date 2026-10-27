@@ -145,6 +145,26 @@ class EbookEventTest {
     }
 
     @Test
+    fun languageSkipsOtherNamespacesLabels() {
+        val event =
+            EbookEvent(
+                hash,
+                hash,
+                0L,
+                arrayOf(
+                    arrayOf("l", "nudity", "content-warning"),
+                    arrayOf("l", "fiction", "genre"),
+                    arrayOf("l", "pt", "ISO-639-1"),
+                ),
+                "",
+                "",
+            )
+        assertEquals("pt", event.language())
+        assertNull(EbookEvent(hash, hash, 0L, arrayOf(arrayOf("l", "fiction", "genre")), "", "").language())
+        assertFalse(LanguageTag.isTag(arrayOf("l", "nudity", "content-warning")))
+    }
+
+    @Test
     fun tagCodecsRecognizeTheirTags() {
         assertTrue(IsbnTag.isTag(arrayOf("isbn", "978-1119473862")))
         assertTrue(LanguageTag.isTag(arrayOf("l", "en")))

@@ -40,6 +40,7 @@ import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** The links all three PressStr kinds share: `p`, `e`, `a` and `q` tags, and `nostr:` citations in the body. */
@@ -111,6 +112,14 @@ class PressStrHintProviderTest {
         val event = MagazineIssueEvent(eventId, author, 1700000000, arrayOf(arrayOf("a", magazine)), "", "")
         assertEquals(listOf(magazine), event.linkedAddressIds())
         assertTrue(event.addressHints().isEmpty())
+    }
+
+    @Test
+    fun linkedIdsAreBuiltOncePerEvent() {
+        val event = MagazineIssueEvent(eventId, author, 1700000000, referenceTags(arrayOf("a", magazine, relay.url)), content, "")
+        assertSame(event.linkedPubKeys(), event.linkedPubKeys())
+        assertSame(event.linkedEventIds(), event.linkedEventIds())
+        assertSame(event.linkedAddressIds(), event.linkedAddressIds())
     }
 
     @Test
