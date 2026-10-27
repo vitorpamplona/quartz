@@ -4,7 +4,7 @@ Every concrete `SearchableEvent` implementor in Quartz, with the exact `indexabl
 expression. **Update this file in the same PR as any change to the searchable set or to an
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
-Counts: 207 concrete classes covering 207 kind values (`GitStatusEvent` spans 4 kinds;
+Counts: 208 concrete classes covering 208 kind values (`GitStatusEvent` spans 4 kinds;
 kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps and kinds 30405 / 30406 with Shopstr — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
@@ -174,6 +174,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 33402 | WorkoutTemplateEvent | experimental/fitness/workout | `listOfNotNull(title(), content)` NL |
 | 33534 | RelayRoleEvent | nip43RelayMembers/roles | `listOfNotNull(label(), description())` NL |
 | 33863 | FundraiserEvent | experimental/agora | `listOfNotNull(title(), content)` NL |
+| 33953 | EbookEvent | experimental/pressstr/ebook | `(listOfNotNull(title(), summary(), content) + authors())` NL — `author` names are plain strings, not pubkeys |
 | 34139 | MusicPlaylistEvent | experimental/music/playlist | `listOfNotNull(title(), description(), content)` NL |
 | 34235 | AddressableNormalVideoEvent | nip71Video | inherited `AddressableVideoEvent`: `(listOfNotNull(title(), content) + segmentTitles())` NL |
 | 34236 | AddressableShortVideoEvent | nip71Video | inherited `AddressableVideoEvent`: `(listOfNotNull(title(), content) + segmentTitles())` NL |

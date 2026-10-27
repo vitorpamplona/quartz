@@ -21,10 +21,6 @@
 package com.vitorpamplona.quartz.experimental.pressstr.ebook
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.BlossomTag
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.IsbnTag
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.LanguageTag
-import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.SizeTag
 import com.vitorpamplona.quartz.experimental.publications.tags.AuthorTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -36,16 +32,9 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip01Core.tags.publishedAt.PublishedAtProvider
-import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
-import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
-import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
-import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
-import com.vitorpamplona.quartz.nip94FileMetadata.tags.HashSha256Tag
-import com.vitorpamplona.quartz.nip94FileMetadata.tags.MimeTypeTag
-import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -89,50 +78,50 @@ class EbookEvent(
         }
     }
 
-    fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
+    fun title() = tags.title()
 
     /** A display name, falling back to the `d` identifier when the title is missing. */
     fun titleOrIdentifier(): String = title()?.takeIf { it.isNotBlank() } ?: dTag()
 
-    fun image() = tags.firstNotNullOfOrNull(ImageTag::parse)
+    fun image() = tags.image()
 
     /** The primary copy of the file. */
-    fun url() = tags.firstNotNullOfOrNull(UrlTag::parse)
+    fun url() = tags.url()
 
     /** Every copy of the file, primary first, then the mirrors. */
-    fun urls() = tags.mapNotNull(UrlTag::parse)
+    fun urls() = tags.urls()
 
-    fun mimeType() = tags.firstNotNullOfOrNull(MimeTypeTag::parse)
+    fun mimeType() = tags.mimeType()
 
     fun isPdf() = mimeType() == MIME_PDF
 
     fun isEpub() = mimeType() == MIME_EPUB
 
     /** The authors' names, as plain strings: a book's author rarely has a nostr key. */
-    fun authors() = tags.mapNotNull(AuthorTag::parse)
+    fun authors() = tags.authors()
 
-    fun summary() = tags.firstNotNullOfOrNull(SummaryTag::parse)
+    fun summary() = tags.summary()
 
     /** File size in bytes. */
-    fun size() = tags.firstNotNullOfOrNull(SizeTag::parse)
+    fun size() = tags.size()
 
     /** SHA-256 of the file, hex. On Blossom this is also the file's name. */
-    fun hash() = tags.firstNotNullOfOrNull(HashSha256Tag::parse)
+    fun hash() = tags.hash()
 
-    fun blossom() = tags.firstNotNullOfOrNull(BlossomTag::parse)
+    fun blossom() = tags.blossom()
 
     fun topics() = tags.hashtags()
 
-    fun language() = tags.firstNotNullOfOrNull(LanguageTag::parse)
+    fun language() = tags.language()
 
-    fun isbn() = tags.firstNotNullOfOrNull(IsbnTag::parse)
+    fun isbn() = tags.isbn()
 
     /**
      * When the book first came out, which for a reissue or an upload of an old work is long before
      * this event. Unlike an article's `published_at` it is not capped at [createdAt]: a book can
      * legitimately be announced ahead of its release date.
      */
-    override fun publishedAt() = tags.firstNotNullOfOrNull(PublishedAtTag::parse)
+    override fun publishedAt() = tags.publishedAt()
 
     companion object {
         const val KIND = 33953
@@ -165,7 +154,7 @@ class EbookEvent(
                 mimeType(mimeType)
                 alt(ALT_DESCRIPTION_PREFIX + title)
 
-                authors.forEach { author(it) }
+                authors(authors)
                 summary?.let { summary(it) }
                 publishedAt?.let { publishedAt(it) }
                 size?.let { size(it) }

@@ -28,6 +28,8 @@ class SizeTag {
     companion object {
         const val TAG_NAME = "size"
 
+        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+
         fun parse(tag: Array<String>): Long? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }

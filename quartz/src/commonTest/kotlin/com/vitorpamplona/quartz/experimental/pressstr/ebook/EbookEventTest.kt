@@ -20,6 +20,10 @@
  */
 package com.vitorpamplona.quartz.experimental.pressstr.ebook
 
+import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.BlossomTag
+import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.IsbnTag
+import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.LanguageTag
+import com.vitorpamplona.quartz.experimental.pressstr.ebook.tags.SizeTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
@@ -28,6 +32,7 @@ import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -114,5 +119,38 @@ class EbookEventTest {
         assertEquals(1525132800L, event.publishedAt())
         assertEquals("Ebook: The Bitcoin Standard", event.alt())
         assertEquals("A look at the history of money.", event.content)
+    }
+
+    @Test
+    fun writesRepeatableTagsInOrder() {
+        val template =
+            EbookEvent.build(
+                title = "Mirrored",
+                url = "https://a.example/$hash.pdf",
+                mimeType = EbookEvent.MIME_PDF,
+                image = "https://a.example/cover.jpg",
+                dTag = "mirrored",
+                authors = listOf("First Author", "Second Author"),
+            ) {
+                urls(listOf("https://b.example/$hash.pdf", "https://c.example/$hash.pdf"))
+            }
+
+        assertEquals(listOf("First Author", "Second Author"), template.tags.authors())
+        assertEquals(
+            listOf("https://a.example/$hash.pdf", "https://b.example/$hash.pdf", "https://c.example/$hash.pdf"),
+            template.tags.urls(),
+        )
+        assertEquals("https://a.example/$hash.pdf", template.tags.url())
+        assertEquals("Mirrored", template.tags.title())
+    }
+
+    @Test
+    fun tagCodecsRecognizeTheirTags() {
+        assertTrue(IsbnTag.isTag(arrayOf("isbn", "978-1119473862")))
+        assertTrue(LanguageTag.isTag(arrayOf("l", "en")))
+        assertTrue(SizeTag.isTag(arrayOf("size", "1905250")))
+        assertTrue(BlossomTag.isTag(arrayOf("blossom", "blossom:$hash.pdf")))
+        assertFalse(IsbnTag.isTag(arrayOf("isbn", "")))
+        assertFalse(SizeTag.isTag(arrayOf("x", hash)))
     }
 }

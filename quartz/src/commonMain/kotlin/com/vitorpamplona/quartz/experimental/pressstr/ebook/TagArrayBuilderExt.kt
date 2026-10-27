@@ -42,9 +42,14 @@ fun TagArrayBuilder<EbookEvent>.image(url: String) = addUnique(ImageTag.assemble
 /** The first call is the primary copy; later calls add mirrors of the same file. */
 fun TagArrayBuilder<EbookEvent>.url(url: String) = add(UrlTag.assemble(url))
 
+/** The primary copy first, then its mirrors. */
+fun TagArrayBuilder<EbookEvent>.urls(urls: List<String>) = addAll(UrlTag.assemble(urls))
+
 fun TagArrayBuilder<EbookEvent>.mimeType(mimeType: String) = addUnique(MimeTypeTag.assemble(mimeType))
 
 fun TagArrayBuilder<EbookEvent>.author(name: String) = add(AuthorTag.assemble(name))
+
+fun TagArrayBuilder<EbookEvent>.authors(names: List<String>) = addAll(AuthorTag.assemble(names))
 
 fun TagArrayBuilder<EbookEvent>.summary(summary: String) = addUnique(SummaryTag.assemble(summary))
 

@@ -28,6 +28,8 @@ class IsbnTag {
     companion object {
         const val TAG_NAME = "isbn"
 
+        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+
         fun parse(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
