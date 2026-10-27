@@ -505,9 +505,9 @@ Relay responds with:
 ### JSON
 
 Quartz's JSON is the same code on every target, behind `OptimizedJsonMapper` (and the event id
-behind `EventHasher`). What travels in bulk goes through Kite (`nip01Core.kite`), Quartz's own
-reader and writer for Nostr JSON: events, relay messages, client commands, filters, tags, rumors
-and event templates. Everything else (NIP-46, NIP-47, NIP-55, CLINK, …) goes through
+behind `EventHasher`). Kite (`nip01Core.kite`), Quartz's own reader and writer for Nostr JSON,
+handles events, relay messages, client commands, filters, tags, rumors, event templates and the
+NIP-46 and NIP-55 signer messages. Everything else (NIP-47, CLINK, …) goes through
 kotlinx.serialization. There is nothing to configure, and Quartz no longer depends on Jackson.
 
 ## Filters

@@ -29,9 +29,10 @@ import kotlin.test.assertNull
 import kotlin.test.fail
 
 /**
- * [JsonMapperNip55]'s reads and writes, pinned. The pins were recorded while every outcome was
- * also compared with the Jackson mapper Quartz used before. The one intended difference: a
- * permission's `"kind": null` reads as no kind, where Jackson read kind 0.
+ * [JsonMapperNip55]'s reads and writes, which go through Kite
+ * ([com.vitorpamplona.quartz.nip55AndroidSigner.kite.Nip55Kite]), pinned. The pins were recorded
+ * while every outcome was also compared with the Jackson mapper Quartz used before. The one
+ * intended difference: a permission's `"kind": null` reads as no kind, where Jackson read kind 0.
  */
 class Nip55JsonPinnedTest {
     private val pin = Pin("nip55")

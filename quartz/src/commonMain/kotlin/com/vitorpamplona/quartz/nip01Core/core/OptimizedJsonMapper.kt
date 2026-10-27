@@ -36,10 +36,9 @@ interface OptimizedSerializable
 /**
  * Quartz's JSON, the same on every target.
  *
- * What travels in bulk goes through Kite, Quartz's own Nostr reader and writer
- * ([KiteReader], [KiteWriter]): events, relay messages, client commands, filters, tags,
- * rumors and event templates. Everything else that implements [OptimizedSerializable]
- * (NIP-46, NIP-47, CLINK, …) goes through kotlinx.serialization ([KotlinSerializationMapper]).
+ * Kite, Quartz's own Nostr reader and writer ([KiteReader], [KiteWriter]), handles events,
+ * relay messages, client commands, filters, tags, rumors, event templates and NIP-46 messages.
+ * Everything else that implements [OptimizedSerializable] (NIP-47, CLINK, …) goes through kotlinx.serialization ([KotlinSerializationMapper]).
  *
  * Malformed input throws [IllegalArgumentException] from either path.
  */

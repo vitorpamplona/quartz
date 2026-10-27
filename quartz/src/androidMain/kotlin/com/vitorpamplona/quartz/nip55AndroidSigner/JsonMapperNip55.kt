@@ -20,119 +20,26 @@
  */
 package com.vitorpamplona.quartz.nip55AndroidSigner
 
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.put
+import com.vitorpamplona.quartz.nip55AndroidSigner.kite.Nip55Kite
 
 /**
  * NIP-55's JSON: the permission list a client sends a signer app, and the results a signer
- * returns for a batch of requests. Signer apps are other people's software, so reads are
- * lenient the way Quartz's earlier Jackson reader was: unknown fields are skipped, `package`,
- * `result`, `event` and `id` count only when they are strings, `rejected` only when it is a
- * boolean, and a permission's `type` and `kind` are coerced from whatever scalar they hold.
- * A permission's `"kind": null` reads as no kind. Malformed JSON throws [IllegalArgumentException].
+ * returns for a batch of requests, read and written by Kite ([Nip55Kite]).
  */
 object JsonMapperNip55 {
-    fun fromJsonToPermission(json: String): Permission = permission(Json.parseToJsonElement(json))
+    fun fromJsonToPermission(json: String): Permission = Nip55Kite.fromJsonToPermission(json)
 
-    fun fromJsonToPermissionArray(json: String): Array<Permission> = array(Json.parseToJsonElement(json)).map(::permission).toTypedArray()
+    fun fromJsonToPermissionArray(json: String): Array<Permission> = Nip55Kite.fromJsonToPermissionArray(json)
 
-    fun fromJsonToIntentResult(json: String): IntentResult = intentResult(Json.parseToJsonElement(json))
+    fun fromJsonToIntentResult(json: String): IntentResult = Nip55Kite.fromJsonToIntentResult(json)
 
-    fun fromJsonToIntentResultList(json: String): List<IntentResult> = array(Json.parseToJsonElement(json)).map(::intentResult)
+    fun fromJsonToIntentResultList(json: String): List<IntentResult> = Nip55Kite.fromJsonToIntentResultList(json)
 
-    /** `{"type":"sign_event","kind":1}`; `kind` is written as `null` when the permission has none. */
-    fun toJson(permission: Permission): String = permissionElement(permission).toString()
+    fun toJson(permission: Permission): String = Nip55Kite.toJson(permission)
 
-    fun toJson(permissions: List<Permission>): String = JsonArray(permissions.map(::permissionElement)).toString()
+    fun toJson(permissions: List<Permission>): String = Nip55Kite.toJson(permissions)
 
-    /** The result's set fields, in declaration order. */
-    fun toJson(result: IntentResult): String =
-        buildJsonObject {
-            result.`package`?.let { put("package", it) }
-            result.result?.let { put("result", it) }
-            result.event?.let { put("event", it) }
-            result.id?.let { put("id", it) }
-            result.rejected?.let { put("rejected", it) }
-        }.toString()
-
-    private fun permissionElement(permission: Permission) =
-        buildJsonObject {
-            put("type", permission.type?.code)
-            put("kind", permission.kind)
-        }
-
-    private fun array(element: JsonElement): JsonArray = element as? JsonArray ?: throw IllegalArgumentException("expected an array")
-
-    private fun permission(element: JsonElement): Permission {
-        val fields = element as? JsonObject ?: throw IllegalArgumentException("expected an object")
-        val type = fields["type"] ?: throw IllegalArgumentException("a permission without a type")
-        return Permission(CommandType.parse(asText(type)), fields["kind"]?.let(::asIntOrNull))
-    }
-
-    private fun intentResult(element: JsonElement): IntentResult {
-        val fields = element as? JsonObject ?: throw IllegalArgumentException("expected an object")
-        return IntentResult(
-            `package` = stringOrNull(fields["package"])?.intern(),
-            result = stringOrNull(fields["result"]),
-            event = stringOrNull(fields["event"]),
-            id = stringOrNull(fields["id"])?.intern(),
-            rejected = (fields["rejected"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull,
-        )
-    }
-
-    private fun stringOrNull(element: JsonElement?): String? = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
-
-    /** A scalar's text (`null` for JSON null), "" for an object or array. */
-    private fun asText(element: JsonElement): String =
-        when (element) {
-            is JsonNull -> "null"
-            is JsonPrimitive -> element.content
-            else -> ""
-        }
-
-    /**
-     * A permission's kind from whatever it holds: null stays null; a number keeps the low 32
-     * bits of an integer or truncates a fraction; a string of digits is that int (0 when out of
-     * range), else a number truncated, else 0; true is 1; false, an object or an array is 0.
-     */
-    private fun asIntOrNull(element: JsonElement): Int? =
-        when {
-            element is JsonNull -> {
-                null
-            }
-
-            element !is JsonPrimitive -> {
-                0
-            }
-
-            element.isString -> {
-                val text = element.content.trim()
-                val digits = text.removePrefix("-").removePrefix("+")
-                if (digits.isNotEmpty() && digits.all { it in '0'..'9' }) {
-                    text.toIntOrNull() ?: 0
-                } else {
-                    text.toDoubleOrNull()?.toInt() ?: 0
-                }
-            }
-
-            element.booleanOrNull != null -> {
-                if (element.booleanOrNull == true) 1 else 0
-            }
-
-            else -> {
-                element.longOrNull?.toInt() ?: element.doubleOrNull?.toInt() ?: 0
-            }
-        }
+    fun toJson(result: IntentResult): String = Nip55Kite.toJson(result)
 }

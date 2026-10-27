@@ -122,8 +122,8 @@ suspend fun post(client: NostrClient) {
   (NIP-55) signers implement the same class.
 - `Event.verify()` checks the id and signature of events you receive from relays.
 - Nostr JSON goes through `OptimizedJsonMapper`: Kite (`nip01Core.kite`, Quartz's own reader
-  and writer) for events, relay frames, filters, tags, rumors and templates, and
-  kotlinx.serialization for everything else, on every target.
+  and writer) for events, relay frames, filters, tags, rumors, templates and NIP-46/NIP-55
+  signer messages, and kotlinx.serialization for everything else, on every target.
 
 ## Identifiers
 
