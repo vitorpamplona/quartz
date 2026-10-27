@@ -321,7 +321,10 @@ class PageRetryBackoff(
  * @param idleTimeoutMs   Idle window per page — like every accessory timeout, it is measured
  *   from the relay's **most recent message**, not from the page's start: every arriving
  *   event resets it, so a slow relay actively streaming a large page is never cropped
- *   mid-delivery. A page only gives up after this much silence without an EOSE.
+ *   mid-delivery. A page only gives up after this much silence without an EOSE. Time
+ *   spent in [onEvent] does not count — the caller's own backpressure is not the relay
+ *   going silent (see `IdleClock.holding`) — so a handler that never returns is not
+ *   ended by this either: bound it at the call site.
  *
  *   Deliberately no wall-clock ceiling here — no accessory has one. A ceiling
  *   would bound one *page*, not this call: the loop below reacts to a page ending by
@@ -781,17 +784,19 @@ internal suspend fun INostrClient.walkPages(
                             // allocated for every event of the walk.
                             busy.withLock {
                                 if (gate.over) return
-                                // The bump is in a finally so it runs for EVERY event —
-                                // including the duplicate that returns early below, which is
-                                // still a sign of life — and, being a volatile write, runs
-                                // AFTER the counters below. That ordering matters: these
-                                // counters are written on the relay's reader thread and read
-                                // by the driver coroutine once the wait ends. The EOSE path
-                                // gets its happens-before from the channel, but the idle
-                                // path has no such edge, so without the release write the
-                                // driver could read a stale `pageMinTs` (ending the walk
-                                // early) or an unsafely published `idsAtPageMin`.
-                                try {
+                                // The whole event is handled under [IdleClock.holding]: the clock
+                                // stands still while the caller's onEvent runs (its backpressure
+                                // is not this relay going silent), and the hold's release bumps it
+                                // — for EVERY event, including the duplicate that returns early
+                                // below, which is still a sign of life. One bump per event, as
+                                // before. The release is volatile writes AFTER the counters below,
+                                // and that ordering matters: these counters are written on the
+                                // relay's reader thread and read by the driver coroutine once the
+                                // wait ends. The EOSE path gets its happens-before from the
+                                // channel, but the idle path has no such edge, so without the
+                                // release the driver could read a stale `pageMinTs` (ending the
+                                // walk early) or an unsafely published `idsAtPageMin`.
+                                clock.holding {
                                     received++
                                     if (watchSearchOrder) {
                                         if (event.createdAt > searchLastCreatedAt) searchUnordered = true
@@ -855,10 +860,7 @@ internal suspend fun INostrClient.walkPages(
                                     }
                                     if (atLeastOne) {
                                         try {
-                                            // The clock stands still while the caller's handler
-                                            // runs: its own backpressure is not this relay going
-                                            // silent (see [IdleClock.holding]).
-                                            clock.holding { onEvent(event) }
+                                            onEvent(event)
                                         } catch (e: Throwable) {
                                             // Not handed on: forgotten, so a copy sent again on this page (a
                                             // reconnect re-serving it) is delivered instead of taken for a repeat.
@@ -900,8 +902,6 @@ internal suspend fun INostrClient.walkPages(
                                             }
                                         }
                                     }
-                                } finally {
-                                    clock.bump()
                                 }
                             }
                         }

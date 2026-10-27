@@ -20,6 +20,14 @@ streaming relay is never cut off mid-delivery — the operation only gives up af
 full window of silence. The shared primitives are in `IdleWatchdog.kt` (`IdleClock` +
 `receiveWithinIdle`); use them in a new accessory.
 
+**The relay's silence, not the caller's.** Time spent in the caller's handler, or in
+a hand-off that suspends on the caller's backpressure, is not the relay going quiet:
+run it under `IdleClock.holding { … }`, which stops the clock (counted, so concurrent
+workers on one clock may overlap) and bumps it on the way out. A walk that timed its
+handler ended pages under a mirror whose ingest queue was full, and re-downloaded
+them; a reconcile that timed its hand-off failed as "relay went silent". The caller
+bounds a stuck handler itself, with `withTimeoutOrNull`.
+
 **The parameter is named `idleTimeoutMs`, never `timeoutMs`** — the name is the
 contract, so a caller can't mistake it for a deadline. The sole exception is
 `publishAndConfirm`'s `timeoutInSeconds`, which genuinely *is* a fixed window (see

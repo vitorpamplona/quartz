@@ -191,6 +191,41 @@ class NostrClientFetchAllPagesIdleTimeoutTest {
         }
 
     /**
+     * The other half of the hold: once a slow handler RETURNS, the window runs
+     * again from that moment. A relay that sends one event, makes the handler
+     * wait past the window, then goes silent without EOSE must still have the
+     * page end about one window after the handler returned — a hold left set
+     * would hang this walk forever instead.
+     */
+    @Test
+    fun theIdleWindowRunsAgainAfterASlowHandlerReturns() =
+        runBlocking {
+            val client = ScriptedClient()
+            val feeder =
+                launch {
+                    delay(50)
+                    client.listener!!.onEvent(event(1), false, relay, null)
+                }
+
+            val start = TimeSource.Monotonic.markNow()
+            val total =
+                withTimeoutOrNull(10_000) {
+                    client.fetchAllPages(
+                        relay = relay,
+                        filters = listOf(Filter(kinds = listOf(1), limit = 3)),
+                        idleTimeoutMs = 300,
+                    ) { delay(700) }
+                }
+            feeder.join()
+            val elapsedMs = start.elapsedNow().inWholeMilliseconds
+
+            assertTrue(total != null, "the page must still end on silence once the handler has returned")
+            assertEquals(1, total.downloaded)
+            assertTrue(elapsedMs >= 50 + 700 + 300, "the window starts after the handler, took ${elapsedMs}ms")
+            assertTrue(elapsedMs < 5_000, "and ends promptly after it, took ${elapsedMs}ms")
+        }
+
+    /**
      * Documents why [fetchAllPages] has no wall-clock ceiling — nor should any
      * accessory: a hard bound composes at the call site as `withTimeoutOrNull`.
      *
