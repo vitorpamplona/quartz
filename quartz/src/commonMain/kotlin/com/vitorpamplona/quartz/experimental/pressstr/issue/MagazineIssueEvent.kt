@@ -26,12 +26,29 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
+import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
+import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.publishedAt.PublishedAtProvider
+import com.vitorpamplona.quartz.nip10Notes.content.findNostrUris
+import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
+import com.vitorpamplona.quartz.nip19Bech32.addressHints
+import com.vitorpamplona.quartz.nip19Bech32.addressIds
+import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
+import com.vitorpamplona.quartz.nip19Bech32.eventHints
+import com.vitorpamplona.quartz.nip19Bech32.eventIds
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
+import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -60,13 +77,12 @@ class MagazineIssueEvent(
     content: String,
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
+    RootScope,
+    PubKeyHintProvider,
+    EventHintProvider,
     AddressHintProvider,
     PublishedAtProvider,
     SearchableEvent {
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
-
-    override fun linkedAddressIds() = listOfNotNull(magazine()?.toTag())
-
     override fun indexableContent() = listOfNotNull(title(), issue(), summary(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without
@@ -77,6 +93,28 @@ class MagazineIssueEvent(
         if (!visitor.visit(summary())) return
         visitor.visit(content)
     }
+
+    @kotlinx.serialization.Transient
+    @kotlin.jvm.Transient
+    private var citedNIP19Cache: List<Entity>? = null
+
+    /** NIP-19 entities cited as `nostr:` URIs in the Markdown editorial notes, parsed once. */
+    fun citedNIP19(): List<Entity> = citedNIP19Cache ?: findNostrUris(content).also { citedNIP19Cache = it }
+
+    // PressStr defines no `p`, `e` or `q` tags, but the body is Markdown that cites people and notes,
+    // and clients add the matching tags when they do. The magazine is an `a` tag, so it is among
+    // the address links and its relay hint is indexed.
+    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+
+    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey) + citedNIP19().pubKeys()
+
+    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint) + citedNIP19().eventHints()
+
+    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId) + tags.mapNotNull(QTag::parseEventId) + citedNIP19().eventIds()
+
+    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(QTag::parseAddressAsHint) + citedNIP19().addressHints()
+
+    override fun linkedAddressIds(): List<String> = tags.mapNotNull(ATag::parseValidAddress) + tags.mapNotNull(QTag::parseValidAddress) + citedNIP19().addressIds()
 
     fun title() = tags.title()
 
