@@ -23,7 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.kite
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
-import com.vitorpamplona.quartz.nip57Zaps.LnZapEvent
+import com.vitorpamplona.quartz.nip57Zaps.ZapReceiptEvent
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -63,7 +63,7 @@ class KiteReaderEventTest {
 
     @Test
     fun buildsTheKindsClass() {
-        assertIs<LnZapEvent>(read(event(kind = "9735", tags = "[]")))
+        assertIs<ZapReceiptEvent>(read(event(kind = "9735", tags = "[]")))
     }
 
     @Test

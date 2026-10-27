@@ -35,7 +35,7 @@ class IdleWatchdogTest {
             val clock = IdleClock()
             // The watchdog's clock is real time, so the window is spent for real.
             val spent = TimeSource.Monotonic.markNow()
-            while (spent.elapsedNow().inWholeMilliseconds < 5) Unit
+            while (spent.elapsedNow().inWholeMilliseconds < 5) { }
             assertEquals(7, channel.receiveWithinIdle(clock, 1), "an item waiting is activity, not silence")
         }
 }

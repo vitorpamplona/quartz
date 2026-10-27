@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePong
 import com.vitorpamplona.quartz.nip46RemoteSigner.NostrConnectEvent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -42,6 +43,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /** A NIP-46 client takes responses only from its remote signer's key. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class RemoteSignerManagerAuthorTest {
     private object Done : IResult
 
