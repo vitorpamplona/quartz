@@ -8,7 +8,7 @@ composeRuntimeAnnotation = "1.12.1"
 core = "1.7.0"
 coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
-cryptoKmp = "2.0.0"
+cryptoKmp = "2.1.0"
 espressoCore = "3.7.0"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
