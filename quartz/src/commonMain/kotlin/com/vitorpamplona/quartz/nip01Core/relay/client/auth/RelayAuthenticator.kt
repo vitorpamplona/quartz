@@ -111,6 +111,7 @@ class RelayAuthenticator(
      * itself, which the host may share with everything else.
      */
     private val signingJob = SupervisorJob(scope.coroutineContext[Job])
+    private val signingScope = CoroutineScope(scope.coroutineContext + signingJob)
 
     // Connection callbacks fire on the per-relay OkHttp dispatcher thread, so
     // this state is mutated concurrently — LargeCache wraps a platform-tuned
@@ -193,7 +194,7 @@ class RelayAuthenticator(
         // an AUTH that was about to be signed.
         status?.signingStarted()
         publishSnapshot(relay.url)
-        scope.launch(signingJob) {
+        signingScope.launch {
             // Relay auth is automatic and not user-initiated. Signing can fail in
             // benign, expected ways — e.g. an external NIP-55 signer prompt that the
             // user ignores surfaces as SignerExceptions.TimedOutException. Those must
