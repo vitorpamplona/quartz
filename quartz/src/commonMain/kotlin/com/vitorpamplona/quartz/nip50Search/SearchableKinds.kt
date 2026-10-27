@@ -217,11 +217,13 @@ object SearchableKinds {
             33402, // WorkoutTemplateEvent
             33534, // RelayRoleEvent
             33863, // FundraiserEvent
+            33953, // EbookEvent
             34139, // MusicPlaylistEvent
             34235, // AddressableNormalVideoEvent
             34236, // AddressableShortVideoEvent
             34259, // EntityRatingEvent
             34550, // CommunityDefinitionEvent
+            34609, // MagazineEvent
             35128, // NamedSiteEvent
             35129, // NamedNappletEvent
             36767, // ThemeDefinitionEvent
@@ -238,6 +240,7 @@ object SearchableKinds {
             39092, // MediaStarterPackEvent
             39307, // TextTrackEvent
             39701, // WebBookmarkEvent
+            39731, // MagazineIssueEvent
             39998, // AddressableListHeaderEvent
             39999, // AddressableListItemEvent
             40002, // StreamMessageV2Event

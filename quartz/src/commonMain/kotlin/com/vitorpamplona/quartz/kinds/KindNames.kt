@@ -163,6 +163,9 @@ import com.vitorpamplona.quartz.experimental.nipsOnNostr.NipTextEvent
 import com.vitorpamplona.quartz.experimental.nns.NNSEvent
 import com.vitorpamplona.quartz.experimental.notifications.wake.WakeUpEvent
 import com.vitorpamplona.quartz.experimental.postingStreak.PostingStreakEvent
+import com.vitorpamplona.quartz.experimental.pressstr.ebook.EbookEvent
+import com.vitorpamplona.quartz.experimental.pressstr.issue.MagazineIssueEvent
+import com.vitorpamplona.quartz.experimental.pressstr.magazine.MagazineEvent
 import com.vitorpamplona.quartz.experimental.profileGallery.ProfileGalleryEntryEvent
 import com.vitorpamplona.quartz.experimental.profileTheme.active.ActiveProfileThemeEvent
 import com.vitorpamplona.quartz.experimental.profileTheme.definition.ThemeDefinitionEvent
@@ -843,6 +846,9 @@ object KindNames {
             ExerciseTemplateEvent.KIND to KindName("Exercise Template", null),
             WorkoutTemplateEvent.KIND to KindName("Workout Template", null),
             FundraiserEvent.KIND to KindName("Fundraiser", null),
+            EbookEvent.KIND to KindName("Ebook", null),
+            MagazineEvent.KIND to KindName("Magazine", null),
+            MagazineIssueEvent.KIND to KindName("Magazine Issue", null),
             ThemeDefinitionEvent.KIND to KindName("Theme", null),
             ActiveProfileThemeEvent.KIND to KindName("Profile Theme", null),
             PostingStreakEvent.KIND to KindName("Posting Streak", null),
