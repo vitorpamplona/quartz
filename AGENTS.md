@@ -151,8 +151,9 @@ isn't tagged yet. It can also be run from the Actions tab on `main`, with the ve
 the tag by hand: Swift Package Manager reads `Package.swift` at the tag, so it must already name
 that release's `QuartzKit.xcframework.zip` and checksum. The workflow runs the checks and the Apple
 tests, builds the XCFramework on macOS, commits `Package.swift` (and `VERSION_NAME`) with
-`tools/release/prepare-release.sh`, tags `v<version>`, pushes both to `main`, opens the GitHub
-release with the zip and publishes to Maven Central. GitHub Actions must be allowed to push to
-`main`. If only the `maven` job fails, re-run it: it publishes from the tag. It needs
+`tools/release/prepare-release.sh` on the tested commit, tags it `v<version>`, opens the GitHub
+release with the zip, merges that commit into `main` (which may have moved meanwhile) and
+publishes to Maven Central, reusing the check job's build cache. GitHub Actions must be allowed
+to push to `main`. If only the `maven` job fails, re-run it: it publishes from the tag. It needs
 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and `SIGNING_PASSWORD`, the same
 secrets as crypto-kmp and quic-kmp.

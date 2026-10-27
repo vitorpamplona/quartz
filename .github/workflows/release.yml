@@ -10,10 +10,12 @@ name: Release
 # VERSION_NAME, for a run from the Actions tab), tags that commit v<version>, pushes both,
 # creates the GitHub release with the zip, and publishes to Maven Central.
 #
-# Pushing the release commit to main needs GitHub Actions allowed to push there (a bypass in
-# the branch ruleset when main is protected). That push does not start this workflow again:
-# pushes made with GITHUB_TOKEN start no workflows, and the tag exists by then anyway. If Maven
-# Central fails after the tag is pushed, re-run the failed `maven` job: it publishes from the tag.
+# The tag sits on the release commit, a child of the commit the jobs tested, so a PR merged
+# while the release builds can't end up in it; that commit is then merged into wherever main
+# has moved. Pushing to main needs GitHub Actions allowed to push there (a bypass in the branch
+# ruleset when main is protected). That push does not start this workflow again: pushes made
+# with GITHUB_TOKEN start no workflows, and the tag exists by then anyway. If Maven Central
+# fails after the tag is pushed, re-run the failed `maven` job: it publishes from the tag.
 on:
   push:
     branches: [main]
@@ -89,6 +91,10 @@ jobs:
     if: needs.check-version.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # The version the maven job publishes with, so its compiles match these and come from the
+      # build cache this job hands over.
+      ORG_GRADLE_PROJECT_VERSION_NAME: ${{ needs.check-version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -122,6 +128,14 @@ jobs:
 
       - name: Build (gradle)
         run: ./gradlew :quartz:assemble
+
+      # The maven job compiles the same sources (the release commit only changes Package.swift
+      # and VERSION_NAME): it restores this cache instead of compiling every target again.
+      - name: Save the build cache for the maven job
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: release-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
 
   test-apple:
     needs: check-version
@@ -223,11 +237,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v8
         with:
           name: QuartzKit.xcframework
 
+      # On the commit these jobs tested, not on main: main may have moved since, and the tag
+      # must hold exactly what was tested.
       - name: Commit and tag the release
         run: |
           tools/release/prepare-release.sh "$VERSION" "$(cat QuartzKit.xcframework.zip.sha256)"
@@ -235,9 +253,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(release): v$VERSION" -- gradle.properties Package.swift
           git tag "v$VERSION"
-          # Fails without a force if main moved since the release started: the tag must sit on
-          # the commit these jobs tested. Run the release again from the new main.
-          git push origin "HEAD:refs/heads/main"
           git push origin "v$VERSION"
 
       - name: Create Release
@@ -250,6 +265,31 @@ jobs:
           files: |
             QuartzKit.xcframework.zip
             QuartzKit.xcframework.zip.sha256
+
+      # A fast-forward when main hasn't moved, else a merge (the release commit only touches
+      # Package.swift and VERSION_NAME), retried if main moves again in between. The release is
+      # already out by now, so a failure here is a warning, not a reason to skip Maven Central.
+      - name: Bring the release commit into main
+        continue-on-error: true
+        run: |
+          release="v$VERSION^{commit}"
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin main
+            git checkout --quiet --detach origin/main
+            if git merge-base --is-ancestor HEAD "$release"; then
+              target="$(git rev-parse "$release")"
+            elif git merge --no-ff --quiet -m "chore(release): merge v$VERSION into main" "$release"; then
+              target="$(git rev-parse HEAD)"
+            else
+              git merge --abort || true
+              echo "::warning::v$VERSION's release commit does not merge into main; merge it by hand"
+              exit 1
+            fi
+            if git push origin "$target:refs/heads/main"; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          echo "::warning::main kept moving; merge v$VERSION's release commit into it by hand"
+          exit 1
 
   # Apple klibs cross-compile on Linux; only Apple test and framework binaries need a Mac.
   maven:
@@ -279,6 +319,13 @@ jobs:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
+
+      - name: Restore the check job's build cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: release-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: release-build-cache-${{ github.run_id }}-
 
       - name: Publish
         run: ./gradlew :quartz:publishAllPublicationsToMavenCentral --no-configuration-cache
