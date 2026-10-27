@@ -43,6 +43,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -166,6 +167,50 @@ class NostrClientNegentropySyncTest : RelayClientTest() {
                 assertEquals(1500, got.map { it.id }.toSet().size, "each exactly once")
                 assertEquals(1500, result.downloaded)
                 assertEquals(1500, result.needCount)
+            } finally {
+                client.disconnect()
+                scope.cancel()
+                hub.close()
+            }
+        }
+
+    /**
+     * The reconcile hands each round's ids to the downloader, and that hand-off
+     * SUSPENDS while the download pipeline is full — paced to the consumer, by
+     * design. That wait is the CALLER's backpressure, not the relay going
+     * silent: a consumer slower than the idle window used to have the reconcile
+     * fail as "relay went silent mid-reconcile" the moment the hand-off
+     * returned, before the next round was even asked for.
+     */
+    @Test
+    fun aSlowConsumerDoesNotFailTheReconcileAsIdle() =
+        runBlocking {
+            val hub = InProcessRelays(negentropySettings = NegentropySettings(frameSizeLimit = 4096))
+            val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            val client = NostrClient(hub, scope)
+            try {
+                val url = RelayUrlNormalizer.normalize("ws://127.0.0.1:7785/")
+                hub.getOrCreate(url).preload(SyntheticEvents.batch(1500, kind = 1))
+
+                val got = mutableListOf<Event>()
+                val result =
+                    withTimeout(60_000) {
+                        client.negentropySync(
+                            relay = url,
+                            filter = Filter(kinds = listOf(1)),
+                            fetchBatch = 50,
+                            maxConcurrentReqs = 1,
+                            idBufferBatches = 1,
+                            idleTimeoutMs = 400,
+                        ) {
+                            // Stalls the whole pipeline for well over the idle window.
+                            if (got.isEmpty()) delay(1_500)
+                            got.add(it)
+                        }
+                    }
+
+                assertEquals(1500, got.size, "every event delivered despite the stalled consumer")
+                assertEquals(1500, result.downloaded)
             } finally {
                 client.disconnect()
                 scope.cancel()

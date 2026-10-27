@@ -143,7 +143,8 @@ class NegentropySyncResult(
  *   **completely silent** before the sync gives up. It is NOT a per-round deadline —
  *   it **resets on every message the relay sends** (each NIP-77 round, every download
  *   `EOSE`/event) and on connect. So a genuinely slow but progressing sync runs for as
- *   long as it needs: only true silence trips it. This matters because the relay
+ *   long as it needs: only true silence trips it. Waiting on YOUR side — the round's ids
+ *   handed to a download pipeline that [onEvent] keeps full — does not count either. This matters because the relay
  *   builds its whole negentropy snapshot before the FIRST round responds — O(matched
  *   set), a minute or more for a multi-million-event filter — and that first wait is a
  *   real silence, so keep this comfortably above the largest expected first-round build.
@@ -1471,23 +1472,33 @@ private suspend fun INostrClient.reconcileStreaming(
                         // yields FEWER full batches rather than the same number
                         // of nearly-empty ones — see NeedGate.
                         val wanted = if (gate == null) needIds else gate.keep(needIds)
-                        var i = 0
-                        while (i < wanted.size) {
-                            val end = min(i + fetchBatch, wanted.size)
-                            // Copy each batch so the frame's full id list can be freed
-                            // as soon as it is chunked; suspends under back-pressure.
-                            sendNeedBatch(ArrayList(wanted.subList(i, end)))
-                            i = end
+                        // The hand-off suspends while the downloader is full: OUR
+                        // backpressure, paced to the consumer, so the idle window does
+                        // not run through it — else a consumer slower than the window
+                        // failed the reconcile as "relay went silent" the moment the
+                        // hand-off returned, before the next round was even asked for.
+                        clock.holding {
+                            var i = 0
+                            while (i < wanted.size) {
+                                val end = min(i + fetchBatch, wanted.size)
+                                // Copy each batch so the frame's full id list can be freed
+                                // as soon as it is chunked; suspends under back-pressure.
+                                sendNeedBatch(ArrayList(wanted.subList(i, end)))
+                                i = end
+                            }
                         }
                     }
                     val haveIds = result.haveIds
                     if (haveIds.isNotEmpty() && sendHaveBatch != null) {
                         onHave(haveIds.size)
-                        var i = 0
-                        while (i < haveIds.size) {
-                            val end = min(i + fetchBatch, haveIds.size)
-                            sendHaveBatch(ArrayList(haveIds.subList(i, end)))
-                            i = end
+                        // The same backpressure, the caller's: held like the need batches.
+                        clock.holding {
+                            var i = 0
+                            while (i < haveIds.size) {
+                                val end = min(i + fetchBatch, haveIds.size)
+                                sendHaveBatch(ArrayList(haveIds.subList(i, end)))
+                                i = end
+                            }
                         }
                     }
                     val next = result.nextCmd
