@@ -84,7 +84,8 @@ in `NostrClient` completion — import them by name:
 | Keep one relay's socket between bursts | `client.keepConnected(relay)` … `client.releaseConnection(relay)` (counted holds; a member method, not an extension) |
 
 Their waits are **idle windows** (`idleTimeoutMs`) that reset on real progress, never
-wall-clock deadlines; wrap a call in `withTimeoutOrNull` for a hard bound. Relay URLs are
+wall-clock deadlines, and that never count time spent in your own `onEvent` (your
+backpressure is not the relay's silence); wrap a call in `withTimeoutOrNull` for a hard bound. Relay URLs are
 `NormalizedRelayUrl` (`"wss://…".normalizeRelayUrl()`); most helpers also accept a `String`.
 Build them through the normalizer, not the constructor: it repairs the url and interns it, so
 every spelling of a relay is one shared instance.

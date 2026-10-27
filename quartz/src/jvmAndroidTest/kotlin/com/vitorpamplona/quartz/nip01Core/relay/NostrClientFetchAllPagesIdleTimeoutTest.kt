@@ -151,6 +151,81 @@ class NostrClientFetchAllPagesIdleTimeoutTest {
         }
 
     /**
+     * Time the CONSUMER spends in `onEvent` is not the relay going silent. A
+     * caller whose handler suspends on its own backpressure (a full ingest
+     * queue) for longer than the idle window used to have the page ended as
+     * idle under it — the walk then re-asked from its cursor and the relay
+     * served the same events again, which for a mirror under a burst meant
+     * re-downloading the burst it was already too busy to take. The window
+     * now measures the relay alone: it does not run while the handler does.
+     */
+    @Test
+    fun aSlowConsumerDoesNotEndThePageAsIdle() =
+        runBlocking {
+            val client = ScriptedClient()
+            val feeder =
+                launch {
+                    // The relay is prompt: three events and an EOSE inside 100ms.
+                    // Only the consumer is slow.
+                    delay(50)
+                    repeat(3) { i -> client.listener!!.onEvent(event(3 - i, createdAt = 100L - i), false, relay, null) }
+                    client.listener!!.onEose(relay, null)
+                }
+
+            val got = mutableListOf<Event>()
+            val total =
+                client.fetchAllPages(
+                    relay = relay,
+                    filters = listOf(Filter(kinds = listOf(1), limit = 3)),
+                    idleTimeoutMs = 300,
+                ) {
+                    // Blocked on the first event for well over the idle window.
+                    if (got.isEmpty()) delay(900)
+                    got.add(it)
+                }
+            feeder.join()
+
+            assertEquals(3, total.downloaded, "every event the relay sent is delivered")
+            assertEquals(3, got.size)
+            assertEquals(1, client.subscribeCount, "one page: a consumer's own wait must not end it as idle and re-ask the relay")
+        }
+
+    /**
+     * The other half of the hold: once a slow handler RETURNS, the window runs
+     * again from that moment. A relay that sends one event, makes the handler
+     * wait past the window, then goes silent without EOSE must still have the
+     * page end about one window after the handler returned — a hold left set
+     * would hang this walk forever instead.
+     */
+    @Test
+    fun theIdleWindowRunsAgainAfterASlowHandlerReturns() =
+        runBlocking {
+            val client = ScriptedClient()
+            val feeder =
+                launch {
+                    delay(50)
+                    client.listener!!.onEvent(event(1), false, relay, null)
+                }
+
+            val start = TimeSource.Monotonic.markNow()
+            val total =
+                withTimeoutOrNull(10_000) {
+                    client.fetchAllPages(
+                        relay = relay,
+                        filters = listOf(Filter(kinds = listOf(1), limit = 3)),
+                        idleTimeoutMs = 300,
+                    ) { delay(700) }
+                }
+            feeder.join()
+            val elapsedMs = start.elapsedNow().inWholeMilliseconds
+
+            assertTrue(total != null, "the page must still end on silence once the handler has returned")
+            assertEquals(1, total.downloaded)
+            assertTrue(elapsedMs >= 50 + 700 + 300, "the window starts after the handler, took ${elapsedMs}ms")
+            assertTrue(elapsedMs < 5_000, "and ends promptly after it, took ${elapsedMs}ms")
+        }
+
+    /**
      * Documents why [fetchAllPages] has no wall-clock ceiling — nor should any
      * accessory: a hard bound composes at the call site as `withTimeoutOrNull`.
      *

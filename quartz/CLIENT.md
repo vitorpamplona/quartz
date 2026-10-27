@@ -394,6 +394,8 @@ Things worth knowing:
 
 - Every wait is an **idle window** (`idleTimeoutMs`), reset by real progress, never a
   wall-clock deadline: a relay streaming a large backlog is never cut off mid-delivery.
+  It measures the relay's silence only: time your `onEvent` spends (a slow write, your
+  own backpressure) does not count, so a stuck handler is not ended by it either.
   Wrap a call in `withTimeoutOrNull` when you need a hard bound.
 - Only `PagedFetchResult.End.DRAINED` proves the relay has nothing more; the other
   endings (`IDLE`, `CLOSED`, `AUTH_REQUIRED`, …) say why the walk stopped, and
