@@ -27,6 +27,7 @@ class StreamDeserializationContext(
 ) {
     var counter: Int = 0
 
+    /** Reads up to [l] bytes: fewer, or none, at the end of the stream. */
     fun read(l: Int): ByteArray {
         var l = l
         if (this.counter == this.output.size) {
@@ -44,8 +45,18 @@ class StreamDeserializationContext(
         return uint8Array
     }
 
+    /** Reads exactly [l] bytes; a proof that ends early is malformed, not an index error. */
+    @Throws(DeserializationException::class)
+    private fun readExactly(l: Int): ByteArray {
+        if (l > this.output.size - this.counter) {
+            throw DeserializationException("Unexpected end of OTS data: wanted $l bytes, ${this.output.size - this.counter} left")
+        }
+        return this.read(l)
+    }
+
+    @Throws(DeserializationException::class)
     fun readBool(): Boolean {
-        val b = this.read(1)[0]
+        val b = this.readExactly(1)[0]
 
         if (b.toInt() == 0xff) {
             return true
@@ -56,13 +67,16 @@ class StreamDeserializationContext(
         return false
     }
 
+    @Throws(DeserializationException::class)
     fun readVaruint(): Int {
         var value = 0
         var shift: Byte = 0
         var b: Byte
 
         do {
-            b = this.read(1)[0]
+            // Five 7-bit groups fill an Int; a longer varuint would wrap into garbage.
+            if (shift > 28) throw DeserializationException("varuint longer than 5 bytes")
+            b = this.readExactly(1)[0]
             value = value or ((b.toInt() and 127) shl shift.toInt())
             shift = (shift + 7).toByte()
         } while ((b.toInt() and 128) != 0)
@@ -76,7 +90,7 @@ class StreamDeserializationContext(
             return this.readVarbytes(1024, 0)
         }
 
-        return this.read(expectedLength)
+        return this.readExactly(expectedLength)
     }
 
     @Throws(DeserializationException::class)
@@ -92,7 +106,7 @@ class StreamDeserializationContext(
             throw DeserializationException("varbytes min length not met;")
         }
 
-        return this.read(l)
+        return this.readExactly(l)
     }
 
     fun assertMagic(expectedMagic: ByteArray): Boolean {
