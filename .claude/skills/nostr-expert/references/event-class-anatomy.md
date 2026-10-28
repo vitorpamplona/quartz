@@ -92,7 +92,8 @@ joining). Then, in the same change: add the kind to `nip50Search/SearchableKinds
 `event-store-semantics` skill's `references/searchable-kinds.md`, and regenerate
 `jvmTest/resources/indexable-content.golden` (delete it and run `IndexableContentGoldenTest`; the
 diff must show only your kind). Numbers about another event, ciphertext and key material are not
-searchable.
+searchable. A kind that carries a title but stays out of search says why in its class KDoc, starting
+`Not searchable:` (`InteractiveStoryReadingStateEvent` copies its story's title); the audit reads it.
 
 ### Builders
 
@@ -142,6 +143,7 @@ is searchable.
 
 Many older classes predate this layout. `scripts/event-pattern-audit.py` lists them: event classes
 with no `build()`, inline tag parsing, `linkedXxx()` reading raw tags with no semantic method, a
-reference tag with no hint provider, or a title with no search. It is a heuristic, so read the class
-before changing it. When you add or change a kind, run it for the package you touch and bring what
-it lists there in line in the same change; do not widen an unrelated change into a sweep.
+reference tag with no hint provider of its type (one inherited from a base class counts), or a title
+with no search and no `Not searchable:` KDoc. It is a heuristic, so read the class before changing
+it. When you add or change a kind, run it for the package you touch and bring what it lists there in
+line in the same change; do not widen an unrelated change into a sweep.

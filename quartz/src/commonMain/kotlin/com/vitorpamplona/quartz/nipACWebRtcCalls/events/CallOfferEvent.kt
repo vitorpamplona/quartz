@@ -24,7 +24,6 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
-import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTagIds
 import com.vitorpamplona.quartz.nipACWebRtcCalls.tags.CallType
@@ -44,15 +43,6 @@ class CallOfferEvent(
     fun callType() = tags.firstNotNullOfOrNull(CallTypeTag::parse)
 
     fun sdpOffer() = content
-
-    /** All pubkeys referenced by `p` tags in this offer. */
-    fun recipientPubKeys(): Set<HexKey> = tags.mapNotNull(PTag::parseKey).toSet()
-
-    /**
-     * All group members for this call: the `p`-tagged recipients plus the
-     * event author (caller).  For 1-to-1 calls the set has two elements.
-     */
-    fun groupMembers(): Set<HexKey> = recipientPubKeys().plus(pubKey)
 
     /** True when this offer targets more than one callee. */
     fun isGroupCall(): Boolean = recipientPubKeys().size > 1
