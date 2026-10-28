@@ -258,7 +258,7 @@ class Podcasting20EpisodeEventTest {
     }
 
     @Test
-    fun `an episode with only a title, an audio or a video is still an episode`() {
+    fun `an episode with only a title or an audio or a video is still an episode`() {
         fun parse(vararg tags: Array<String>) = EventFactory.create<Event>("11".repeat(32), "22".repeat(32), 1_699_123_456L, 30054, arrayOf(arrayOf("d", "ep"), *tags), "", "00".repeat(64))
 
         assertIs<Podcasting20EpisodeEvent>(parse(arrayOf("title", "Episode 1")))
