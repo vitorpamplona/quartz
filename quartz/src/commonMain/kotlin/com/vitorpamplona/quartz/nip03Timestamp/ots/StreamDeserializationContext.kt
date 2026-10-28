@@ -74,6 +74,8 @@ class StreamDeserializationContext(
         var b: Byte
 
         do {
+            // Five 7-bit groups fill an Int; a longer varuint would wrap into garbage.
+            if (shift > 28) throw DeserializationException("varuint longer than 5 bytes")
             b = this.readExactly(1)[0]
             value = value or ((b.toInt() and 127) shl shift.toInt())
             shift = (shift + 7).toByte()

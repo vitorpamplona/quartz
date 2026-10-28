@@ -105,6 +105,46 @@ class OtsMalformedInputTest {
         assertFailsWith<DeserializationException> { DetachedTimestampFile.deserialize(chainedSha256File(Timestamp.MAX_DEPTH)) }
     }
 
+    /** A 4000-byte append, then [siblings] 2-byte appends: each sibling keeps its own ~4 KB message. */
+    private fun wideProof(siblings: Int): ByteArray {
+        val children = mutableListOf<Byte>()
+        repeat(siblings) { child ->
+            if (child < siblings - 1) children += 0xff.toByte()
+            children += listOf(0xf0.toByte(), 2, (child shr 8).toByte(), child.toByte())
+            children += 0x00 // attestation: an unknown 8-byte tag and an empty payload
+            children += ByteArray(8) { 1 }.toList()
+            children += 0x00
+        }
+        return DetachedTimestampFile.HEADER_MAGIC + byteArrayOf(1, 0x08) + ByteArray(32) +
+            byteArrayOf(0xf0.toByte(), 0xa0.toByte(), 0x1f) + ByteArray(4000) + children.toByteArray()
+    }
+
+    @Test
+    fun wideProofOfLargeMessagesIsAnError() {
+        val e = assertFailsWith<DeserializationException> { DetachedTimestampFile.deserialize(wideProof(300)) }
+        assertTrue(e.message!!.contains("bytes of messages"), e.message)
+
+        // ~800 KB of messages is within the budget.
+        assertEquals(
+            200,
+            DetachedTimestampFile
+                .deserialize(wideProof(200))
+                .timestamp.ops.values
+                .single()
+                .ops.size,
+        )
+    }
+
+    @Test
+    fun overlongVaruintIsADeserializationError() {
+        // Six bytes would shift past 32 bits: without the check this decodes as 8.
+        val sixBytes = ByteArray(5) { 0x80.toByte() } + byteArrayOf(0x01)
+        assertFailsWith<DeserializationException> { StreamDeserializationContext(sixBytes).readVaruint() }
+
+        val maxInt = ByteArray(4) { 0xff.toByte() } + byteArrayOf(0x07)
+        assertEquals(Int.MAX_VALUE, StreamDeserializationContext(maxInt).readVaruint())
+    }
+
     @Test
     fun truncatedProofIsADeserializationError() {
         assertFailsWith<DeserializationException> { DetachedTimestampFile.deserialize(chainedSha256File(3, tail = byteArrayOf())) }

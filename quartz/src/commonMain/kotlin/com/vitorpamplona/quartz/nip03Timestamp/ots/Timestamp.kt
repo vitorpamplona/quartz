@@ -577,6 +577,17 @@ class Timestamp(
         const val MAX_DEPTH = 256
 
         /**
+         * Maximum total size of the messages a deserialized timestamp holds. Each node keeps its own
+         * message, up to [Op.MAX_RESULT_LENGTH], so a wide tree of 1-byte appends under a 4 KB message
+         * holds ~450x its input. Real proofs hold a few KB.
+         */
+        const val MAX_MESSAGE_BYTES = 1 shl 20
+
+        private class Budget(
+            var messageBytesLeft: Int = MAX_MESSAGE_BYTES,
+        )
+
+        /**
          * Deserialize a Timestamp.
          *
          * @param ots        - The serialized byte array.
@@ -611,26 +622,29 @@ class Timestamp(
         fun deserialize(
             ctx: StreamDeserializationContext,
             initialMsg: ByteArray,
-        ): Timestamp = deserialize(ctx, initialMsg, MAX_DEPTH)
+        ): Timestamp = deserialize(ctx, initialMsg, MAX_DEPTH, Budget())
 
         @Throws(DeserializationException::class)
         private fun deserialize(
             ctx: StreamDeserializationContext,
             initialMsg: ByteArray,
             depthLeft: Int,
+            budget: Budget,
         ): Timestamp {
             if (depthLeft <= 0) throw DeserializationException("Timestamp is nested deeper than $MAX_DEPTH ops")
+            budget.messageBytesLeft -= initialMsg.size
+            if (budget.messageBytesLeft < 0) throw DeserializationException("Timestamp holds more than $MAX_MESSAGE_BYTES bytes of messages")
 
             val self = Timestamp(initialMsg)
             var tag = ctx.readBytes(1)[0]
 
             while ((tag.toInt() and 0xff) == 0xff) {
                 val current = ctx.readBytes(1)[0]
-                doTagOrAttestation(self, ctx, current, initialMsg, depthLeft)
+                doTagOrAttestation(self, ctx, current, initialMsg, depthLeft, budget)
                 tag = ctx.readBytes(1)[0]
             }
 
-            doTagOrAttestation(self, ctx, tag, initialMsg, depthLeft)
+            doTagOrAttestation(self, ctx, tag, initialMsg, depthLeft, budget)
 
             return self
         }
@@ -642,6 +656,7 @@ class Timestamp(
             tag: Byte,
             initialMsg: ByteArray,
             depthLeft: Int,
+            budget: Budget,
         ) {
             if ((tag.toInt() and 0xff) == 0x00) {
                 val attestation = TimeAttestation.deserialize(ctx)
@@ -650,7 +665,7 @@ class Timestamp(
                 val op = Op.deserializeFromTag(ctx, tag)
                 val result = op.call(initialMsg)
 
-                val stamp: Timestamp = deserialize(ctx, result, depthLeft - 1)
+                val stamp: Timestamp = deserialize(ctx, result, depthLeft - 1, budget)
                 self.ops.put(op, stamp)
             }
         }
