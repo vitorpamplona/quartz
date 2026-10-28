@@ -20,6 +20,11 @@
  */
 package com.vitorpamplona.quartz.nip50Search
 
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
+import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo.MostroInfoEvent
 import com.vitorpamplona.quartz.nip87Ecash.recommendation.MintRecommendationEvent
 import com.vitorpamplona.quartz.utils.EventFactory
@@ -47,7 +52,31 @@ class IndexableContentGoldenTest {
      * One event per kind, carrying every tag name the accessors read plus a content body, so the
      * recorded string exercises each field a kind joins rather than just its content.
      */
-    private fun sample(kind: Int) =
+    private fun sample(kind: Int) = drssSample(kind) ?: sharedSample(kind)
+
+    /**
+     * drss.io's feed lists (30100) and event lists (30102) are told apart from the other apps on
+     * those kinds by carrying nothing but `d`, `title` and their `p` / `e` items, so the shared
+     * sample, with every tag name, would sample as their unsearchable fallbacks.
+     */
+    private fun drssSample(kind: Int) =
+        when (kind) {
+            DrssFeedListEvent.KIND -> arrayOf(arrayOf("p", "b".repeat(64), "wss://relay.drss.io", "The Feed"))
+            DrssEventListEvent.KIND -> arrayOf(arrayOf("e", "c".repeat(64), "wss://relay.drss.io", "1700000000"))
+            else -> null
+        }?.let { items ->
+            EventFactory.create<com.vitorpamplona.quartz.nip01Core.core.Event>(
+                "9".repeat(64),
+                "a".repeat(64),
+                1700000000L,
+                kind,
+                arrayOf(arrayOf("d", "the-d-tag"), arrayOf("title", "The Title"), *items),
+                "",
+                "",
+            )
+        }
+
+    private fun sharedSample(kind: Int) =
         EventFactory.create<com.vitorpamplona.quartz.nip01Core.core.Event>(
             "9".repeat(64),
             "a".repeat(64),
@@ -76,6 +105,14 @@ class IndexableContentGoldenTest {
                 *if (kind == MintRecommendationEvent.KIND) arrayOf(arrayOf("k", "38172")) else emptyArray(),
                 // Kind 38385 is Mostro's only with its `z`; the instance name and currencies are
                 // what it indexes.
+                // drss.io's folders hold lists or provenance records, and its provenance records
+                // carry its label namespace; without them they sample as the other apps' fallbacks.
+                *when (kind) {
+                    DrssListFolderEvent.KIND -> arrayOf(arrayOf("a", "30004:${"a".repeat(64)}:a-list"))
+                    DrssProvenanceFolderEvent.KIND -> arrayOf(arrayOf("a", "31985:${"a".repeat(64)}:a-record"))
+                    DrssProvenanceEvent.KIND -> arrayOf(arrayOf("L", DrssProvenanceEvent.NAMESPACE))
+                    else -> emptyArray()
+                },
                 *if (kind == MostroInfoEvent.KIND) {
                     arrayOf(arrayOf("z", "info"), arrayOf("y", "mostro", "The Instance"), arrayOf("fiat_currencies_accepted", "USD,EUR"))
                 } else {

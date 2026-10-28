@@ -78,7 +78,7 @@ interface SearchableEvent {
 ```
 
 A kind is searchable iff its class implements this **and** is wired into `EventFactory` (the
-stores probe by kind). The set is `nip50Search/SearchableKinds.kt` `ALL` — 201 kinds today,
+stores probe by kind). The set is `nip50Search/SearchableKinds.kt` `ALL` — 216 kinds today,
 one row each in **`references/searchable-kinds.md`** with the exact `indexableContent()`
 expression.
 

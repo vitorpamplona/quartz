@@ -21,14 +21,22 @@
 package com.vitorpamplona.quartz.drss.listenProgress
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.drss.listenProgress.tags.CompletedTag
+import com.vitorpamplona.quartz.drss.listenProgress.tags.PlaysTag
+import com.vitorpamplona.quartz.drss.listenProgress.tags.PositionTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
+import com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags.DurationTag
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * drss.io's listening progress in one episode (kind 30054, which it shares with the Podcasting-2.0
@@ -44,6 +52,7 @@ import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEve
  *
  * The player saves at most once a minute while playing, and on pause, end and tab hide. drss's
  * source is private: this follows the events it publishes and its `static/js/listen-player.js`.
+ * Nothing to search: it is numbers about another event.
  */
 @Immutable
 class DrssListenProgressEvent(
@@ -55,35 +64,29 @@ class DrssListenProgressEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider {
-    /** The episode article this record tracks. */
-    fun episode(): ATag? = tags.firstNotNullOfOrNull(ATag::parse)
+    /** The episode article this record tracks (`a`). */
+    fun episode(): ATag? = tags.episode()
+
+    /** The address of [episode], as `kind:pubkey:d`. */
+    fun episodeAddressId(): String? = episode()?.toTag()
 
     /** The playhead in seconds, or null once the episode was played to the end. */
-    fun position(): Long? = tags.firstNotNullOfOrNull { seconds(it, POSITION) }
+    fun position(): Long? = tags.position()
 
-    fun durationInSeconds(): Long? = tags.firstNotNullOfOrNull { seconds(it, DURATION) }
+    fun durationInSeconds(): Long? = tags.durationInSeconds()
 
     /** When the listener first played the episode through (unix seconds). */
-    fun completedAt(): Long? = tags.firstNotNullOfOrNull { seconds(it, COMPLETED) }
+    fun completedAt(): Long? = tags.completedAt()
 
-    fun plays(): Long? = tags.firstNotNullOfOrNull { seconds(it, PLAYS) }
+    fun plays(): Long? = tags.plays()
 
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    /** `TRACKED`: the episode article (`a`). */
+    override fun linkedAddressIds(): List<String> = listOfNotNull(episodeAddressId())
 
     companion object {
         const val KIND = Podcasting20EpisodeEvent.KIND
-
-        const val POSITION = "position"
-        const val DURATION = "duration"
-        const val COMPLETED = "completed"
-        const val PLAYS = "plays"
-
-        private fun seconds(
-            tag: Array<String>,
-            name: String,
-        ): Long? = if (tag.size > 1 && tag[0] == name) tag[1].toLongOrNull()?.takeIf { it >= 0 } else null
 
         /**
          * True for drss's progress shape: an `a` to the episode and at least one of `position`,
@@ -91,7 +94,32 @@ class DrssListenProgressEvent(
          * so an episode that happens to carry one of these names stays an episode.
          */
         fun isListenProgress(tags: TagArray): Boolean =
-            tags.fastAny { it.size > 1 && it[0] == ATag.TAG_NAME && it[1].isNotEmpty() } &&
-                tags.fastAny { it.size > 1 && (it[0] == POSITION || it[0] == DURATION || it[0] == COMPLETED || it[0] == PLAYS) }
+            tags.fastAny(ATag::isTagged) &&
+                tags.fastAny {
+                    it.size > 1 &&
+                        (it[0] == PositionTag.TAG_NAME || it[0] == DurationTag.TAG_NAME || it[0] == CompletedTag.TAG_NAME || it[0] == PlaysTag.TAG_NAME)
+                }
+
+        /**
+         * A record of where the listener is in [episode]. Give at least one of the numbers, or it
+         * parses back as an `UnrecognizedKind30054Event`.
+         */
+        fun build(
+            episode: ATag,
+            position: Long? = null,
+            durationInSeconds: Long? = null,
+            completedAt: Long? = null,
+            plays: Long? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<DrssListenProgressEvent>.() -> Unit = {},
+        ) = eventTemplate<DrssListenProgressEvent>(KIND, "", createdAt) {
+            dTag(episode.dTag)
+            episode(episode)
+            position?.let { position(it) }
+            durationInSeconds?.let { duration(it) }
+            completedAt?.let { completed(it) }
+            plays?.let { plays(it) }
+            initializer()
+        }
     }
 }

@@ -750,14 +750,14 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
 | 30054 | `Podcasting20EpisodeEvent` | edit -> EDITED (E); t -> HASHTAG (T) | editsEventId() (EditTag::parse), topics() (hashtags) | Podcasting-2.0 draft (not a NIP; podstr). edit = 'the event id of the original publication when an addressable episode/trailer is updated' - fits draft EDITED. person tags carry names/URLs, not pubkeys (not modelled). Quartz: EditTag.parse does not check 64-hex. |
-| 30054 | `DrssListenProgressEvent` | a -> TRACKED (A) | episode() (ATag) | drss.io's listening progress in a 30023 episode article; position, duration, completed and plays are values. Chosen after the episode check. |
+| 30054 | `DrssListenProgressEvent` | a -> TRACKED (A) | episodeAddressId() (ATag) | drss.io's listening progress in a 30023 episode article; position, duration, completed and plays are values. Chosen after the episode check. |
 | 30054 | `UnrecognizedKind30054Event` | *none* | – | neither an episode nor drss progress. |
-| 30100 | `DrssFeedListEvent` | p -> MEMBER (U) | feeds() (PTag) | drss's older feed list, like a NIP-51 follow set of feed bots (draft: MEMBER). |
-| 30101 | `DrssListFolderEvent` | a -> CURATED (A) | children() (ATag) | drss's folder of lists (draft: CURATED). |
-| 30102 | `DrssEventListEvent` | e -> CURATED (E) | items() (ETag) | drss's list of events (draft: CURATED). |
-| 30104 | `DrssProvenanceFolderEvent` | a -> CURATED (A) | children() (ATag) | drss's folder of provenance records (draft: CURATED). |
-| 31341 | `DrssShowEvent` | p -> MEMBER (U) | showBot() (PTag) | drss's generated-show settings; the show bot publishes its episodes. JSON content not modelled. |
-| 31985 | `DrssProvenanceEvent` | p -> LABELED (U); a -> LABELED (A) | feed() (PTag), foundThrough() (ATag) | drss's provenance record, a NIP-32-labelled note about a feed bot; i/k are the source (values). |
+| 30100 | `DrssFeedListEvent` | p -> MEMBER (U) | feedKeys() (FeedTag) | drss's older feed list, like a NIP-51 follow set of feed bots (draft: MEMBER). |
+| 30101 | `DrssListFolderEvent` | a -> CURATED (A) | childAddressIds() (ATag) | drss's folder of lists (draft: CURATED). |
+| 30102 | `DrssEventListEvent` | e -> CURATED (E) | itemIds() (ListItemTag) | drss's list of events (draft: CURATED). |
+| 30104 | `DrssProvenanceFolderEvent` | a -> CURATED (A) | childAddressIds() (ATag) | drss's folder of provenance records (draft: CURATED). |
+| 31341 | `DrssShowEvent` | p -> MEMBER (U) | showBotKey() (PTag) | drss's generated-show settings; the show bot publishes its episodes. JSON content not modelled. |
+| 31985 | `DrssProvenanceEvent` | p -> LABELED (U); a -> LABELED (A); content nostr: -> MENTION (E,A,U) | feedKey() (PTag), foundThroughAddressId() (ATag), citedNIP19() | drss's provenance record, a NIP-32-labelled note about a feed bot; i/k are the source (values). |
 | 30100, 30101, 30102, 30104, 31985 | `UnrecognizedKind…Event` | *none* | – | other apps' events on drss's kinds (CI statuses, room listings, votes, Ditto ratings): addressable, unread. |
 | 30055 | `Podcasting20TrailerEvent` | *none* | – | Podcasting-2.0 draft trailer: title, url, pubdate, length, type, season - no references. |
 

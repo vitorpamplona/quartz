@@ -22,8 +22,10 @@ package com.vitorpamplona.quartz.drss
 
 import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
 import com.vitorpamplona.quartz.drss.eventList.UnrecognizedKind30102Event
+import com.vitorpamplona.quartz.drss.eventList.tags.ListItemTag
 import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.feedList.UnrecognizedKind30100Event
+import com.vitorpamplona.quartz.drss.feedList.tags.FeedTag
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.listFolder.UnrecognizedKind30101Event
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
@@ -35,10 +37,17 @@ import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.kinds.KindNames
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
+import com.vitorpamplona.quartz.utils.DeterministicSigner
 import com.vitorpamplona.quartz.utils.EventFactory
+import com.vitorpamplona.quartz.utils.nsecToKeyPair
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -392,8 +401,10 @@ class DrssEventsTest {
     fun feedListReadsItsFeeds() {
         val list = assertIs<DrssFeedListEvent>(feedlistDrss)
         assertEquals(3, list.feeds().size)
-        assertEquals(list.feeds(), list.linkedPubKeys())
-        assertTrue(list.feedTitle(list.feeds().first()) != null)
+        assertEquals(list.feeds().map { it.pubKey }, list.feedKeys())
+        assertEquals(list.feedKeys(), list.linkedPubKeys())
+        assertEquals(list.feeds().size, list.pubKeyHints().size)
+        assertEquals(list.feeds().mapNotNull { it.title }, list.feedTitles())
     }
 
     @Test
@@ -424,7 +435,8 @@ class DrssEventsTest {
         assertEquals(3, assertIs<DrssEventListEvent>(evlistDrss).items().size)
         val titled = assertIs<DrssEventListEvent>(evlistTitled)
         assertTrue(titled.title() != null)
-        assertEquals(titled.items(), titled.linkedEventIds())
+        assertEquals(titled.items().map { it.eventId }, titled.itemIds())
+        assertEquals(titled.itemIds(), titled.linkedEventIds())
     }
 
     @Test
@@ -441,7 +453,9 @@ class DrssEventsTest {
         assertEquals(listOf(31985), folder.children().map { it.kind })
 
         val record = assertIs<DrssProvenanceEvent>(provDrss)
-        assertEquals("4a6edcf5840db6709d8d82216991031a80416246f25834368adb8de8cf95365d", record.feed())
+        assertEquals("4a6edcf5840db6709d8d82216991031a80416246f25834368adb8de8cf95365d", record.feedKey())
+        assertEquals(listOf(record.feedKey()), record.linkedPubKeys())
+        assertEquals(listOf(record.foundThroughAddressId()), record.linkedAddressIds())
         assertEquals("https://blog.senko.net/feed/", record.source())
         assertEquals("web", record.sourceType())
         assertEquals(30023, record.foundThrough()?.kind)
@@ -460,7 +474,8 @@ class DrssEventsTest {
     @Test
     fun showReadsItsBotAndStatus() {
         val definition = assertIs<DrssShowEvent>(show)
-        assertEquals("3bd809035c152a0ca4927d94fd3b901f4cd6346a31a5b2b6c88a2689a109cf8b", definition.showBot())
+        assertEquals("3bd809035c152a0ca4927d94fd3b901f4cd6346a31a5b2b6c88a2689a109cf8b", definition.showBotKey())
+        assertEquals("drift", definition.showName())
         assertTrue(definition.isActive())
         assertEquals("Podcast show: drift", definition.alt())
     }
@@ -468,26 +483,102 @@ class DrssEventsTest {
     // ---- every shape ----
 
     @Test
-    fun everyShapeStaysAddressableAndUnindexed() {
-        val all =
-            listOf(
-                progressCompleted,
-                feedlistDrss,
-                feedlistCi,
-                folderRoot,
-                folderRoom,
-                evlistDrss,
-                evlistWaifu,
-                pfolderDrss,
-                pfolderRodada,
-                provDrss,
-                provDitto,
-                show,
-            )
-        all.forEach {
+    fun theDrssShapesWithTextAreSearchableAndTheRestAreNot() {
+        listOf(feedlistDrss, folderRoot, evlistTitled, pfolderDrss, provDrss, show).forEach {
+            assertTrue(it is SearchableEvent, it.toJson())
+        }
+        listOf(progressCompleted, feedlistCi, folderRoom, evlistWaifu, pfolderRodada, provDitto).forEach {
             assertTrue(it is AddressableEvent, it.toJson())
             assertFalse(it is SearchableEvent, it.toJson())
+            assertEquals(IndexableFields.None, SearchFieldExtractor.extract(it), it.toJson())
         }
+    }
+
+    @Test
+    fun searchFieldsRankTitlesAboveTheRest() {
+        val folder = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(folderRoot))
+        assertEquals(listOf("DRSS lists"), folder.primary)
+
+        val feeds = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(feedlistDrss))
+        assertEquals((feedlistDrss as DrssFeedListEvent).feedTitles(), feeds.secondary)
+
+        val showFields = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(show))
+        assertEquals(listOf("drift"), showFields.primary)
+
+        val note = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(provDrss))
+        assertTrue(note.text!!.startsWith("I want to find people"))
+        assertEquals(listOf("https://blog.senko.net/feed/"), note.websites)
+    }
+
+    @Test
+    fun anEventListItemWithNoRelayIsALinkButNotAHint() {
+        val list = assertIs<DrssEventListEvent>(event(30102, "22".repeat(32), "", arrayOf("d", "papers"), arrayOf("e", "aa".repeat(32), "", "1787491182"), arrayOf("e", "bb".repeat(32), "wss://relay.nostr.io", "1787491292")))
+        assertEquals(listOf("aa".repeat(32), "bb".repeat(32)), list.linkedEventIds())
+        assertEquals(listOf("bb".repeat(32)), list.eventHints().map { it.eventId })
+        assertEquals(1787491182L, list.items().first().addedAt)
+    }
+
+    @Test
+    fun aProvenanceNoteCitesWhatItMentions() {
+        val npub = "npub1hwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwamhwasxw04hu" // "bb" x 32
+        val cited = event(31985, "22".repeat(32), "Found through nostr:$npub", arrayOf("d", "cc".repeat(32)), arrayOf("L", DrssProvenanceEvent.NAMESPACE), arrayOf("p", "cc".repeat(32)))
+        val record = assertIs<DrssProvenanceEvent>(cited)
+        assertEquals(listOf("cc".repeat(32), "bb".repeat(32)), record.linkedPubKeys())
+    }
+
+    // ---- builders ----
+
+    private val signer = DeterministicSigner("nsec10g0wheggqn9dawlc0yuv6adnat6n09anr7eyykevw2dm8xa5fffs0wsdsr".nsecToKeyPair())
+
+    private fun <T : Event> roundTrip(signed: T): Event = EventFactory.create(signed.id, signed.pubKey, signed.createdAt, signed.kind, signed.tags, signed.content, signed.sig)
+
+    @Test
+    fun everyBuilderParsesBackAsItsClass() {
+        val episode = ATag(30023, "dd".repeat(32), "episode-1", RelayUrlNormalizer.normalizeOrNull("wss://relay.drss.io"))
+        val bot = PTag("ee".repeat(32), RelayUrlNormalizer.normalizeOrNull("wss://relay.drss.io"))
+
+        val progress = assertIs<DrssListenProgressEvent>(roundTrip(signer.sign<DrssListenProgressEvent>(DrssListenProgressEvent.build(episode, position = 733, durationInSeconds = 2744))))
+        assertEquals("episode-1", progress.dTag())
+        assertEquals(episode.toTag(), progress.episodeAddressId())
+        assertEquals(733L, progress.position())
+        assertEquals(2744L, progress.durationInSeconds())
+
+        val feeds = assertIs<DrssFeedListEvent>(roundTrip(signer.sign<DrssFeedListEvent>(DrssFeedListEvent.build("drss/podcasts", listOf(FeedTag(bot.pubKey, bot.relayHint, "Conversations with Tyler")), title = "Podcasts"))))
+        assertEquals(listOf(FeedTag(bot.pubKey, bot.relayHint, "Conversations with Tyler")), feeds.feeds())
+        assertEquals("Podcasts", feeds.title())
+
+        val child = ATag(30004, "dd".repeat(32), "drss-podcasts", null)
+        val folder = assertIs<DrssListFolderEvent>(roundTrip(signer.sign<DrssListFolderEvent>(DrssListFolderEvent.build("drss", "DRSS lists", listOf(child), language = "en-us"))))
+        assertEquals(listOf(child), folder.children())
+        assertEquals("en-us", folder.language())
+
+        val item = ListItemTag("aa".repeat(32), null, 1787491182L)
+        val items = assertIs<DrssEventListEvent>(roundTrip(signer.sign<DrssEventListEvent>(DrssEventListEvent.build("papers", listOf(item), title = "Papers"))))
+        assertEquals(listOf(item), items.items())
+
+        val record = assertIs<DrssProvenanceEvent>(roundTrip(signer.sign<DrssProvenanceEvent>(DrssProvenanceEvent.build(bot, "https://blog.senko.net/feed/", "web", "Worth keeping", foundThrough = episode))))
+        assertEquals(bot.pubKey, record.dTag())
+        assertEquals(bot.pubKey, record.feedKey())
+        assertEquals("web", record.sourceType())
+        assertEquals(episode.toTag(), record.foundThroughAddressId())
+
+        val recordAddress = ATag(DrssProvenanceEvent.KIND, signer.pubKey, bot.pubKey, null)
+        val provenanceFolder = assertIs<DrssProvenanceFolderEvent>(roundTrip(signer.sign<DrssProvenanceFolderEvent>(DrssProvenanceFolderEvent.build("vault-provenance/_root", "Root", listOf(recordAddress)))))
+        assertEquals(listOf(recordAddress), provenanceFolder.children())
+
+        val definition = assertIs<DrssShowEvent>(roundTrip(signer.sign<DrssShowEvent>(DrssShowEvent.build("drift", "drift", bot, "{\"name\":\"drift\"}"))))
+        assertEquals("drift", definition.showName())
+        assertEquals(bot.pubKey, definition.showBotKey())
+        assertTrue(definition.isActive())
+    }
+
+    @Test
+    fun aBuilderLeftWithoutItsShapeParsesBackAsUnrecognized() {
+        val emptyFolder = DrssListFolderEvent.build("empty", "Empty", emptyList())
+        assertIs<UnrecognizedKind30101Event>(signer.sign<Event>(emptyFolder.createdAt, emptyFolder.kind, emptyFolder.tags, emptyFolder.content))
+
+        val noNumbers = DrssListenProgressEvent.build(ATag(30023, "dd".repeat(32), "x", null))
+        assertIs<UnrecognizedKind30054Event>(signer.sign<Event>(noNumbers.createdAt, noNumbers.kind, noNumbers.tags, noNumbers.content))
     }
 
     @Test

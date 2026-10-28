@@ -4,8 +4,8 @@ Every concrete `SearchableEvent` implementor in Quartz, with the exact `indexabl
 expression. **Update this file in the same PR as any change to the searchable set or to an
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
-Counts: 210 concrete classes covering 210 kind values (`GitStatusEvent` spans 4 kinds;
-kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr and kind 30054 with drss.io's listening progress — see the footnotes). The kind
+Counts: 216 concrete classes covering 216 kind values (`GitStatusEvent` spans 4 kinds;
+kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's listening progress, and drss.io's 30100–30104 and 31985 with other apps — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
 
@@ -125,6 +125,10 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30063 | ReleaseArtifactSetEvent † | nip51Lists/releaseArtifactSet | `listOfNotNull(title(), description(), searchableReleaseNotes())` NL |
 | 30066 | LiveChessMoveEvent | nip64Chess/move | `content` |
 | 30068 | LiveChessDrawOfferEvent | nip64Chess/draw | `content` |
+| 30100 | DrssFeedListEvent ‖ | drss/feedList | `(listOfNotNull(title()) + feedTitles())` NL |
+| 30101 | DrssListFolderEvent ‖ | drss/listFolder | `title() ?: ""` |
+| 30102 | DrssEventListEvent ‖ | drss/eventList | `title() ?: ""` |
+| 30104 | DrssProvenanceFolderEvent ‖ | drss/provenance | `title() ?: ""` |
 | 30142 | LearningResourceEvent | experimental/library | `(listOfNotNull(title(), alternateTitle(), summary(), alternateSummary(), content, author()) + facetLabels())` NL — `facetLabels()` = resource types, educational levels, subjects, deduplicated |
 | 30175 | PersonaEvent | buzz/apPersonas | `personaOrNull()?.let { listOfNotNull(it.displayName, it.description, it.systemPrompt).joinToString("\n") } ?: ""` |
 | 30176 | TeamEvent | buzz/teams | `teamOrNull()?.let { listOfNotNull(it.name, it.description, it.instructions).joinToString("\n") } ?: ""` |
@@ -156,6 +160,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30817 | NipTextEvent | experimental/nipsOnNostr | `listOfNotNull(title(), content)` NL |
 | 30818 | WikiArticleEvent | nip54Wiki | `listOfNotNull(title(), summary(), content)` NL |
 | 31337 | AudioTrackEvent | experimental/audio/track | `listOfNotNull(subject())` NL |
+| 31341 | DrssShowEvent | drss/show | `showName() ?: ""` (the `alt` minus `Podcast show: `) |
 | 31555 | ProductReviewEvent | nip99Classifieds/review | `content` (the review text) |
 | 31871 | AttestationEvent | experimental/attestations/attestation | `content` |
 | 31872 | AttestationRequestEvent | experimental/attestations/request | `content` |
@@ -165,6 +170,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 31923 | CalendarTimeSlotEvent | nip52Calendar/appt/time | `(listOfNotNull(title(), summary(), content) + locations() + hashtags())` NL |
 | 31924 | CalendarCollectionEvent | nip52Calendar/calendar | `listOfNotNull(title(), content)` NL |
 | 31925 | CalendarRSVPEvent | nip52Calendar/rsvp | `content` |
+| 31985 | DrssProvenanceEvent ‖ | drss/provenance | `listOfNotNull(content.ifBlank { null }, source())` NL |
 | 31987 | RelayReviewEvent | experimental/ratings | `content` |
 | 31990 | AppDefinitionEvent | nip89AppHandlers/definition | `appMetaData()?.let { listOfNotNull(it.name, it.username, it.displayName, it.about, it.nip05, it.lud06, it.lud16, it.website, it.picture, it.banner, it.image).joinToString(" ") } ?: ""` (SP) |
 | 32176 | BlossomPieceIndexEvent | experimental/library | `listOfNotNull(title(), summary(), content)` NL |
@@ -255,6 +261,12 @@ NIP-44 tasks). Kind-level probes answer as `KanbanBoardEvent`. A verification in
 `description` and the markdown report (`content`) of its JSON `content`. Kind 30302 is split the
 same way: `KanbanCardEvent` on a `title` or an `a` to a 30301 board, else
 `UnrecognizedKind30302Event` (Fieldbook team memberships).
+
+‖ **drss.io's reader kinds are shared** with other apps (CI job statuses, room listings, voting
+rounds, file announcements, Ditto's ratings…). `EventFactory` builds the drss class only for drss's
+shape (see `drss/README.md`) and an `UnrecognizedKind30100Event` / `…30101…` / `…30102…` / `…30104…`
+/ `UnrecognizedKind31985Event` otherwise — addressable but unsearchable. Kind-level probes answer
+as the drss class. Its 30054 listening progress is a `DrssListenProgressEvent`, not searchable.
 
 ## Abstract bases (no kind of their own)
 

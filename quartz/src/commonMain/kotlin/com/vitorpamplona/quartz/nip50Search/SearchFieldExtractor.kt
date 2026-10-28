@@ -33,6 +33,12 @@ import com.vitorpamplona.quartz.buzz.workflow.WorkflowDefEvent
 import com.vitorpamplona.quartz.contextvm.cep06Announcements.CvmServerAnnouncementEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoAvatarEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoObjectEvent
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
+import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.experimental.agora.FundraiserEvent
 import com.vitorpamplona.quartz.experimental.audio.track.AudioTrackEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdDetectionEvent
@@ -556,6 +562,33 @@ object SearchFieldExtractor {
 
             is ArticleCurationSetEvent -> {
                 tiers(event, event.title(), event.description(), null)
+            }
+
+            // drss.io's reader: its folders and lists are named like the NIP-51 sets they hold, a
+            // feed list's feed titles are its keywords, a show is found by name, and a provenance
+            // record is the reader's note about where a feed came from.
+            is DrssListFolderEvent -> {
+                tiers(event, event.title(), null, null)
+            }
+
+            is DrssEventListEvent -> {
+                tiers(event, event.title(), null, null)
+            }
+
+            is DrssProvenanceFolderEvent -> {
+                tiers(event, event.title(), null, null)
+            }
+
+            is DrssFeedListEvent -> {
+                tiers(event, listOf(event.title()), event.feedTitles(), null)
+            }
+
+            is DrssShowEvent -> {
+                tiers(event, event.showName(), null, null)
+            }
+
+            is DrssProvenanceEvent -> {
+                tiers(event, null, null, event.note(), website = event.source())
             }
 
             is VideoCurationSetEvent -> {
