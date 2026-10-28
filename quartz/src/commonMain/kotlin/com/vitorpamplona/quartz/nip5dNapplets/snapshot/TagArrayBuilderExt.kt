@@ -18,29 +18,20 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip5dNapplets.tags
+package com.vitorpamplona.quartz.nip5dNapplets.snapshot
 
-import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.utils.ensure
+import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip5dNapplets.snapshot.tags.OriginTag
 
-/**
- * NIP-5D required capability: `["R", "<nap-name>"]`, one bare NAP domain (`relay`, never
- * `NAP-RELAY`) the napplet needs for full functionality. A declaration, never a grant: the shell
- * still decides what it exposes.
- */
-class RequiredNapTag {
-    companion object {
-        const val TAG_NAME = "R"
+fun TagArrayBuilder<NappletSnapshotEvent>.parent(
+    address: Address,
+    relay: NormalizedRelayUrl? = null,
+) = addUnique(ATag.assemble(address, relay))
 
-        fun parse(tag: Array<String>): String? {
-            ensure(tag.has(1)) { return null }
-            ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].isNotEmpty()) { return null }
-            return tag[1]
-        }
-
-        fun assemble(napName: String) = arrayOf(TAG_NAME, napName)
-
-        fun assemble(napNames: List<String>) = napNames.map { assemble(it) }
-    }
-}
+fun TagArrayBuilder<NappletSnapshotEvent>.origin(
+    address: Address,
+    relay: NormalizedRelayUrl? = null,
+) = addUnique(OriginTag.assemble(address, relay))

@@ -23,40 +23,58 @@ package com.vitorpamplona.quartz.nip5dNapplets
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.ServerTag
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.TitleTag
 import com.vitorpamplona.quartz.nip5dNapplets.tags.ArchetypeTag
-import com.vitorpamplona.quartz.nip5dNapplets.tags.ArtifactHashTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.ArtifactTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.IconTag
 import com.vitorpamplona.quartz.nip5dNapplets.tags.IntentTag
-import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIconTag
-import com.vitorpamplona.quartz.nip5dNapplets.tags.OptionalNapTag
-import com.vitorpamplona.quartz.nip5dNapplets.tags.RequiredNapTag
-import com.vitorpamplona.quartz.nip5dNapplets.tags.RequiresTag
-
-/** Legacy `requires` tags, from napplets published before `R`/`O` replaced them. */
-fun TagArray.nappletRequires() = mapNotNull(RequiresTag::parse)
-
-/** `R` tags: NAP domains the napplet needs for full functionality. */
-fun TagArray.nappletRequired() = mapNotNull(RequiredNapTag::parse)
-
-/** `O` tags: NAP domains the napplet can use when offered. */
-fun TagArray.nappletOptional() = mapNotNull(OptionalNapTag::parse)
-
-fun TagArray.nappletArchetypes() = mapNotNull(ArchetypeTag::parse)
-
-fun TagArray.nappletIntents() = mapNotNull(IntentTag::parse)
-
-fun TagArray.nappletIcon() = firstNotNullOfOrNull(NappletIconTag::parse)
+import com.vitorpamplona.quartz.nip5dNapplets.tags.OptionalTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.RequiredTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.SourceTag
 
 /**
  * The artifact sha256 from the manifest's `x` tag. NIP-5D: a manifest that does not carry exactly
- * one `x` tag MUST be rejected, so two `x` tags (or one that isn't a bare sha256) give null.
+ * one `x` tag MUST be rejected, so a second `x` tag, or one that isn't a bare lowercase sha256,
+ * gives null.
  */
-fun TagArray.nappletArtifactHash(): HexKey? {
+fun TagArray.artifact(): HexKey? {
     var found: Array<String>? = null
     fastForEach {
-        if (ArtifactHashTag.isTag(it)) {
+        if (ArtifactTag.isTag(it)) {
             if (found != null) return null
             found = it
         }
     }
-    return found?.let(ArtifactHashTag::parse)
+    return found?.let(ArtifactTag::parse)
+}
+
+fun TagArray.required() = mapNotNull(RequiredTag::parse).distinct()
+
+fun TagArray.optional() = mapNotNull(OptionalTag::parse).distinct()
+
+fun TagArray.archetypes() = mapNotNull(ArchetypeTag::parse)
+
+fun TagArray.intents() = mapNotNull(IntentTag::parse)
+
+/** The `icon` tag, when there is exactly one and it is well formed; anything else falls back to generic artwork. */
+fun TagArray.icon() = singleOrNullMatching(IconTag::isTag)?.let(IconTag::parse)
+
+fun TagArray.servers() = mapNotNull(ServerTag::parse).distinct()
+
+fun TagArray.title() = singleOrNullMatching { it.has(0) && it[0] == TitleTag.TAG_NAME }?.let(TitleTag::parse)
+
+/** The `source` tag; null when absent, repeated, or not an accepted location. */
+fun TagArray.source() = singleOrNullMatching(SourceTag::isTag)?.let(SourceTag::parse)
+
+private inline fun TagArray.singleOrNullMatching(isTag: (Array<String>) -> Boolean): Array<String>? {
+    var found: Array<String>? = null
+    fastForEach {
+        if (isTag(it)) {
+            if (found != null) return null
+            found = it
+        }
+    }
+    return found
 }

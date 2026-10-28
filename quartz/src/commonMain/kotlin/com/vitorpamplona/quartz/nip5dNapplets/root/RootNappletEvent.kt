@@ -18,32 +18,32 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip5dNapplets
+package com.vitorpamplona.quartz.nip5dNapplets.root
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteDescription
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteIcon
-import com.vitorpamplona.quartz.nip5aStaticWebsites.sitePaths
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteServers
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteSource
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteTitle
-import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nip5dNapplets.NappletManifest
+import com.vitorpamplona.quartz.nip5dNapplets.archetypes
+import com.vitorpamplona.quartz.nip5dNapplets.artifact
+import com.vitorpamplona.quartz.nip5dNapplets.icon
+import com.vitorpamplona.quartz.nip5dNapplets.intents
+import com.vitorpamplona.quartz.nip5dNapplets.optional
+import com.vitorpamplona.quartz.nip5dNapplets.required
+import com.vitorpamplona.quartz.nip5dNapplets.servers
+import com.vitorpamplona.quartz.nip5dNapplets.source
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
+import com.vitorpamplona.quartz.nip5dNapplets.title
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
- * NIP-5D **root napplet** (kind 15129) — the replaceable manifest for a pubkey's
- * default napplet. One per author; newer events replace older ones. See
- * [NappletManifest] for the tags it carries.
+ * NIP-5D **root napplet** (kind 15129): the replaceable manifest for a pubkey's default napplet,
+ * one per author, with no `d` tag. See [NappletManifest] for what it carries.
  */
 @Immutable
 class RootNappletEvent(
@@ -69,9 +69,8 @@ class RootNappletEvent(
         const val KIND = 15129
 
         /**
-         * A manifest for the single self-contained `/index.html` whose sha256 is [artifactHash].
-         * [description] becomes the event content and MUST NOT be blank; [required] and [optional]
-         * become the `R` and `O` tags.
+         * A manifest for the self-contained `/index.html` whose sha256 is [artifactHash]. NIP-5D
+         * requires a non-empty plain-text [description], which becomes the event content.
          */
         fun build(
             artifactHash: HexKey,
@@ -86,46 +85,16 @@ class RootNappletEvent(
             source: String? = null,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<RootNappletEvent>.() -> Unit = {},
-        ): EventTemplate<RootNappletEvent> {
-            require(description.isNotBlank()) { "NIP-5D: a napplet manifest needs a non-empty description" }
-            return eventTemplate(KIND, description, createdAt) {
-                nappletArtifactHash(artifactHash)
-                if (servers.isNotEmpty()) siteServers(servers)
-                if (required.isNotEmpty()) nappletRequired(required)
-                if (optional.isNotEmpty()) nappletOptional(optional)
-                if (archetypes.isNotEmpty()) nappletArchetypes(archetypes)
-                if (intents.isNotEmpty()) nappletIntents(intents)
-                icon?.let { nappletIcon(it) }
-                title?.let { siteTitle(it) }
-                source?.let { siteSource(it) }
-                initializer()
-            }
-        }
-
-        @Deprecated(
-            "NIP-5D napplets are now one self-contained /index.html addressed by a bare x tag, with the description " +
-                "in content and R/O capability tags. Use the build(…, artifactHash, description, …) overload; publish a " +
-                "multi-file app as a NIP-5A nsite.",
-        )
-        fun build(
-            paths: List<PathTag>,
-            servers: List<String> = emptyList(),
-            requires: List<String> = emptyList(),
-            title: String? = null,
-            description: String? = null,
-            source: String? = null,
-            icon: String? = null,
-            createdAt: Long = TimeUtils.now(),
-            initializer: TagArrayBuilder<RootNappletEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, "", createdAt) {
-            sitePaths(paths)
-            siteAggregateHash(paths)
-            if (servers.isNotEmpty()) siteServers(servers)
-            if (requires.isNotEmpty()) nappletRequires(requires)
-            title?.let { siteTitle(it) }
-            description?.let { siteDescription(it) }
-            source?.let { siteSource(it) }
-            icon?.let { siteIcon(it) }
+        ) = eventTemplate(KIND, description, createdAt) {
+            artifact(artifactHash)
+            if (servers.isNotEmpty()) servers(servers)
+            if (required.isNotEmpty()) required(required)
+            if (optional.isNotEmpty()) optional(optional)
+            if (archetypes.isNotEmpty()) archetypes(archetypes)
+            if (intents.isNotEmpty()) intents(intents)
+            icon?.let { icon(it) }
+            title?.let { title(it) }
+            source?.let { source(it) }
             initializer()
         }
     }

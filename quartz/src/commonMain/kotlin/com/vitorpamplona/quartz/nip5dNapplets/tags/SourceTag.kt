@@ -24,22 +24,29 @@ import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
- * NIP-5D optional capability: `["O", "<nap-name>"]`, a bare NAP domain the napplet can use when
- * the shell offers it. A missing optional domain MUST NOT stop the napplet from loading.
+ * NIP-5D source: `["source", "<location>"]`, exactly two elements. The location is an absolute
+ * `http`, `https`, `ssh` or `git` URL, or Git's scp-like `[user@]host:path`; local paths and `file`
+ * URLs are refused. Informational only: it does not attest that the source builds the artifact.
  */
-class OptionalNapTag {
+class SourceTag {
     companion object {
-        const val TAG_NAME = "O"
+        const val TAG_NAME = "source"
+
+        private val URL = Regex("^(https?|ssh|git)://[^/\\s]+(/\\S*)?$", RegexOption.IGNORE_CASE)
+        private val SCP_LIKE = Regex("^([^@:/\\s]+@)?[A-Za-z0-9][A-Za-z0-9.-]*:\\S+$")
+        private val NOT_HOSTS = setOf("file", "javascript", "data", "vbscript")
+
+        fun isTag(tag: Array<String>) = tag.has(0) && tag[0] == TAG_NAME
 
         fun parse(tag: Array<String>): String? {
-            ensure(tag.has(1)) { return null }
+            ensure(tag.size == 2) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].isNotEmpty()) { return null }
+            ensure(isLocation(tag[1])) { return null }
             return tag[1]
         }
 
-        fun assemble(napName: String) = arrayOf(TAG_NAME, napName)
+        fun isLocation(value: String): Boolean = URL.matches(value) || (SCP_LIKE.matches(value) && value.substringBefore(':').substringAfter('@').lowercase() !in NOT_HOSTS)
 
-        fun assemble(napNames: List<String>) = napNames.map { assemble(it) }
+        fun assemble(location: String) = arrayOf(TAG_NAME, location)
     }
 }

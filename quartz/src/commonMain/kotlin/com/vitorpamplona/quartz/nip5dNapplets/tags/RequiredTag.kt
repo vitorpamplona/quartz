@@ -24,18 +24,15 @@ import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
- * Legacy NIP-5D capability-requirement tag: `["requires", "<nap-name>"]`, replaced by `R`
- * ([RequiredNapTag]) and `O` ([OptionalNapTag]). Still read so napplets published before the change
- * keep their declarations.
- *
- * Each value is a bare NAP domain the napplet needs from its shell — e.g.
- * `relay`, `identity`, `storage` — never the `NAP-RELAY` spec name. A shell uses
- * these to decide which capabilities to broker (and which to deny) before running
- * the napplet.
+ * NIP-5D required domain: `["R", "<nap-name>"]`, one bare NAP domain (`relay`, never `NAP-RELAY`)
+ * the napplet needs for full functionality. A declaration, never a grant: what the napplet gets is
+ * still the shell's call.
  */
-class RequiresTag {
+class RequiredTag {
     companion object {
-        const val TAG_NAME = "requires"
+        const val TAG_NAME = "R"
+
+        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
         fun parse(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }
