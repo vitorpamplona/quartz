@@ -67,6 +67,15 @@ def superclass_sources(path, src, name, depth=0):
     return [parent_src] + superclass_sources(parent, parent_src, parent_name, depth + 1)
 
 
+def has_builder(src):
+    """A `build()` (generic or not), or any companion function that returns an unsigned EventTemplate:
+    a kind-specific builder such as `reply()` or `buildMove()` counts."""
+    if re.search(r"\bfun\s+(?:<[^>]*>\s*)?build\(", src):
+        return True
+    companion = src[src.find("companion object") :] if "companion object" in src else ""
+    return bool(re.search(r"\beventTemplate\s*[(<]|\)\s*:\s*EventTemplate<", companion))
+
+
 def class_kdoc(src, name):
     """The KDoc directly above [name]'s declaration (annotations and modifiers may sit between)."""
     m = re.search(r"/\*\*((?:(?!\*/)[\s\S])*)\*/\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:(?:open|abstract|data|sealed)\s+)*class\s+" + name + r"\b", src)
@@ -74,7 +83,7 @@ def class_kdoc(src, name):
 
 
 CHECKS = [
-    ("no companion build()", lambda src, parents, name: not re.search(r"\bfun build\b", src)),
+    ("no companion build()", lambda src, parents, name: not has_builder(src)),
     ("tag parsing inline in the class (it[0] == / tag[0] ==)", lambda src, parents, name: re.search(r"\b(it|tag)\[0\]\s*==\s*\"", src)),
     (
         "linkedXxx() reads raw tags instead of a semantic method",
