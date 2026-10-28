@@ -570,6 +570,13 @@ class Timestamp(
         val ANSI_UNDERLINE = "\u001B[4m"
 
         /**
+         * Maximum nesting of ops in a deserialized timestamp, as in python-opentimestamps.
+         * Real proofs are a few dozen ops deep; a hash op costs one byte, so without a limit a
+         * few KB of proof from a relay recurse deep enough to overflow the stack.
+         */
+        const val MAX_DEPTH = 256
+
+        /**
          * Deserialize a Timestamp.
          *
          * @param ots        - The serialized byte array.
@@ -604,17 +611,26 @@ class Timestamp(
         fun deserialize(
             ctx: StreamDeserializationContext,
             initialMsg: ByteArray,
+        ): Timestamp = deserialize(ctx, initialMsg, MAX_DEPTH)
+
+        @Throws(DeserializationException::class)
+        private fun deserialize(
+            ctx: StreamDeserializationContext,
+            initialMsg: ByteArray,
+            depthLeft: Int,
         ): Timestamp {
+            if (depthLeft <= 0) throw DeserializationException("Timestamp is nested deeper than $MAX_DEPTH ops")
+
             val self = Timestamp(initialMsg)
             var tag = ctx.readBytes(1)[0]
 
             while ((tag.toInt() and 0xff) == 0xff) {
                 val current = ctx.readBytes(1)[0]
-                doTagOrAttestation(self, ctx, current, initialMsg)
+                doTagOrAttestation(self, ctx, current, initialMsg, depthLeft)
                 tag = ctx.readBytes(1)[0]
             }
 
-            doTagOrAttestation(self, ctx, tag, initialMsg)
+            doTagOrAttestation(self, ctx, tag, initialMsg, depthLeft)
 
             return self
         }
@@ -625,6 +641,7 @@ class Timestamp(
             ctx: StreamDeserializationContext,
             tag: Byte,
             initialMsg: ByteArray,
+            depthLeft: Int,
         ) {
             if ((tag.toInt() and 0xff) == 0x00) {
                 val attestation = TimeAttestation.deserialize(ctx)
@@ -633,7 +650,7 @@ class Timestamp(
                 val op = Op.deserializeFromTag(ctx, tag)
                 val result = op.call(initialMsg)
 
-                val stamp: Timestamp = deserialize(ctx, result)
+                val stamp: Timestamp = deserialize(ctx, result, depthLeft - 1)
                 self.ops.put(op, stamp)
             }
         }
