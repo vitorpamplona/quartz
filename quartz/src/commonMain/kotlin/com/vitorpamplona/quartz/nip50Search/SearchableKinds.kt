@@ -169,6 +169,10 @@ object SearchableKinds {
             30063, // ReleaseArtifactSetEvent
             30066, // LiveChessMoveEvent
             30068, // LiveChessDrawOfferEvent
+            30100, // DrssFeedListEvent
+            30101, // DrssListFolderEvent
+            30102, // DrssEventListEvent
+            30104, // DrssProvenanceFolderEvent
             30142, // LearningResourceEvent
             30175, // PersonaEvent
             30176, // TeamEvent
@@ -199,6 +203,7 @@ object SearchableKinds {
             30817, // NipTextEvent
             30818, // WikiArticleEvent
             31337, // AudioTrackEvent
+            31341, // DrssShowEvent
             31555, // ProductReviewEvent
             31871, // AttestationEvent
             31872, // AttestationRequestEvent
@@ -208,6 +213,7 @@ object SearchableKinds {
             31923, // CalendarTimeSlotEvent
             31924, // CalendarCollectionEvent
             31925, // CalendarRSVPEvent
+            31985, // DrssProvenanceEvent
             31987, // RelayReviewEvent
             31990, // AppDefinitionEvent
             32176, // BlossomPieceIndexEvent

@@ -6,7 +6,7 @@ as `com.vitorpamplona.quartz:quartz`. It holds implementations of Nostr specific
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
 them: `marmot/` (MLS over Nostr, `mipXX`: event classes, tags and content codecs only),
 `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
-NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`. A new protocol over Nostr belongs here as a package. Every
+NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`, `drss/` (drss.io's reader). A new protocol over Nostr belongs here as a package. Every
 event class stays here, so any client or relay parses and stores every kind typed; a protocol's
 heavy engine does not. The MLS bindings' engines and clients are their own libraries,
 [marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot) and
@@ -55,6 +55,12 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
 
 - **Protocol only.** No UI, no Compose UI, no app state. `@Immutable`/`@Stable` annotations are
   the only Compose dependency.
+- **Event classes follow one layout**, `.claude/skills/nostr-expert/references/event-class-anatomy.md`
+  (modelled on `nip88Polls/`): tag codecs under `tags/`, `TagArrayExt.kt` readers,
+  `TagArrayBuilderExt.kt` writers, a companion `build()`, a semantic method for every `a`/`e`/`p`/`q`
+  that the hint providers read through, and a decision on `SearchableEvent`. When you add or change
+  a kind, bring what `.claude/skills/nostr-expert/scripts/event-pattern-audit.py <package>` lists
+  in that package in line.
 - **Reuse before writing.** Relay operations (fetch a set, fetch one, page past the relay cap,
   publish-and-confirm, NIP-45 count, NIP-77 sync) are `INostrClient` extension functions in
   `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/`

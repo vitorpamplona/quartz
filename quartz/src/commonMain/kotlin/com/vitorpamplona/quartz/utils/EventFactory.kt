@@ -117,6 +117,18 @@ import com.vitorpamplona.quartz.cyberspace.CyberspaceBagEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoAvatarEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoObjectEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoShardEvent
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.eventList.UnrecognizedKind30102Event
+import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
+import com.vitorpamplona.quartz.drss.feedList.UnrecognizedKind30100Event
+import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
+import com.vitorpamplona.quartz.drss.listFolder.UnrecognizedKind30101Event
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind30104Event
+import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind31985Event
+import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.experimental.agora.FundraiserEvent
 import com.vitorpamplona.quartz.experimental.attestations.attestation.AttestationEvent
 import com.vitorpamplona.quartz.experimental.attestations.proficiency.AttestorProficiencyEvent
@@ -497,6 +509,7 @@ import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
+import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
 import com.vitorpamplona.quartz.nipXXPrivateNoteStorage.PnsEvent
 import com.vitorpamplona.quartz.nipXXPushNotifications.deregistration.PushDeregistrationEvent
@@ -670,6 +683,40 @@ class EventFactory {
                 CalendarCollectionEvent.KIND -> CalendarCollectionEvent(id, pubKey, createdAt, tags, content, sig)
                 CalendarTimeSlotEvent.KIND -> CalendarTimeSlotEvent(id, pubKey, createdAt, tags, content, sig)
                 CalendarRSVPEvent.KIND -> CalendarRSVPEvent(id, pubKey, createdAt, tags, content, sig)
+                // drss.io's reader (RSS and podcasts bridged to Nostr) publishes its lists and records on
+                // kinds other apps use too. Each is told apart by its drss shape; the rest stays
+                // addressable but unread. Its show definitions (31341) have the kind to themselves.
+                DrssFeedListEvent.KIND ->
+                    if (DrssFeedListEvent.isFeedList(tags, content)) {
+                        DrssFeedListEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30100Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                DrssListFolderEvent.KIND ->
+                    if (DrssListFolderEvent.isListFolder(tags)) {
+                        DrssListFolderEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30101Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                DrssEventListEvent.KIND ->
+                    if (DrssEventListEvent.isEventList(tags)) {
+                        DrssEventListEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30102Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                DrssProvenanceFolderEvent.KIND ->
+                    if (DrssProvenanceFolderEvent.isProvenanceFolder(tags)) {
+                        DrssProvenanceFolderEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30104Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                DrssProvenanceEvent.KIND ->
+                    if (DrssProvenanceEvent.isProvenance(tags)) {
+                        DrssProvenanceEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind31985Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                DrssShowEvent.KIND -> DrssShowEvent(id, pubKey, createdAt, tags, content, sig)
                 else -> null
             }
 
@@ -1064,7 +1111,14 @@ class EventFactory {
                 ThemeDefinitionEvent.KIND -> ThemeDefinitionEvent(id, pubKey, createdAt, tags, content, sig)
                 AuthoredPodcastsEvent.KIND -> AuthoredPodcastsEvent(id, pubKey, createdAt, tags, content, sig)
                 FavoritePodcastsListEvent.KIND -> FavoritePodcastsListEvent(id, pubKey, createdAt, tags, content, sig)
-                Podcasting20EpisodeEvent.KIND -> Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)
+                // Podcasting-2.0 episodes (podstr's draft) share 30054 with drss.io's listening-progress
+                // records (`position`, `duration`, an `a` to the 30023 article the episode is bridged as).
+                Podcasting20EpisodeEvent.KIND ->
+                    when {
+                        Podcasting20EpisodeEvent.isPodcastEpisode(tags) -> Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)
+                        DrssListenProgressEvent.isListenProgress(tags) -> DrssListenProgressEvent(id, pubKey, createdAt, tags, content, sig)
+                        else -> UnrecognizedKind30054Event(id, pubKey, createdAt, tags, content, sig)
+                    }
                 Podcasting20TrailerEvent.KIND -> Podcasting20TrailerEvent(id, pubKey, createdAt, tags, content, sig)
                 ProductEvent.KIND -> ProductEvent(id, pubKey, createdAt, tags, content, sig)
                 EncryptedDmEvent.KIND -> EncryptedDmEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1210,8 +1264,10 @@ class EventFactory {
          * 38385 and 38386 and RoboSats' 31986 do the same: with no tags they fall to their
          * `UnrecognizedKind…Event`, and 38385's primary class is searchable. Kind 30301 answers as
          * its Kanban board (WalletScrutiny's verifications on it are searchable too) and 30302 as
-         * the Kanban card, and Open Markets' 30405 and 30406 as their collection and shipping option
-         * (Shopstr's carts and escrow records on them are the unsearchable fallbacks). (The other
+         * the Kanban card, Open Markets' 30405 and 30406 as their collection and shipping option
+         * (Shopstr's carts and escrow records on them are the unsearchable fallbacks), 30054 as
+         * the Podcasting-2.0 episode, and drss.io's 30100, 30101, 30102, 30104 and 31985 as its feed
+         * list, list folder, event list, provenance folder and provenance record. (The other
          * tag-split kinds, 39005 and 20001, already land on a typed class with no tags.)
          *
          * The id is non-blank so kinds that lazily hash a missing id (NIP-17 chat) skip that work
@@ -1228,6 +1284,12 @@ class EventFactory {
                 RoboSatsCoordinatorRatingEvent.KIND -> RoboSatsCoordinatorRatingEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 KanbanBoardEvent.KIND -> KanbanBoardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 KanbanCardEvent.KIND -> KanbanCardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                Podcasting20EpisodeEvent.KIND -> Podcasting20EpisodeEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                DrssFeedListEvent.KIND -> DrssFeedListEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                DrssListFolderEvent.KIND -> DrssListFolderEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                DrssEventListEvent.KIND -> DrssEventListEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                DrssProvenanceFolderEvent.KIND -> DrssProvenanceFolderEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                DrssProvenanceEvent.KIND -> DrssProvenanceEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 else -> create(PROBE_ID, PROBE_ID, 0L, kind, emptyArray(), "", "")
             }
 

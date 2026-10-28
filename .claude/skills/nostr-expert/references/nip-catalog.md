@@ -124,6 +124,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `concord/` | ConcordChatEditEvent 3302, ControlEditionEvent 3308, ConcordWebxdc 3310, ConcordCommunityListEvent 13302, ConcordInviteListEvent 13303, VoicePresence 23313, ConcordBrokerToken 27235, ConcordInviteBundleEvent 33301, ConcordCommunityListFragmentEvent 33302 |
 | `contextvm/` | (no event kinds: tags/utilities) |
 | `cyberspace/` | SnoShardEvent 3330, SnoAvatarEvent 11333, CyberspaceBagEvent 33330, SnoObjectEvent 33331 |
+| `drss/` | DrssListenProgressEvent 30054, DrssFeedListEvent 30100, DrssListFolderEvent 30101, DrssEventListEvent 30102, DrssProvenanceFolderEvent 30104, DrssShowEvent 31341, DrssProvenanceEvent 31985 |
 | `feedDefinition/` | FeedDefinitionEvent 31890 |
 | `kinds/` | (no event kinds: tags/utilities) |
 | `lightning/` | (no event kinds: tags/utilities) |

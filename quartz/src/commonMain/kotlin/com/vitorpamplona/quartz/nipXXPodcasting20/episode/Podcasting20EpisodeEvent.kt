@@ -23,7 +23,9 @@ package com.vitorpamplona.quartz.nipXXPodcasting20.episode
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -182,6 +184,18 @@ class Podcasting20EpisodeEvent(
 
     companion object {
         const val KIND = 30054
+
+        /**
+         * An episode carries a `title`, an `audio` or a `video` (the draft requires the first two).
+         * The listening-progress records drss.io saves on this kind carry none of them, and
+         * parse as `DrssListenProgressEvent`.
+         */
+        fun isPodcastEpisode(tags: TagArray): Boolean =
+            tags.fastAny {
+                it.size > 1 &&
+                    it[1].isNotBlank() &&
+                    (it[0] == TitleTag.TAG_NAME || it[0] == AudioTag.TAG_NAME || it[0] == VideoTag.TAG_NAME)
+            }
 
         fun build(
             dTag: String,

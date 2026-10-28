@@ -114,6 +114,12 @@ import com.vitorpamplona.quartz.cyberspace.CyberspaceBagEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoAvatarEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoObjectEvent
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.SnoShardEvent
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
+import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.experimental.agora.FundraiserEvent
 import com.vitorpamplona.quartz.experimental.attestations.attestation.AttestationEvent
 import com.vitorpamplona.quartz.experimental.attestations.proficiency.AttestorProficiencyEvent
@@ -524,6 +530,14 @@ object KindNames {
             AuthoredPodcastsEvent.KIND to KindName("Authored Podcasts", "F4"),
             FavoritePodcastsListEvent.KIND to KindName("Favorite Podcasts", "F4"),
             Podcasting20EpisodeEvent.KIND to KindName("Podcast Episode (Podcasting 2.0)", null),
+            // drss.io's reader kinds. 30100, 30101, 30102, 30104 and 31985 are shared with other apps: the
+            // label names the drss shape the kind is probed as.
+            DrssFeedListEvent.KIND to KindName("DRSS Feed List", null),
+            DrssListFolderEvent.KIND to KindName("DRSS List Folder", null),
+            DrssEventListEvent.KIND to KindName("DRSS Event List", null),
+            DrssProvenanceFolderEvent.KIND to KindName("DRSS Provenance Folder", null),
+            DrssProvenanceEvent.KIND to KindName("DRSS Provenance", null),
+            DrssShowEvent.KIND to KindName("DRSS Podcast Show", null),
             Podcasting20TrailerEvent.KIND to KindName("Podcast Trailer (Podcasting 2.0)", null),
             AttestationEvent.KIND to KindName("Attestation", null),
             AttestationRequestEvent.KIND to KindName("Attestation Request", null),
