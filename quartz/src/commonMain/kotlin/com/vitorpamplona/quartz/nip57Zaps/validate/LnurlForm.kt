@@ -43,7 +43,8 @@ object LnurlForm {
     fun toUrl(value: String): String? = rawUrl(value)?.takeIf { isPlausibleHost(hostOf(it)) }
 
     private fun rawUrl(value: String): String? {
-        val trimmed = value.trim()
+        // Profiles and QR codes often carry the `lightning:` URI scheme in front of either form.
+        val trimmed = value.trim().let { if (it.startsWith(LIGHTNING_SCHEME, ignoreCase = true)) it.substring(LIGHTNING_SCHEME.length) else it }
         if (trimmed.isEmpty()) return null
 
         // Already a URL.
@@ -128,6 +129,8 @@ object LnurlForm {
         }
         return true
     }
+
+    private const val LIGHTNING_SCHEME = "lightning:"
 
     private val IDN_CATEGORIES =
         setOf(

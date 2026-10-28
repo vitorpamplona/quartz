@@ -21,6 +21,11 @@
 package com.vitorpamplona.quartz.nip57Zaps.validate
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.utils.Hex
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 /**
  * Cached metadata pulled from a recipient's `/.well-known/lnurlp/<user>` endpoint
@@ -34,4 +39,31 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 data class LnurlEndpointInfo(
     val nostrPubkey: HexKey?,
     val allowsNostr: Boolean,
-)
+) {
+    companion object {
+        /**
+         * Reads an LNURL-pay answer (LUD-06) as NIP-57 sees it. Strict, since the answer is
+         * anyone's JSON: `allowsNostr` is true only for the JSON boolean `true` (not the string
+         * `"true"`), and `nostrPubkey` is kept only when it is a 64-character hex key, lowercased.
+         *
+         * Null when [json] is not a JSON object, or is an LNURL error (`"status": "ERROR"`).
+         */
+        fun parse(json: String): LnurlEndpointInfo? {
+            val root =
+                try {
+                    Json.parseToJsonElement(json) as? JsonObject
+                } catch (e: Exception) {
+                    null
+                } ?: return null
+            val status = root["status"] as? JsonPrimitive
+            if (status != null && status.isString && status.content.equals("ERROR", ignoreCase = true)) return null
+
+            val allows = root["allowsNostr"] as? JsonPrimitive
+            val key = (root["nostrPubkey"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.lowercase()
+            return LnurlEndpointInfo(
+                nostrPubkey = key?.takeIf { it.length == 64 && Hex.isHex64(it) },
+                allowsNostr = allows != null && !allows.isString && allows.booleanOrNull == true,
+            )
+        }
+    }
+}
