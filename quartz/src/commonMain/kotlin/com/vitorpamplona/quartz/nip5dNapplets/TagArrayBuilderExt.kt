@@ -21,7 +21,29 @@
 package com.vitorpamplona.quartz.nip5dNapplets
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip5dNapplets.tags.ArchetypeTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.ArtifactHashTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.IntentTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIconTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
+import com.vitorpamplona.quartz.nip5dNapplets.tags.OptionalNapTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.RequiredNapTag
 import com.vitorpamplona.quartz.nip5dNapplets.tags.RequiresTag
 
+/** Legacy `requires` tags. New manifests declare [nappletRequired] and [nappletOptional] instead. */
 fun <T : Event> TagArrayBuilder<T>.nappletRequires(napNames: List<String>) = addAll(RequiresTag.assemble(napNames))
+
+fun <T : Event> TagArrayBuilder<T>.nappletRequired(napNames: List<String>) = addAll(RequiredNapTag.assemble(napNames))
+
+fun <T : Event> TagArrayBuilder<T>.nappletOptional(napNames: List<String>) = addAll(OptionalNapTag.assemble(napNames))
+
+fun <T : Event> TagArrayBuilder<T>.nappletArchetypes(archetypes: List<String>) = addAll(ArchetypeTag.assemble(archetypes))
+
+fun <T : Event> TagArrayBuilder<T>.nappletIntents(intents: List<NappletIntent>) = addAll(IntentTag.assemble(intents))
+
+fun <T : Event> TagArrayBuilder<T>.nappletIcon(icon: NappletIcon) = addUnique(NappletIconTag.assemble(icon))
+
+fun <T : Event> TagArrayBuilder<T>.nappletArtifactHash(artifactHash: HexKey) = addUnique(ArtifactHashTag.assemble(artifactHash))

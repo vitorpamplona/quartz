@@ -24,7 +24,9 @@ import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
- * NIP-5D capability-requirement tag: `["requires", "<nap-name>"]`.
+ * Legacy NIP-5D capability-requirement tag: `["requires", "<nap-name>"]`, replaced by `R`
+ * ([RequiredNapTag]) and `O` ([OptionalNapTag]). Still read so napplets published before the change
+ * keep their declarations.
  *
  * Each value is a bare NAP domain the napplet needs from its shell — e.g.
  * `relay`, `identity`, `storage` — never the `NAP-RELAY` spec name. A shell uses

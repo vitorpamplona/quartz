@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -36,12 +37,14 @@ import com.vitorpamplona.quartz.nip5aStaticWebsites.siteServers
 import com.vitorpamplona.quartz.nip5aStaticWebsites.siteSource
 import com.vitorpamplona.quartz.nip5aStaticWebsites.siteTitle
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * NIP-5D **named napplet** (kind 35129) — an addressable manifest identified by a
- * `d` tag, so one pubkey can publish many named napplets. Carries the NIP-5A tag
- * set; the `x` aggregate hash is recommended and included by [build].
+ * `d` tag, so one pubkey can publish many named napplets. See [NappletManifest] for
+ * the tags it carries.
  */
 @Immutable
 class NamedNappletEvent(
@@ -68,6 +71,47 @@ class NamedNappletEvent(
     companion object {
         const val KIND = 35129
 
+        /**
+         * A manifest for the single self-contained `/index.html` whose sha256 is [artifactHash].
+         * [description] becomes the event content and MUST NOT be blank; [required] and [optional]
+         * become the `R` and `O` tags.
+         */
+        fun build(
+            identifier: String,
+            artifactHash: HexKey,
+            description: String,
+            servers: List<String> = emptyList(),
+            required: List<String> = emptyList(),
+            optional: List<String> = emptyList(),
+            archetypes: List<String> = emptyList(),
+            intents: List<NappletIntent> = emptyList(),
+            icon: NappletIcon? = null,
+            title: String? = null,
+            source: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NamedNappletEvent>.() -> Unit = {},
+        ): EventTemplate<NamedNappletEvent> {
+            require(description.isNotBlank()) { "NIP-5D: a napplet manifest needs a non-empty description" }
+            return eventTemplate(KIND, description, createdAt) {
+                dTag(identifier)
+                nappletArtifactHash(artifactHash)
+                if (servers.isNotEmpty()) siteServers(servers)
+                if (required.isNotEmpty()) nappletRequired(required)
+                if (optional.isNotEmpty()) nappletOptional(optional)
+                if (archetypes.isNotEmpty()) nappletArchetypes(archetypes)
+                if (intents.isNotEmpty()) nappletIntents(intents)
+                icon?.let { nappletIcon(it) }
+                title?.let { siteTitle(it) }
+                source?.let { siteSource(it) }
+                initializer()
+            }
+        }
+
+        @Deprecated(
+            "NIP-5D napplets are now one self-contained /index.html addressed by a bare x tag, with the description " +
+                "in content and R/O capability tags. Use the build(…, artifactHash, description, …) overload; publish a " +
+                "multi-file app as a NIP-5A nsite.",
+        )
         fun build(
             identifier: String,
             paths: List<PathTag>,

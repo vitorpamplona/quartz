@@ -32,6 +32,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+/** The multi-file form napplets used before NIP-5D moved to a single artifact; still read. */
+@Suppress("DEPRECATION")
 class NappletEventTest {
     private val zero = "00".repeat(32)
     private val h1 = "11".repeat(32)
