@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nipXXPodcasting20
 
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip50Search.IndexableFields
 import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
@@ -225,7 +226,7 @@ class Podcasting20EpisodeEventTest {
     }
 
     @Test
-    fun `a playback-progress record on the same kind is unrecognized and not searchable`() {
+    fun `a drss listening-progress record on the same kind is not an episode and not searchable`() {
         // Verbatim from wss://relay.nostr.io, 2026-10-28: drss.io's listening position in a podcast
         // episode it bridged as a long-form article, keyed by the article's own `d`.
         val json =
@@ -249,7 +250,8 @@ class Podcasting20EpisodeEventTest {
         val event = Event.fromJson(json)
         assertFalse(event is PodcastEpisode)
         assertFalse(event is SearchableEvent)
-        assertIs<UnrecognizedKind30054Event>(event)
+        assertIs<DrssListenProgressEvent>(event)
+        assertEquals(733L, event.position())
         assertEquals(IndexableFields.None, SearchFieldExtractor.extract(event))
         // Still addressable: stores replace and delete it by `d`.
         assertEquals("981a23b01dc9f1a65527b005b2e8af0a6e38a5c6af460692ab7b0c2cac692160", event.dTag())
