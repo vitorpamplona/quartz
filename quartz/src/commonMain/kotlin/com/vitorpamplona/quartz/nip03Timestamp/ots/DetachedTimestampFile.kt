@@ -138,7 +138,7 @@ class DetachedTimestampFile(
          */
         @Throws(DeserializationException::class)
         fun deserialize(ctx: StreamDeserializationContext): DetachedTimestampFile {
-            ctx.assertMagic(HEADER_MAGIC)
+            if (!ctx.assertMagic(HEADER_MAGIC)) throw DeserializationException("Not an OpenTimestamps proof: bad header magic")
             ctx.readVaruint()
 
             val fileHashOp =
