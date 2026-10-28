@@ -44,15 +44,6 @@ class CallOfferEvent(
 
     fun sdpOffer() = content
 
-    /** All pubkeys referenced by `p` tags in this offer. */
-    fun recipientPubKeys(): Set<HexKey> = recipientKeys().toSet()
-
-    /**
-     * All group members for this call: the `p`-tagged recipients plus the
-     * event author (caller).  For 1-to-1 calls the set has two elements.
-     */
-    fun groupMembers(): Set<HexKey> = recipientPubKeys().plus(pubKey)
-
     /** True when this offer targets more than one callee. */
     fun isGroupCall(): Boolean = recipientPubKeys().size > 1
 

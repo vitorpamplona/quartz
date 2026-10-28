@@ -39,12 +39,6 @@ class CallAnswerEvent(
 ) : WebRTCEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
     fun sdpAnswer() = content
 
-    /** All pubkeys referenced by `p` tags in this event. */
-    fun recipientPubKeys(): Set<HexKey> = recipientKeys().toSet()
-
-    /** All group members: `p`-tagged pubkeys plus the event author. */
-    fun groupMembers(): Set<HexKey> = recipientPubKeys().plus(pubKey)
-
     companion object {
         const val KIND = 25051
 

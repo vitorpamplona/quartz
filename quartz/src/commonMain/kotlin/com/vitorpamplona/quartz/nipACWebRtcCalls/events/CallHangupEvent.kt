@@ -39,12 +39,6 @@ class CallHangupEvent(
 ) : WebRTCEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
     fun reason() = content.ifEmpty { null }
 
-    /** All pubkeys referenced by `p` tags in this event. */
-    fun recipientPubKeys(): Set<HexKey> = recipientKeys().toSet()
-
-    /** All group members: `p`-tagged pubkeys plus the event author. */
-    fun groupMembers(): Set<HexKey> = recipientPubKeys().plus(pubKey)
-
     companion object {
         const val KIND = 25053
 

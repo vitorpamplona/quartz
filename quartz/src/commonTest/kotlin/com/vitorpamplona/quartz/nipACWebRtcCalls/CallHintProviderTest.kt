@@ -65,8 +65,8 @@ class CallHintProviderTest {
         signals.forEach { signal ->
             val name = signal::class.simpleName
             assertIs<PubKeyHintProvider>(signal, name)
-            assertEquals(listOf(a, b), signal.recipientKeys(), name)
-            assertEquals(listOf(a, b), signal.recipients().map { it.pubKey }, name)
+            assertEquals(setOf(a, b), signal.recipientPubKeys(), name)
+            assertEquals(setOf(a, b, caller), signal.groupMembers(), name)
             assertEquals(listOf(a, b), signal.linkedPubKeys(), name)
             assertEquals(listOf(a), signal.pubKeyHints().map { it.pubkey }, name)
             assertEquals(listOf(relay), signal.pubKeyHints().map { it.relay.url }, name)
@@ -74,11 +74,21 @@ class CallHintProviderTest {
     }
 
     @Test
-    fun recipientPubKeysIsTheSetOfRecipientKeys() {
+    fun aRepeatedRecipientIsLinkedOnce() {
         val offer = CallOfferEvent(id, caller, 1, tags + arrayOf(arrayOf("p", a)), "sdp", sig)
-        assertEquals(listOf(a, b, a), offer.recipientKeys())
-        assertEquals(setOf(a, b), offer.recipientPubKeys())
-        assertEquals(setOf(a, b, caller), offer.groupMembers())
+        assertEquals(listOf(a, b), offer.linkedPubKeys())
+    }
+
+    @Test
+    fun theSenderIsNeverItsOwnRecipient() {
+        // NIP-AC multi-device: "answered elsewhere" is an answer addressed to the sender's own key,
+        // and a group answer or reject names every member, the sender included.
+        val elsewhere = CallAnswerEvent(id, caller, 1, arrayOf(arrayOf("p", caller), arrayOf("call-id", "c1")), "", sig)
+        assertEquals(setOf(caller), elsewhere.recipientPubKeys())
+        assertEquals(emptyList(), elsewhere.linkedPubKeys())
+
+        val groupReject = CallRejectEvent(id, caller, 1, arrayOf(arrayOf("p", a), arrayOf("p", caller), arrayOf("p", b)), "", sig)
+        assertEquals(listOf(a, b), groupReject.linkedPubKeys())
     }
 
     @Test

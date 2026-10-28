@@ -28,14 +28,14 @@ import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
-import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUsers
 import com.vitorpamplona.quartz.nipACWebRtcCalls.tags.CallIdTag
 
 /**
- * A NIP-AC call signal. Every kind addresses its recipients with `p` tags; in a group call,
- * every kind but ICE candidates (which name only the peer) carries one per group member. The
- * signals travel inside ephemeral gift wraps (kind 21059), so these hints and links only apply
- * once a signal is unwrapped.
+ * A NIP-AC call signal. Its `p` tags name the call's members: the addressee in a one-to-one
+ * call; in a group call, every member (all kinds but ICE candidates, which name only the peer).
+ * A multi-device "answered/rejected elsewhere" signal names its own sender. The signals travel
+ * inside ephemeral gift wraps (kind 21059), so these hints and links only apply once a signal
+ * is unwrapped.
  */
 @Immutable
 abstract class WebRTCEvent(
@@ -50,14 +50,17 @@ abstract class WebRTCEvent(
     PubKeyHintProvider {
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
-    /** `RECIPIENT`: the users this signal is addressed to (`p`). */
-    override fun linkedPubKeys(): List<HexKey> = recipientKeys()
+    /** `RECIPIENT`: the users the signal names in `p`, without the sender (see the class KDoc). */
+    override fun linkedPubKeys(): List<HexKey> = recipientPubKeys().filter { it != pubKey }
 
     fun callId() = tags.firstNotNullOfOrNull(CallIdTag::parse)
 
-    /** The users this signal is addressed to (`p`), in tag order. */
-    fun recipients(): List<PTag> = tags.taggedUsers()
+    /** All pubkeys referenced by `p` tags in this event, in tag order. */
+    fun recipientPubKeys(): Set<HexKey> = tags.taggedUserIds().toSet()
 
-    /** The keys of [recipients] (`p`), in tag order. */
-    fun recipientKeys(): List<HexKey> = tags.taggedUserIds()
+    /**
+     * All group members for this call: the `p`-tagged recipients plus the
+     * event author. For 1-to-1 calls the set has two elements.
+     */
+    fun groupMembers(): Set<HexKey> = recipientPubKeys().plus(pubKey)
 }
