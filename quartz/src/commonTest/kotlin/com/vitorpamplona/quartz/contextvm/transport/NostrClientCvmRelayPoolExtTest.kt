@@ -34,7 +34,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
-import kotlin.test.assertTrue
 
 /**
  * The adapter between quartz's relay client and what ContextVM asks of one.
@@ -45,14 +44,14 @@ import kotlin.test.assertTrue
  * response dropped because it arrived as a stored event, and a subscription
  * left open after the call that made it returned.
  */
-class NostrClientCvmRelayPoolTest {
+class NostrClientCvmRelayPoolExtTest {
     private val serverRelay = relay("wss://server.example")
     private val otherRelay = relay("wss://elsewhere.example")
 
     @Test
     fun subscribesOnlyToTheRelaysItWasGiven() {
         val client = RecordingClient()
-        val pool = NostrClientCvmRelayPool(client, setOf(serverRelay))
+        val pool = client.cvmRelayPool(setOf(serverRelay))
 
         pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE)) { }
 
@@ -67,7 +66,7 @@ class NostrClientCvmRelayPoolTest {
     @Test
     fun filtersOnKindAndOnTheRecipientPTag() {
         val client = RecordingClient()
-        val pool = NostrClientCvmRelayPool(client, setOf(serverRelay, otherRelay))
+        val pool = client.cvmRelayPool(setOf(serverRelay, otherRelay))
 
         pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE, CvmKinds.GIFT_WRAP)) { }
 
@@ -85,26 +84,31 @@ class NostrClientCvmRelayPoolTest {
     }
 
     @Test
-    fun sendsTheFilterTheCallerBuildsUnderItsPrefix() {
+    fun sendsTheFilterTheCallerBuilds() {
         val client = RecordingClient()
         val built = mutableListOf<Filter>()
         val pool =
-            NostrClientCvmRelayPool(client, setOf(serverRelay), subIdPrefix = "cordn") { pubKey: HexKey, kinds: IntArray ->
-                NostrClientCvmRelayPool.addressedTo(pubKey, kinds).also { built += it }
+            client.cvmRelayPool(setOf(serverRelay)) { pubKey: HexKey, kinds: IntArray ->
+                cvmAddressedTo(pubKey, kinds).also { built += it }
             }
 
         pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE)) { }
 
-        val req = client.subscribed.single()
-        assertSame(built.single(), req.filters.getValue(serverRelay).single())
-        assertTrue(req.subId.startsWith("cordn-"), req.subId)
+        assertSame(
+            built.single(),
+            client.subscribed
+                .single()
+                .filters
+                .getValue(serverRelay)
+                .single(),
+        )
     }
 
     @Test
     fun deliversAStoredEventAsReadilyAsALiveOne() =
         runTest {
             val client = RecordingClient()
-            val pool = NostrClientCvmRelayPool(client, setOf(serverRelay))
+            val pool = client.cvmRelayPool(setOf(serverRelay))
 
             val seen = mutableListOf<Event>()
             pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE)) { seen += it }
@@ -124,7 +128,7 @@ class NostrClientCvmRelayPoolTest {
     @Test
     fun closingASubscriptionUnsubscribesThatIdAndNoOther() {
         val client = RecordingClient()
-        val pool = NostrClientCvmRelayPool(client, setOf(serverRelay))
+        val pool = client.cvmRelayPool(setOf(serverRelay))
 
         val first = pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE)) { }
         pool.subscribe(SERVER, intArrayOf(CvmKinds.MESSAGE)) { }
@@ -145,7 +149,7 @@ class NostrClientCvmRelayPoolTest {
     fun publishesToTheServerRelays() =
         runTest {
             val client = RecordingClient()
-            val pool = NostrClientCvmRelayPool(client, setOf(serverRelay, otherRelay))
+            val pool = client.cvmRelayPool(setOf(serverRelay, otherRelay))
 
             pool.publish(response())
 

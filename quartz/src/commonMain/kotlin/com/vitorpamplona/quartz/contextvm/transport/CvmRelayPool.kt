@@ -34,7 +34,7 @@ interface CvmSubscription {
  * Deliberately tiny and transport-agnostic: everything above it is pure
  * protocol, and the Tier C fixture implements this same interface to play a
  * misbehaving peer without any network. The production binding wraps quartz's
- * relay client: [NostrClientCvmRelayPool].
+ * relay client: [cvmRelayPool].
  */
 interface CvmRelayPool {
     /**

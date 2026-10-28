@@ -82,7 +82,7 @@ is fine; do not paste spec prose into this repo.
    the ordering is the transport's job, not the caller's. `InMemoryRelayPool`
    drops an event nobody is listening for, so the property is tested rather
    than assumed. Over a real relay client the pool is
-   `NostrClientCvmRelayPool`, given the server's relays, never the user's.
+   `INostrClient.cvmRelayPool(relays)`, given the server's relays, never the user's.
 
 2. **CEP-41 has two independent ordering fields.** `progress` orders every
    frame, control frames included, and is explicitly *not* a chunk counter;
