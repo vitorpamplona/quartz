@@ -31,9 +31,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class Nip05Parser {
-    fun toJson(keyInfo: KeyInfoSet) = Json.encodeToString(keyInfo)
+    fun toJson(keyInfo: KeyInfoSet) = writer.encodeToString(keyInfo)
 
-    fun parse(json: String) = Json.decodeFromString<KeyInfoSet>(json)
+    /**
+     * The whole document. Fields beside `names` and `relays` (`nip46`, `clink_offer`, …) are
+     * skipped: NIP-05 lets a domain add its own, and most documents carry no `relays` at all.
+     */
+    fun parse(json: String) = reader.decodeFromString<KeyInfoSet>(json)
 
     fun parseHexKey(
         nip05: Nip05Id,
@@ -141,5 +145,12 @@ class Nip05Parser {
         } else {
             null
         }
+    }
+
+    private companion object {
+        val reader = Json { ignoreUnknownKeys = true }
+
+        // Writes `relays` even when empty, as before the defaults.
+        val writer = Json { encodeDefaults = true }
     }
 }
