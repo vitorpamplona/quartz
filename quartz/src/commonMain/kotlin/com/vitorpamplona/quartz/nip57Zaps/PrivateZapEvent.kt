@@ -23,9 +23,13 @@ package com.vitorpamplona.quartz.nip57Zaps
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.tagArray
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -73,19 +77,31 @@ class PrivateZapEvent(
         const val KIND = 9733
         const val ALT = "Private zap"
 
+        /**
+         * The hidden copy of a private zap request: the request's [requestTags] (without its `anon`
+         * marker), kept in their order, and the zapper's [message]. The copy is encrypted into the
+         * public request's `anon` tag (PrivateZapRequestBuilder).
+         */
+        fun build(
+            requestTags: TagArray,
+            message: String = "",
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<PrivateZapEvent>.() -> Unit = {},
+        ) = EventTemplate<PrivateZapEvent>(createdAt, KIND, requestTags + tagArray(initializer), message)
+
         suspend fun create(
             signer: NostrSigner,
             tags: Array<Array<String>> = emptyArray(),
             content: String = "",
             createdAt: Long = TimeUtils.now(),
-        ): PrivateZapEvent = signer.sign(createdAt, KIND, tags, content)
+        ): PrivateZapEvent = signer.sign(build(tags, content, createdAt))
 
         fun create(
             signer: NostrSignerSync,
             tags: Array<Array<String>> = emptyArray(),
             content: String = "",
             createdAt: Long = TimeUtils.now(),
-        ): PrivateZapEvent = signer.sign(createdAt, KIND, tags, content)
+        ): PrivateZapEvent = signer.sign(build(tags, content, createdAt))
     }
 }
 

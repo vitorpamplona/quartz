@@ -24,10 +24,13 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Notification
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -64,6 +67,18 @@ class NwcNotificationEvent(
         const val KIND = 23197
         const val LEGACY_KIND = 23196
 
+        /** The unsigned notification: [notification] NIP-44 encrypted by [signer] to [client]. */
+        suspend fun build(
+            notification: Notification,
+            client: HexKey,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NwcNotificationEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(notification), client), createdAt) {
+            pTag(PTag(client))
+            initializer()
+        }
+
         /**
          * Creates an NWC notification event (server-side).
          * Uses NIP-44 encryption (kind 23197).
@@ -78,17 +93,6 @@ class NwcNotificationEvent(
             clientPubkey: HexKey,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): NwcNotificationEvent {
-            val serialized = OptimizedJsonMapper.toJson(notification)
-
-            val tags =
-                arrayOf(
-                    arrayOf("p", clientPubkey),
-                )
-
-            val encrypted = signer.nip44Encrypt(serialized, clientPubkey)
-
-            return signer.sign(createdAt, KIND, tags, encrypted)
-        }
+        ): NwcNotificationEvent = signer.sign(build(notification, clientPubkey, signer, createdAt))
     }
 }

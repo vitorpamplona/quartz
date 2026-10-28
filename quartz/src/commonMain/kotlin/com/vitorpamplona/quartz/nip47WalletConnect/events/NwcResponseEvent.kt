@@ -24,12 +24,17 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.eTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Response
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -73,6 +78,30 @@ class NwcResponseEvent(
     companion object {
         const val KIND = 23195
 
+        /** The unsigned answer to [request]: [response] encrypted by [signer] to the request's author. */
+        suspend fun build(
+            response: Response,
+            request: NwcRequestEvent,
+            signer: NostrSigner,
+            useNip44: Boolean = false,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NwcResponseEvent>.() -> Unit = {},
+        ): EventTemplate<NwcResponseEvent> {
+            val serializedResponse = OptimizedJsonMapper.toJson(response)
+            val encrypted =
+                if (useNip44) {
+                    signer.nip44Encrypt(serializedResponse, request.pubKey)
+                } else {
+                    signer.nip04Encrypt(serializedResponse, request.pubKey)
+                }
+
+            return eventTemplate(KIND, encrypted, createdAt) {
+                pTag(PTag(request.pubKey))
+                eTag(ETag(request.id))
+                initializer()
+            }
+        }
+
         /**
          * Creates an NWC response event (server-side).
          *
@@ -88,26 +117,7 @@ class NwcResponseEvent(
             signer: NostrSigner,
             useNip44: Boolean = false,
             createdAt: Long = TimeUtils.now(),
-        ): NwcResponseEvent {
-            val serializedResponse = OptimizedJsonMapper.toJson(response)
-
-            val clientPubkey = requestEvent.pubKey
-
-            val tags =
-                arrayOf(
-                    arrayOf("p", clientPubkey),
-                    arrayOf("e", requestEvent.id),
-                )
-
-            val encrypted =
-                if (useNip44) {
-                    signer.nip44Encrypt(serializedResponse, clientPubkey)
-                } else {
-                    signer.nip04Encrypt(serializedResponse, clientPubkey)
-                }
-
-            return signer.sign(createdAt, KIND, tags, encrypted)
-        }
+        ): NwcResponseEvent = signer.sign(build(response, requestEvent, signer, useNip44, createdAt))
     }
 }
 

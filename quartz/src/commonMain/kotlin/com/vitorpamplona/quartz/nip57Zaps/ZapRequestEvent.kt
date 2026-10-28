@@ -21,23 +21,25 @@
 package com.vitorpamplona.quartz.nip57Zaps
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.experimental.zapPolls.tags.PollOptionTag
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
-import com.vitorpamplona.quartz.nip01Core.tags.kinds.KindTag
+import com.vitorpamplona.quartz.nip01Core.tags.events.eTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip29RelayGroups.groupId
-import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -110,6 +112,91 @@ class ZapRequestEvent(
     companion object {
         const val KIND = 9734
 
+        /**
+         * A zap request for [zappedEvent], paying [recipient] (its author when null), with the
+         * receipt published to [relays]. [zapType] writes the `anon` marker: an ANONYMOUS request
+         * must be signed by a throwaway key, a PRIVATE one goes through PrivateZapRequestBuilder.
+         */
+        fun build(
+            zappedEvent: Event,
+            relays: Set<NormalizedRelayUrl>,
+            message: String,
+            zapType: ZapReceiptEvent.ZapType,
+            recipient: PTag? = null,
+            pollOption: Int? = null,
+            amountMillisats: Long? = null,
+            lnurl: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ZapRequestEvent>.() -> Unit = {},
+        ): EventTemplate<ZapRequestEvent> {
+            require(zapType != ZapReceiptEvent.ZapType.NONZAP) { "Invalid zap type" }
+            return eventTemplate(KIND, message, createdAt) {
+                eTag(ETag(zappedEvent.id))
+                pTag(recipient ?: PTag(zappedEvent.pubKey))
+                receiptRelays(relays)
+                zappedKind(zappedEvent.kind)
+                if (zappedEvent is AddressableEvent) zappedAddress(zappedEvent.address())
+                // Zapping NIP-29 group content is itself group content: carry the room's `h` tag so the
+                // receipt the provider publishes is scoped to the room, which is what lets the host relay
+                // serve it to the members (and to the recipient's `#h` notification query) instead of
+                // dropping an unscoped kind-9735 nobody in the group will ever see. Same rule reactions
+                // follow (ReactionAction copies the `h` tag onto the kind-7).
+                zappedEvent.groupId()?.let { zappedGroup(it) }
+                if (pollOption != null && pollOption >= 0) pollVote(pollOption)
+                zapTail(amountMillisats, lnurl, zapType)
+                initializer()
+            }
+        }
+
+        /** A zap request for a user's profile, paying [user], with the receipt published to [relays]. */
+        fun build(
+            user: PTag,
+            relays: Set<NormalizedRelayUrl>,
+            message: String,
+            zapType: ZapReceiptEvent.ZapType,
+            amountMillisats: Long? = null,
+            lnurl: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ZapRequestEvent>.() -> Unit = {},
+        ): EventTemplate<ZapRequestEvent> {
+            require(zapType != ZapReceiptEvent.ZapType.NONZAP) { "Invalid zap type" }
+            return eventTemplate(KIND, message, createdAt) {
+                pTag(user)
+                receiptRelays(relays)
+                zapTail(amountMillisats, lnurl, zapType)
+                initializer()
+            }
+        }
+
+        private fun TagArrayBuilder<ZapRequestEvent>.zapTail(
+            amountMillisats: Long?,
+            lnurl: String?,
+            zapType: ZapReceiptEvent.ZapType,
+        ) {
+            if (amountMillisats != null && amountMillisats > 0) amount(amountMillisats)
+            if (!lnurl.isNullOrBlank()) lnurl(lnurl)
+            when (zapType) {
+                // Valueless `anon` tag: a blank-valued one (`["anon", ""]`) is the
+                // marker for an *unsigned private* zap and would make the throwaway
+                // signer encrypt the message instead of keeping it public.
+                ZapReceiptEvent.ZapType.ANONYMOUS -> anonymous()
+                ZapReceiptEvent.ZapType.PRIVATE -> privateZap()
+                else -> {}
+            }
+        }
+
+        /** Signs [template] with [signer], or with a throwaway key when the zap is anonymous. */
+        private suspend fun sign(
+            template: EventTemplate<ZapRequestEvent>,
+            zapType: ZapReceiptEvent.ZapType,
+            signer: NostrSigner,
+        ): ZapRequestEvent =
+            if (zapType == ZapReceiptEvent.ZapType.ANONYMOUS) {
+                NostrSignerInternal(KeyPair()).sign(template)
+            } else {
+                signer.sign(template)
+            }
+
         suspend fun create(
             zappedEvent: Event,
             relays: Set<NormalizedRelayUrl>,
@@ -122,51 +209,8 @@ class ZapRequestEvent(
             lnurl: String? = null,
             createdAt: Long = TimeUtils.now(),
         ): ZapRequestEvent {
-            var tags =
-                listOf(
-                    arrayOf("e", zappedEvent.id),
-                    arrayOf("p", toUserPubHex ?: zappedEvent.pubKey),
-                    arrayOf("relays") + relays.map { it.url },
-                    KindTag.assemble(zappedEvent.kind),
-                )
-            if (zappedEvent is AddressableEvent) {
-                tags = tags + listOf(ATag.assemble(zappedEvent.address(), null))
-            }
-            // Zapping NIP-29 group content is itself group content: carry the room's `h` tag so the
-            // receipt the provider publishes is scoped to the room, which is what lets the host relay
-            // serve it to the members (and to the recipient's `#h` notification query) instead of
-            // dropping an unscoped kind-9735 nobody in the group will ever see. Same rule reactions
-            // follow (ReactionAction copies the `h` tag onto the kind-7).
-            zappedEvent.groupId()?.let { tags = tags + listOf(GroupIdTag.assemble(it)) }
-            if (pollOption != null && pollOption >= 0) {
-                tags = tags + listOf(arrayOf(PollOptionTag.TAG_NAME, pollOption.toString()))
-            }
-            if (amountMillisats != null && amountMillisats > 0) {
-                tags = tags + listOf(arrayOf("amount", amountMillisats.toString()))
-            }
-            if (!lnurl.isNullOrBlank()) {
-                tags = tags + listOf(arrayOf("lnurl", lnurl))
-            }
-
-            return when (zapType) {
-                ZapReceiptEvent.ZapType.PUBLIC -> {
-                    signer.sign(createdAt, KIND, tags.toTypedArray(), message)
-                }
-
-                ZapReceiptEvent.ZapType.ANONYMOUS -> {
-                    tags = tags + listOf(arrayOf("anon"))
-                    NostrSignerInternal(KeyPair()).sign(createdAt, KIND, tags.toTypedArray(), message)
-                }
-
-                ZapReceiptEvent.ZapType.PRIVATE -> {
-                    tags = tags + listOf(arrayOf("anon", ""))
-                    signer.sign(createdAt, KIND, tags.toTypedArray(), message)
-                }
-
-                ZapReceiptEvent.ZapType.NONZAP -> {
-                    throw IllegalArgumentException("Invalid zap type")
-                }
-            }
+            val template = build(zappedEvent, relays, message, zapType, toUserPubHex?.let { PTag(it) }, pollOption, amountMillisats, lnurl, createdAt)
+            return sign(template, zapType, signer)
         }
 
         suspend fun create(
@@ -178,42 +222,7 @@ class ZapRequestEvent(
             amountMillisats: Long? = null,
             lnurl: String? = null,
             createdAt: Long = TimeUtils.now(),
-        ): ZapRequestEvent {
-            var tags =
-                arrayOf(
-                    arrayOf("p", userHex),
-                    arrayOf("relays") + relays.map { it.url },
-                )
-            if (amountMillisats != null && amountMillisats > 0) {
-                tags += arrayOf(arrayOf("amount", amountMillisats.toString()))
-            }
-            if (!lnurl.isNullOrBlank()) {
-                tags += arrayOf(arrayOf("lnurl", lnurl))
-            }
-
-            return when (zapType) {
-                ZapReceiptEvent.ZapType.PUBLIC -> {
-                    signer.sign(createdAt, KIND, tags, message)
-                }
-
-                ZapReceiptEvent.ZapType.ANONYMOUS -> {
-                    // Valueless `anon` tag: a blank-valued one (`["anon", ""]`) is the
-                    // marker for an *unsigned private* zap and would make the throwaway
-                    // signer encrypt the message instead of keeping it public.
-                    tags += arrayOf(arrayOf("anon"))
-                    NostrSignerInternal(KeyPair()).sign(createdAt, KIND, tags, message)
-                }
-
-                ZapReceiptEvent.ZapType.PRIVATE -> {
-                    tags += arrayOf(arrayOf("anon", ""))
-                    signer.sign(createdAt, KIND, tags, message)
-                }
-
-                ZapReceiptEvent.ZapType.NONZAP -> {
-                    throw IllegalArgumentException("Invalid zap type")
-                }
-            }
-        }
+        ): ZapRequestEvent = sign(build(PTag(userHex), relays, message, zapType, amountMillisats, lnurl, createdAt), zapType, signer)
     }
 }
 

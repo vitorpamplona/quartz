@@ -24,10 +24,13 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -75,24 +78,23 @@ class NostrConnectEvent(
         const val KIND = 24133
         const val ALT = "Nostr Connect Event"
 
+        /** The unsigned NIP-46 envelope: [message] NIP-44 encrypted by [signer] to [remoteKey], which `p` names. */
+        suspend fun build(
+            message: BunkerMessage,
+            remoteKey: HexKey,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NostrConnectEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(message), remoteKey), createdAt) {
+            pTag(PTag(remoteKey))
+            initializer()
+        }
+
         suspend fun create(
             message: BunkerMessage,
             remoteKey: HexKey,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): NostrConnectEvent =
-            signer.sign(
-                createdAt = createdAt,
-                kind = KIND,
-                tags =
-                    arrayOf(
-                        arrayOf("p", remoteKey),
-                    ),
-                content =
-                    signer.nip44Encrypt(
-                        plaintext = OptimizedJsonMapper.toJson(message),
-                        toPublicKey = remoteKey,
-                    ),
-            )
+        ): NostrConnectEvent = signer.sign(build(message, remoteKey, signer, createdAt))
     }
 }

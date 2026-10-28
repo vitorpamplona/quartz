@@ -21,7 +21,20 @@
 package com.vitorpamplona.quartz.nipB7Blossom
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomHashTag
 import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomVerbTag
 
 /** BUD-03 `server` tags, in preference order. */
 fun TagArrayBuilder<BlossomServersEvent>.blossomServers(servers: List<String>) = addAll(servers.map { BlossomServerTag.assemble(it) })
+
+/** BUD-11 `t`: what the token allows (`upload`, `delete`, `list`, `get`, `media`). */
+fun TagArrayBuilder<BlossomAuthorizationEvent>.verb(verb: String) = addUnique(BlossomVerbTag.assemble(verb))
+
+fun TagArrayBuilder<BlossomAuthorizationEvent>.blobHash(hash: String) = add(BlossomHashTag.assemble(hash))
+
+fun TagArrayBuilder<BlossomAuthorizationEvent>.blobSize(size: Long) = addUnique(BlossomSizeTag.assemble(size))
+
+/** BUD-11 `server` tags: the bare domains the token is scoped to. */
+fun TagArrayBuilder<BlossomAuthorizationEvent>.serverDomains(domains: List<String>) = addAll(domains.map { BlossomServerTag.assemble(it) })

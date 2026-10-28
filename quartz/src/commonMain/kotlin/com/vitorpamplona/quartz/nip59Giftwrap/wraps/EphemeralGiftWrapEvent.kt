@@ -23,8 +23,10 @@ package com.vitorpamplona.quartz.nip59Giftwrap.wraps
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -57,24 +59,25 @@ class EphemeralGiftWrapEvent(
         const val KIND = 21059
         const val ALT = "Ephemeral encrypted event"
 
+        /** The unsigned wrap: [event] NIP-44 encrypted by [wrapSigner], the throwaway key that signs it, to [recipient]. */
+        fun build(
+            event: Event,
+            recipient: PTag,
+            wrapSigner: NostrSignerSync,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<EphemeralGiftWrapEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, wrapSigner.nip44Encrypt(event.toJson(), recipient.pubKey), createdAt) {
+            recipient(recipient)
+            initializer()
+        }
+
         fun create(
             event: Event,
             recipientPubKey: HexKey,
             createdAt: Long = TimeUtils.now(),
         ): EphemeralGiftWrapEvent {
             val signer = NostrSignerSync(KeyPair())
-
-            val tags =
-                arrayOf(
-                    PTag.assemble(recipientPubKey, null),
-                )
-
-            return signer.sign(
-                createdAt = createdAt,
-                kind = KIND,
-                tags = tags,
-                content = signer.nip44Encrypt(event.toJson(), recipientPubKey),
-            )
+            return signer.sign(build(event, PTag(recipientPubKey), signer, createdAt))
         }
     }
 }
