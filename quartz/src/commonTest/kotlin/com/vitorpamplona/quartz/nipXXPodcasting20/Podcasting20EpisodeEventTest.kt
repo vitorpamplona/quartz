@@ -20,17 +20,25 @@
  */
 package com.vitorpamplona.quartz.nipXXPodcasting20
 
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
+import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
+import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.edit
 import com.vitorpamplona.quartz.podcasts.PodcastAudio
 import com.vitorpamplona.quartz.podcasts.PodcastEpisode
 import com.vitorpamplona.quartz.podcasts.PodcastValue
 import com.vitorpamplona.quartz.podcasts.PodcastValueRecipient
 import com.vitorpamplona.quartz.utils.DeterministicSigner
+import com.vitorpamplona.quartz.utils.EventFactory
 import com.vitorpamplona.quartz.utils.nsecToKeyPair
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -215,5 +223,53 @@ class Podcasting20EpisodeEventTest {
         assertEquals(3600L, event.durationInSeconds())
         assertEquals(3, event.topics().size)
         assertEquals("https://example.com/episodes/episode-001.mp3", event.audios()[0].url)
+    }
+
+    @Test
+    fun `a drss listening-progress record on the same kind is not an episode and not searchable`() {
+        // Verbatim from wss://relay.nostr.io, 2026-10-28: drss.io's listening position in a podcast
+        // episode it bridged as a long-form article, keyed by the article's own `d`.
+        val json =
+            """
+            {
+              "id": "3ee5c5b34d270521515371e718cb439f7879753c8bd17a1071f3b45c6b80af63",
+              "pubkey": "dd81a8bacbab0b5c3007d1672fb8301383b4e9583d431835985057223eb298a5",
+              "created_at": 1793192579,
+              "kind": 30054,
+              "tags": [
+                ["d", "981a23b01dc9f1a65527b005b2e8af0a6e38a5c6af460692ab7b0c2cac692160"],
+                ["a", "30023:2b5291468087688f8bc91037e732ea07a81736a7289ff1cc38a820c9628082ec:981a23b01dc9f1a65527b005b2e8af0a6e38a5c6af460692ab7b0c2cac692160"],
+                ["position", "733"],
+                ["duration", "2744"]
+              ],
+              "content": "",
+              "sig": "526bd215c606fd1feeba5e7a91daaa9732746923a95575ad8b88a884133266aa2aaef603d80371f4232b6911b054985e97e1d599e40cf0cf2ec22907061f29db"
+            }
+            """.trimIndent()
+
+        val event = Event.fromJson(json)
+        assertFalse(event is PodcastEpisode)
+        assertFalse(event is SearchableEvent)
+        assertIs<DrssListenProgressEvent>(event)
+        assertEquals(733L, event.position())
+        assertEquals(IndexableFields.None, SearchFieldExtractor.extract(event))
+        // Still addressable: stores replace and delete it by `d`.
+        assertEquals("981a23b01dc9f1a65527b005b2e8af0a6e38a5c6af460692ab7b0c2cac692160", event.dTag())
+    }
+
+    @Test
+    fun `an episode with only a title, an audio or a video is still an episode`() {
+        fun parse(vararg tags: Array<String>) = EventFactory.create<Event>("11".repeat(32), "22".repeat(32), 1_699_123_456L, 30054, arrayOf(arrayOf("d", "ep"), *tags), "", "00".repeat(64))
+
+        assertIs<Podcasting20EpisodeEvent>(parse(arrayOf("title", "Episode 1")))
+        assertIs<Podcasting20EpisodeEvent>(parse(arrayOf("audio", "https://example.com/ep.mp3")))
+        assertIs<Podcasting20EpisodeEvent>(parse(arrayOf("video", "https://example.com/ep.mp4")))
+        assertIs<UnrecognizedKind30054Event>(parse(arrayOf("title", " ")))
+        assertIs<UnrecognizedKind30054Event>(parse())
+    }
+
+    @Test
+    fun `probe answers as the episode`() {
+        assertIs<Podcasting20EpisodeEvent>(EventFactory.probe(30054))
     }
 }

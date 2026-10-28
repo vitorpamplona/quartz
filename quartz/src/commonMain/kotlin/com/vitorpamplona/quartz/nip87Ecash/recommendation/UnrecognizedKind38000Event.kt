@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip87Ecash.recommendation
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-38000 event that is none of the formats Amethyst reads on that number — not a NIP-87
@@ -41,4 +42,5 @@ class UnrecognizedKind38000Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, MintRecommendationEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, MintRecommendationEvent.KIND, tags, content, sig),
+    UnrecognizedShape

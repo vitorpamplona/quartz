@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-38385 event that is not a [MostroInfoEvent]: Paygress lease revocations
@@ -40,4 +41,5 @@ class UnrecognizedKind38385Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, MostroInfoEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, MostroInfoEvent.KIND, tags, content, sig),
+    UnrecognizedShape
