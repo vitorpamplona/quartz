@@ -23,6 +23,8 @@ package com.vitorpamplona.quartz.nip5dNapplets
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.IEvent
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
@@ -39,7 +41,9 @@ import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
  * the intents it accepts (`i`, [intents]), a content-addressed [icon], Blossom [servers], a [title]
  * and a [source] location. Declarations are routing hints from untrusted content, never grants.
  */
-interface NappletManifest : IEvent {
+interface NappletManifest :
+    IEvent,
+    SearchableEvent {
     val tags: TagArray
     val content: String
 
@@ -50,8 +54,9 @@ interface NappletManifest : IEvent {
     fun artifactFile(): PathTag? = artifact()?.let { PathTag(INDEX_PATH, it) }
 
     /**
-     * Whether the manifest meets NIP-5D's MUSTs: exactly one `x` tag and a non-empty description.
-     * A runtime MUST reject one that doesn't; it MUST still verify the signature and the blob's hash.
+     * Whether the manifest meets NIP-5D's MUSTs: exactly one `x` tag and a non-empty description
+     * (each kind adds its own `d` and lineage rules). A runtime MUST reject one that doesn't; it
+     * MUST still verify the signature and the blob's hash.
      */
     fun isValid(): Boolean = artifact() != null && content.isNotBlank()
 
@@ -83,6 +88,16 @@ interface NappletManifest : IEvent {
      * shell SHOULD reject the napplet, or warn, when this is not empty. Optional domains never count.
      */
     fun missingRequired(available: Set<String>): List<String> = required().filter { it !in available }
+
+    // NIP-50: what the manifest says about itself, its title and description.
+    override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
+
+    // The read path: the same fields indexableContent() joins, handed over without building the
+    // joined string a scan would throw away.
+    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
+        if (!visitor.visit(title())) return
+        visitor.visit(description())
+    }
 
     companion object {
         /** Where the artifact is served. */

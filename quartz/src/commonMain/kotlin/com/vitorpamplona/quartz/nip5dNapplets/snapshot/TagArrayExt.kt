@@ -20,14 +20,42 @@
  */
 package com.vitorpamplona.quartz.nip5dNapplets.snapshot
 
+import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
-import com.vitorpamplona.quartz.nip5dNapplets.snapshot.tags.OriginTag
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.OriginSiteTag
+import com.vitorpamplona.quartz.nip5dNapplets.named.NamedNappletEvent
+import com.vitorpamplona.quartz.nip5dNapplets.root.RootNappletEvent
 
-/** The `a` tag: the napplet a snapshot derives from. Null when absent or malformed. */
-fun TagArray.parent() = firstNotNullOfOrNull(ATag::parseAddress)
+// NIP-5D lineage: at most one `a` (the antecedent) and one `A` (the root of the line), each
+// addressing a napplet. A repeated tag, or one addressing any other kind, counts as absent, and the
+// hints come from the same single tag the address does, so they never point anywhere else.
 
-/** The `A` tag: the root napplet a snapshot's lineage starts from. Null when absent or malformed. */
-fun TagArray.origin() = firstNotNullOfOrNull(OriginTag::parseAddress)
+private val NAPPLET_ADDRESS_KINDS = setOf(RootNappletEvent.KIND, NamedNappletEvent.KIND)
 
-fun TagArray.lineageHints() = mapNotNull(ATag::parseAsHint) + mapNotNull(OriginTag::parseAsHint)
+/** The `a` tag: the napplet a snapshot derives from. */
+fun TagArray.parent(): Address? = singleNamed(ATag.TAG_NAME)?.let(ATag::parseAddress)?.takeIf { it.kind in NAPPLET_ADDRESS_KINDS }
+
+/** The `A` tag: the root napplet a snapshot's lineage starts from. */
+fun TagArray.origin(): Address? = singleNamed(OriginSiteTag.TAG_NAME)?.let(OriginSiteTag::parseAddress)?.takeIf { it.kind in NAPPLET_ADDRESS_KINDS }
+
+fun TagArray.parentHint(): AddressHint? = singleNamed(ATag.TAG_NAME)?.let(ATag::parseAsHint)?.takeIf { it.isNappletAddress() }
+
+fun TagArray.originHint(): AddressHint? = singleNamed(OriginSiteTag.TAG_NAME)?.let(OriginSiteTag::parseAsHint)?.takeIf { it.isNappletAddress() }
+
+private fun AddressHint.isNappletAddress() = AddressSerializer.parse(addressId)?.kind in NAPPLET_ADDRESS_KINDS
+
+private fun TagArray.singleNamed(name: String): Array<String>? {
+    var found: Array<String>? = null
+    fastForEach {
+        if (it.has(0) && it[0] == name) {
+            if (found != null) return null
+            found = it
+        }
+    }
+    return found
+}

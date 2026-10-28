@@ -65,7 +65,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 5050 | DvmTextGenerationRequestEvent | nip90Dvms/textGeneration | `inputs().filter { it.type == "prompt" \|\| it.type == "text" }.joinToString(" ") { it.value }` (SP) |
 | 5100 | DvmImageGenerationRequestEvent | nip90Dvms/imageGeneration | `listOfNotNull(prompt(), negativePrompt()).joinToString(" ")` (SP) |
 | 5128 | SiteSnapshotEvent | nip5aStaticWebsites | `listOfNotNull(title(), description())` NL |
-| 5129 | NappletSnapshotEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content`, else the legacy `description` tag |
+| 5129 | NappletSnapshotEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content` |
 | 5250 | DvmTextToSpeechRequestEvent | nip90Dvms/textToSpeech | `text() ?: ""` |
 | 5302 | DvmContentSearchRequestEvent | nip90Dvms/contentSearch | `searchQuery() ?: ""` |
 | 5303 | DvmPeopleSearchRequestEvent | nip90Dvms/peopleSearch | `searchQuery() ?: ""` |
@@ -98,7 +98,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 11871 | AttestorProficiencyEvent | experimental/attestations/proficiency | `listOfNotNull(description())` NL |
 | 12473 | BirdexEvent | experimental/birdstar | `(listOfNotNull(summary()) + speciesNames())` NL |
 | 15128 | RootSiteEvent | nip5aStaticWebsites | `listOfNotNull(title(), description())` NL |
-| 15129 | RootNappletEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content`, else the legacy `description` tag |
+| 15129 | RootNappletEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content` |
 | 30000 | FollowSetEvent | nip51Lists/followSet | `listOfNotNull(titleOrName(), description())` NL |
 | 30001 | OldBookmarkListEvent | nip51Lists/bookmarkList | `listOfNotNull(title())` NL |
 | 30002 | RelaySetEvent | nip51Lists/relaySets | `listOfNotNull(title(), description())` NL |
@@ -182,7 +182,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 34550 | CommunityDefinitionEvent | nip72ModCommunities/definition | `listOfNotNull(name(), description(), rules(), content)` NL |
 | 34609 | MagazineEvent | experimental/pressstr/magazine | `listOfNotNull(title(), summary(), content)` NL |
 | 35128 | NamedSiteEvent | nip5aStaticWebsites | `listOfNotNull(title(), description())` NL |
-| 35129 | NamedNappletEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content`, else the legacy `description` tag |
+| 35129 | NamedNappletEvent | nip5dNapplets | `listOfNotNull(title(), description())` NL; description is `content` |
 | 36767 | ThemeDefinitionEvent | experimental/profileTheme/definition | `listOfNotNull(title(), description())` NL (never the colors, fonts or URLs) |
 | 36787 | MusicTrackEvent | experimental/music/track | `listOfNotNull(title(), artist(), album(), content)` NL |
 | 37516 | GeocacheListingEvent | nipCCGeocaching/listing | `listOfNotNull(cacheName(), content)` NL (the `hint` is deliberately not indexed — matching a hint is spoiling it) |

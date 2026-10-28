@@ -63,6 +63,8 @@ class NamedNappletAccessorsTest {
         assertEquals("SeedHammer 3D viewer", event.title())
         assertTrue(event.description().startsWith("3D viewer for the Seed I"))
         assertEquals(listOf("https://bls.unrug.tech", "https://blossom.primal.net"), event.servers())
+        // nostr:// is NIP-34's git URL, but NIP-5D accepts only http(s), ssh, git or scp-like.
+        assertNull(event.source())
         assertEquals(listOf("inc"), event.missingRequired(setOf("relay", "resource", "theme")))
         assertTrue(event.missingRequired(setOf("inc", "resource")).isEmpty())
     }
@@ -90,6 +92,15 @@ class NamedNappletAccessorsTest {
         assertFalse(event.isValid())
         val twoIds = NamedNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact), arrayOf("d", "a"), arrayOf("d", "b")), "a napplet", zero)
         assertFalse(twoIds.isValid())
+        val emptyId = NamedNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact), arrayOf("d", "")), "a napplet", zero)
+        assertFalse(emptyId.isValid())
+    }
+
+    @Test
+    fun onlyASnapshotRecordsLineage() {
+        val lineage = arrayOf("a", "35129:$zero:other")
+        val event = NamedNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact), arrayOf("d", "feed"), lineage), "a napplet", zero)
+        assertFalse(event.isValid())
     }
 
     @Test

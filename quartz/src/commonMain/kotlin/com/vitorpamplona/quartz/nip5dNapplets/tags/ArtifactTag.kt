@@ -30,7 +30,8 @@ import com.vitorpamplona.quartz.utils.ensure
  * from Blossom and verifies it before running anything.
  *
  * Same tag name as NIP-5A's `["x", "<sha256>", "aggregate"]`, which hashes a site's `path` tags
- * rather than one blob; a tag carrying that marker is not an artifact.
+ * rather than one blob. [parse] refuses that marker, and [isTag] still counts the tag, so a
+ * manifest carrying one has no valid single `x` and is rejected.
  */
 class ArtifactTag {
     companion object {

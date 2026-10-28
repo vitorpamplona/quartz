@@ -42,17 +42,20 @@ class IntentTag {
     companion object {
         const val TAG_NAME = "i"
 
-        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+        fun isTag(tag: Array<String>) = tag.has(0) && tag[0] == TAG_NAME
 
         fun parse(tag: Array<String>): NappletIntent? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotEmpty()) { return null }
-            val params = if (tag.size > 2) tag.copyOfRange(2, tag.size).filter { it.isNotEmpty() } else emptyList()
+            if (tag.size <= 2) return NappletIntent(tag[1])
+            val params = ArrayList<String>(tag.size - 2)
+            for (i in 2 until tag.size) if (tag[i].isNotEmpty()) params.add(tag[i])
             return NappletIntent(tag[1], params)
         }
 
-        fun assemble(intent: NappletIntent) = arrayOf(TAG_NAME, intent.intent, *intent.params.toTypedArray())
+        /** Empty parameter names are dropped, as [parse] drops them. */
+        fun assemble(intent: NappletIntent) = arrayOf(TAG_NAME, intent.intent, *intent.params.filter { it.isNotEmpty() }.toTypedArray())
 
         fun assemble(intents: List<NappletIntent>) = intents.map { assemble(it) }
     }

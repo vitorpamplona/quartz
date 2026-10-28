@@ -29,21 +29,13 @@ import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
-import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
-import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5dNapplets.NappletManifest
-import com.vitorpamplona.quartz.nip5dNapplets.archetypes
-import com.vitorpamplona.quartz.nip5dNapplets.artifact
-import com.vitorpamplona.quartz.nip5dNapplets.icon
 import com.vitorpamplona.quartz.nip5dNapplets.identifierCount
-import com.vitorpamplona.quartz.nip5dNapplets.intents
-import com.vitorpamplona.quartz.nip5dNapplets.optional
-import com.vitorpamplona.quartz.nip5dNapplets.required
-import com.vitorpamplona.quartz.nip5dNapplets.servers
-import com.vitorpamplona.quartz.nip5dNapplets.source
+import com.vitorpamplona.quartz.nip5dNapplets.manifest
+import com.vitorpamplona.quartz.nip5dNapplets.originCount
+import com.vitorpamplona.quartz.nip5dNapplets.parentCount
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
-import com.vitorpamplona.quartz.nip5dNapplets.title
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -63,29 +55,19 @@ class NappletSnapshotEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     NappletManifest,
-    AddressHintProvider,
-    SearchableEvent {
-    override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
-
-    // The read path: the same fields indexableContent() joins, handed over without
-    // building the joined string a scan would throw away.
-    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
-        if (!visitor.visit(title())) return
-        visitor.visit(description())
-    }
-
-    override fun addressHints(): List<AddressHint> = tags.lineageHints()
+    AddressHintProvider {
+    override fun addressHints(): List<AddressHint> = listOfNotNull(tags.parentHint(), tags.originHint())
 
     override fun linkedAddressIds(): List<String> = listOfNotNull(parent(), origin()).map { it.toValue() }
 
-    /** The `a` tag: the napplet this version derives from. */
+    /** The `a` tag: the napplet this version derives from; null when absent, repeated or not a napplet. */
     fun parent(): Address? = tags.parent()
 
-    /** The `A` tag: the root napplet this line of versions originates from. */
+    /** The `A` tag: the root napplet this line of versions originates from; null when absent, repeated or not a napplet. */
     fun origin(): Address? = tags.origin()
 
-    /** Only a named napplet carries a `d` tag. */
-    override fun isValid() = super<NappletManifest>.isValid() && tags.identifierCount() == 0
+    /** Only a named napplet carries a `d` tag; a snapshot records at most one `a` and one `A`. */
+    override fun isValid() = super<NappletManifest>.isValid() && tags.identifierCount() == 0 && tags.parentCount() <= 1 && tags.originCount() <= 1
 
     companion object {
         const val KIND = 5129
@@ -111,15 +93,7 @@ class NappletSnapshotEvent(
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<NappletSnapshotEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, description, createdAt) {
-            artifact(artifactHash)
-            if (servers.isNotEmpty()) servers(servers)
-            if (required.isNotEmpty()) required(required)
-            if (optional.isNotEmpty()) optional(optional)
-            if (archetypes.isNotEmpty()) archetypes(archetypes)
-            if (intents.isNotEmpty()) intents(intents)
-            icon?.let { icon(it) }
-            title?.let { title(it) }
-            source?.let { source(it) }
+            manifest(artifactHash, servers, required, optional, archetypes, intents, icon, title, source)
             parent?.let { parent(it, lineageRelay) }
             origin?.let { origin(it, lineageRelay) }
             initializer()

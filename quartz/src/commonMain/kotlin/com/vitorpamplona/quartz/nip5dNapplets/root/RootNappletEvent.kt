@@ -25,21 +25,13 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
-import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
-import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5dNapplets.NappletManifest
-import com.vitorpamplona.quartz.nip5dNapplets.archetypes
-import com.vitorpamplona.quartz.nip5dNapplets.artifact
-import com.vitorpamplona.quartz.nip5dNapplets.icon
 import com.vitorpamplona.quartz.nip5dNapplets.identifierCount
-import com.vitorpamplona.quartz.nip5dNapplets.intents
-import com.vitorpamplona.quartz.nip5dNapplets.optional
-import com.vitorpamplona.quartz.nip5dNapplets.required
-import com.vitorpamplona.quartz.nip5dNapplets.servers
-import com.vitorpamplona.quartz.nip5dNapplets.source
+import com.vitorpamplona.quartz.nip5dNapplets.manifest
+import com.vitorpamplona.quartz.nip5dNapplets.originCount
+import com.vitorpamplona.quartz.nip5dNapplets.parentCount
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
 import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
-import com.vitorpamplona.quartz.nip5dNapplets.title
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -55,19 +47,9 @@ class RootNappletEvent(
     content: String,
     sig: HexKey,
 ) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
-    NappletManifest,
-    SearchableEvent {
-    override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
-
-    // The read path: the same fields indexableContent() joins, handed over without
-    // building the joined string a scan would throw away.
-    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
-        if (!visitor.visit(title())) return
-        visitor.visit(description())
-    }
-
-    /** Only a named napplet carries a `d` tag. */
-    override fun isValid() = super<NappletManifest>.isValid() && tags.identifierCount() == 0
+    NappletManifest {
+    /** Only a named napplet carries a `d` tag, and only a snapshot records lineage (`a` / `A`). */
+    override fun isValid() = super<NappletManifest>.isValid() && tags.identifierCount() == 0 && tags.parentCount() == 0 && tags.originCount() == 0
 
     companion object {
         const val KIND = 15129
@@ -90,15 +72,7 @@ class RootNappletEvent(
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<RootNappletEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, description, createdAt) {
-            artifact(artifactHash)
-            if (servers.isNotEmpty()) servers(servers)
-            if (required.isNotEmpty()) required(required)
-            if (optional.isNotEmpty()) optional(optional)
-            if (archetypes.isNotEmpty()) archetypes(archetypes)
-            if (intents.isNotEmpty()) intents(intents)
-            icon?.let { icon(it) }
-            title?.let { title(it) }
-            source?.let { source(it) }
+            manifest(artifactHash, servers, required, optional, archetypes, intents, icon, title, source)
             initializer()
         }
     }

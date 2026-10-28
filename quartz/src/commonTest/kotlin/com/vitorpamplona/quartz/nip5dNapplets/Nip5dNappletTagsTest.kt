@@ -90,6 +90,41 @@ class Nip5dNappletTagsTest {
     }
 
     @Test
+    fun serversAreHttpOrigins() {
+        val tags =
+            arrayOf(
+                arrayOf("server", "https://blossom.example.com"),
+                arrayOf("server", "http://localhost:3000/"),
+                arrayOf("server", "https://blossom.example.com"),
+                arrayOf("server", "file:///etc"),
+                arrayOf("server", "content://x"),
+                arrayOf("server", "https://user:pass@host.example"),
+                arrayOf("server", "https://host.example/path"),
+                arrayOf("server", "https://host.example?x=1"),
+                arrayOf("server", " https://host.example"),
+            )
+        assertEquals(listOf("https://blossom.example.com", "http://localhost:3000/"), tags.servers())
+    }
+
+    @Test
+    fun aRepeatedTitleIsNoTitle() {
+        assertEquals("T", arrayOf(arrayOf("title", "T")).title())
+        assertNull(arrayOf(arrayOf("title", "T"), arrayOf("title", "U")).title())
+    }
+
+    @Test
+    fun anAggregateXNextToTheArtifactLeavesNoSingleArtifact() {
+        assertNull(arrayOf(arrayOf("x", hash), arrayOf("x", hash, "aggregate")).artifact())
+    }
+
+    @Test
+    fun intentParamsRoundTripWithoutEmptyNames() {
+        val written = IntentTag.assemble(NappletIntent("napplet:feed/edit", listOf("", "filters", "")))
+        assertContentEquals(arrayOf("i", "napplet:feed/edit", "filters"), written)
+        assertEquals(NappletIntent("napplet:feed/edit", listOf("filters")), IntentTag.parse(written))
+    }
+
+    @Test
     fun sourceLocations() {
         listOf(
             "https://git.example.com/owner/napplet.git",
@@ -99,7 +134,34 @@ class Nip5dNappletTagsTest {
             "git://git.example.com/owner/napplet.git",
         ).forEach { assertEquals(it, SourceTag.parse(arrayOf("source", it)), it) }
 
-        listOf("file:///home/me/napplet", "/home/me/napplet", "javascript:alert(1)", "").forEach {
+        listOf(
+            "file:///home/me/napplet",
+            "/home/me/napplet",
+            "javascript:alert(1)",
+            "",
+            // Windows paths are local paths too.
+            "C:\\Users\\me\\napplet",
+            "C:/Users/me/napplet",
+            "c:napplet",
+            // Other URI schemes, with or without `//`.
+            "content://com.evil.provider/x",
+            "intent://scan/#Intent;scheme=zxing;end",
+            "mailto:a@b.c",
+            "tel:+15551234",
+            "smb://host/share",
+            "blob:https://x/uuid",
+            "jar:file:/x!/y",
+            "nostr://npub1zj0q0eseamwn9er4drf3jl3kufc0fddsfrr0v54l2mlfqenah7ysxuy9th/relay.ngit.dev/seedhammer-viewer",
+            // Option injection into git / ssh.
+            "-oProxyCommand=touch_pwned@host.example:path",
+            "ssh://-oProxyCommand=touch_pwned/x",
+            "ssh://-oProxyCommand@host.example/x",
+            "git@host.example:-upload-pack=x",
+            // Invisible or bidi characters that would spoof the displayed repo.
+            "https://github.com/\u202Eabc",
+            "https://github.com/a\u00A0b",
+            "https://github.com/a b",
+        ).forEach {
             assertNull(SourceTag.parse(arrayOf("source", it)), it)
         }
         // Exactly two elements, and at most one tag.

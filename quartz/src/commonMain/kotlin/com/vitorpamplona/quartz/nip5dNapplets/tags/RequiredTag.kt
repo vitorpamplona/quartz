@@ -32,7 +32,7 @@ class RequiredTag {
     companion object {
         const val TAG_NAME = "R"
 
-        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
+        fun isTag(tag: Array<String>) = tag.has(0) && tag[0] == TAG_NAME
 
         fun parse(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }

@@ -598,15 +598,15 @@ object SearchFieldExtractor {
             }
 
             is RootNappletEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             is NappletSnapshotEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             is NamedNappletEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             // kinds 30392-30395 -- a Trusted List's title is the ONLY

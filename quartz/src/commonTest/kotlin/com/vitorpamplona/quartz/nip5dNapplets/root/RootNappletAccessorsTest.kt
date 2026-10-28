@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip5dNapplets.root
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -51,6 +53,47 @@ class RootNappletAccessorsTest {
         val event = RootNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact)), "  ", zero)
         assertEquals(artifact, event.artifact())
         assertFalse(event.isValid())
+    }
+
+    @Test
+    fun onlyASnapshotRecordsLineage() {
+        val event = RootNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact), arrayOf("A", "35129:$zero:root")), "d", zero)
+        assertFalse(event.isValid())
+    }
+
+    @Test
+    fun buildKeepsOnlyWhatReadsBack() {
+        val template =
+            RootNappletEvent.build(
+                artifactHash = artifact.uppercase().replace('1', 'A'),
+                description = "An editor",
+                servers = listOf("https://blossom.example.com", "file:///etc", ""),
+                required = listOf("", "relay"),
+                optional = listOf(""),
+                archetypes = listOf(""),
+                intents = listOf(NappletIntent(""), NappletIntent("napplet:feed/open", listOf(""))),
+                icon = NappletIcon("../../x", "image/svg+xml"),
+                title = " ",
+                source = "/home/me",
+            )
+        val event = RootNappletEvent(zero, zero, template.createdAt, template.tags, template.content, zero)
+        assertTrue(event.isValid())
+        assertEquals("aa".repeat(32), event.artifact())
+        assertEquals(listOf("https://blossom.example.com"), event.servers())
+        assertEquals(listOf("relay"), event.required())
+        assertTrue(event.optional().isEmpty() && event.archetypes().isEmpty())
+        assertEquals(listOf(NappletIntent("napplet:feed/open")), event.intents())
+        assertNull(event.icon())
+        assertNull(event.title())
+        assertNull(event.source())
+        // Every tag the builder wrote is one the readers accept.
+        assertEquals(setOf("x", "server", "R", "i", "alt"), template.tags.map { it[0] }.toSet() + "alt")
+    }
+
+    @Test
+    fun withNoRequiredDomainsNothingIsMissing() {
+        val event = RootNappletEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact)), "d", zero)
+        assertTrue(event.missingRequired(emptySet()).isEmpty())
     }
 
     @Test

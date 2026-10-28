@@ -24,7 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
-import com.vitorpamplona.quartz.nip5dNapplets.snapshot.tags.OriginTag
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.OriginSiteTag
 
 fun TagArrayBuilder<NappletSnapshotEvent>.parent(
     address: Address,
@@ -34,4 +34,4 @@ fun TagArrayBuilder<NappletSnapshotEvent>.parent(
 fun TagArrayBuilder<NappletSnapshotEvent>.origin(
     address: Address,
     relay: NormalizedRelayUrl? = null,
-) = addUnique(OriginTag.assemble(address, relay))
+) = addUnique(OriginSiteTag.assemble(address, relay))

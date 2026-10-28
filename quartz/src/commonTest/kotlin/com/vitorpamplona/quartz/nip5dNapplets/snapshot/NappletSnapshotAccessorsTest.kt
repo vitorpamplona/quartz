@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip5dNapplets.root.RootNappletEvent
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -53,6 +54,33 @@ class NappletSnapshotAccessorsTest {
         assertEquals(listOf(parent.toValue(), origin.toValue()), event.linkedAddressIds())
         assertEquals(listOf(parent.toValue(), origin.toValue()), event.addressHints().map { it.addressId })
         assertEquals(listOf(relay, relay), event.addressHints().map { it.relay })
+    }
+
+    @Test
+    fun repeatedOrForeignLineageIsIgnoredAndHintsMatchLinks() {
+        val one = "35129:$alice:one"
+        val two = "35129:$bob:two"
+        val tags =
+            arrayOf(
+                arrayOf("x", artifact),
+                arrayOf("a", one, relay.url),
+                arrayOf("a", two, relay.url),
+                arrayOf("A", "30023:$alice:article", relay.url),
+            )
+        val event = NappletSnapshotEvent(zero, bob, 0, tags, "v1", zero)
+        // Two `a` tags: neither is the parent, and a snapshot with two is not valid NIP-5D.
+        assertNull(event.parent())
+        assertFalse(event.isValid())
+        // An `A` addressing an article is not napplet lineage.
+        assertNull(event.origin())
+        assertTrue(event.addressHints().isEmpty())
+        assertTrue(event.linkedAddressIds().isEmpty())
+    }
+
+    @Test
+    fun aSnapshotHasNoIdentifier() {
+        val event = NappletSnapshotEvent(zero, zero, 0, arrayOf(arrayOf("x", artifact), arrayOf("d", "x")), "v1", zero)
+        assertFalse(event.isValid())
     }
 
     @Test
