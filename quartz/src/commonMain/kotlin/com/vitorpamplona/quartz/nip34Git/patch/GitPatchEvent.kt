@@ -70,16 +70,21 @@ class GitPatchEvent(
 
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
+    /** `REPOSITORY_OWNER` and `MENTION`: the repository owner and the users notified (`p`). */
     override fun linkedPubKeys() = notifiedUsers()
 
     override fun eventHints() = tags.mapNotNull(MarkedETag::parseAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(MarkedETag::parseId)
+    /** `ROOT` and `PARENT`: the patches this one threads onto (`e`, `root` and `reply` markers). */
+    override fun linkedEventIds() = threadEventIds()
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    // NIP-34: a patch names a single repository (`a`).
+    /** `REPOSITORY`: the repository the patch is for; NIP-34 names a single one (`a`). */
     override fun linkedAddressIds() = listOfNotNull(repositoryAddress()?.toValue())
+
+    /** Every `e` id, marked or not, in tag order: the series root and the patch this one replies to. */
+    fun threadEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
 
     // The `a` marked `root` when there is one, else the first `a`.
     private fun innerRepository() =

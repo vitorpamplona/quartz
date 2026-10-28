@@ -66,7 +66,14 @@ class ChannelCreateEvent(
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId)
+    /** `MENTION`: addresses tagged with `a` (NIP-28 defines none on kind 40). */
+    override fun linkedAddressIds() = mentionedAddressIds()
+
+    /** Addresses tagged with `a`, in tag order. NIP-28 defines no `a` here; clients may add them. */
+    fun mentionedAddresses(): List<ATag> = tags.mapNotNull(ATag::parse)
+
+    /** The address ids of [mentionedAddresses] (`a`), in tag order. */
+    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient
@@ -74,6 +81,7 @@ class ChannelCreateEvent(
 
     override fun eventHints() = channelInfo().relays?.map { EventIdHint(id, it) } ?: emptyList()
 
+    /** This event's own id, which is the channel's id: pairs it with the relays in its content ([eventHints]). */
     override fun linkedEventIds() = listOf(id)
 
     fun isEncrypted() = tags.any { it.has(1) && it[0] == "encrypted" && it[1] == "true" }

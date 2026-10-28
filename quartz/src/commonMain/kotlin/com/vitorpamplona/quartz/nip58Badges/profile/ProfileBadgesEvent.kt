@@ -50,17 +50,24 @@ class ProfileBadgesEvent(
     PubKeyHintProvider {
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    /** `MENTION`: users tagged with `p` (NIP-58 defines none on profile badges). */
+    override fun linkedPubKeys() = mentionKeys()
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
+    /** `BADGE_AWARD`: the kind-8 awards the profile displays (`e`). */
     override fun linkedEventIds() = badgeAwardEvents().map { it.eventId }
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    // Both relationships a profile's `a` tags carry: the badge definitions it displays and the
-    // badge sets it points at.
+    /** `BADGE_DEFINITION`: the badge definitions it displays; `BADGE_SET`: the badge sets it points at (`a`). */
     override fun linkedAddressIds() = (badgeAwardDefinitions() + badgeSets()).map { it.toValue() }
+
+    /** Users tagged with `p`, in tag order. NIP-58 defines no `p` here; clients may add them. */
+    fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
+
+    /** The keys of [mentions] (`p`), in tag order. */
+    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
     fun acceptedBadges() = tags.acceptedBadges()
 

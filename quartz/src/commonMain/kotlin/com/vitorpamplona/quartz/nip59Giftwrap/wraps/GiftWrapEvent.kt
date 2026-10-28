@@ -66,7 +66,8 @@ open class GiftWrapEvent(
     // [create]'s `recipientRelayHint`). Tags only: the content is never opened here.
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    /** `RECIPIENT`: the user the wrap is addressed to (`p`). */
+    override fun linkedPubKeys() = recipientKeys()
 
     // `@Volatile`: set by the decrypting coroutine in [unwrapThrowing], read
     // by relay socket threads walking the wrap → seal → rumor chain.
@@ -131,6 +132,9 @@ open class GiftWrapEvent(
     }
 
     fun recipientPubKey() = tags.firstTagValue("p")
+
+    /** Every well-formed `p` key, in tag order. NIP-59 writes one, the recipient. */
+    fun recipientKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
     companion object {
         const val KIND = 1059

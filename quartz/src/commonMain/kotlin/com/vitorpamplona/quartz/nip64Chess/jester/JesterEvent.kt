@@ -62,11 +62,19 @@ class JesterEvent(
     // the START_POSITION_HASH constant, which is a position digest, not an event to fetch.
     override fun eventHints(): List<EventIdHint> = tags.mapNotNull { tag -> ETag.parseAsHint(tag)?.takeIf { it.eventId != JesterProtocol.START_POSITION_HASH } }
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+    /** `ROOT`: the game's start event; `PARENT`: the move this one follows (`e`). */
+    override fun linkedEventIds(): List<HexKey> = gameEventIds()
 
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    /** `OPPONENT`: the other player of a private game (`p`). */
+    override fun linkedPubKeys(): List<HexKey> = opponentKeys()
+
+    /** The `e` ids, in tag order (the start event, then the move this one follows), minus START_POSITION_HASH. */
+    fun gameEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+
+    /** Every well-formed `p` key, in tag order. Jester writes one, [opponentPubkey]. */
+    fun opponentKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
     private val parsedContent: JesterContent? by lazy {
         try {

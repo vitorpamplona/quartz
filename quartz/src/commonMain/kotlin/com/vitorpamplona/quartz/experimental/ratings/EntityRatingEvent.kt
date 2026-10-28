@@ -92,15 +92,17 @@ class EntityRatingEvent(
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
-    // [build] writes one rated event (`e`) and one rated author (`p`).
+    /** `RATED`: the rated event (`e`); [build] writes one. */
     override fun linkedEventIds() = listOfNotNull(targetEventId())
 
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(RootAddressTag::parseAsHint)
 
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId) + tags.mapNotNull(RootAddressTag::parseAddressId)
+    /** `RATED`: the rated coordinate (`a`, then `A`, which [build] writes with the same value). */
+    override fun linkedAddressIds(): List<String> = targetAddressIds()
 
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
+    /** `RATED_AUTHOR`: the rated entity's author (`p`); [build] writes one. */
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(targetAuthor())
 
     /** What sort of thing is rated. Never null — an absent `m` means a nostr event, per the spec. */
@@ -155,6 +157,9 @@ class EntityRatingEvent(
         tags.firstNotNullOfOrNull(ATag::parseAddress)
             ?: tags.firstNotNullOfOrNull(RootAddressTag::parseAddress)
             ?: Address.parse(targetIdentifier())
+
+    /** Every rated coordinate's id: the `a` tags, then the `A` tags, in tag order, duplicates kept. */
+    fun targetAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId) + tags.mapNotNull(RootAddressTag::parseAddressId)
 
     /** The rated event's id, from the `e` tag. Absent for ratings that only name a coordinate. */
     fun targetEventId(): HexKey? = tags.firstNotNullOfOrNull(ETag::parseId)

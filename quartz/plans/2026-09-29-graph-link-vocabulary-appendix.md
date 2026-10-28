@@ -1043,3 +1043,13 @@ New relations:
 | 30301 | `UnrecognizedKind30301Event` | *none* | – | an encrypted planner app (b is a hash). |
 | 30302 | `KanbanCardEvent` | a[30301] -> BOARD (A); other a -> TRACKED (A); e -> TRACKED (E); refs/board -> TRACKED_BOARD (A); p -> ASSIGNEE (U) | board(), trackedAddress(), trackedEvent(), trackedCardBoard(), assigneeKeys() | k is a kind value. |
 | 30302 | `UnrecognizedKind30302Event` | *none* | – | Fieldbook team memberships. |
+
+### Rows added 2026-10-28 (event-class cleanup, batch 1)
+
+Classes the 2026-09-29 pass did not list. Batch 1 of the event-class cleanup routed every
+`linkedXxx()` in its 23 classes through a semantic method; these two had no row to update.
+
+| Kind | Class | Links | Built from | Notes |
+|---|---|---|---|---|
+| 30405 | `ProductCollectionEvent` | a -> MEMBER (A); t -> HASHTAG (T) | itemAddressIds() (ATag::parseAddressId, any kind); products() keeps kind 30402 | NIP-99 product collection, the 30402 listings it groups (as 31924 groups calendar events). linkedAddressIds() keeps every non-empty `a` value, unvalidated. g and location are values. |
+| 39005 | `ThreadSummaryEvent` | e -> ROOT (E); content{participants} -> PARTICIPANT (U) | rootEventIds() (ETag::parseId), participantKeys() (ThreadSummaryContent, 64-hex only) | Buzz NIP-CW thread-summary overlay, relay-synthesized; d repeats the e (not a second link). h is the channel id (GROUP, T). Shares kind 39005 with NIP-29 `GroupPinnedEvent`. |

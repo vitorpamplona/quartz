@@ -77,16 +77,24 @@ class ZapGoalEvent(
     // NIP-75 lets a goal carry NIP-57 `zap` splits: their beneficiaries are linked people too.
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint) + tags.zapSplitHints()
 
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey) + beneficiaries().mapNotNull { (it as? ZapSplitSetup)?.pubKeyHex }
+    /** `MENTION`: users tagged with `p`; `ZAP_SPLIT`: the [beneficiaries] that are pubkeys (`zap`). */
+    override fun linkedPubKeys() = mentionKeys() + beneficiaries().mapNotNull { (it as? ZapSplitSetup)?.pubKeyHex }
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
-    // NIP-75 links a goal to at most one event (`e`) and one addressable event (`a`).
+    /** `FUNDED`: the event this goal raises funds for (`e`); NIP-75 links at most one. */
     override fun linkedEventIds() = listOfNotNull(goalEventId())
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
+    /** `FUNDED`: the addressable event this goal raises funds for (`a`); NIP-75 links at most one. */
     override fun linkedAddressIds() = listOfNotNull(goalAddressId())
+
+    /** Users tagged with `p`, in tag order. NIP-75 defines no `p`; clients may add them. */
+    fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
+
+    /** The keys of [mentions] (`p`), in tag order. */
+    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
     /**
      * NIP-75: who the goal's zaps go to, as NIP-57 `zap` splits. Only splits a zap would pay:

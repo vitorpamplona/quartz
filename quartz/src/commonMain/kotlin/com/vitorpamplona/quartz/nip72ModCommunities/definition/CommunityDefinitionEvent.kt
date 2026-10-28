@@ -71,18 +71,33 @@ class CommunityDefinitionEvent(
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(ETag::parseId) + tags.mapNotNull(QTag::parseEventId)
+    /** `MENTION`: events tagged with `e` or quoted with `q` (NIP-72 defines neither on a community). */
+    override fun linkedEventIds() = mentionedEventIds() + quotedEventIds()
 
     override fun addressHints() =
         tags.mapNotNull(ATag::parseAsHint) +
             tags.mapNotNull(QTag::parseAddressAsHint) +
             tags.mapNotNull(RelayTag::parse).map { AddressHint(addressTag(), it.url) }
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId) + tags.mapNotNull(QTag::parseAddressId)
+    /** `MENTION`: addresses tagged with `a` or quoted with `q` (NIP-72 defines neither on a community). */
+    override fun linkedAddressIds() = mentionedAddressIds() + quotedAddressIds()
 
     override fun pubKeyHints() = tags.mapNotNull(ModeratorTag::parseAsHint)
 
+    /** `MODERATOR`: the community's moderators (`p`), without the owner [moderatorKeys] adds. */
     override fun linkedPubKeys() = tags.mapNotNull(ModeratorTag::parseKey)
+
+    /** The ids of events tagged with `e`, in tag order. NIP-72 defines no `e` here; clients may add them. */
+    fun mentionedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+
+    /** The ids of events quoted with `q` (NIP-18), in tag order. */
+    fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
+
+    /** The ids of addresses tagged with `a`, in tag order. NIP-72 defines no `a` here; clients may add them. */
+    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+
+    /** The ids of addresses quoted with `q` (NIP-18), in tag order. */
+    fun quotedAddressIds(): List<String> = tags.mapNotNull(QTag::parseAddressId)
 
     fun name() = tags.firstNotNullOfOrNull(NameTag::parse)
 

@@ -47,21 +47,33 @@ class BadgeAwardEvent(
     PubKeyHintProvider {
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
+    /** `AWARDED`: the users the badge is awarded to (`p`). */
     override fun linkedPubKeys() = awardeeIds()
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(ETag::parseId)
+    /** `MENTION`: events tagged with `e` (NIP-58 defines none on an award). */
+    override fun linkedEventIds() = mentionedEventIds()
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId)
+    /** `BADGE_DEFINITION`: the badge definition being awarded (`a`). */
+    override fun linkedAddressIds() = awardDefinitionIds()
 
     fun awardees() = tags.awardees()
 
     fun awardeeIds() = tags.awardeeIds()
 
     fun awardDefinition() = tags.awardDefinitions()
+
+    /** The address ids of [awardDefinition] (`a`), in tag order. NIP-58 writes one. */
+    fun awardDefinitionIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+
+    /** Events tagged with `e`, in tag order. NIP-58 defines no `e` here; clients may add them. */
+    fun mentionedEvents(): List<ETag> = tags.mapNotNull(ETag::parse)
+
+    /** The ids of [mentionedEvents] (`e`), in tag order. */
+    fun mentionedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
 
     companion object {
         const val KIND = 8

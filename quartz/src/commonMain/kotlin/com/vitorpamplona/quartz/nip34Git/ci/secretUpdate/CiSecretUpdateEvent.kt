@@ -75,7 +75,7 @@ class CiSecretUpdateEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator that receives the secrets (`p`). */
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys() = coordinatorKeys()
 
     override fun addressHints() = tags.mapNotNull(RepositoryTag::parseAsHint)
 
@@ -86,6 +86,9 @@ class CiSecretUpdateEvent(
     fun repository() = tags.ciSingleOrNull(RepositoryTag::parse)?.takeIf { it.pubKeyHex == pubKey }
 
     fun coordinator() = tags.ciSingleOrNull(PTag::parseKey)
+
+    /** Every `p` key, in tag order, however many; [coordinator] reads only a single one, as coordinators do. */
+    fun coordinatorKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
     fun advertisementId() = tags.ciSingleOrNull(SecretsKeyAdvertisementTag::parseId)
 

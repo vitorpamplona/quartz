@@ -55,7 +55,8 @@ class InterestListEvent(
     AddressHintProvider {
     override fun addressHints() = tags.mapNotNull(AddressBookmark::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(AddressBookmark::parseValidAddress)
+    /** `SUBSCRIBED`: the public interest sets this list follows (`a`). */
+    override fun linkedAddressIds() = subscribedAddressIds()
 
     override fun diffFrom(older: Event): InterestListDiff? {
         if (older !is InterestListEvent || older.pubKey != pubKey || older.dTag() != dTag()) return null
@@ -69,6 +70,9 @@ class InterestListEvent(
 
     /** NIP-51: besides hashtags, kind 10015 can point (`a`) to kind:30015 interest sets. */
     fun publicInterestSets(): List<AddressBookmark> = tags.interestSetPointers()
+
+    /** The public `a` entries' address ids, of any kind, in tag order; [publicInterestSets] keeps only kind 30015. */
+    fun subscribedAddressIds(): List<String> = tags.mapNotNull(AddressBookmark::parseValidAddress)
 
     suspend fun privateInterestSets(signer: NostrSigner): List<AddressBookmark>? = privateTags(signer)?.interestSetPointers()
 

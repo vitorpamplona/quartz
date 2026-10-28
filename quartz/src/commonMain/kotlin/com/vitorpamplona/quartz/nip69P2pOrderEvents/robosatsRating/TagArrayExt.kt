@@ -31,6 +31,9 @@ fun TagArray.coordinatorToken() = fastFirstNotNullOfOrNull(CoordinatorTokenTag::
 /** The rated coordinator: the first `p` holding a 64-hex key. */
 fun TagArray.coordinator() = fastFirstNotNullOfOrNull(PTag::parseKey)
 
+/** Every `p` holding a 64-hex key, in tag order. */
+fun TagArray.coordinatorKeys() = mapNotNull(PTag::parseKey)
+
 /**
  * The score as a 0..1 fraction (RoboSats writes `stars / 5`). A value outside 0..1 is malformed
  * for this kind, so it reads as null rather than being clamped.

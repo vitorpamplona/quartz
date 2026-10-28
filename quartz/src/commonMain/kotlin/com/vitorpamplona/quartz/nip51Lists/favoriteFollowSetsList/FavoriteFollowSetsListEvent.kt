@@ -56,7 +56,8 @@ class FavoriteFollowSetsListEvent(
     AddressHintProvider {
     override fun addressHints() = tags.mapNotNull(AddressBookmark::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(AddressBookmark::parseValidAddress)
+    /** `FAVORITE`: the public follow sets this list favorites (`a`). */
+    override fun linkedAddressIds() = favoriteAddressIds()
 
     // A plain replaceable (10000..19999): a stray `d` tag must not split its address.
     override fun dTag() = FIXED_D_TAG
@@ -70,6 +71,9 @@ class FavoriteFollowSetsListEvent(
     }
 
     fun publicFavoriteFollowSets(): List<AddressBookmark> = tags.favoriteFollowSetBookmarks()
+
+    /** The public `a` entries' address ids, of any kind, in tag order; [publicFavoriteFollowSets] keeps only kind 30000. */
+    fun favoriteAddressIds(): List<String> = tags.mapNotNull(AddressBookmark::parseValidAddress)
 
     suspend fun privateFavoriteFollowSets(signer: NostrSigner): List<AddressBookmark>? = privateTags(signer)?.favoriteFollowSetBookmarks()
 

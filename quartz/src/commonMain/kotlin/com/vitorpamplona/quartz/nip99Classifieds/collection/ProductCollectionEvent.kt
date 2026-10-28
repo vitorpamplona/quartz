@@ -79,7 +79,8 @@ class ProductCollectionEvent(
 
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+    /** `MEMBER`: the products in the collection (`a`). */
+    override fun linkedAddressIds(): List<String> = itemAddressIds()
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 
@@ -95,6 +96,9 @@ class ProductCollectionEvent(
 
     /** The kind-30402 products in the collection, in tag order. */
     fun products(): List<Address> = tags.products()
+
+    /** Every `a` entry's address id, of any kind, in tag order; [products] keeps only kind 30402. */
+    fun itemAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
 
     fun shippingOptions() = tags.shippingOptions()
 
