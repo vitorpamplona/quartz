@@ -52,12 +52,14 @@ class GitStatusAppliedEvent(
     content: String,
     sig: HexKey,
 ) : GitStatusEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
+    /** `ROOT` and `PARENT` (see [GitStatusEvent]); `APPLIED`: the patches applied or merged (`q`). */
     override fun linkedEventIds(): List<HexKey> = super.linkedEventIds() + appliedPatchIds()
 
     fun mergeCommit(): String? = tags.firstNotNullOfOrNull(MergeCommitTag::parse)
 
     fun appliedAsCommits(): List<String> = tags.mapNotNull(AppliedAsCommitsTag::parse).flatten()
 
+    /** The ids of the patches applied or merged (`q`), in tag order. */
     fun appliedPatchIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
 
     companion object {

@@ -12,24 +12,56 @@ import sys
 ROOT = "quartz/src/commonMain/kotlin"
 FACTORY = ROOT + "/com/vitorpamplona/quartz/utils/EventFactory.kt"
 REFERENCE_PARSERS = r"(ETag|ATag|PTag|QTag|MarkedETag|EventBookmark|AddressBookmark)"
+# Which provider each reference parser needs; a `q` may quote an event or an address.
+PROVIDER_FOR = {"PTag": ("PubKey",), "ETag": ("Event",), "ATag": ("Address",), "QTag": ("Event", "Address")}
+
+
+def missing_provider(src, parents):
+    sources = [src] + parents
+    for parser in set(re.findall(r"\b(PTag|ETag|ATag|QTag)::parse", src)):
+        if not any(re.search(kind + "HintProvider", s) for kind in PROVIDER_FOR[parser] for s in sources):
+            return True
+    return False
+
+
+def superclass_sources(path, src, depth=0):
+    """The sources of the class's superclasses, nearest first, as far as they live in this repo."""
+    m = re.search(r"\bclass\s+\w+[\s\S]*?\)\s*:\s*([A-Z]\w*)\s*[(<]", src)
+    if not m or depth > 5:
+        return []
+    name = m.group(1)
+    imported = re.search(r"^import ([\w.]+\." + name + r")$", src, re.M)
+    if imported:
+        parent = os.path.join(ROOT, imported.group(1).replace(".", "/") + ".kt")
+    else:
+        parent = os.path.join(os.path.dirname(path), name + ".kt")
+    if not os.path.exists(parent):
+        return []
+    parent_src = open(parent).read()
+    return [parent_src] + superclass_sources(parent, parent_src, depth + 1)
 
 CHECKS = [
-    ("no companion build()", lambda src: not re.search(r"\bfun build\b", src)),
-    ("tag parsing inline in the class (it[0] == / tag[0] ==)", lambda src: re.search(r"\b(it|tag)\[0\]\s*==\s*\"", src)),
+    ("no companion build()", lambda src, parents: not re.search(r"\bfun build\b", src)),
+    ("tag parsing inline in the class (it[0] == / tag[0] ==)", lambda src, parents: re.search(r"\b(it|tag)\[0\]\s*==\s*\"", src)),
     (
         "linkedXxx() reads raw tags instead of a semantic method",
-        lambda src: any(
+        lambda src, parents: any(
             re.search(r"tags\.(mapNotNull|firstNotNullOfOrNull)\(" + REFERENCE_PARSERS, body)
             for body in re.findall(r"override fun linked(?:EventIds|AddressIds|PubKeys)\(\)[^\n]*=\s*([^\n]+)", src)
         ),
     ),
     (
-        "parses a/e/p/q but implements no hint provider",
-        lambda src: re.search(r"\b(PTag|ETag|ATag|QTag)::parse", src) and not re.search(r"(PubKey|Event|Address)HintProvider", src),
+        # The provider must match the reference type; one inherited from a base class counts
+        # (DvmResponseEvent, GitStatusEvent, BaseDMGroupEvent, ...).
+        "parses a/e/p/q but implements no hint provider for it",
+        lambda src, parents: missing_provider(src, parents),
     ),
     (
+        # A class that decided against search says so in its KDoc: "Not searchable: <why>".
         "reads a title/name/summary/description but is not SearchableEvent",
-        lambda src: "SearchableEvent" not in src and re.search(r"\b(TitleTag|SubjectTag|SummaryTag|DescriptionTag|NameTag)::parse", src),
+        lambda src, parents: "Not searchable:" not in src
+        and not any("SearchableEvent" in s for s in [src] + parents)
+        and re.search(r"\b(TitleTag|SubjectTag|SummaryTag|DescriptionTag|NameTag)::parse", src),
     ),
 ]
 
@@ -53,8 +85,9 @@ def main():
         if scope not in path:
             continue
         src = open(path).read()
+        parents = superclass_sources(path, src)
         for label, check in CHECKS:
-            if check(src):
+            if check(src, parents):
                 found[label].append(path[len(ROOT) + 1 :])
     total = 0
     for label, paths in found.items():

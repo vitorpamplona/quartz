@@ -26,6 +26,8 @@ import com.vitorpamplona.quartz.experimental.audio.header.tags.WaveformTag
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
+import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
@@ -55,6 +57,7 @@ class ChatMessageEncryptedFileHeaderEvent(
     content: String,
     sig: HexKey,
 ) : BaseDMGroupEvent(id, pubKey, createdAt, KIND, tags, content, sig),
+    EventHintProvider,
     SearchableEvent {
     // `content` is the encrypted file's URL, not text; the optional `summary`
     // tag is the only human-written caption the header carries.
@@ -64,6 +67,14 @@ class ChatMessageEncryptedFileHeaderEvent(
         visitor.visit(summary())
     }
 
+    // The `e` is the parent message, as on a kind-14 ChatMessageEvent; the encrypted file is
+    // named by its URL (`content`) and hashes (`x`, `ox`), which are not event references.
+    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+
+    /** `PARENT`: the message this file replies to (`e`). */
+    override fun linkedEventIds(): List<HexKey> = replyTo()
+
+    /** The ids of the messages this file replies to (`e`), in tag order. */
     fun replyTo() = tags.mapNotNull(ETag::parseId)
 
     fun summary() = tags.firstNotNullOfOrNull(SummaryTag::parse)

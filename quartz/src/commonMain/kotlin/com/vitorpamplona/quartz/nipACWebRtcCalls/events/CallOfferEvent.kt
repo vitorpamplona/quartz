@@ -24,7 +24,6 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
-import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTagIds
 import com.vitorpamplona.quartz.nipACWebRtcCalls.tags.CallType
@@ -46,7 +45,7 @@ class CallOfferEvent(
     fun sdpOffer() = content
 
     /** All pubkeys referenced by `p` tags in this offer. */
-    fun recipientPubKeys(): Set<HexKey> = tags.mapNotNull(PTag::parseKey).toSet()
+    fun recipientPubKeys(): Set<HexKey> = recipientKeys().toSet()
 
     /**
      * All group members for this call: the `p`-tagged recipients plus the
