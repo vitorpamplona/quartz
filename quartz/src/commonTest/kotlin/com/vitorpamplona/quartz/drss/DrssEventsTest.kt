@@ -391,6 +391,14 @@ class DrssEventsTest {
     }
 
     @Test
+    fun progressWhoseNumbersAreEmptyIsUnrecognized() {
+        val episode = arrayOf("a", "30023:${"dd".repeat(32)}:x")
+        assertIs<UnrecognizedKind30054Event>(event(30054, "22".repeat(32), "", arrayOf("d", "x"), episode, arrayOf("position", "")))
+        assertIs<UnrecognizedKind30054Event>(event(30054, "22".repeat(32), "", arrayOf("d", "x"), episode, arrayOf("plays", "many")))
+        assertIs<DrssListenProgressEvent>(event(30054, "22".repeat(32), "", arrayOf("d", "x"), episode, arrayOf("position", ""), arrayOf("plays", "2")))
+    }
+
+    @Test
     fun progressWithoutAnEpisodeIsUnrecognized() {
         assertIs<UnrecognizedKind30054Event>(event(30054, "22".repeat(32), "", arrayOf("d", "x"), arrayOf("position", "10")))
     }

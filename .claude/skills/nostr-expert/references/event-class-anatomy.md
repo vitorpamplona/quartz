@@ -106,7 +106,8 @@ strings. A `build()` must parse back as its own class: test it.
 When another app publishes a different shape on the same number, the class gets a classifier on its
 companion (`fun isPodcastEpisode(tags): Boolean`, built from the codecs' `TAG_NAME`s), and every
 other shape becomes an `UnrecognizedKindNNNNNEvent` beside it: same base class, the shared `KIND`, no
-hints, not searchable. Then:
+hints, not searchable, and implementing `UnrecognizedShape` (`nip01Core/core/`), which tells clients
+the kind's name is not this event's. Then:
 
 - `EventFactory.create` picks the class with the classifier (an `if` or a `when`), in whichever of
   the four `createPartN` it lives in; keep each part under the JIT limit (`EventFactoryJitSizeTest`).
@@ -114,7 +115,7 @@ hints, not searchable. Then:
 - `KindNames` names the kind after your class; say in a comment that the kind is shared.
 - Document the split in the class KDoc, and in `searchable-kinds.md` when the class is searchable.
 
-`drss/` (30054, 30100–30104, 31985) and `nip99Classifieds/` (30405, 30406) are worked examples.
+`drss/` (30054, 30100, 30101, 30102, 30104, 31985) and `nip99Classifieds/` (30405, 30406) are worked examples.
 
 ## Registrations a new kind needs
 

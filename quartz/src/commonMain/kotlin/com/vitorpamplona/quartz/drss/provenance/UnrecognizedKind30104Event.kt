@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.drss.provenance
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30104 event that is not a [DrssProvenanceFolderEvent]: a showcase app's round results. Still
@@ -36,4 +37,5 @@ class UnrecognizedKind30104Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, DrssProvenanceFolderEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, DrssProvenanceFolderEvent.KIND, tags, content, sig),
+    UnrecognizedShape

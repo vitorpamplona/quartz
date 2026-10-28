@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip99Classifieds.shipping
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30406 event that is not an Open Markets [ShippingOptionEvent]: Shopstr stores buyer escrow
@@ -37,4 +38,5 @@ class UnrecognizedKind30406Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, ShippingOptionEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, ShippingOptionEvent.KIND, tags, content, sig),
+    UnrecognizedShape

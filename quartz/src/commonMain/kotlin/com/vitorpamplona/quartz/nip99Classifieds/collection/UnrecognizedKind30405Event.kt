@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip99Classifieds.collection
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30405 event that is not an Open Markets [ProductCollectionEvent]: Shopstr stores
@@ -37,4 +38,5 @@ class UnrecognizedKind30405Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, ProductCollectionEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, ProductCollectionEvent.KIND, tags, content, sig),
+    UnrecognizedShape

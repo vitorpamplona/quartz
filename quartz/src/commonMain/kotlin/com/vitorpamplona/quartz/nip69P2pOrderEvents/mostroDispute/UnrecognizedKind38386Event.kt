@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroDispute
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-38386 event that is not a [MostroDisputeEvent]: Paygress standby-promotion
@@ -41,4 +42,5 @@ class UnrecognizedKind38386Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, MostroDisputeEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, MostroDisputeEvent.KIND, tags, content, sig),
+    UnrecognizedShape

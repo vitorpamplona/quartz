@@ -25,16 +25,29 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArray
 /**
  * True when [tags] hold at least one `a` and every `a` names an address of one of [kinds]. drss's
  * folders hold only lists (or provenance records); the other apps on those kinds tag other things
- * with `a`, or nothing.
+ * with `a`, or nothing. Runs in `EventFactory.create`, so it reads each address's kind in place
+ * rather than splitting the string.
  */
-internal fun TagArray.onlyAddressesOfKinds(kinds: Set<String>): Boolean {
+internal fun TagArray.onlyAddressesOfKinds(kinds: IntArray): Boolean {
     var found = false
     for (tag in this) {
         if (tag.size < 2 || tag[0] != "a") continue
-        if (tag[1].substringBefore(':') !in kinds) return false
+        if (!kinds.contains(addressKind(tag[1]))) return false
         found = true
     }
     return found
+}
+
+/** The kind an address (`kind:pubkey:d`) starts with, or -1 when it does not start with one. */
+private fun addressKind(address: String): Int {
+    var kind = 0
+    for (i in address.indices) {
+        val c = address[i]
+        if (c == ':') return if (i == 0) -1 else kind
+        if (c < '0' || c > '9' || i >= 6) return -1
+        kind = kind * 10 + (c - '0')
+    }
+    return -1
 }
 
 /** True when [tags] hold at least one [required] tag with a value and every tag's name is in [allowed]. */
