@@ -69,7 +69,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nip58Badges/` | BadgeAwardEvent 8, ProfileBadgesEvent 10008, AcceptedBadgeSetEvent 30008, BadgeDefinitionEvent 30009 |
 | `nip59Giftwrap/` | SealEvent 13, GiftWrapEvent 1059, EphemeralGiftWrapEvent 21059 |
 | `nip5aStaticWebsites/` | SiteSnapshotEvent 5128, RootSiteEvent 15128, NamedSiteEvent 35128 |
-| `nip5dNapplets/` | NappletSnapshotEvent 5129, RootNappletEvent 15129, NamedNappletEvent 35129 |
+| `nip5dNapplets/` | NappletSnapshotEvent 5129 (`snapshot/`), RootNappletEvent 15129 (`root/`), NamedNappletEvent 35129 (`named/`); shared `NappletManifest` and `tags/` |
 | `nip60Cashu/` | CashuMintQuoteEvent 7374, CashuTokenEvent 7375, CashuSpendingHistoryEvent 7376, CashuWalletEvent 17375 |
 | `nip61Nutzaps/` | NutzapEvent 9321, NutzapInfoEvent 10019 |
 | `nip62RequestToVanish/` | RequestToVanishEvent 62 |
