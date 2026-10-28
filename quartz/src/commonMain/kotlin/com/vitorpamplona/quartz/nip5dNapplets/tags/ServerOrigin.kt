@@ -20,30 +20,16 @@
  */
 package com.vitorpamplona.quartz.nip5dNapplets.tags
 
-import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.utils.ensure
-
 /**
- * NIP-5D capability-requirement tag: `["requires", "<nap-name>"]`.
- *
- * Each value is a bare NAP domain the napplet needs from its shell — e.g.
- * `relay`, `identity`, `storage` — never the `NAP-RELAY` spec name. A shell uses
- * these to decide which capabilities to broker (and which to deny) before running
- * the napplet.
+ * NIP-5D `server` tags are "Blossom server origin hint[s]": clients fetch the artifact and the icon
+ * from them, so a napplet manifest only keeps values that are an `http(s)` origin (scheme, host,
+ * optional port, optional trailing slash). A path, a query, credentials, another scheme
+ * (`file:`, `content:`) or whitespace never reaches a fetcher.
  */
-class RequiresTag {
-    companion object {
-        const val TAG_NAME = "requires"
+object ServerOrigin {
+    private val ORIGIN = Regex("https?://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/?", RegexOption.IGNORE_CASE)
 
-        fun parse(tag: Array<String>): String? {
-            ensure(tag.has(1)) { return null }
-            ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].isNotEmpty()) { return null }
-            return tag[1]
-        }
+    fun isValid(value: String) = value.length <= MAX_LENGTH && ORIGIN.matches(value)
 
-        fun assemble(napName: String) = arrayOf(TAG_NAME, napName)
-
-        fun assemble(napNames: List<String>) = napNames.map { assemble(it) }
-    }
+    private const val MAX_LENGTH = 300
 }

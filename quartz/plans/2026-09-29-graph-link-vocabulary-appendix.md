@@ -34,7 +34,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | `ADMIN` | 39001 | a NIP-29 group's admins (kind 39001 'group admins'; props: roles). It is kept apart from NIP-72 MODERATOR because roles are relay-defined |
 | `AGENT` | 24200, 30177, 43001, 44200 | Buzz's `agent` tag word; the AI agent a frame/metric/job/managed-agent record is about |
 | `ALLOWED` | 30175, 30177, 34551 | entries of NIP-AP's respond_to_allowlist (who the agent answers), named as the list names them |
-| `APP` | 5129, 15128, 15129, 35128, 35129 | NIP-5A `app` tag, 'an addressable event reference to an app descriptor' (NIP-89 31990 / 32267) |
+| `APP` | 5128, 15128, 35128 | NIP-5A `app` tag, 'an addressable event reference to an app descriptor' (NIP-89 31990 / 32267) |
 | `APPLICATION` | 30063 | NIP-51's own example names the a the 'Reference to parent software application' (kind 32267): the release belongs to it, it is not a curated item |
 | `APPLIED` | 1631 | the patch(es) a 1631 status applied or merged (NIP-34 'applied-or-merged-patch-event-id'; past participle of the status' own name). A q here is not a NIP-18 quote. REPOSITORY_OWNER: see 1617 |
 | `APPROVED_AUTHOR` | 4550 | rule 3 - NIP-72 requires 'the p tag of the author of the post (for approval notifications)' |
@@ -57,7 +57,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | `COLLABORATED_AUTHOR` | 34238 | – |
 | `CONCEPT_GRAPH` | 39998 | – |
 | `CONFIRMED` | 1316 | the kind-1315 report a Roadstr confirmation confirms or denies (spec: 'report being confirmed or denied'; the kind is named Road Event Confirmation). Props: status (still_there \| no_longer_there) |
-| `COPIED` | 15128, 15129, 35128, 35129 | NIP-5A 'a copied site MUST include exactly one lowercase a tag referencing the immediate parent nsite from which it was copied' (past participle of the NIP's action) |
+| `COPIED` | 5129, 15128, 35128 | NIP-5A 'a copied site MUST include exactly one lowercase a tag referencing the immediate parent nsite from which it was copied' (past participle of the NIP's action) |
 | `CREATED` | 7376 | NIP-60 marker 'created' - the token event this spend created |
 | `CREDITED` | 21, 22, 34235, 34236 | divine.video credit markers on p/a/e (inspired-by, audio, collaborator...) that are neither a NIP-71 participant nor a mention; one relation + props.credit instead of one relation per free-text label |
 | `CURRENT_SCENE` | 30298 | the scene a reader is at (Quartz currentScene()) |
@@ -93,7 +93,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | `OPEN_TIMESTAMP` | 31 | the kind-1040 NIP-03 proof attesting when the cited page was seen; named after the tag (the spec's word for the slot), not TIMESTAMPED, which is the 1040's own link to its target |
 | `OPPONENT` | 30, 30064, 30065, 30066, 30067, 30068 | the other player (Quartz OpponentTag/opponentPubkey(); Jester FLOW 'opponent'), shared with the live chess kinds 30064-30068 |
 | `OPTION` | 30296, 30297 | a scene an interactive story branches to (the tag's own name; props: the option text) |
-| `ORIGIN` | 5129, 15128, 15129, 35128, 35129 | the uppercase A, 'the origin nsite of the copy lineage' (the NIP's word) |
+| `ORIGIN` | 5128, 5129, 15128, 35128 | the uppercase A, 'the origin nsite of the copy lineage' (the NIP's word) |
 | `OWNER` | 9035, 9036, 30174, 44200 | NIP-OA's own word; the owner key attesting the event's (agent) author via the `auth` tag, or the owner an agent reports to (NIP-AM/NIP-AE `p`). Props: conditions (attestation only) |
 | `PALETTE` | 3330, 11333, 33331 | DECK-0003 §1.3b names the payload field `palette`: an nevent/naddr to a palette published as its own event; a content-borne event/address reference that is not a passing mention |
 | `PARENT_LIST` | 9999, 39999 | the list header an item is filed under (spec: 'a pointer to the parent list (the list header)'); T when the z is the bare name of an undeclared list. ITEM: the thing declared as an item on that list (spec: 'declaring a pubkey, event id, string, or naddr as an item on a list') |
@@ -118,7 +118,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | `SCHEDULED` | 5905 | DVM spec kinds/5905 'Schedule events to be published in the future'; past participle of the action for the signed event the DVM will publish |
 | `SEARCH_AUTHOR` | 5302 | DVM spec kinds/5302 param 'users' = 'pubkeys of users to filter notes from' (the authors the search is restricted to) |
 | `SITE_MANIFEST` | 31990 | NIP-89 'App descriptor events SHOULD tag or otherwise reference related site manifest events' (latest/next nsite manifests) |
-| `SNAPSHOTTED` | 5129 | NIP-5A snapshot (5128) 'MUST include exactly one a tag referencing the source root site or named site' - past participle of the NIP's action; ORIGIN / APP: see 15128 |
+| `SNAPSHOTTED` | 5128 | NIP-5A snapshot (5128) 'MUST include exactly one a tag referencing the source root site or named site' - past participle of the NIP's action; ORIGIN / APP: see 15128 |
 | `SOURCE` | 818, 1163, 30040 | the event a reproduced piece of content was taken from (here the post the gallery picture came from; also used for NKBIP-01 derivative works on 30040). Quartz calls the slot fromEvent |
 | `SOURCE_TAG` | 30392, 30393, 30394, 30395 | the tag definition the membership was computed from (tag name) |
 | `STALL` | 30018, 30020 | the NIP-15 stall a product or auction belongs to ('stall_id: id of the stall to which this product belong to'). The address is derived from the author plus the content stall_id |
@@ -627,9 +627,9 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
-| 5129 | `NappletSnapshotEvent` | a -> SNAPSHOTTED (A); A -> ORIGIN (A); app -> APP (A) | new parser needed (NappletManifest reads only path/server/requires/x/title/description/source/icon) | NIP-5D napplets are not on nostr-protocol/nips master (spec fetch 404); per NappletManifest they 'carry the same NIP-5A tag set', so the 5128 snapshot rules are applied by analogy. UNCERTAIN: whole row; Quartz build() writes none of a/A/app. path hashes, server (blossom) and source URLs: not modelled (source may be a NIP-34 nostr:// git URL - a future REPOSITORY candidate). |
-| 15129 | `RootNappletEvent` | a -> COPIED (A); A -> ORIGIN (A); app -> APP (A) | new parser needed (NappletManifest) | NIP-5D root napplet; 'carries the NIP-5A tag set' (NappletManifest). requires = NAP capability domains (values, not modelled). UNCERTAIN: NIP-5D not on nips master; applies NIP-5A rules by analogy; Quartz writes none of these tags. |
-| 35129 | `NamedNappletEvent` | a -> COPIED (A); A -> ORIGIN (A); app -> APP (A) | new parser needed (NappletManifest) | NIP-5D named napplet; NIP-5A tag set by analogy. UNCERTAIN: NIP-5D not on nips master. |
+| 5129 | `NappletSnapshotEvent` | a -> COPIED (A); A -> ORIGIN (A) | `NappletSnapshotEvent.parent()` / `origin()` | NIP-5D (nostr-protocol/nips#2303): at most one `a` (the antecedent, which may be another author's) and one `A` (the root of the line), each addressing a 15129/35129; provenance only, never trusted for verification. `x` is the single `/index.html` artifact hash (not modelled as a link); `server` and `source` are not modelled. |
+| 15129 | `RootNappletEvent` | none | n/a | NIP-5D root napplet: no lineage tags (`a`/`A` are 5129-only, and a root carrying them is invalid). |
+| 35129 | `NamedNappletEvent` | none | n/a | NIP-5D named napplet: no lineage tags, as for 15129. |
 
 ### `nip87Ecash` (3)
 

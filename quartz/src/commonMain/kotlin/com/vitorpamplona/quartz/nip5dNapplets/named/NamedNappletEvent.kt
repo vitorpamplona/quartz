@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip5dNapplets
+package com.vitorpamplona.quartz.nip5dNapplets.named
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
@@ -26,22 +26,18 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
-import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
-import com.vitorpamplona.quartz.nip50Search.SearchableEvent
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteDescription
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteIcon
-import com.vitorpamplona.quartz.nip5aStaticWebsites.sitePaths
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteServers
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteSource
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteTitle
-import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nip5dNapplets.NappletManifest
+import com.vitorpamplona.quartz.nip5dNapplets.identifierCount
+import com.vitorpamplona.quartz.nip5dNapplets.manifest
+import com.vitorpamplona.quartz.nip5dNapplets.originCount
+import com.vitorpamplona.quartz.nip5dNapplets.parentCount
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
- * NIP-5D **named napplet** (kind 35129) — an addressable manifest identified by a
- * `d` tag, so one pubkey can publish many named napplets. Carries the NIP-5A tag
- * set; the `x` aggregate hash is recommended and included by [build].
+ * NIP-5D **named napplet** (kind 35129): an addressable manifest identified by its `d` tag, so
+ * one pubkey can publish many napplets. See [NappletManifest] for what it carries.
  */
 @Immutable
 class NamedNappletEvent(
@@ -52,43 +48,41 @@ class NamedNappletEvent(
     content: String,
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
-    NappletManifest,
-    SearchableEvent {
-    override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
-
-    // The read path: the same fields indexableContent() joins, handed over without
-    // building the joined string a scan would throw away.
-    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
-        if (!visitor.visit(title())) return
-        visitor.visit(description())
-    }
-
+    NappletManifest {
     fun identifier() = dTag()
+
+    /**
+     * A named napplet also needs exactly one `d` identifier, and only a snapshot records lineage
+     * (`a` / `A`). The identifier must not be empty either: NIP-01 allows an empty `d`, but here it
+     * names no napplet, and a client keying grants by author + identifier would give it the author's
+     * root napplet's grants.
+     */
+    override fun isValid() = super<NappletManifest>.isValid() && tags.identifierCount() == 1 && identifier().isNotEmpty() && tags.parentCount() == 0 && tags.originCount() == 0
 
     companion object {
         const val KIND = 35129
 
+        /**
+         * A manifest for the self-contained `/index.html` whose sha256 is [artifactHash]. NIP-5D
+         * requires a non-empty plain-text [description], which becomes the event content.
+         */
         fun build(
             identifier: String,
-            paths: List<PathTag>,
+            artifactHash: HexKey,
+            description: String,
             servers: List<String> = emptyList(),
-            requires: List<String> = emptyList(),
+            required: List<String> = emptyList(),
+            optional: List<String> = emptyList(),
+            archetypes: List<String> = emptyList(),
+            intents: List<NappletIntent> = emptyList(),
+            icon: NappletIcon? = null,
             title: String? = null,
-            description: String? = null,
             source: String? = null,
-            icon: String? = null,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<NamedNappletEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, "", createdAt) {
+        ) = eventTemplate(KIND, description, createdAt) {
             dTag(identifier)
-            sitePaths(paths)
-            siteAggregateHash(paths)
-            if (servers.isNotEmpty()) siteServers(servers)
-            if (requires.isNotEmpty()) nappletRequires(requires)
-            title?.let { siteTitle(it) }
-            description?.let { siteDescription(it) }
-            source?.let { siteSource(it) }
-            icon?.let { siteIcon(it) }
+            manifest(artifactHash, servers, required, optional, archetypes, intents, icon, title, source)
             initializer()
         }
     }

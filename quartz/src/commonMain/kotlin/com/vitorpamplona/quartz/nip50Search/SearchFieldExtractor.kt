@@ -123,9 +123,9 @@ import com.vitorpamplona.quartz.nip58Badges.definition.BadgeDefinitionEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.NamedSiteEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.RootSiteEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.SiteSnapshotEvent
-import com.vitorpamplona.quartz.nip5dNapplets.NamedNappletEvent
-import com.vitorpamplona.quartz.nip5dNapplets.NappletSnapshotEvent
-import com.vitorpamplona.quartz.nip5dNapplets.RootNappletEvent
+import com.vitorpamplona.quartz.nip5dNapplets.named.NamedNappletEvent
+import com.vitorpamplona.quartz.nip5dNapplets.root.RootNappletEvent
+import com.vitorpamplona.quartz.nip5dNapplets.snapshot.NappletSnapshotEvent
 import com.vitorpamplona.quartz.nip64Chess.game.ChessGameEvent
 import com.vitorpamplona.quartz.nip68Picture.PictureEvent
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.P2POrderEvent
@@ -598,15 +598,15 @@ object SearchFieldExtractor {
             }
 
             is RootNappletEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             is NappletSnapshotEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             is NamedNappletEvent -> {
-                tiers(event, event.title(), event.description(), null)
+                tiers(event, event.title(), event.description(), null, website = event.source())
             }
 
             // kinds 30392-30395 -- a Trusted List's title is the ONLY

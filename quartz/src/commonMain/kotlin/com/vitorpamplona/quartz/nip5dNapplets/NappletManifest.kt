@@ -21,64 +21,86 @@
 package com.vitorpamplona.quartz.nip5dNapplets
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.IEvent
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
-import com.vitorpamplona.quartz.nip5aStaticWebsites.NappletIconPath
-import com.vitorpamplona.quartz.nip5aStaticWebsites.SiteAggregateHash
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteDescription
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteIcon
-import com.vitorpamplona.quartz.nip5aStaticWebsites.sitePaths
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteServers
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteSource
-import com.vitorpamplona.quartz.nip5aStaticWebsites.siteTitle
+import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIcon
+import com.vitorpamplona.quartz.nip5dNapplets.tags.NappletIntent
 
 /**
- * Common surface for the three NIP-5D napplet manifest kinds — snapshot
- * ([NappletSnapshotEvent] / 5129), root ([RootNappletEvent] / 15129), and named
- * ([NamedNappletEvent] / 35129). They carry the same NIP-5A tag set and differ
- * only in replaceability and the `d` identifier, so all accessors live here and
- * read off the event's [tags].
+ * What the three NIP-5D napplet manifest kinds share: snapshot
+ * ([com.vitorpamplona.quartz.nip5dNapplets.snapshot.NappletSnapshotEvent], 5129), root
+ * ([com.vitorpamplona.quartz.nip5dNapplets.root.RootNappletEvent], 15129) and named
+ * ([com.vitorpamplona.quartz.nip5dNapplets.named.NamedNappletEvent], 35129).
+ *
+ * A napplet is one self-contained `/index.html`. The manifest names it by its sha256 in a single
+ * `x` tag ([artifact]), describes it in plain-text `content` ([description]), and declares the NAP
+ * domains it needs (`R`, [required]) or can use (`O`, [optional]), what it does (`z`, [archetypes]),
+ * the intents it accepts (`i`, [intents]), a content-addressed [icon], Blossom [servers], a [title]
+ * and a [source] location. Declarations are routing hints from untrusted content, never grants.
  */
-interface NappletManifest {
+interface NappletManifest :
+    IEvent,
+    SearchableEvent {
     val tags: TagArray
+    val content: String
 
-    /** `path` tags mapping each absolute request path to its blob's sha256. */
-    fun paths(): List<PathTag> = tags.sitePaths()
+    /** The sha256 of the napplet's `/index.html`, or null when the manifest lacks exactly one valid `x` tag. */
+    fun artifact(): HexKey? = tags.artifact()
 
-    /** `server` tags hinting which Blossom servers hold the blobs. */
-    fun servers(): List<String> = tags.siteServers()
-
-    /** `requires` tags: bare NAP capability domains the napplet needs from the shell. */
-    fun requires(): List<String> = tags.nappletRequires()
-
-    /** The aggregate hash declared in the `x` tag, or null when absent. */
-    fun declaredAggregateHash(): HexKey? = tags.siteAggregateHash()
-
-    fun title(): String? = tags.siteTitle()
-
-    fun description(): String? = tags.siteDescription()
-
-    fun source(): String? = tags.siteSource()
-
-    /** `icon` tag: URL to the napplet's square app icon, when the publisher supplied one. */
-    fun icon(): String? = tags.siteIcon()
+    /** The artifact as the file a static-site resolver serves: `/index.html` mapped to [artifact]. */
+    fun artifactFile(): PathTag? = artifact()?.let { PathTag(INDEX_PATH, it) }
 
     /**
-     * The bundled blob that best looks like this napplet's own app icon (a conventional `favicon`/`icon`
-     * path among [paths]), or null when none is present. Lets a launcher show the real icon from verified,
-     * Tor-routed content even without an explicit `icon` URL tag. See [NappletIconPath].
+     * Whether the manifest meets NIP-5D's MUSTs: exactly one `x` tag and a non-empty description
+     * (each kind adds its own `d` and lineage rules). A runtime MUST reject one that doesn't; it
+     * MUST still verify the signature and the blob's hash.
      */
-    fun iconBlob(): PathTag? = NappletIconPath.choose(paths())
+    fun isValid(): Boolean = artifact() != null && content.isNotBlank()
 
-    /** The NIP-5A aggregate hash recomputed from this manifest's [paths]. */
-    fun computeAggregateHash(): HexKey = SiteAggregateHash.compute(paths())
+    /** The plain-text description. Clients MUST treat it as plain text, not HTML or Markdown. */
+    fun description(): String = content
+
+    fun title(): String? = tags.title()
+
+    fun servers(): List<String> = tags.servers()
+
+    fun source(): String? = tags.source()
+
+    fun icon(): NappletIcon? = tags.icon()
+
+    /** `R`: NAP domains the napplet needs for full functionality. */
+    fun required(): List<String> = tags.required()
+
+    /** `O`: NAP domains the napplet integrates with when offered. */
+    fun optional(): List<String> = tags.optional()
+
+    /** `z`: what the napplet says it does (`feed`, `profile`). */
+    fun archetypes(): List<String> = tags.archetypes()
+
+    /** `i`: the intents the napplet accepts, with their advertised parameter names. */
+    fun intents(): List<NappletIntent> = tags.intents()
 
     /**
-     * Verifies the declared `x` aggregate hash against the one recomputed from the
-     * `path` tags. Returns `true` when no `x` tag is present — per NIP-5D it is only
-     * enforced when carried. A runtime MUST still verify each blob's own sha256
-     * separately (see `StaticSiteResolver`).
+     * The [required] domains missing from [available]. Compatibility is `required ⊆ available`: a
+     * shell SHOULD reject the napplet, or warn, when this is not empty. Optional domains never count.
      */
-    fun verifyAggregate(): Boolean = SiteAggregateHash.verify(paths(), declaredAggregateHash())
+    fun missingRequired(available: Set<String>): List<String> = required().filter { it !in available }
+
+    // NIP-50: what the manifest says about itself, its title and description.
+    override fun indexableContent() = listOfNotNull(title(), description()).joinToString("\n")
+
+    // The read path: the same fields indexableContent() joins, handed over without building the
+    // joined string a scan would throw away.
+    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
+        if (!visitor.visit(title())) return
+        visitor.visit(description())
+    }
+
+    companion object {
+        /** Where the artifact is served. */
+        const val INDEX_PATH = "/index.html"
+    }
 }
