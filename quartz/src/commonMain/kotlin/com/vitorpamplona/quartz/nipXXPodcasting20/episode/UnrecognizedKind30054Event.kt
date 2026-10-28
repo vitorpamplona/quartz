@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30054 event that is neither a Podcasting-2.0 [Podcasting20EpisodeEvent] nor drss.io's
@@ -38,4 +39,5 @@ class UnrecognizedKind30054Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, Podcasting20EpisodeEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, Podcasting20EpisodeEvent.KIND, tags, content, sig),
+    UnrecognizedShape

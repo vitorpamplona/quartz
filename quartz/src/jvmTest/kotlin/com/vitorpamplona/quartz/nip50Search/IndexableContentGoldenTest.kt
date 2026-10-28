@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo.MostroInfoEvent
 import com.vitorpamplona.quartz.nip87Ecash.recommendation.MintRecommendationEvent
 import com.vitorpamplona.quartz.utils.EventFactory
@@ -65,7 +66,7 @@ class IndexableContentGoldenTest {
             DrssEventListEvent.KIND -> arrayOf(arrayOf("e", "c".repeat(64), "wss://relay.drss.io", "1700000000"))
             else -> null
         }?.let { items ->
-            EventFactory.create<com.vitorpamplona.quartz.nip01Core.core.Event>(
+            EventFactory.create<Event>(
                 "9".repeat(64),
                 "a".repeat(64),
                 1700000000L,
@@ -77,7 +78,7 @@ class IndexableContentGoldenTest {
         }
 
     private fun sharedSample(kind: Int) =
-        EventFactory.create<com.vitorpamplona.quartz.nip01Core.core.Event>(
+        EventFactory.create<Event>(
             "9".repeat(64),
             "a".repeat(64),
             1700000000L,
@@ -103,8 +104,6 @@ class IndexableContentGoldenTest {
                 // Kind 38000 picks its class by tags; without a mint `k` it would sample as the
                 // plain Event its junk parses to rather than as the mint recommendation it indexes.
                 *if (kind == MintRecommendationEvent.KIND) arrayOf(arrayOf("k", "38172")) else emptyArray(),
-                // Kind 38385 is Mostro's only with its `z`; the instance name and currencies are
-                // what it indexes.
                 // drss.io's folders hold lists or provenance records, and its provenance records
                 // carry its label namespace; without them they sample as the other apps' fallbacks.
                 *when (kind) {
@@ -113,6 +112,8 @@ class IndexableContentGoldenTest {
                     DrssProvenanceEvent.KIND -> arrayOf(arrayOf("L", DrssProvenanceEvent.NAMESPACE))
                     else -> emptyArray()
                 },
+                // Kind 38385 is Mostro's only with its `z`; the instance name and currencies are
+                // what it indexes.
                 *if (kind == MostroInfoEvent.KIND) {
                     arrayOf(arrayOf("z", "info"), arrayOf("y", "mostro", "The Instance"), arrayOf("fiat_currencies_accepted", "USD,EUR"))
                 } else {

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.drss.feedList
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30100 event that is not a [DrssFeedListEvent]: CI job statuses, room listings, showcase
@@ -37,4 +38,5 @@ class UnrecognizedKind30100Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, DrssFeedListEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, DrssFeedListEvent.KIND, tags, content, sig),
+    UnrecognizedShape

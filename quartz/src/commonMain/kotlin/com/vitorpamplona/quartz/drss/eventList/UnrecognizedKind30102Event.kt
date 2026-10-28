@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.drss.eventList
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30102 event that is not a [DrssEventListEvent]: showcase votes, model-file announcements,
@@ -37,4 +38,5 @@ class UnrecognizedKind30102Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, DrssEventListEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, DrssEventListEvent.KIND, tags, content, sig),
+    UnrecognizedShape

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.experimental.kanban.board
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30301 event that is neither a [KanbanBoardEvent] nor a WalletScrutiny build
@@ -43,4 +44,5 @@ class UnrecognizedKind30301Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, KanbanBoardEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, KanbanBoardEvent.KIND, tags, content, sig),
+    UnrecognizedShape

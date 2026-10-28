@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.drss.listFolder
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30101 event that is not a [DrssListFolderEvent]: room memberships, game handshakes, voting
@@ -37,4 +38,5 @@ class UnrecognizedKind30101Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, DrssListFolderEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, DrssListFolderEvent.KIND, tags, content, sig),
+    UnrecognizedShape

@@ -21,7 +21,10 @@
 package com.vitorpamplona.quartz.drss.listFolder
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.onlyAddressesOfKinds
+import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
@@ -33,6 +36,9 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.nip51Lists.articleCurationSet.ArticleCurationSetEvent
+import com.vitorpamplona.quartz.nip51Lists.bookmarkSet.BookmarkSetEvent
+import com.vitorpamplona.quartz.nip51Lists.followSet.FollowSetEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -91,7 +97,16 @@ class DrssListFolderEvent(
         const val KIND = 30101
 
         /** What a drss folder may hold: NIP-51 sets and drss's own list kinds. */
-        private val CHILD_KINDS = setOf("30000", "30003", "30004", "30100", "30101", "30102", "30104")
+        private val CHILD_KINDS =
+            intArrayOf(
+                FollowSetEvent.KIND,
+                BookmarkSetEvent.KIND,
+                ArticleCurationSetEvent.KIND,
+                DrssFeedListEvent.KIND,
+                KIND,
+                DrssEventListEvent.KIND,
+                DrssProvenanceFolderEvent.KIND,
+            )
 
         /** True for drss's shape: one or more `a`, each naming a list or folder kind. */
         fun isListFolder(tags: TagArray): Boolean = tags.onlyAddressesOfKinds(CHILD_KINDS)

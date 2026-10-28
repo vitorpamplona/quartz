@@ -90,14 +90,14 @@ class DrssListenProgressEvent(
 
         /**
          * True for drss's progress shape: an `a` to the episode and at least one of `position`,
-         * `duration`, `completed` or `plays`. Checked after [Podcasting20EpisodeEvent.isPodcastEpisode],
-         * so an episode that happens to carry one of these names stays an episode.
+         * `duration`, `completed` or `plays` holding a number. Checked after
+         * [Podcasting20EpisodeEvent.isPodcastEpisode], so an episode that happens to carry one of
+         * these names stays an episode.
          */
         fun isListenProgress(tags: TagArray): Boolean =
             tags.fastAny(ATag::isTagged) &&
                 tags.fastAny {
-                    it.size > 1 &&
-                        (it[0] == PositionTag.TAG_NAME || it[0] == DurationTag.TAG_NAME || it[0] == CompletedTag.TAG_NAME || it[0] == PlaysTag.TAG_NAME)
+                    PositionTag.parse(it) != null || DurationTag.parse(it) != null || CompletedTag.parse(it) != null || PlaysTag.parse(it) != null
                 }
 
         /**

@@ -5,7 +5,7 @@ expression. **Update this file in the same PR as any change to the searchable se
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
 Counts: 216 concrete classes covering 216 kind values (`GitStatusEvent` spans 4 kinds;
-kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's listening progress, and drss.io's 30100–30104 and 31985 with other apps — see the footnotes). The kind
+kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's listening progress, and drss.io's 30100, 30101, 30102, 30104 and 31985 with other apps — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
 

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.experimental.kanban.card
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30302 event that is not a [KanbanCardEvent]. The one other shape seen in the 2026-10
@@ -41,4 +42,5 @@ class UnrecognizedKind30302Event(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : BaseAddressableEvent(id, pubKey, createdAt, KanbanCardEvent.KIND, tags, content, sig)
+) : BaseAddressableEvent(id, pubKey, createdAt, KanbanCardEvent.KIND, tags, content, sig),
+    UnrecognizedShape

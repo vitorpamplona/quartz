@@ -76,7 +76,7 @@ class DrssProvenanceFolderEvent(
     companion object {
         const val KIND = 30104
 
-        private val CHILD_KINDS = setOf(DrssProvenanceEvent.KIND.toString(), KIND.toString())
+        private val CHILD_KINDS = intArrayOf(DrssProvenanceEvent.KIND, KIND)
 
         /** True for drss's shape: one or more `a`, each naming a provenance record or folder. */
         fun isProvenanceFolder(tags: TagArray): Boolean = tags.onlyAddressesOfKinds(CHILD_KINDS)
