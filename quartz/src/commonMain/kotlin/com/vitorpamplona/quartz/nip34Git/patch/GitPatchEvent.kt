@@ -42,6 +42,7 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.Committer
 import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitterTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -113,7 +114,7 @@ class GitPatchEvent(
     fun committer() = tags.mapNotNull(CommitterTag::parse)
 
     /** Earliest unique commit of the target repository, encoded as `["r", <commit>]`. */
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     /** `true` if this event is tagged `["t", "root"]` (root of a patch series). */
     fun isRoot(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT) }

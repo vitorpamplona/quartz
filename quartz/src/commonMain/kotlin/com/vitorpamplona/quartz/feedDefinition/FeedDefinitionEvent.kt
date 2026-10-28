@@ -53,9 +53,9 @@ class FeedDefinitionEvent(
         visitor.visit(title())
     }
 
-    fun title(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
+    fun title(): String? = tags.feedTitle()
 
-    fun emoji(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "emoji" }?.get(1)
+    fun emoji(): String? = tags.feedEmoji()
 
     fun feedConfigJson(): String = content
 

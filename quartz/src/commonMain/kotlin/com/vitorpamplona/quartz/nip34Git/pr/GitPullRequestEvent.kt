@@ -41,6 +41,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.BranchNameTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -100,7 +101,7 @@ class GitPullRequestEvent(
 
     fun repositoryAddress() = tags.firstNotNullOfOrNull(ATag::parseAddress)
 
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     fun currentCommit(): String? = tags.firstNotNullOfOrNull(CurrentCommitTag::parse)
 

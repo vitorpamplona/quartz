@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip90Dvms.DvmResponseEvent
+import com.vitorpamplona.quartz.nip90Dvms.tags.dvmResultPubKeys
 import com.vitorpamplona.quartz.nip90Dvms.tags.parseDvmResultTags
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -54,14 +55,7 @@ class DvmPeopleSearchResponseEvent(
     fun innerTags(): List<HexKey> {
         people?.let { return it }
 
-        return resultTags()
-            .mapNotNull {
-                if (it.size > 1 && it[0] == "p") {
-                    it[1]
-                } else {
-                    null
-                }
-            }.also { people = it }
+        return resultTags().dvmResultPubKeys().also { people = it }
     }
 
     // The results are public references, just carried in content instead of tags, each with its

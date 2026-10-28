@@ -25,6 +25,9 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip40Expiration.expiration
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomHashTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomVerbTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.io.encoding.Base64
 
@@ -38,13 +41,13 @@ class BlossomAuthorizationEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig) {
     /** The BUD-01 verb this token allows: `upload`, `delete`, `list`, `get` or `media`. */
-    fun type() = tags.firstOrNull { it.size > 1 && it[0] == "t" }?.get(1)
+    fun type() = tags.blossomVerb()
 
     /** The blob hashes (`x` tags) the token is limited to; empty means any blob the verb reaches. */
-    fun hashes() = tags.mapNotNull { if (it.size > 1 && it[0] == "x") it[1] else null }
+    fun hashes() = tags.blossomHashes()
 
     /** BUD-11 `server` domains the token is scoped to; empty means any server accepts it. */
-    fun servers() = tags.mapNotNull { if (it.size > 1 && it[0] == "server") it[1] else null }
+    fun servers() = tags.blossomServers()
 
     fun expiration() = tags.expiration()
 
@@ -154,14 +157,14 @@ class BlossomAuthorizationEvent(
                     .map { BlossomServerUrl.domain(it) }
                     .filter { it.isNotBlank() }
                     .distinct()
-                    .map { arrayOf("server", it) }
+                    .map { BlossomServerTag.assemble(it) }
 
             val tags =
                 listOfNotNull(
-                    arrayOf("t", type),
+                    BlossomVerbTag.assemble(type),
                     arrayOf("expiration", expiration.toString()),
                     fileSize?.let { arrayOf("size", it.toString()) },
-                    hash?.let { arrayOf("x", it) },
+                    hash?.let { BlossomHashTag.assemble(it) },
                 ) + serverTags
 
             return signer.sign(createdAt, KIND, tags.toTypedArray(), alt)

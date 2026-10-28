@@ -30,7 +30,7 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.Committer
 import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitterTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
-import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
 fun TagArrayBuilder<GitPatchEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
 
@@ -43,7 +43,7 @@ fun TagArrayBuilder<GitPatchEvent>.repository(rep: EventHintBundle<GitRepository
  * (confirmed against the ngit reference implementation). A `#r` filter still
  * matches either shape (both key off the value at index 1).
  */
-fun TagArrayBuilder<GitPatchEvent>.euc(commit: String) = addUnique(arrayOf(EucTag.TAG_NAME, commit))
+fun TagArrayBuilder<GitPatchEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPatchEvent>.commit(commit: String) = addUnique(CommitTag.assemble(commit))
 

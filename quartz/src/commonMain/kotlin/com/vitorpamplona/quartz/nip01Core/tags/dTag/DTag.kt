@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip01Core.tags.dTag
 
+import com.vitorpamplona.quartz.nip01Core.core.has
+
 class DTag(
     val dId: String,
 ) {
@@ -27,6 +29,9 @@ class DTag(
 
     companion object {
         const val TAG_NAME = "d"
+
+        /** True for a `d` tag that carries a value. */
+        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME
 
         fun parse(tags: Array<String>): DTag {
             require(tags[0] == TAG_NAME)

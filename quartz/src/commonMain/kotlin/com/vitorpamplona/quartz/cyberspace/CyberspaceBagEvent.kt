@@ -53,7 +53,7 @@ class CyberspaceBagItem(
      * §7.6: an item MAY carry a `C` tag, "its exact coordinate (§2), which lets
      * a client render it at a point rather than somewhere in the region."
      */
-    fun coordinate(): String? = event.tags.firstOrNull { it.size > 1 && it[0] == "C" }?.get(1)
+    fun coordinate(): String? = event.tags.coordinate()
 }
 
 /** What a bag turned out to hold, once its key was found (§7.6). */
@@ -112,20 +112,20 @@ class CyberspaceBagEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
     /** The `d` tag: this region's `lookup_id` (§7.2), and the address a sweep asks for. */
-    fun lookupId(): HexKey? = tags.firstOrNull { it.size > 1 && it[0] == "d" }?.get(1)
+    fun lookupId(): HexKey? = tags.lookupId()
 
     /**
      * The `h` tag: "the height of the region whose key encrypts the content,
      * which is the discovery radius of §7.3". Optional, and a hint is read
      * against it.
      */
-    fun height(): Int? = tags.firstOrNull { it.size > 1 && it[0] == "h" }?.get(1)?.toIntOrNull()
+    fun height(): Int? = tags.height()
 
     /**
      * §8.6: "`version` names the rules of §7.6. A reader MUST ignore a bag whose
      * version it does not know."
      */
-    fun isKnownVersion(): Boolean = tags.firstOrNull { it.size > 1 && it[0] == "version" }?.get(1) == VERSION
+    fun isKnownVersion(): Boolean = tags.bagVersion() == VERSION
 
     fun hint(): CyberspaceHint? = CyberspaceHint.read(tags, height())
 
@@ -140,10 +140,10 @@ class CyberspaceBagEvent(
      * else's format rather than a malformed bag.
      */
     fun payload(): ByteArray? {
-        val tag = tags.firstOrNull { it.size > 2 && it[0] == "encrypted" } ?: return null
-        if (tag[1] != ALGORITHM) return null
+        val tag = tags.bagCiphertext() ?: return null
+        if (tag.algorithm != ALGORITHM) return null
         return try {
-            Base64.decode(tag[2])
+            Base64.decode(tag.payload)
         } catch (_: Exception) {
             null
         }

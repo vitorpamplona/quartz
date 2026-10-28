@@ -30,14 +30,14 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
-import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
 fun TagArrayBuilder<GitPullRequestUpdateEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
 
 fun TagArrayBuilder<GitPullRequestUpdateEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUnique(rep.toATag().toATagArray())
 
 // Plain `["r", <commit>]` — the `"euc"` marker is only on the 30617 announcement.
-fun TagArrayBuilder<GitPullRequestUpdateEvent>.euc(commit: String) = addUnique(arrayOf(EucTag.TAG_NAME, commit))
+fun TagArrayBuilder<GitPullRequestUpdateEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPullRequestUpdateEvent>.currentCommit(commit: String) = addUnique(CurrentCommitTag.assemble(commit))
 

@@ -21,9 +21,9 @@
 package com.vitorpamplona.quartz.experimental.birdstar
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesNameTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.mapValueTagged
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -67,7 +67,7 @@ class BirdexEvent(
     }
 
     /** Scientific names of the collected species, in event order, from the `n` tags. */
-    fun speciesNames() = tags.mapValueTagged("n") { it }
+    fun speciesNames() = tags.speciesNames()
 
     /**
      * The collected species, in event order, each paired with the external
@@ -95,7 +95,7 @@ class BirdexEvent(
             if (tag.size < 2) continue
 
             when (tag[0]) {
-                "n" -> {
+                SpeciesNameTag.TAG_NAME -> {
                     species.add(BirdexSpecies(tag[1], if (pendingIndex == index - 1) pendingReference else null))
                     pendingReference = null
                     pendingIndex = -1
@@ -119,7 +119,7 @@ class BirdexEvent(
     }
 
     /** Number of collected species (one `n` tag per species). */
-    fun speciesCount() = tags.count { it.size > 1 && it[0] == "n" }
+    fun speciesCount() = tags.speciesCount()
 
     /** Publisher-provided human-readable summary, from the NIP-31 `alt` tag (may be null). */
     fun summary() = tags.alt()

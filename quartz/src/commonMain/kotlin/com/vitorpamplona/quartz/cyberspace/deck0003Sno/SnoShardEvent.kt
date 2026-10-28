@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.cyberspace.deck0003Sno
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.cyberspace.CyberspaceCoordinate
 import com.vitorpamplona.quartz.cyberspace.CyberspacePlane
+import com.vitorpamplona.quartz.cyberspace.coordinate
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 
@@ -95,7 +96,7 @@ class SnoShardEvent(
      * bag that coordinate MUST lie inside the region the bag is encrypted to;
      * this class has no bag to check it against, so it only reports the claim.
      */
-    fun coordinate(): String? = tags.firstOrNull { it.size > 1 && it[0] == "C" }?.get(1)
+    fun coordinate(): String? = tags.coordinate()
 
     /**
      * The plane the claimed coordinate lies in, or null when there is no `C`

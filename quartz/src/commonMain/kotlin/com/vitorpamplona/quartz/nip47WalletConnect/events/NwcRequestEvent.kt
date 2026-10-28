@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
+import com.vitorpamplona.quartz.nip47WalletConnect.tags.EncryptionTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -61,7 +62,7 @@ class NwcRequestEvent(
         return OptimizedJsonMapper.fromJsonTo<Request>(jsonText)
     }
 
-    fun encryptionScheme() = tags.firstOrNull { it.size > 1 && it[0] == "encryption" }?.get(1)
+    fun encryptionScheme() = tags.encryptionScheme()
 
     companion object {
         const val KIND = 23194
@@ -92,7 +93,7 @@ class NwcRequestEvent(
 
             val tags =
                 if (useNip44) {
-                    arrayOf(arrayOf("p", walletServicePubkey), arrayOf("encryption", "nip44_v2"))
+                    arrayOf(arrayOf("p", walletServicePubkey), EncryptionTag.assembleScheme("nip44_v2"))
                 } else {
                     arrayOf(arrayOf("p", walletServicePubkey))
                 }

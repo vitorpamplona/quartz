@@ -22,10 +22,11 @@ package com.vitorpamplona.quartz.nip87Ecash.recommendation
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip87Ecash.MintUrlTag
+import com.vitorpamplona.quartz.nip87Ecash.recommendation.tags.MintKindTag
 
 fun TagArrayBuilder<MintRecommendationEvent>.dTag(mintIdentifier: String) = addUnique(arrayOf("d", mintIdentifier))
 
-fun TagArrayBuilder<MintRecommendationEvent>.kTag(kind: Int) = addUnique(arrayOf("k", kind.toString()))
+fun TagArrayBuilder<MintRecommendationEvent>.kTag(kind: Int) = addUnique(MintKindTag.assemble(kind))
 
 fun TagArrayBuilder<MintRecommendationEvent>.mintUrl(url: String) = add(MintUrlTag.assemble(url))
 
