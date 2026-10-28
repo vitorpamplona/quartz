@@ -28,6 +28,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,7 +54,7 @@ class PublicAddressGuardTest {
     private fun client(allowedPorts: Set<Int>? = null) =
         OkHttpClient
             .Builder()
-            .publicAddressesOnly(allowedPorts)
+            .publicAddressesOnly(direct = true, allowedPorts = allowedPorts)
             .addInterceptor(stub)
             .build()
 
@@ -91,11 +92,47 @@ class PublicAddressGuardTest {
     }
 
     @Test
-    fun theClientNeverUsesAProxyOrFollowsRedirects() {
+    fun aDirectClientUsesNoProxyAndFollowsNoRedirects() {
         val c = client()
         assertEquals(Proxy.NO_PROXY, c.proxy)
         assertEquals(false, c.followRedirects)
         assertEquals(false, c.followSslRedirects)
+    }
+
+    @Test
+    fun aTorClientKeepsItsProxy() {
+        // Regression: the guard used to force NO_PROXY, sending a Tor client's requests around Tor.
+        val tor = Proxy(Proxy.Type.SOCKS, InetSocketAddress.createUnresolved("127.0.0.1", 9050))
+        val c =
+            OkHttpClient
+                .Builder()
+                .proxy(tor)
+                .publicAddressesOnly(direct = false)
+                .build()
+        assertEquals(tor, c.proxy)
+        assertEquals(false, c.followRedirects)
+        // Literals are still refused before any proxy is involved.
+        val call =
+            c
+                .newBuilder()
+                .addInterceptor(stub)
+                .build()
+                .newCall(Request.Builder().url("https://192.168.1.1/").build())
+        assertFailsWith<NonPublicAddressException> { call.execute() }
+    }
+
+    @Test
+    fun theGivenResolverIsWrappedNotReplaced() {
+        val asked = mutableListOf<String>()
+        val doh =
+            Dns { host ->
+                asked += host
+                listOf(InetAddress.getByName("127.0.0.1"))
+            }
+        val c = OkHttpClient.Builder().publicAddressesOnly(direct = true, dns = doh).build()
+        // A real call, refused at resolution: no socket is opened.
+        assertFailsWith<NonPublicAddressException> { c.newCall(Request.Builder().url("https://rebind.example/").build()).execute() }
+        assertEquals(listOf("rebind.example"), asked)
     }
 
     @Test

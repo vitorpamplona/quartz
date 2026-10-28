@@ -139,8 +139,9 @@ suspend fun post(client: NostrClient) {
   signer reports against `userPubKey`. `NostrConnectURI.fillNostrConnectUrl` fills its
   `nostrConnectUrl` page with a `nostrconnect://` code.
 - **Fetch what a profile points at** (a NIP-05 domain, a lightning address): build the
-  `OkHttpClient` with `publicAddressesOnly()` (`utils.okhttp`), so a profile can't aim the
-  request at a private or loopback address. `OkHttpNip05Fetcher` caps the body and fails with a
+  `OkHttpClient` with `publicAddressesOnly(direct, …)` (`utils.okhttp`), so a profile can't aim
+  the request at a private or loopback address. `direct = true` on a server; `false` on a client
+  behind Tor, which keeps its proxy (`true` would bypass Tor). `OkHttpNip05Fetcher` caps the body and fails with a
   `Nip05FetchException` that says why: `Status(code)`, `TooLarge`, `Refused` or `Unreachable`.
   For zaps, `LnurlForm.toUrl(lud16OrLnurl)` gives the LNURL-pay URL and
   `LnurlEndpointInfo.parse(body)` reads its `allowsNostr` and `nostrPubkey` (`nip57Zaps.validate`).

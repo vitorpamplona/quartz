@@ -35,22 +35,36 @@ import java.net.UnknownHostException
  * doing that without a guard can be pointed at its own cloud metadata service or internal
  * network; a client, at the user's router.
  *
- * - Host names resolve through [PublicOnlyDns], and OkHttp connects to exactly the addresses
- *   it returns, so a host can't pass the check and then rebind to an internal address.
+ * - Host names resolve through [PublicOnlyDns] over [dns], and OkHttp connects to exactly the
+ *   addresses it returns, so a host can't pass the check and then rebind to an internal address.
+ *   The builder's own resolver can't be read back, so pass it as [dns] to keep it (DoH, say).
  * - IP-literal hosts, which OkHttp never sends to a [Dns], are checked by [PublicOnlyInterceptor],
  *   as are the ports in [allowedPorts] when given (`setOf(443)` for an https-only fetcher).
- * - No proxy: through one, OkHttp resolves only the proxy, so the target would go unchecked.
  * - No redirects: OkHttp follows them past application interceptors, so a redirect to an IP
  *   literal would go unchecked. NIP-05 forbids following them anyway.
  *
+ * [direct] is required because no default is safe for both kinds of caller. Through a proxy,
+ * OkHttp resolves only the proxy and the proxy resolves the target, so host names go unchecked
+ * here; only IP literals are still refused.
+ * - A server fencing off its own network passes `true`: no proxy, every host name checked. The
+ *   JVM's proxy settings would otherwise apply silently.
+ * - A client behind Tor (a SOCKS proxy) passes `false`: `true` would send the request around
+ *   Tor and reveal the user's address. Host names then resolve at the exit, on its network,
+ *   not the user's.
+ *
  * A refused request fails with [NonPublicAddressException].
  */
-fun OkHttpClient.Builder.publicAddressesOnly(allowedPorts: Set<Int>? = null): OkHttpClient.Builder =
-    proxy(Proxy.NO_PROXY)
-        .dns(PublicOnlyDns())
+fun OkHttpClient.Builder.publicAddressesOnly(
+    direct: Boolean,
+    allowedPorts: Set<Int>? = null,
+    dns: Dns = Dns.SYSTEM,
+): OkHttpClient.Builder {
+    if (direct) proxy(Proxy.NO_PROXY)
+    return dns(PublicOnlyDns(dns))
         .followRedirects(false)
         .followSslRedirects(false)
         .addInterceptor(PublicOnlyInterceptor(allowedPorts))
+}
 
 /** A request refused because its host is, or resolves to, an address that isn't public. */
 class NonPublicAddressException(

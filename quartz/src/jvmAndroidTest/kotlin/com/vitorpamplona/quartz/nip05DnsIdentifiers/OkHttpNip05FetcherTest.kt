@@ -90,9 +90,15 @@ class OkHttpNip05FetcherTest {
     @Test
     fun aNonPublicHostIsRefused() =
         runTest {
-            val guarded = OkHttpNip05Fetcher({ OkHttpClient.Builder().publicAddressesOnly().build() })
+            val guarded = OkHttpNip05Fetcher({ OkHttpClient.Builder().publicAddressesOnly(direct = true).build() })
             assertFailsWith<Nip05FetchException.Refused> { guarded.fetch("https://127.0.0.1/.well-known/nostr.json?name=bob") }
         }
+
+    @Test
+    fun aCapThatCannotBeReadIsRejectedUpFront() {
+        assertFailsWith<IllegalArgumentException> { OkHttpNip05Fetcher({ OkHttpClient() }, Long.MAX_VALUE) }
+        assertFailsWith<IllegalArgumentException> { OkHttpNip05Fetcher({ OkHttpClient() }, -1) }
+    }
 
     @Test
     fun theFailuresAreStillIllegalStateExceptions() =

@@ -36,6 +36,7 @@ import java.io.IOException
  *
  * To fetch only from public addresses, build the client with
  * [publicAddressesOnly][com.vitorpamplona.quartz.utils.okhttp.publicAddressesOnly].
+ * Its refusals surface as [Nip05FetchException.Refused].
  */
 class OkHttpNip05Fetcher
     @JvmOverloads
@@ -43,6 +44,11 @@ class OkHttpNip05Fetcher
         val okHttpClient: (String) -> OkHttpClient,
         val maxBodyBytes: Long = DEFAULT_MAX_BODY_BYTES,
     ) : Nip05Fetcher {
+        init {
+            // The read asks for one byte past the cap.
+            require(maxBodyBytes in 0 until Long.MAX_VALUE) { "maxBodyBytes out of range: $maxBodyBytes" }
+        }
+
         override suspend fun fetch(url: String): String =
             withContext(Dispatchers.IO) {
                 val request =
@@ -56,13 +62,13 @@ class OkHttpNip05Fetcher
                 val client = okHttpClient(url).newBuilder().followRedirects(false).build()
 
                 try {
+                    // Already on Dispatchers.IO, where the body's blocking reads belong.
                     client.newCall(request).executeAsync().use { response ->
-                        withContext(Dispatchers.IO) {
-                            if (!response.isSuccessful) throw Nip05FetchException.Status(response.code)
-                            val source = response.body.source()
-                            if (source.request(maxBodyBytes + 1)) throw Nip05FetchException.TooLarge(maxBodyBytes)
-                            source.buffer.readUtf8()
-                        }
+                        if (!response.isSuccessful) throw Nip05FetchException.Status(response.code)
+                        // OkHttp decompresses gzip transparently, so this caps the inflated size too.
+                        val source = response.body.source()
+                        if (source.request(maxBodyBytes + 1)) throw Nip05FetchException.TooLarge(maxBodyBytes)
+                        source.buffer.readUtf8()
                     }
                 } catch (e: NonPublicAddressException) {
                     throw Nip05FetchException.Refused(e.message ?: "non-public address", e)
