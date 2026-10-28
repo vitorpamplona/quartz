@@ -750,6 +750,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
 | 30054 | `Podcasting20EpisodeEvent` | edit -> EDITED (E); t -> HASHTAG (T) | editsEventId() (EditTag::parse), topics() (hashtags) | Podcasting-2.0 draft (not a NIP; podstr). edit = 'the event id of the original publication when an addressable episode/trailer is updated' - fits draft EDITED. person tags carry names/URLs, not pubkeys (not modelled). Quartz: EditTag.parse does not check 64-hex. |
+| 30054 | `UnrecognizedKind30054Event` | *none* | – | an undocumented app's playback-progress records (`position`, `duration`, an `a` to the 30023 article listened to): addressable, unread. |
 | 30055 | `Podcasting20TrailerEvent` | *none* | – | Podcasting-2.0 draft trailer: title, url, pubdate, length, type, season - no references. |
 
 ### `nip01Core` (1)

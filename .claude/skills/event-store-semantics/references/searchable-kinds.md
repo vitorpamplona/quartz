@@ -5,7 +5,7 @@ expression. **Update this file in the same PR as any change to the searchable se
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
 Counts: 210 concrete classes covering 210 kind values (`GitStatusEvent` spans 4 kinds;
-kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps and kinds 30405 / 30406 with Shopstr — see the footnotes). The kind
+kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr and kind 30054 with a playback-progress app — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
 
@@ -120,7 +120,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30040 | PublicationIndexEvent | experimental/publications | `listOfNotNull(title(), author(), summary())` NL |
 | 30041 | PublicationContentEvent | experimental/publications | `listOfNotNull(title(), content)` NL |
 | 30045 | BookshelfDirectoryEvent | experimental/library | `listOfNotNull(title(), summary(), content)` NL |
-| 30054 | Podcasting20EpisodeEvent | nipXXPodcasting20/episode | `(listOfNotNull(title(), description(), content) + personNames() + soundbiteTitles() + topics())` NL |
+| 30054 | Podcasting20EpisodeEvent | nipXXPodcasting20/episode | `(listOfNotNull(title(), description(), content) + personNames() + soundbiteTitles() + topics())` NL — another app's playback-progress records on this kind (no `title`, `audio` or `video`) parse as `UnrecognizedKind30054Event` and are not indexed |
 | 30055 | Podcasting20TrailerEvent | nipXXPodcasting20/trailer | `listOfNotNull(title(), content)` NL |
 | 30063 | ReleaseArtifactSetEvent † | nip51Lists/releaseArtifactSet | `listOfNotNull(title(), description(), searchableReleaseNotes())` NL |
 | 30066 | LiveChessMoveEvent | nip64Chess/move | `content` |

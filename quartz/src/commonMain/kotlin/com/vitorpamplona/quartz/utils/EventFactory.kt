@@ -497,6 +497,7 @@ import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
+import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
 import com.vitorpamplona.quartz.nipXXPrivateNoteStorage.PnsEvent
 import com.vitorpamplona.quartz.nipXXPushNotifications.deregistration.PushDeregistrationEvent
@@ -1064,7 +1065,14 @@ class EventFactory {
                 ThemeDefinitionEvent.KIND -> ThemeDefinitionEvent(id, pubKey, createdAt, tags, content, sig)
                 AuthoredPodcastsEvent.KIND -> AuthoredPodcastsEvent(id, pubKey, createdAt, tags, content, sig)
                 FavoritePodcastsListEvent.KIND -> FavoritePodcastsListEvent(id, pubKey, createdAt, tags, content, sig)
-                Podcasting20EpisodeEvent.KIND -> Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)
+                // Podcasting-2.0 episodes (podstr's draft) share 30054 with an undocumented app's
+                // playback-progress records (`position`, `duration`, an `a` to the article listened to).
+                Podcasting20EpisodeEvent.KIND ->
+                    if (Podcasting20EpisodeEvent.isPodcastEpisode(tags)) {
+                        Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30054Event(id, pubKey, createdAt, tags, content, sig)
+                    }
                 Podcasting20TrailerEvent.KIND -> Podcasting20TrailerEvent(id, pubKey, createdAt, tags, content, sig)
                 ProductEvent.KIND -> ProductEvent(id, pubKey, createdAt, tags, content, sig)
                 EncryptedDmEvent.KIND -> EncryptedDmEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1210,8 +1218,9 @@ class EventFactory {
          * 38385 and 38386 and RoboSats' 31986 do the same: with no tags they fall to their
          * `UnrecognizedKind…Event`, and 38385's primary class is searchable. Kind 30301 answers as
          * its Kanban board (WalletScrutiny's verifications on it are searchable too) and 30302 as
-         * the Kanban card, and Open Markets' 30405 and 30406 as their collection and shipping option
-         * (Shopstr's carts and escrow records on them are the unsearchable fallbacks). (The other
+         * the Kanban card, Open Markets' 30405 and 30406 as their collection and shipping option
+         * (Shopstr's carts and escrow records on them are the unsearchable fallbacks), and 30054 as
+         * the Podcasting-2.0 episode. (The other
          * tag-split kinds, 39005 and 20001, already land on a typed class with no tags.)
          *
          * The id is non-blank so kinds that lazily hash a missing id (NIP-17 chat) skip that work
@@ -1228,6 +1237,7 @@ class EventFactory {
                 RoboSatsCoordinatorRatingEvent.KIND -> RoboSatsCoordinatorRatingEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 KanbanBoardEvent.KIND -> KanbanBoardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 KanbanCardEvent.KIND -> KanbanCardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                Podcasting20EpisodeEvent.KIND -> Podcasting20EpisodeEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 else -> create(PROBE_ID, PROBE_ID, 0L, kind, emptyArray(), "", "")
             }
 
