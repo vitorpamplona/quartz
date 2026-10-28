@@ -42,6 +42,7 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.Committer
 import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitterTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils

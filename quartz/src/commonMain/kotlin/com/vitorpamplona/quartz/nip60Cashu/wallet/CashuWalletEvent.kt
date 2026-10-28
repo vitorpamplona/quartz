@@ -67,7 +67,7 @@ class CashuWalletEvent(
     /**
      * Extracts mint URLs from the decrypted private tags.
      */
-    suspend fun mints(signer: NostrSigner): List<String> = cachedPrivateTags(signer).mints()
+    suspend fun mints(signer: NostrSigner): List<String> = cachedPrivateTags(signer).walletMints()
 
     /**
      * Extracts the P2PK private key from the decrypted private tags (used for NIP-61 nutzaps).

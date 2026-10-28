@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.geohash.GeoHashTag
 import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohashes
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
+import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzChannelTypeTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ChildTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ParentTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.SupportedKindsTag
@@ -184,10 +185,10 @@ class GroupMetadataEvent(
     }
 
     companion object {
-        const val BUZZ_CHANNEL_TYPE_DM = "dm"
+        const val BUZZ_CHANNEL_TYPE_DM = BuzzChannelTypeTag.DM
 
         /** Every value Buzz's `ChannelType` can serialize to. */
-        val BUZZ_CHANNEL_TYPES = setOf("stream", "forum", BUZZ_CHANNEL_TYPE_DM, "workflow")
+        val BUZZ_CHANNEL_TYPES = BuzzChannelTypeTag.TYPES
 
         const val KIND = 39000
 

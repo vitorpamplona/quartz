@@ -18,11 +18,11 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nip34Git.pr
+package com.vitorpamplona.quartz.nip34Git.repository
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
-/** The repository's earliest unique commit: the first non-empty `r`. */
+/** The repository's earliest unique commit, as patches and pull requests carry it: the first non-empty `r`. */
 fun TagArray.earliestUniqueCommit() = fastFirstNotNullOfOrNull(CommitReferenceTag::parse)

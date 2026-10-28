@@ -125,7 +125,7 @@ class JesterEvent(
     fun headEventId(): String? = tags.gameEventRefs().getOrNull(1)
 
     /** Get opponent pubkey (p-tag, for private games) */
-    fun opponentPubkey(): String? = tags.opponent()
+    fun opponentPubkey(): String? = tags.jesterOpponent()
 
     /** Get all e-tags */
     fun eTags(): List<String> = tags.gameEventRefs()
@@ -189,7 +189,7 @@ class JesterEvent(
                 gameEventRef(JesterProtocol.START_POSITION_HASH)
                 // Tag the opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    opponent(opponentPubkey)
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }
@@ -229,7 +229,7 @@ class JesterEvent(
                 gameEventRef(headEventId)
                 // Tag opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    opponent(opponentPubkey)
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }
@@ -267,7 +267,7 @@ class JesterEvent(
                 gameEventRef(headEventId)
                 // Tag opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    opponent(opponentPubkey)
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }

@@ -32,4 +32,4 @@ fun TagArray.firstGameEventRef() = fastFirstNotNullOfOrNull(JesterEventTag::pars
 
 fun TagArray.gameEventRefCount() = count(JesterEventTag::isTag)
 
-fun TagArray.opponent() = fastFirstNotNullOfOrNull(JesterOpponentTag::parse)
+fun TagArray.jesterOpponent() = fastFirstNotNullOfOrNull(JesterOpponentTag::parse)

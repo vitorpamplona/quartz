@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.marmot.mip02Welcome
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.marmot.mip02Welcome.tags.WelcomeGroupIdTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -91,7 +92,7 @@ class WelcomeEvent(
             // receiver that switched decoders on one could be steered into a
             // different parse of the same bytes, so the binding removes the
             // negotiation entirely rather than defining it.
-            nostrGroupId?.let { addUnique(arrayOf("h", it)) }
+            nostrGroupId?.let { addUnique(WelcomeGroupIdTag.assemble(it)) }
             initializer()
         }
     }

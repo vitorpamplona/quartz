@@ -24,14 +24,16 @@ import com.vitorpamplona.quartz.cyberspace.tags.BagCiphertextTag
 import com.vitorpamplona.quartz.cyberspace.tags.BagVersionTag
 import com.vitorpamplona.quartz.cyberspace.tags.CoordinateTag
 import com.vitorpamplona.quartz.cyberspace.tags.HeightTag
-import com.vitorpamplona.quartz.cyberspace.tags.LookupIdTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstOrNull
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
 
 /** The first `C` value, as written. */
 fun TagArray.coordinate() = fastFirstNotNullOfOrNull(CoordinateTag::parse)
 
-fun TagArray.lookupId() = fastFirstNotNullOfOrNull(LookupIdTag::parse)
+/** The first `d` value, as written; null when there is none (unlike [com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag]'s ""). */
+fun TagArray.lookupId() = fastFirstOrNull(DTag::isTag)?.get(1)
 
 /** The first `h` as a number; null when it is absent or not one (a later `h` is not read). */
 fun TagArray.height() = fastFirstNotNullOfOrNull(HeightTag::parse)?.toIntOrNull()

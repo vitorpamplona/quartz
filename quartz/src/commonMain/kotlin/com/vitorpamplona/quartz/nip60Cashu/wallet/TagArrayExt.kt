@@ -25,6 +25,6 @@ import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip60Cashu.tags.CashuMintTag
 import com.vitorpamplona.quartz.nip60Cashu.tags.WalletPrivkeyTag
 
-fun TagArray.mints() = mapNotNull(CashuMintTag::parse)
+fun TagArray.walletMints() = mapNotNull(CashuMintTag::parse)
 
 fun TagArray.privkey() = fastFirstNotNullOfOrNull(WalletPrivkeyTag::parse)

@@ -27,4 +27,4 @@ import com.vitorpamplona.quartz.nip64Chess.jester.tags.JesterOpponentTag
 /** Appends an `e`; a move writes two, the start event then the move it follows, so this never replaces. */
 fun TagArrayBuilder<JesterEvent>.gameEventRef(id: String) = add(JesterEventTag.assemble(id))
 
-fun TagArrayBuilder<JesterEvent>.opponent(pubKey: String) = add(JesterOpponentTag.assemble(pubKey))
+fun TagArrayBuilder<JesterEvent>.jesterOpponent(pubKey: String) = add(JesterOpponentTag.assemble(pubKey))

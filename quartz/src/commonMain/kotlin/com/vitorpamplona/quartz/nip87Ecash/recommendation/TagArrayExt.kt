@@ -22,7 +22,9 @@ package com.vitorpamplona.quartz.nip87Ecash.recommendation
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstOrNull
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
 import com.vitorpamplona.quartz.nip87Ecash.MintUrlTag
 import com.vitorpamplona.quartz.nip87Ecash.recommendation.tags.MintKindTag
 
@@ -31,7 +33,7 @@ fun TagArray.mintUrls(): List<String> = mapNotNull(MintUrlTag::parse)
 /** The first `k` as a number; null when it is absent or not one (a later `k` is not read). */
 fun TagArray.mintEventKind(): Int? = fastFirstNotNullOfOrNull(MintKindTag::parse)?.toIntOrNull()
 
-fun TagArray.dTag(): String? = firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+fun TagArray.dTag(): String? = fastFirstOrNull(DTag::isTag)?.get(1)
 
 /** The recommended mints' announcements (`a`), as well-formed `kind:pubkey:d` address ids. */
 fun TagArray.mintEventAddresses(): List<String> = mapNotNull(ATag::parseValidAddress)

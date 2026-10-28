@@ -21,21 +21,28 @@
 package com.vitorpamplona.quartz.nip29RelayGroups.tags
 
 import com.vitorpamplona.quartz.nip01Core.core.has
-import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMetadataEvent
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
  * A Buzz channel type, `["t", <type>]` on a group's metadata. It shares the tag name with real
- * hashtags, so only a value in [GroupMetadataEvent.BUZZ_CHANNEL_TYPES] is a type.
+ * hashtags, so only a value in [TYPES] is a type. Ground truth: `ChannelType` in Buzz's
+ * `buzz-core/src/channel.rs`.
  */
 class BuzzChannelTypeTag {
     companion object {
         const val TAG_NAME = "t"
 
+        const val STREAM = "stream"
+        const val FORUM = "forum"
+        const val DM = "dm"
+        const val WORKFLOW = "workflow"
+
+        val TYPES = setOf(STREAM, FORUM, DM, WORKFLOW)
+
         fun parse(tag: Array<String>): String? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1] in GroupMetadataEvent.BUZZ_CHANNEL_TYPES) { return null }
+            ensure(tag[1] in TYPES) { return null }
             return tag[1]
         }
 

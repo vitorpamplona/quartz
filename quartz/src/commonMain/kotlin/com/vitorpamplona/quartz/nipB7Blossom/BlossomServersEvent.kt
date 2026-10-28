@@ -62,7 +62,7 @@ class BlossomServersEvent(
         ): BlossomServersEvent {
             val tags =
                 earlierVersion.tags
-                    .filter { it[0] != BlossomServerTag.TAG_NAME }
+                    .filter { it.isNotEmpty() && it[0] != BlossomServerTag.TAG_NAME }
                     .plus(servers.map { BlossomServerTag.assemble(it) })
                     .toTypedArray()
 

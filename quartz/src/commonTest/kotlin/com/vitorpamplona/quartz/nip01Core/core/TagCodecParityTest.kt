@@ -42,6 +42,7 @@ import com.vitorpamplona.quartz.nip28PublicChat.base.isEncrypted
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMetadataEvent
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.buzzChannelType
 import com.vitorpamplona.quartz.nip29RelayGroups.metadata.supportedKinds
+import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.status.referenceCommits
 import com.vitorpamplona.quartz.nip47WalletConnect.events.encryptionScheme
 import com.vitorpamplona.quartz.nip57Zaps.bolt11
@@ -50,8 +51,8 @@ import com.vitorpamplona.quartz.nip60Cashu.history.spendingAmount
 import com.vitorpamplona.quartz.nip60Cashu.history.spendingDirectionCode
 import com.vitorpamplona.quartz.nip60Cashu.history.spendingUnit
 import com.vitorpamplona.quartz.nip60Cashu.quote.mint
-import com.vitorpamplona.quartz.nip60Cashu.wallet.mints
 import com.vitorpamplona.quartz.nip60Cashu.wallet.privkey
+import com.vitorpamplona.quartz.nip60Cashu.wallet.walletMints
 import com.vitorpamplona.quartz.nip64Chess.jester.JesterEvent
 import com.vitorpamplona.quartz.nip64Chess.jester.gameEventRefCount
 import com.vitorpamplona.quartz.nip87Ecash.MintUrlTag
@@ -65,8 +66,7 @@ import com.vitorpamplona.quartz.nipB7Blossom.blossomVerb
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import com.vitorpamplona.quartz.nip34Git.patch.earliestUniqueCommit as patchEuc
-import com.vitorpamplona.quartz.nip34Git.pr.earliestUniqueCommit as prEuc
+import com.vitorpamplona.quartz.nip87Ecash.recommendation.dTag as recommendationDTag
 
 /**
  * Event-class cleanup, batch 3: tags that classes parsed inline now go through codecs. Each test
@@ -101,14 +101,18 @@ class TagCodecParityTest {
     ) {
         val cases = sequences(pool)
         assertTrue(cases.size > 100)
-        cases.forEach { tags -> assertEquals(old(tags), new(tags), tags.joinToString { it.toList().toString() }) }
+        cases.forEach { tags ->
+            val expected = old(tags)
+            val actual = new(tags)
+            // The message is built only on a mismatch: some pools yield over 100k cases.
+            if (expected != actual) assertEquals(expected, actual, tags.joinToString { it.toList().toString() })
+        }
     }
 
     @Test
     fun gitCommitReference() {
         val pool = pool(listOf("r"))
-        assertParity(pool, { t -> t.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1) }, { it.patchEuc() })
-        assertParity(pool, { t -> t.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1) }, { it.prEuc() })
+        assertParity(pool, { t -> t.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1) }, { it.earliestUniqueCommit() })
         assertParity(pool, { t -> t.mapNotNull { tag -> if (tag.size > 1 && tag[0] == "r" && tag[1].isNotEmpty()) tag[1] else null } }, { it.referenceCommits() })
     }
 
@@ -160,7 +164,7 @@ class TagCodecParityTest {
     @Test
     fun cashuTags() {
         assertParity(pool(listOf("mint")), { t -> t.firstOrNull { it.size >= 2 && it[0] == "mint" }?.get(1) }, { it.mint() })
-        assertParity(pool(listOf("mint")), { t -> t.filter { it.size >= 2 && it[0] == "mint" }.map { it[1] } }, { it.mints() })
+        assertParity(pool(listOf("mint")), { t -> t.filter { it.size >= 2 && it[0] == "mint" }.map { it[1] } }, { it.walletMints() })
         assertParity(pool(listOf("privkey")), { t -> t.firstOrNull { it.size >= 2 && it[0] == "privkey" }?.get(1) }, { it.privkey() })
         assertParity(pool(listOf("direction"), listOf("in", "out")), { t -> t.firstOrNull { it.size >= 2 && it[0] == "direction" }?.get(1) }, { it.spendingDirectionCode() })
         assertParity(pool(listOf("amount"), listOf("21")), { t -> t.firstOrNull { it.size >= 2 && it[0] == "amount" }?.get(1)?.toLongOrNull() }, { it.spendingAmount() })
@@ -235,6 +239,7 @@ class TagCodecParityTest {
         }
         assertParity(pool, old) { MintRecommendationEvent.isMintRecommendation(it) }
         assertParity(pool, { t -> t.firstOrNull { it.size >= 2 && it[0] == "k" }?.get(1)?.toIntOrNull() }, { it.mintEventKind() })
+        assertParity(pool(listOf("d")), { t -> t.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) }, { it.recommendationDTag() })
     }
 
     @Test
