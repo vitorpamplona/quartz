@@ -24,7 +24,9 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -75,10 +77,19 @@ class BlossomServersEvent(
             createdAt: Long = TimeUtils.now(),
         ) = create(relays, signer, createdAt)
 
+        fun build(
+            servers: List<String>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BlossomServersEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            blossomServers(servers)
+            initializer()
+        }
+
         suspend fun create(
             servers: List<String>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ) = signer.sign<BlossomServersEvent>(createdAt, KIND, createTagArray(servers), "")
+        ) = signer.sign(build(servers, createdAt))
     }
 }

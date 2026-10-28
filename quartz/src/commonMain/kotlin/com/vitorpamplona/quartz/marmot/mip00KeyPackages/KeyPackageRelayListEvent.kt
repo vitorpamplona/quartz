@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
@@ -33,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.relayLists.RelayListDiff
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -98,17 +100,26 @@ class KeyPackageRelayListEvent(
                 .map { RelayTag.assemble(it) }
                 .toTypedArray()
 
+        fun build(
+            relays: List<NormalizedRelayUrl>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<KeyPackageRelayListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            keyPackageRelays(relays)
+            initializer()
+        }
+
         suspend fun create(
             relays: List<NormalizedRelayUrl>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): KeyPackageRelayListEvent = signer.sign(createdAt, KIND, createTagArray(relays), "")
+        ): KeyPackageRelayListEvent = signer.sign(build(relays, createdAt))
 
         fun create(
             relays: List<NormalizedRelayUrl>,
             signer: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
-        ): KeyPackageRelayListEvent = signer.sign(createdAt, KIND, createTagArray(relays), "")
+        ): KeyPackageRelayListEvent = signer.sign(build(relays, createdAt))
 
         suspend fun updateRelayList(
             earlierVersion: KeyPackageRelayListEvent,
@@ -126,6 +137,9 @@ class KeyPackageRelayListEvent(
         }
     }
 }
+
+/** MIP-00 `relay` tags: where this user publishes KeyPackages. */
+fun TagArrayBuilder<KeyPackageRelayListEvent>.keyPackageRelays(relays: List<NormalizedRelayUrl>) = addAll(relays.map { RelayTag.assemble(it) })
 
 /**
  * Relay tag parser for KeyPackage relay list events.

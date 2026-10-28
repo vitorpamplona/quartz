@@ -24,8 +24,11 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip53LiveActivities.nestsServers.tags.NestsServerTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -110,7 +113,7 @@ class NestsServersEvent(
 
         fun createTagArray(servers: List<NestsServer>): Array<Array<String>> =
             servers
-                .map { arrayOf("server", it.relay, it.auth) }
+                .map { NestsServerTag.assemble(it) }
                 .toTypedArray()
 
         suspend fun updateRelayList(
@@ -121,8 +124,8 @@ class NestsServersEvent(
         ): NestsServersEvent {
             val tags =
                 earlierVersion.tags
-                    .filter { it[0] != "server" && it[0] != "relay" }
-                    .plus(servers.map { arrayOf("server", it.relay, it.auth) })
+                    .filter { it.isNotEmpty() && it[0] != NestsServerTag.TAG_NAME && it[0] != NestsServerTag.LEGACY_TAG_NAME }
+                    .plus(servers.map { NestsServerTag.assemble(it) })
                     .toTypedArray()
 
             return signer.sign(createdAt, KIND, tags, earlierVersion.content)
@@ -134,11 +137,20 @@ class NestsServersEvent(
             createdAt: Long = TimeUtils.now(),
         ) = create(servers, signer, createdAt)
 
+        fun build(
+            servers: List<NestsServer>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NestsServersEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            nestsServers(servers)
+            initializer()
+        }
+
         suspend fun create(
             servers: List<NestsServer>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ) = signer.sign<NestsServersEvent>(createdAt, KIND, createTagArray(servers), "")
+        ) = signer.sign(build(servers, createdAt))
 
         /**
          * Derive the moq-auth base URL from a moq-relay URL when a

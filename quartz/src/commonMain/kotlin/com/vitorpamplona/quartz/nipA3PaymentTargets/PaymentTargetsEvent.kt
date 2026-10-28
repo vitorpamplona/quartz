@@ -24,9 +24,11 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 class PaymentTargetsEvent(
@@ -68,10 +70,19 @@ class PaymentTargetsEvent(
 
         fun createPaymentTargets(targets: List<PaymentTarget>) = targets.map { PaymentTargetTag.assemble(it) }.toTypedArray()
 
+        fun build(
+            targets: List<PaymentTarget>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<PaymentTargetsEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            paymentTargets(targets)
+            initializer()
+        }
+
         suspend fun create(
             targets: List<PaymentTarget>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): PaymentTargetsEvent = signer.sign(createdAt, KIND, createPaymentTargets(targets), "")
+        ): PaymentTargetsEvent = signer.sign(build(targets, createdAt))
     }
 }
