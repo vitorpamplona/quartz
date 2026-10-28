@@ -86,7 +86,7 @@ class DrssListenProgressEvent(
     override fun linkedAddressIds(): List<String> = listOfNotNull(episodeAddressId())
 
     companion object {
-        const val KIND = Podcasting20EpisodeEvent.KIND
+        const val KIND = 30054
 
         /**
          * True for drss's progress shape: an `a` to the episode and at least one of `position`,

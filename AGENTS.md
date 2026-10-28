@@ -55,6 +55,12 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
 
 - **Protocol only.** No UI, no Compose UI, no app state. `@Immutable`/`@Stable` annotations are
   the only Compose dependency.
+- **Event classes follow one layout**, `.claude/skills/nostr-expert/references/event-class-anatomy.md`
+  (modelled on `nip88Polls/`): tag codecs under `tags/`, `TagArrayExt.kt` readers,
+  `TagArrayBuilderExt.kt` writers, a companion `build()`, a semantic method for every `a`/`e`/`p`/`q`
+  that the hint providers read through, and a decision on `SearchableEvent`. When you add or change
+  a kind, bring what `.claude/skills/nostr-expert/scripts/event-pattern-audit.py <package>` lists
+  in that package in line.
 - **Reuse before writing.** Relay operations (fetch a set, fetch one, page past the relay cap,
   publish-and-confirm, NIP-45 count, NIP-77 sync) are `INostrClient` extension functions in
   `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/`
