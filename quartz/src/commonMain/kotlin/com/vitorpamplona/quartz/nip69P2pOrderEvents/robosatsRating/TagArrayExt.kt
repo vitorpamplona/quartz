@@ -21,15 +21,20 @@
 package com.vitorpamplona.quartz.nip69P2pOrderEvents.robosatsRating
 
 import com.vitorpamplona.quartz.experimental.ratings.tags.RatingTag
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.robosatsRating.tags.CoordinatorTokenTag
 
 fun TagArray.coordinatorToken() = fastFirstNotNullOfOrNull(CoordinatorTokenTag::parse)
 
 /** The rated coordinator: the first `p` holding a 64-hex key. */
 fun TagArray.coordinator() = fastFirstNotNullOfOrNull(PTag::parseKey)
+
+/** Every `p` holding a 64-char key, in tag order. */
+fun TagArray.coordinatorKeys(): List<HexKey> = taggedUserIds()
 
 /**
  * The score as a 0..1 fraction (RoboSats writes `stars / 5`). A value outside 0..1 is malformed

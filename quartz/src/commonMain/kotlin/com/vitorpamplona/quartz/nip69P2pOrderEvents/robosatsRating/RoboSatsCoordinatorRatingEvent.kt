@@ -76,10 +76,13 @@ class RoboSatsCoordinatorRatingEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     /** `RATED`: the coordinator this robot rates (`p`). */
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys() = coordinatorKeys()
 
     /** The rated coordinator's pubkey (`p`). */
     fun coordinator() = tags.coordinator()
+
+    /** Every `p` key, in tag order; RoboSats writes one, [coordinator]. */
+    fun coordinatorKeys(): List<HexKey> = tags.coordinatorKeys()
 
     /** The score as a 0..1 fraction; multiply by 5 for RoboSats' stars. */
     fun rating() = tags.coordinatorRating()

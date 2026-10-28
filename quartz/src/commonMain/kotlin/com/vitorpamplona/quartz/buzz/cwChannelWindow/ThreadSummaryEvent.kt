@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEventIds
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -58,11 +59,13 @@ class ThreadSummaryEvent(
     // Participants live in the relay-synthesized JSON body, with no relay hints.
     override fun pubKeyHints(): List<PubKeyHint> = emptyList()
 
-    override fun linkedPubKeys(): List<HexKey> = summaryOrNull()?.participants?.filter { it.isValid() } ?: emptyList()
+    /** `PARTICIPANT`: the users that posted in the thread (from the JSON body). */
+    override fun linkedPubKeys(): List<HexKey> = participantKeys()
 
     override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+    /** `ROOT`: the thread root this summarizes (`e`). */
+    override fun linkedEventIds(): List<HexKey> = rootEventIds()
 
     /** The thread root event id — the `d` tag (equal to the `e` tag). */
     fun rootId() = dTag()
@@ -72,6 +75,12 @@ class ThreadSummaryEvent(
 
     /** The root event id from the `e` tag. */
     fun rootEventTag() = tags.firstNotNullOfOrNull(ETag::parseId)
+
+    /** Every `e` id, in tag order; the relay writes one, [rootEventTag]. */
+    fun rootEventIds(): List<HexKey> = tags.taggedEventIds()
+
+    /** The valid participant keys of the [summaryOrNull] body; empty when the body does not parse. */
+    fun participantKeys(): List<HexKey> = summaryOrNull()?.participants?.filter { it.isValid() } ?: emptyList()
 
     // linkedPubKeys() runs for every relay copy of every event, so the body is decoded once
     // per instance — a failure included. Events are immutable; a race only decodes twice.

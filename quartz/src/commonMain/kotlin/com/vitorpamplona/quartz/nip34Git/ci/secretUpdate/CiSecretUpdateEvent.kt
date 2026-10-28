@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip34Git.ci.ciSingleOrNull
 import com.vitorpamplona.quartz.nip34Git.ci.coordinatorAdvertisement.CiCoordinatorAdvertisementEvent
 import com.vitorpamplona.quartz.nip34Git.ci.tags.EncryptionSchemeTag
@@ -75,7 +76,7 @@ class CiSecretUpdateEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator that receives the secrets (`p`). */
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys() = coordinatorKeys()
 
     override fun addressHints() = tags.mapNotNull(RepositoryTag::parseAsHint)
 
@@ -86,6 +87,9 @@ class CiSecretUpdateEvent(
     fun repository() = tags.ciSingleOrNull(RepositoryTag::parse)?.takeIf { it.pubKeyHex == pubKey }
 
     fun coordinator() = tags.ciSingleOrNull(PTag::parseKey)
+
+    /** Every `p` key, in tag order, however many; [coordinator] reads only a single one, as coordinators do. */
+    fun coordinatorKeys(): List<HexKey> = tags.taggedUserIds()
 
     fun advertisementId() = tags.ciSingleOrNull(SecretsKeyAdvertisementTag::parseId)
 

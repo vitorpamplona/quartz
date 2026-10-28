@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip34Git.ci.CiRunContext
 import com.vitorpamplona.quartz.nip34Git.ci.ciCommits
 import com.vitorpamplona.quartz.nip34Git.ci.ciGitRef
@@ -76,7 +77,7 @@ class CiManualTriggerEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator asked to run (`p`); `ROOT_AUTHOR`: the PR's author (`P`). */
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey) + listOfNotNull(pullRequest()?.pullRequestAuthor)
+    override fun linkedPubKeys() = coordinatorKeys() + listOfNotNull(pullRequest()?.pullRequestAuthor)
 
     override fun addressHints() = tags.ciRunAddressHints()
 
@@ -88,6 +89,9 @@ class CiManualTriggerEvent(
      * second `p` makes the request ambiguous and this returns null (ngit's rule).
      */
     fun coordinator() = tags.ciSingleOrNull(PTag::parseKey)
+
+    /** Every `p` key, in tag order, however many; [coordinator] reads only a single one, as coordinators do. */
+    fun coordinatorKeys(): List<HexKey> = tags.taggedUserIds()
 
     fun repositories() = tags.ciRepositories()
 
