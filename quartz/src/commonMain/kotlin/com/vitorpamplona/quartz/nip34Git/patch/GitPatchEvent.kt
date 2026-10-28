@@ -113,7 +113,7 @@ class GitPatchEvent(
     fun committer() = tags.mapNotNull(CommitterTag::parse)
 
     /** Earliest unique commit of the target repository, encoded as `["r", <commit>]`. */
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     /** `true` if this event is tagged `["t", "root"]` (root of a patch series). */
     fun isRoot(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT) }

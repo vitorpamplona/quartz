@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.expiration
+import com.vitorpamplona.quartz.nip60Cashu.tags.CashuMintTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -91,10 +92,7 @@ class CashuMintQuoteEvent(
     /**
      * Gets the mint URL from the public tags.
      */
-    fun mint(): String? =
-        tags
-            .firstOrNull { it.size >= 2 && it[0] == "mint" }
-            ?.get(1)
+    fun mint(): String? = tags.mint()
 
     companion object {
         const val KIND = 7374
@@ -118,7 +116,7 @@ class CashuMintQuoteEvent(
             initializer: TagArrayBuilder<CashuMintQuoteEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, "", createdAt) {
             expiration(expirationTimestamp)
-            add(arrayOf("mint", mintUrl))
+            add(CashuMintTag.assemble(mintUrl))
             initializer()
         }.let { template ->
             val payload =

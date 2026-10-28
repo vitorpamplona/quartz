@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
@@ -144,7 +145,7 @@ class UserStatusEvent(
             createdAt: Long = TimeUtils.now(),
         ): UserStatusEvent {
             val msg = ""
-            val tags = event.tags.filter { it.size > 1 && it[0] == "d" }
+            val tags = event.tags.filter(DTag::isTag)
             return signer.sign(createdAt, KIND, tags.toTypedArray(), msg)
         }
     }

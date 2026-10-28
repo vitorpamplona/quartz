@@ -24,7 +24,6 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -34,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.taggedATags
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelData
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelDataNorm
+import com.vitorpamplona.quartz.nip28PublicChat.base.isEncrypted
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -85,7 +85,7 @@ class ChannelCreateEvent(
     /** This event's own id, which is the channel's id: pairs it with the relays in its content ([eventHints]). */
     override fun linkedEventIds() = listOf(id)
 
-    fun isEncrypted() = tags.any { it.has(1) && it[0] == "encrypted" && it[1] == "true" }
+    fun isEncrypted() = tags.isEncrypted()
 
     fun channelInfo(): ChannelDataNorm {
         cache?.let { return it }

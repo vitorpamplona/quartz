@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.experimental.edits
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.experimental.edits.tags.EditSummaryTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -66,7 +67,7 @@ class TextNoteModificationEvent(
 
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(notifiedUser())
 
-    fun summary() = tags.firstOrNull { it.size > 1 && it[0] == "summary" }?.get(1)
+    fun summary() = tags.editSummary()
 
     override fun indexableContent() = listOfNotNull(content, summary()).joinToString("\n")
 
@@ -95,7 +96,7 @@ class TextNoteModificationEvent(
             }
 
             summary?.let {
-                tags.add(arrayOf("summary", it))
+                tags.add(EditSummaryTag.assemble(it))
             }
 
             return signer.sign(createdAt, KIND, tags.toTypedArray(), content)

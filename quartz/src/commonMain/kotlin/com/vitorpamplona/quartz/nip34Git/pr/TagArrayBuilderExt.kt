@@ -32,7 +32,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
-import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
 fun TagArrayBuilder<GitPullRequestEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
 
@@ -40,7 +40,7 @@ fun TagArrayBuilder<GitPullRequestEvent>.repository(rep: EventHintBundle<GitRepo
 
 // NIP-34 pull requests use the plain `["r", <commit>]` shape; the `"euc"` marker
 // is only on the kind-30617 announcement (see the patch builder for the rationale).
-fun TagArrayBuilder<GitPullRequestEvent>.euc(commit: String) = addUnique(arrayOf(EucTag.TAG_NAME, commit))
+fun TagArrayBuilder<GitPullRequestEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPullRequestEvent>.currentCommit(commit: String) = addUnique(CurrentCommitTag.assemble(commit))
 

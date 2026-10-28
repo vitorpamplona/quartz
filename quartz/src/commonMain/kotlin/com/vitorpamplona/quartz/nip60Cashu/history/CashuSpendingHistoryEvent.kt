@@ -33,6 +33,9 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
+import com.vitorpamplona.quartz.nip60Cashu.tags.SpendingAmountTag
+import com.vitorpamplona.quartz.nip60Cashu.tags.SpendingDirectionTag
+import com.vitorpamplona.quartz.nip60Cashu.tags.SpendingUnitTag
 import com.vitorpamplona.quartz.nip61Nutzaps.redemption.redeemedNutzaps
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -95,8 +98,8 @@ class CashuSpendingHistoryEvent(
      */
     suspend fun direction(signer: NostrSigner): SpendingDirection? {
         val privateTags = cachedPrivateTags(signer)
-        val directionTag = privateTags.firstOrNull { it.size >= 2 && it[0] == "direction" } ?: return null
-        return SpendingDirection.fromCode(directionTag[1])
+        val code = privateTags.spendingDirectionCode() ?: return null
+        return SpendingDirection.fromCode(code)
     }
 
     /**
@@ -104,10 +107,7 @@ class CashuSpendingHistoryEvent(
      */
     suspend fun amount(signer: NostrSigner): Long? {
         val privateTags = cachedPrivateTags(signer)
-        return privateTags
-            .firstOrNull { it.size >= 2 && it[0] == "amount" }
-            ?.get(1)
-            ?.toLongOrNull()
+        return privateTags.spendingAmount()
     }
 
     /**
@@ -115,10 +115,7 @@ class CashuSpendingHistoryEvent(
      */
     suspend fun unit(signer: NostrSigner): String {
         val privateTags = cachedPrivateTags(signer)
-        return privateTags
-            .firstOrNull { it.size >= 2 && it[0] == "unit" }
-            ?.get(1)
-            ?: "sat"
+        return privateTags.spendingUnit() ?: "sat"
     }
 
     /**
@@ -169,9 +166,9 @@ class CashuSpendingHistoryEvent(
         }.let { template ->
             val privateTags =
                 buildList {
-                    add(arrayOf("direction", direction.code))
-                    add(arrayOf("amount", amount.toString()))
-                    add(arrayOf("unit", unit))
+                    add(SpendingDirectionTag.assemble(direction.code))
+                    add(SpendingAmountTag.assemble(amount))
+                    add(SpendingUnitTag.assemble(unit))
                     // Encrypt non-redeemed token references
                     tokenReferences
                         .filter { it.marker != TokenReference.MARKER_REDEEMED }

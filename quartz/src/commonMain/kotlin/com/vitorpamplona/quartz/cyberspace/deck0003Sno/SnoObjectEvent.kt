@@ -73,7 +73,7 @@ class SnoObjectEvent(
     fun snoOrNull(fetchedPalette: SnoPalette? = null): SnoPayload? = sno(fetchedPalette).payloadOrNull()
 
     /** The `name` tag, which duplicates the payload's name for relay-side filtering. */
-    fun nameTag(): String? = tags.firstOrNull { it.size > 1 && it[0] == "name" }?.get(1)
+    fun nameTag(): String? = tags.snoName()
 
     /** The `name` tag is the only human text; the content is SNO geometry JSON and stays out. */
     override fun indexableContent() = nameTag().orEmpty()
@@ -94,7 +94,7 @@ class SnoObjectEvent(
             initializer: TagArrayBuilder<SnoObjectEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, payloadJson, createdAt) {
             dTag(dTag)
-            name?.let { add(arrayOf("name", it)) }
+            name?.let { snoName(it) }
             alt(name?.let { "$ALT: $it" } ?: ALT)
             initializer()
         }

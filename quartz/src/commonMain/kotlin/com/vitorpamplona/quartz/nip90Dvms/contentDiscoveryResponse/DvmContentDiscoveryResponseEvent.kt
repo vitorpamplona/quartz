@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip90Dvms.DvmResponseEvent
+import com.vitorpamplona.quartz.nip90Dvms.tags.dvmResultEventOrAddresses
 import com.vitorpamplona.quartz.nip90Dvms.tags.parseDvmResultTags
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -58,14 +59,7 @@ class DvmContentDiscoveryResponseEvent(
     fun innerTags(): List<HexKey> {
         events?.let { return it }
 
-        return resultTags()
-            .mapNotNull {
-                if (it.size > 1 && (it[0] == "e" || it[0] == "a")) {
-                    it[1]
-                } else {
-                    null
-                }
-            }.also { events = it }
+        return resultTags().dvmResultEventOrAddresses().also { events = it }
     }
 
     // The results are public references, just carried in content instead of tags, each with its

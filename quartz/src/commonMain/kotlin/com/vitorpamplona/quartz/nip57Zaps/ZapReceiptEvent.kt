@@ -141,9 +141,9 @@ class ZapReceiptEvent(
 
     override fun amount() = amount
 
-    fun lnInvoice() = tags.firstOrNull { it.size > 1 && it[0] == "bolt11" }?.get(1)
+    fun lnInvoice() = tags.bolt11()
 
-    private fun description() = tags.firstOrNull { it.size > 1 && it[0] == "description" }?.get(1)
+    private fun description() = tags.zapRequestDescription()
 
     companion object {
         const val KIND = 9735

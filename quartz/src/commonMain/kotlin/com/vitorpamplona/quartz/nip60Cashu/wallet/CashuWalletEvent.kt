@@ -32,6 +32,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
+import com.vitorpamplona.quartz.nip60Cashu.tags.CashuMintTag
+import com.vitorpamplona.quartz.nip60Cashu.tags.WalletPrivkeyTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -65,18 +67,12 @@ class CashuWalletEvent(
     /**
      * Extracts mint URLs from the decrypted private tags.
      */
-    suspend fun mints(signer: NostrSigner): List<String> =
-        cachedPrivateTags(signer)
-            .filter { it.size >= 2 && it[0] == "mint" }
-            .map { it[1] }
+    suspend fun mints(signer: NostrSigner): List<String> = cachedPrivateTags(signer).mints()
 
     /**
      * Extracts the P2PK private key from the decrypted private tags (used for NIP-61 nutzaps).
      */
-    suspend fun privkey(signer: NostrSigner): String? =
-        cachedPrivateTags(signer)
-            .firstOrNull { it.size >= 2 && it[0] == "privkey" }
-            ?.get(1)
+    suspend fun privkey(signer: NostrSigner): String? = cachedPrivateTags(signer).privkey()
 
     companion object {
         const val KIND = 17375
@@ -95,8 +91,8 @@ class CashuWalletEvent(
         }.let { template ->
             val privateTags =
                 buildList {
-                    privkey?.let { add(arrayOf("privkey", it)) }
-                    mints.forEach { add(arrayOf("mint", it)) }
+                    privkey?.let { add(WalletPrivkeyTag.assemble(it)) }
+                    mints.forEach { add(CashuMintTag.assemble(it)) }
                 }.toTypedArray()
 
             val encryptedContent = PrivateTagsInContent.encryptNip44(privateTags, signer)

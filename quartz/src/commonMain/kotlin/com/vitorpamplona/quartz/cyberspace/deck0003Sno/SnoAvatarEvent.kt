@@ -64,7 +64,7 @@ class SnoAvatarEvent(
     fun sno(fetchedPalette: SnoPalette? = null): SnoResult = SnoParser.parse(content, fetchedPalette)
 
     /** The `name` tag: the shape's name for humans. */
-    fun nameTag(): String? = tags.firstOrNull { it.size > 1 && it[0] == "name" }?.get(1)
+    fun nameTag(): String? = tags.snoName()
 
     /** The `name` tag is the only human text; the content is SNO geometry JSON and stays out. */
     override fun indexableContent() = nameTag().orEmpty()

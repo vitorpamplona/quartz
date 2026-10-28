@@ -89,7 +89,7 @@ class GitPullRequestUpdateEvent(
     // Tolerant of both the multi-value and legacy repeated `clone` forms; deduped.
     fun cloneUrls(): List<String> = tags.flatMap(CloneTag::parseAll).distinct()
 
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     fun mergeBase(): String? = tags.firstNotNullOfOrNull(MergeBaseTag::parse)
 

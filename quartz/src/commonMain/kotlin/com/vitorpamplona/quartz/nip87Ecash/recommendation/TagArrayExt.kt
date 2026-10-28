@@ -21,12 +21,15 @@
 package com.vitorpamplona.quartz.nip87Ecash.recommendation
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip87Ecash.MintUrlTag
+import com.vitorpamplona.quartz.nip87Ecash.recommendation.tags.MintKindTag
 
 fun TagArray.mintUrls(): List<String> = mapNotNull(MintUrlTag::parse)
 
-fun TagArray.mintEventKind(): Int? = firstOrNull { it.size >= 2 && it[0] == "k" }?.get(1)?.toIntOrNull()
+/** The first `k` as a number; null when it is absent or not one (a later `k` is not read). */
+fun TagArray.mintEventKind(): Int? = fastFirstNotNullOfOrNull(MintKindTag::parse)?.toIntOrNull()
 
 fun TagArray.dTag(): String? = firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
 

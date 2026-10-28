@@ -20,13 +20,17 @@
  */
 package com.vitorpamplona.quartz.experimental.ballots
 
+import com.vitorpamplona.quartz.experimental.ballots.tags.ElectionTag
+import com.vitorpamplona.quartz.experimental.ballots.tags.ProofHashTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 
-private fun TagArray.firstNonBlankValue(name: String): String? = fastFirstNotNullOfOrNull { if (it.size > 1 && it[0] == name && it[1].isNotBlank()) it[1] else null }
-
 /** The election this ballot is cast in. */
-fun TagArray.election() = firstNonBlankValue("election")
+fun TagArray.election() = fastFirstNotNullOfOrNull(ElectionTag::parse)
 
-/** The ballot's proof hash, from either spelling of the tag (`proof-hash` or `proof_hash`). */
-fun TagArray.proofHash() = firstNonBlankValue("proof-hash") ?: firstNonBlankValue("proof_hash")
+/** True when any `election` tag names one. */
+fun TagArray.hasElection() = fastAny { ElectionTag.parse(it) != null }
+
+/** The ballot's proof hash: the first `proof-hash`, else the first `proof_hash`. */
+fun TagArray.proofHash() = fastFirstNotNullOfOrNull(ProofHashTag::parse) ?: fastFirstNotNullOfOrNull(ProofHashTag::parseLegacy)

@@ -100,7 +100,7 @@ class GitPullRequestEvent(
 
     fun repositoryAddress() = tags.firstNotNullOfOrNull(ATag::parseAddress)
 
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     fun currentCommit(): String? = tags.firstNotNullOfOrNull(CurrentCommitTag::parse)
 

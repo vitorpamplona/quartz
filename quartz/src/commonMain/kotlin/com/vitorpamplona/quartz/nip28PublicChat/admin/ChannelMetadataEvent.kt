@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip28PublicChat.admin
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -34,6 +33,7 @@ import com.vitorpamplona.quartz.nip28PublicChat.base.BasePublicChatEvent
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelData
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelDataNorm
 import com.vitorpamplona.quartz.nip28PublicChat.base.channel
+import com.vitorpamplona.quartz.nip28PublicChat.base.isEncrypted
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -79,7 +79,7 @@ class ChannelMetadataEvent(
 
     override fun linkedEventIds() = channelId()?.let { listOf(it) } ?: emptyList()
 
-    fun isEncrypted() = tags.any { it.has(1) && it[0] == "encrypted" && it[1] == "true" }
+    fun isEncrypted() = tags.isEncrypted()
 
     fun channelInfo(): ChannelDataNorm {
         cache?.let { return it }

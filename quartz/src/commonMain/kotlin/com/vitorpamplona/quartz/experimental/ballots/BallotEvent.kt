@@ -24,7 +24,6 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
-import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
@@ -81,6 +80,6 @@ class BallotEvent(
         const val VOTE_QUESTION = "Vote"
 
         /** True when a kind-38000 event is a ballot: it names the `election` it is cast in. */
-        fun isBallot(tags: TagArray): Boolean = tags.fastAny { it.size > 1 && it[0] == "election" && it[1].isNotBlank() }
+        fun isBallot(tags: TagArray): Boolean = tags.hasElection()
     }
 }

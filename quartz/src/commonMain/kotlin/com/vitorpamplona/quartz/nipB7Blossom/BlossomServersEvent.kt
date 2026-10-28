@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -37,14 +38,7 @@ class BlossomServersEvent(
     content: String,
     sig: HexKey,
 ) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
-    fun servers(): List<String> =
-        tags.mapNotNull {
-            if (it.size > 1 && it[0] == "server") {
-                it[1]
-            } else {
-                null
-            }
-        }
+    fun servers(): List<String> = tags.blossomServers()
 
     companion object {
         const val KIND = 10063
@@ -57,7 +51,7 @@ class BlossomServersEvent(
 
         fun createTagArray(servers: List<String>): Array<Array<String>> =
             servers
-                .map { arrayOf("server", it) }
+                .map { BlossomServerTag.assemble(it) }
                 .toTypedArray()
 
         suspend fun updateRelayList(
@@ -68,8 +62,8 @@ class BlossomServersEvent(
         ): BlossomServersEvent {
             val tags =
                 earlierVersion.tags
-                    .filter { it[0] != "server" }
-                    .plus(servers.map { arrayOf("server", it) })
+                    .filter { it[0] != BlossomServerTag.TAG_NAME }
+                    .plus(servers.map { BlossomServerTag.assemble(it) })
                     .toTypedArray()
 
             return signer.sign(createdAt, KIND, tags, earlierVersion.content)

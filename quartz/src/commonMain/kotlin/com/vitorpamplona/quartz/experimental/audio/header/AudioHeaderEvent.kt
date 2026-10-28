@@ -62,7 +62,7 @@ class AudioHeaderEvent(
     fun mediaUrl() = stream() ?: download() ?: url()
 
     /** The MIME type a `blossom` tag declares for the file (`["blossom", hash, mime]`), if any. */
-    fun blossomMimeType(): String? = tags.firstOrNull { it.size > 2 && it[0] == "blossom" }?.get(2)?.ifBlank { null }
+    fun blossomMimeType(): String? = tags.blossomMimeType()
 
     fun wavefrom() = tags.firstNotNullOfOrNull(WaveformTag::parse)
 

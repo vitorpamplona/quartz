@@ -32,6 +32,12 @@ fun TagArray.dvmInputEventIds(): List<HexKey> = mapNotNull(InputTag::parseEventI
 /** [dvmInputEventIds] that carry the relay hint NIP-90 allows in slot 3. */
 fun TagArray.dvmInputEventHints(): List<EventIdHint> = mapNotNull(InputTag::parseEventAsHint)
 
+/** The ids and addresses a content result list holds (`e` / `a`), in order. */
+fun TagArray.dvmResultEventOrAddresses(): List<String> = mapNotNull(DvmResultTag::parseEventOrAddress)
+
+/** The pubkeys a people result list holds (`p`), in order. */
+fun TagArray.dvmResultPubKeys(): List<String> = mapNotNull(DvmResultTag::parsePubKey)
+
 /**
  * Parses a NIP-90 result `content` that is itself a JSON tag array (content discovery, search,
  * people discovery: `[["e", <id>, <relay>], ["a", <address>], ["p", <pubkey>]]`). Public data,
