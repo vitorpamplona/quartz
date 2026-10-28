@@ -24,9 +24,11 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.AddressBookmark
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
@@ -56,18 +58,28 @@ class GitRepositoryListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicRepositories] as tags, [privateRepositories] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicRepositories: List<AddressBookmark> = emptyList(),
+            privateRepositories: List<AddressBookmark> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<GitRepositoryListEvent>.() -> Unit = {},
+        ) = eventTemplate<GitRepositoryListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateRepositories.map { it.toTagArray() }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            gitRepositories(publicRepositories)
+            initializer()
+        }
+
         suspend fun create(
             publicRepositories: List<AddressBookmark> = emptyList(),
             privateRepositories: List<AddressBookmark> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): GitRepositoryListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateRepositories.map { it.toTagArray() }.toTypedArray(), signer),
-                tags = publicRepositories.map { it.toTagArray() }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): GitRepositoryListEvent = signer.sign(build(publicRepositories, privateRepositories, signer, createdAt))
 
         suspend fun add(
             earlierVersion: GitRepositoryListEvent,

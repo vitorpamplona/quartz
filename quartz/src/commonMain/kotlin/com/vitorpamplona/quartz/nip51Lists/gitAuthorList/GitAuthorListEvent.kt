@@ -24,9 +24,11 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.gitAuthorList.tags.GitAuthorTag
@@ -56,18 +58,28 @@ class GitAuthorListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicAuthors] as tags, [privateAuthors] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicAuthors: List<GitAuthorTag> = emptyList(),
+            privateAuthors: List<GitAuthorTag> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<GitAuthorListEvent>.() -> Unit = {},
+        ) = eventTemplate<GitAuthorListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateAuthors.map { it.toTagArray() }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            gitAuthors(publicAuthors)
+            initializer()
+        }
+
         suspend fun create(
             publicAuthors: List<GitAuthorTag> = emptyList(),
             privateAuthors: List<GitAuthorTag> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): GitAuthorListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateAuthors.map { it.toTagArray() }.toTypedArray(), signer),
-                tags = publicAuthors.map { it.toTagArray() }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): GitAuthorListEvent = signer.sign(build(publicAuthors, privateAuthors, signer, createdAt))
 
         suspend fun add(
             earlierVersion: GitAuthorListEvent,

@@ -24,9 +24,11 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.muteList.tags.UserTag
@@ -56,18 +58,28 @@ class MediaFollowListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicFollows] as tags, [privateFollows] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicFollows: List<UserTag> = emptyList(),
+            privateFollows: List<UserTag> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<MediaFollowListEvent>.() -> Unit = {},
+        ) = eventTemplate<MediaFollowListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateFollows.map { it.toTagArray() }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            mediaFollows(publicFollows)
+            initializer()
+        }
+
         suspend fun create(
             publicFollows: List<UserTag> = emptyList(),
             privateFollows: List<UserTag> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): MediaFollowListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateFollows.map { it.toTagArray() }.toTypedArray(), signer),
-                tags = publicFollows.map { it.toTagArray() }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): MediaFollowListEvent = signer.sign(build(publicFollows, privateFollows, signer, createdAt))
 
         suspend fun add(
             earlierVersion: MediaFollowListEvent,

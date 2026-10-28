@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityListFrag
 import com.vitorpamplona.quartz.concord.cord05Invites.ConcordInviteListDocument
 import com.vitorpamplona.quartz.concord.cord05Invites.ConcordInviteListEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageRelayListEvent
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
@@ -32,6 +33,18 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip02FollowList.tags.ContactTag
 import com.vitorpamplona.quartz.nip17Dm.settings.DmRelayListEvent
+import com.vitorpamplona.quartz.nip51Lists.PinListEvent
+import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.AddressBookmark
+import com.vitorpamplona.quartz.nip51Lists.bookmarkList.tags.EventBookmark
+import com.vitorpamplona.quartz.nip51Lists.gitAuthorList.GitAuthorListEvent
+import com.vitorpamplona.quartz.nip51Lists.gitAuthorList.tags.GitAuthorTag
+import com.vitorpamplona.quartz.nip51Lists.gitRepositoryList.GitRepositoryListEvent
+import com.vitorpamplona.quartz.nip51Lists.goodWikiAuthorList.GoodWikiAuthorListEvent
+import com.vitorpamplona.quartz.nip51Lists.goodWikiRelayList.GoodWikiRelayListEvent
+import com.vitorpamplona.quartz.nip51Lists.mediaFollowList.MediaFollowListEvent
+import com.vitorpamplona.quartz.nip51Lists.muteList.tags.UserTag
+import com.vitorpamplona.quartz.nip51Lists.simpleGroupList.GroupTag
+import com.vitorpamplona.quartz.nip51Lists.simpleGroupList.SimpleGroupListEvent
 import com.vitorpamplona.quartz.nip53LiveActivities.nestsServers.NestsServer
 import com.vitorpamplona.quartz.nip53LiveActivities.nestsServers.NestsServersEvent
 import com.vitorpamplona.quartz.nip65RelayList.AdvertisedRelayListEvent
@@ -41,6 +54,7 @@ import com.vitorpamplona.quartz.nipA3PaymentTargets.PaymentTarget
 import com.vitorpamplona.quartz.nipA3PaymentTargets.PaymentTargetsEvent
 import com.vitorpamplona.quartz.nipB1Bolt12Zaps.offer.Bolt12OfferListEvent
 import com.vitorpamplona.quartz.nipB7Blossom.BlossomServersEvent
+import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -147,5 +161,52 @@ class ListBuildersTest {
             val invites = signAndParse(ConcordInviteListEvent.build(ConcordInviteListDocument.EMPTY, signer))
             assertEquals(emptyList(), invites.tagList())
             assertEquals(0, invites.decrypt(signer)?.entries?.size)
+        }
+
+    private val bob = "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"
+    private val repo = Address(30617, friend, "quartz")
+
+    @Test
+    fun privateListsKeepTheirPublicTagsAndEncryptThePrivateOnes() =
+        runTest {
+            val podcasts = signAndParse(FavoritePodcastsListEvent.build(listOf(UserTag(friend)), listOf(UserTag(bob)), signer))
+            assertEquals(listOf(listOf("p", friend)), podcasts.tagList())
+            assertEquals(listOf(friend), podcasts.publicFavorites().map { it.pubKey })
+            assertEquals(listOf(bob), podcasts.privateFavorites(signer)?.map { it.pubKey })
+
+            val authors = signAndParse(GitAuthorListEvent.build(listOf(GitAuthorTag(friend)), listOf(GitAuthorTag(bob)), signer))
+            assertEquals(listOf(friend), authors.publicAuthors().map { it.pubKey })
+            assertEquals(listOf(bob), authors.privateAuthors(signer)?.map { it.pubKey })
+
+            val repositories = signAndParse(GitRepositoryListEvent.build(listOf(AddressBookmark(repo)), emptyList(), signer))
+            assertEquals(listOf(listOf("a", repo.toValue())), repositories.tagList())
+            assertEquals(listOf(repo), repositories.publicRepositories().map { it.address })
+            assertEquals(emptyList(), repositories.privateRepositories(signer)?.map { it.address })
+
+            val wikiAuthors = signAndParse(GoodWikiAuthorListEvent.build(emptyList(), listOf(UserTag(bob)), signer))
+            assertEquals(emptyList(), wikiAuthors.tagList())
+            assertEquals(listOf(bob), wikiAuthors.privateAuthors(signer)?.map { it.pubKey })
+
+            val wikiRelays = signAndParse(GoodWikiRelayListEvent.build(listOf(relay1), listOf(relay2), signer))
+            assertEquals(listOf(listOf("relay", relay1.url)), wikiRelays.tagList())
+            assertEquals(listOf(relay1), wikiRelays.publicRelays())
+            assertEquals(listOf(relay2), wikiRelays.privateRelays(signer))
+
+            val media = signAndParse(MediaFollowListEvent.build(listOf(UserTag(friend), UserTag(bob)), emptyList(), signer))
+            assertEquals(listOf(friend, bob), media.publicFollows().map { it.pubKey })
+
+            val groups = signAndParse(SimpleGroupListEvent.build(listOf(GroupTag("g1", relay1.url, "Dev")), emptyList(), signer))
+            assertEquals(listOf(listOf("group", "g1", relay1.url, "Dev")), groups.tagList())
+            assertEquals(listOf("g1"), groups.publicGroups().map { it.groupId })
+        }
+
+    @Test
+    fun pinListKeepsPinOrder() =
+        runTest {
+            val first = "a1".repeat(32)
+            val second = "b2".repeat(32)
+            val pins = signAndParse(PinListEvent.build(listOf(EventBookmark(first), EventBookmark(second))))
+            assertEquals(listOf(first, second), pins.pinnedEventIds())
+            assertEquals(listOf(listOf("e", first)), signAndParse(PinListEvent.build(listOf(EventBookmark(first)))).tagList())
         }
 }
