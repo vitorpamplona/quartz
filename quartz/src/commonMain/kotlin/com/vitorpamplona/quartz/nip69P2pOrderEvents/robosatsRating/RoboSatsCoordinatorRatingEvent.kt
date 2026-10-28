@@ -82,7 +82,7 @@ class RoboSatsCoordinatorRatingEvent(
     fun coordinator() = tags.coordinator()
 
     /** Every `p` key, in tag order; RoboSats writes one, [coordinator]. */
-    fun coordinatorKeys() = tags.coordinatorKeys()
+    fun coordinatorKeys(): List<HexKey> = tags.coordinatorKeys()
 
     /** The score as a 0..1 fraction; multiply by 5 for RoboSats' stars. */
     fun rating() = tags.coordinatorRating()

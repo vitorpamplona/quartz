@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEventIds
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEvents
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -66,14 +68,14 @@ class BadgeAwardEvent(
 
     fun awardDefinition() = tags.awardDefinitions()
 
-    /** The address ids of [awardDefinition] (`a`), in tag order. NIP-58 writes one. */
+    /** Every non-empty `a` value, in tag order, unvalidated and of any kind; [awardDefinition] keeps well-formed ones. NIP-58 writes one. */
     fun awardDefinitionIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
 
     /** Events tagged with `e`, in tag order. NIP-58 defines no `e` here; clients may add them. */
-    fun mentionedEvents(): List<ETag> = tags.mapNotNull(ETag::parse)
+    fun mentionedEvents(): List<ETag> = tags.taggedEvents()
 
     /** The ids of [mentionedEvents] (`e`), in tag order. */
-    fun mentionedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+    fun mentionedEventIds(): List<HexKey> = tags.taggedEventIds()
 
     companion object {
         const val KIND = 8

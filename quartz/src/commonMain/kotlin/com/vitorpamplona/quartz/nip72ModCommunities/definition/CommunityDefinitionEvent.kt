@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEventIds
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -84,11 +85,11 @@ class CommunityDefinitionEvent(
 
     override fun pubKeyHints() = tags.mapNotNull(ModeratorTag::parseAsHint)
 
-    /** `MODERATOR`: the community's moderators (`p`), without the owner [moderatorKeys] adds. */
-    override fun linkedPubKeys() = tags.mapNotNull(ModeratorTag::parseKey)
+    /** `MODERATOR`: the moderators the `p` tags list. */
+    override fun linkedPubKeys() = listedModeratorKeys()
 
     /** The ids of events tagged with `e`, in tag order. NIP-72 defines no `e` here; clients may add them. */
-    fun mentionedEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+    fun mentionedEventIds(): List<HexKey> = tags.taggedEventIds()
 
     /** The ids of events quoted with `q` (NIP-18), in tag order. */
     fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
@@ -109,7 +110,11 @@ class CommunityDefinitionEvent(
 
     fun moderators() = tags.mapNotNull(ModeratorTag::parse)
 
-    fun moderatorKeys() = tags.mapNotNull(ModeratorTag::parseKey).plus(pubKey)
+    /** The keys of [moderators] (`p`), in tag order, without the owner. */
+    fun listedModeratorKeys(): List<HexKey> = tags.mapNotNull(ModeratorTag::parseKey)
+
+    /** [listedModeratorKeys] plus the owner, who moderates without being listed. */
+    fun moderatorKeys() = listedModeratorKeys().plus(pubKey)
 
     fun relays() = tags.mapNotNull(RelayTag::parse)
 

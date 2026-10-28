@@ -163,6 +163,10 @@ class SemanticLinkMethodsTest {
         assertEquals(rawAddressIds, event.mentionedAddressIds())
         assertEquals(listOf(article), event.quotedAddressIds())
         assertEquals(rawAddressIds + article, event.linkedAddressIds())
+        // The owner moderates without a tag, so it is not a link.
+        assertEquals(keys, event.listedModeratorKeys())
+        assertEquals(keys, event.linkedPubKeys())
+        assertEquals(keys + pk1, event.moderatorKeys())
     }
 
     @Test

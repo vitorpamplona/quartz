@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.events.firstTaggedEvent
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip52Calendar.appt.tags.RSVPStatusTag
@@ -94,7 +95,7 @@ class CalendarRSVPEvent(
     fun calendarEventAuthor() = tags.firstNotNullOfOrNull(PTag.Companion::parse)
 
     /** Every `p` key, in tag order. NIP-52 writes one, [calendarEventAuthor]. */
-    fun calendarEventAuthorKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun calendarEventAuthorKeys(): List<HexKey> = tags.taggedUserIds()
 
     companion object {
         const val KIND = 31925

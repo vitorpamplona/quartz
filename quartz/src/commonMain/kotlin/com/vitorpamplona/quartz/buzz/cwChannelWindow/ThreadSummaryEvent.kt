@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEventIds
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -76,7 +77,7 @@ class ThreadSummaryEvent(
     fun rootEventTag() = tags.firstNotNullOfOrNull(ETag::parseId)
 
     /** Every `e` id, in tag order; the relay writes one, [rootEventTag]. */
-    fun rootEventIds(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+    fun rootEventIds(): List<HexKey> = tags.taggedEventIds()
 
     /** The valid participant keys of the [summaryOrNull] body; empty when the body does not parse. */
     fun participantKeys(): List<HexKey> = summaryOrNull()?.participants?.filter { it.isValid() } ?: emptyList()

@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip10Notes.BaseNoteEvent
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
@@ -123,7 +124,7 @@ class GitCoverNoteEvent(
     fun rootEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
 
     /** Every `p` key, in tag order; [rootAuthor] is the first. */
-    fun rootAuthorKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun rootAuthorKeys(): List<HexKey> = tags.taggedUserIds()
 
     /** The ids of events quoted with `q` (NIP-18), in tag order. */
     fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)

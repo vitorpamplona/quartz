@@ -37,6 +37,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.events.toETag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUsers
 import com.vitorpamplona.quartz.nip01Core.tags.references.reference
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
@@ -91,10 +93,10 @@ class ZapGoalEvent(
     override fun linkedAddressIds() = listOfNotNull(goalAddressId())
 
     /** Users tagged with `p`, in tag order. NIP-75 defines no `p`; clients may add them. */
-    fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
+    fun mentions(): List<PTag> = tags.taggedUsers()
 
     /** The keys of [mentions] (`p`), in tag order. */
-    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun mentionKeys(): List<HexKey> = tags.taggedUserIds()
 
     /**
      * NIP-75: who the goal's zaps go to, as NIP-57 `zap` splits. Only splits a zap would pay:

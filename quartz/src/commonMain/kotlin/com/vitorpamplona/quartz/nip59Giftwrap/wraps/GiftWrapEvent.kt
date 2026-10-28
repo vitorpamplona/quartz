@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
 import com.vitorpamplona.quartz.nip40Expiration.ExpirationTag
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
@@ -134,7 +135,7 @@ open class GiftWrapEvent(
     fun recipientPubKey() = tags.firstTagValue("p")
 
     /** Every well-formed `p` key, in tag order. NIP-59 writes one, the recipient. */
-    fun recipientKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun recipientKeys(): List<HexKey> = tags.taggedUserIds()
 
     companion object {
         const val KIND = 1059

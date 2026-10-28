@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip64Chess.Color
 import com.vitorpamplona.quartz.nip64Chess.GameResult
 import com.vitorpamplona.quartz.nip64Chess.GameTermination
@@ -73,8 +74,8 @@ class JesterEvent(
     /** The `e` ids, in tag order (the start event, then the move this one follows), minus START_POSITION_HASH. */
     fun gameEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
 
-    /** Every well-formed `p` key, in tag order. Jester writes one, [opponentPubkey]. */
-    fun opponentKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    /** Every 64-char `p` key, in tag order. Jester writes one; [opponentPubkey] reads the first `p` unvalidated. */
+    fun opponentKeys(): List<HexKey> = tags.taggedUserIds()
 
     private val parsedContent: JesterContent? by lazy {
         try {

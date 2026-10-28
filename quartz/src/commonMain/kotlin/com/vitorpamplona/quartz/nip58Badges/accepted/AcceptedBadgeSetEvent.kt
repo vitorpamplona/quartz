@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUsers
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
@@ -85,10 +87,10 @@ class AcceptedBadgeSetEvent(
     override fun linkedAddressIds() = badgeAwardDefinitions().map { it.toValue() }
 
     /** Users tagged with `p`, in tag order. NIP-58 defines no `p` here; clients may add them. */
-    fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
+    fun mentions(): List<PTag> = tags.taggedUsers()
 
     /** The keys of [mentions] (`p`), in tag order. */
-    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun mentionKeys(): List<HexKey> = tags.taggedUserIds()
 
     fun acceptedBadges() = tags.acceptedBadges()
 
