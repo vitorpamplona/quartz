@@ -20,30 +20,59 @@
  */
 package com.vitorpamplona.quartz.nip05DnsIdentifiers
 
+import com.vitorpamplona.quartz.utils.okhttp.NonPublicAddressException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.coroutines.executeAsync
+import java.io.IOException
 
-class OkHttpNip05Fetcher(
-    val okHttpClient: (String) -> OkHttpClient,
-) : Nip05Fetcher {
-    override suspend fun fetch(url: String): String =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder().url(url).build()
-
-            // Fetchers MUST ignore any HTTP redirects given by the /.well-known/nostr.json endpoint.
-            val client = okHttpClient(url).newBuilder().followRedirects(false).build()
-
-            client.newCall(request).executeAsync().use { response ->
-                withContext(Dispatchers.IO) {
-                    if (response.isSuccessful) {
-                        response.body.string()
-                    } else {
-                        throw IllegalStateException("Error: ${response.code}, ${response.message}")
+/**
+ * Fetches NIP-05 documents with OkHttp. Redirects are never followed (NIP-05 forbids it), and
+ * the body is read only up to [maxBodyBytes]: a `nostr.json` is a text file anyone can serve, and
+ * reading it whole would let a hostile domain stream gigabytes into memory. Every failure is a
+ * [Nip05FetchException].
+ *
+ * To fetch only from public addresses, build the client with
+ * [publicAddressesOnly][com.vitorpamplona.quartz.utils.okhttp.publicAddressesOnly].
+ */
+class OkHttpNip05Fetcher
+    @JvmOverloads
+    constructor(
+        val okHttpClient: (String) -> OkHttpClient,
+        val maxBodyBytes: Long = DEFAULT_MAX_BODY_BYTES,
+    ) : Nip05Fetcher {
+        override suspend fun fetch(url: String): String =
+            withContext(Dispatchers.IO) {
+                val request =
+                    try {
+                        Request.Builder().url(url).build()
+                    } catch (e: IllegalArgumentException) {
+                        throw Nip05FetchException.Refused("not an http(s) URL: $url", e)
                     }
+
+                // Fetchers MUST ignore any HTTP redirects given by the /.well-known/nostr.json endpoint.
+                val client = okHttpClient(url).newBuilder().followRedirects(false).build()
+
+                try {
+                    client.newCall(request).executeAsync().use { response ->
+                        withContext(Dispatchers.IO) {
+                            if (!response.isSuccessful) throw Nip05FetchException.Status(response.code)
+                            val source = response.body.source()
+                            if (source.request(maxBodyBytes + 1)) throw Nip05FetchException.TooLarge(maxBodyBytes)
+                            source.buffer.readUtf8()
+                        }
+                    }
+                } catch (e: NonPublicAddressException) {
+                    throw Nip05FetchException.Refused(e.message ?: "non-public address", e)
+                } catch (e: IOException) {
+                    throw Nip05FetchException.Unreachable(e)
                 }
             }
+
+        companion object {
+            /** Large enough for a busy domain's whole name list, small enough to hold in memory. */
+            const val DEFAULT_MAX_BODY_BYTES = 2L * 1024 * 1024
         }
-}
+    }

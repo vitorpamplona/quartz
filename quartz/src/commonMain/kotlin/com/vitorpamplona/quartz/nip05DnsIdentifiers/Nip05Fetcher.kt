@@ -21,5 +21,9 @@
 package com.vitorpamplona.quartz.nip05DnsIdentifiers
 
 interface Nip05Fetcher {
+    /**
+     * The body of a `200` answer to [url]. Implementations should throw a [Nip05FetchException]
+     * saying why there is none, so callers can tell a missing address from a domain that's down.
+     */
     suspend fun fetch(url: String): String
 }

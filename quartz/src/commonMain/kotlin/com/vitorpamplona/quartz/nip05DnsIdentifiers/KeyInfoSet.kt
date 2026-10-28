@@ -22,8 +22,12 @@ package com.vitorpamplona.quartz.nip05DnsIdentifiers
 
 import kotlinx.serialization.Serializable
 
+/**
+ * A NIP-05 `/.well-known/nostr.json` document. Only `names` is required by NIP-05, and most
+ * domains serve nothing else, so both maps default to empty.
+ */
 @Serializable
 data class KeyInfoSet(
-    val names: Map<String, String>,
-    val relays: Map<String, List<String>>,
+    val names: Map<String, String> = emptyMap(),
+    val relays: Map<String, List<String>> = emptyMap(),
 )
