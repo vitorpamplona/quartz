@@ -1065,8 +1065,8 @@ class EventFactory {
                 ThemeDefinitionEvent.KIND -> ThemeDefinitionEvent(id, pubKey, createdAt, tags, content, sig)
                 AuthoredPodcastsEvent.KIND -> AuthoredPodcastsEvent(id, pubKey, createdAt, tags, content, sig)
                 FavoritePodcastsListEvent.KIND -> FavoritePodcastsListEvent(id, pubKey, createdAt, tags, content, sig)
-                // Podcasting-2.0 episodes (podstr's draft) share 30054 with an undocumented app's
-                // playback-progress records (`position`, `duration`, an `a` to the article listened to).
+                // Podcasting-2.0 episodes (podstr's draft) share 30054 with drss.io's listening-progress
+                // records (`position`, `duration`, an `a` to the 30023 article the episode is bridged as).
                 Podcasting20EpisodeEvent.KIND ->
                     if (Podcasting20EpisodeEvent.isPodcastEpisode(tags)) {
                         Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)

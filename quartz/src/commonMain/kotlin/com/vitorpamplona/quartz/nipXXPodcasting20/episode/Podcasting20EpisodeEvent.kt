@@ -187,7 +187,7 @@ class Podcasting20EpisodeEvent(
 
         /**
          * An episode carries a `title`, an `audio` or a `video` (the draft requires the first two).
-         * The playback-progress records another app saves on this kind carry none of them, and
+         * The listening-progress records drss.io saves on this kind carry none of them, and
          * parse as [UnrecognizedKind30054Event].
          */
         fun isPodcastEpisode(tags: TagArray): Boolean =

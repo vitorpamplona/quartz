@@ -25,10 +25,12 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 
 /**
- * A kind-30054 event that is not a Podcasting-2.0 [Podcasting20EpisodeEvent]: an undocumented app
- * saves playback progress on this number (`position` and `duration` in seconds, an `a` to the
- * long-form article being listened to, the article's `d` as its own). Still addressable, so
- * stores replace and delete it by `d`; not a SearchableEvent, so it is never indexed.
+ * A kind-30054 event that is not a Podcasting-2.0 [Podcasting20EpisodeEvent]: drss.io's Listen
+ * player saves listening progress on this number, one record per episode it bridged from RSS as a
+ * kind-30023 article (an `a` to that article, its `d` as the record's own; `position` and
+ * `duration` in seconds, and once played through a `completed` timestamp and a `plays` count).
+ * Still addressable, so stores replace and delete it by `d`; not a SearchableEvent, so it is never
+ * indexed.
  */
 @Immutable
 class UnrecognizedKind30054Event(

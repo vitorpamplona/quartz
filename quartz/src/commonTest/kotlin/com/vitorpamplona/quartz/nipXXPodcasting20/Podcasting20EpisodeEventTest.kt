@@ -226,8 +226,8 @@ class Podcasting20EpisodeEventTest {
 
     @Test
     fun `a playback-progress record on the same kind is unrecognized and not searchable`() {
-        // Verbatim from a relay, 2026-10-28: an undocumented app's listening position in a
-        // long-form article, keyed by the article's own `d`.
+        // Verbatim from wss://relay.nostr.io, 2026-10-28: drss.io's listening position in a podcast
+        // episode it bridged as a long-form article, keyed by the article's own `d`.
         val json =
             """
             {
