@@ -293,6 +293,15 @@ fun main() = runBlocking {
 }
 ```
 
+Every event class has a `build(...)` like `TextNoteEvent.build`: it returns an unsigned template
+for `signer.sign(...)`. Two kinds are the exception, because they must not be signed by the
+user's own key:
+
+- **Anonymous zap requests** (NIP-57): sign with `ZapRequestEvent.sign(template, signer)`, which
+  picks a throwaway key for an anonymous request, or call `ZapRequestEvent.create(...)`.
+- **Gift wraps** (NIP-59): use `GiftWrapEvent.create(...)`, which signs each wrap with a fresh
+  key, or `NIP17Factory` to build whole NIP-17 messages.
+
 For detailed per-relay results, use `publishAndConfirmDetailed`:
 
 ```kotlin

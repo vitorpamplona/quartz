@@ -117,6 +117,14 @@ suspend fun post(client: NostrClient) {
 
 - Build events with the event class's `build(...)` template, then `signer.sign(template)`.
   Don't assemble tag arrays by hand when a typed builder exists.
+- A few kinds must not carry the user's own key, so don't hand their `build(...)` straight to
+  the user's signer:
+  - **Anonymous zap requests** (NIP-57): sign the template with `ZapRequestEvent.sign(template,
+    signer)`, which uses a throwaway key for an anonymous request (`ZapRequestEvent.create`
+    does this for you). Signed with the user's key, the `anon` tag hides nothing.
+  - **Gift wraps** (NIP-59) and NIP-17 DMs: use `GiftWrapEvent.create(...)`, which signs each
+    wrap with a fresh key, or `NIP17Factory` for whole messages. A wrap signed by the user's
+    key puts the sender's identity on the outside.
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
