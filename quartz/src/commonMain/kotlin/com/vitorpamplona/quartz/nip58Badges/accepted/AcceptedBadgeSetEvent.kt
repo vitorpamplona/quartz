@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUsers
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.DescriptionTag
@@ -71,15 +73,24 @@ class AcceptedBadgeSetEvent(
 
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    /** `MENTION`: users tagged with `p` (NIP-58 defines none on a badge set). */
+    override fun linkedPubKeys() = mentionKeys()
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
+    /** `BADGE_AWARD`: the kind-8 awards the set accepts (`e`). */
     override fun linkedEventIds() = badgeAwardEvents().map { it.eventId }
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
+    /** `BADGE_DEFINITION`: the badge definitions the set accepts (`a`). */
     override fun linkedAddressIds() = badgeAwardDefinitions().map { it.toValue() }
+
+    /** Users tagged with `p`, in tag order. NIP-58 defines no `p` here; clients may add them. */
+    fun mentions(): List<PTag> = tags.taggedUsers()
+
+    /** The keys of [mentions] (`p`), in tag order. */
+    fun mentionKeys(): List<HexKey> = tags.taggedUserIds()
 
     fun acceptedBadges() = tags.acceptedBadges()
 

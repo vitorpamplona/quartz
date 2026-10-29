@@ -24,7 +24,9 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -75,13 +77,20 @@ class ConcordInviteListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [document] encrypted to [signer]'s own key; no tags. */
+        suspend fun build(
+            document: ConcordInviteListDocument,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ConcordInviteListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(ConcordInviteList.encode(document), signer.pubKey), createdAt) {
+            initializer()
+        }
+
         suspend fun create(
             signer: NostrSigner,
             document: ConcordInviteListDocument,
             createdAt: Long = TimeUtils.now(),
-        ): ConcordInviteListEvent {
-            val content = signer.nip44Encrypt(ConcordInviteList.encode(document), signer.pubKey)
-            return signer.sign(createdAt, KIND, emptyArray(), content)
-        }
+        ): ConcordInviteListEvent = signer.sign(build(document, signer, createdAt))
     }
 }

@@ -59,7 +59,8 @@ class FavoriteRelayListEvent(
     AddressHintProvider {
     override fun addressHints() = tags.mapNotNull(AddressBookmark::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(AddressBookmark::parseValidAddress)
+    /** `FAVORITE`: the public relay sets this list favorites (`a`). */
+    override fun linkedAddressIds() = favoriteAddressIds()
 
     override fun diffFrom(older: Event): RelayListDiff? {
         if (older !is FavoriteRelayListEvent || older.pubKey != pubKey || older.dTag() != dTag()) return null
@@ -74,6 +75,9 @@ class FavoriteRelayListEvent(
 
     /** NIP-51: besides relays, kind 10012 can point (`a`) to kind:30002 relay sets. */
     fun publicRelaySets(): List<AddressBookmark> = tags.relaySetPointers()
+
+    /** The public `a` entries' address ids, of any kind, in tag order; [publicRelaySets] keeps only kind 30002. */
+    fun favoriteAddressIds(): List<String> = tags.mapNotNull(AddressBookmark::parseValidAddress)
 
     suspend fun decryptPrivateRelaySets(signer: NostrSigner) = privateTags(signer)?.relaySetPointers()
 

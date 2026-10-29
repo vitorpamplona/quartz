@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.any
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
@@ -33,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip02FollowList.tags.ContactTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -96,22 +98,26 @@ class ContactListEvent(
 
         fun createAddressTag(pubKey: HexKey): String = Address.assemble(KIND, pubKey)
 
+        /**
+         * A whole follow list. [relayUse] is the legacy relay map NIP-02 clients kept in `content`;
+         * null writes an empty content, as NIP-65 relay lists replaced it.
+         */
+        fun build(
+            follows: List<ContactTag>,
+            relayUse: Map<String, ReadWrite>? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ContactListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, relayUse?.let { RelaySet.assemble(it) } ?: "", createdAt) {
+            follows(follows)
+            initializer()
+        }
+
         suspend fun createFromScratch(
             followUsers: List<ContactTag>,
             relayUse: Map<String, ReadWrite>?,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): ContactListEvent {
-            val content = relayUse?.let { RelaySet.assemble(it) } ?: ""
-
-            val tags = followUsers.map { it.toTagArray() }
-            return create(
-                content = content,
-                tags = tags.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
-        }
+        ): ContactListEvent = signer.sign(build(followUsers, relayUse, createdAt))
 
         suspend fun followUser(
             earlierVersion: ContactListEvent,
@@ -215,12 +221,6 @@ class ContactListEvent(
             relayUse: Map<String, ReadWrite>? = emptyMap(),
             signer: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
-        ): ContactListEvent {
-            val content = relayUse?.let { RelaySet.assemble(it) } ?: ""
-
-            val tags = followUsers.map { it.toTagArray() }
-
-            return signer.sign(createdAt, KIND, tags.toTypedArray(), content)
-        }
+        ): ContactListEvent = signer.sign(build(followUsers, relayUse, createdAt))
     }
 }

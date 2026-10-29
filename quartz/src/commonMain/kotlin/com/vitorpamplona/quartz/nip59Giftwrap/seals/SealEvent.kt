@@ -23,8 +23,10 @@ package com.vitorpamplona.quartz.nip59Giftwrap.seals
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
-import com.vitorpamplona.quartz.nip40Expiration.ExpirationTag
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import com.vitorpamplona.quartz.utils.Log
@@ -115,29 +117,30 @@ class SealEvent(
             return create(rumor, encryptTo, signer, expirationDelta, createdAt)
         }
 
+        /**
+         * The unsigned seal: [rumor] NIP-44 encrypted by [signer] (the author, who signs it) to
+         * [encryptTo]. [expirationDelta] adds an `expiration` that far past the (randomized)
+         * [createdAt], plus two days so the randomization never expires the seal before it arrives.
+         */
+        suspend fun build(
+            rumor: Rumor,
+            encryptTo: HexKey,
+            signer: NostrSigner,
+            expirationDelta: Long? = null,
+            createdAt: Long = TimeUtils.randomWithTwoDays(),
+            initializer: TagArrayBuilder<SealEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(Rumor.toJson(rumor), encryptTo), createdAt) {
+            expirationDelta?.let { expiration(createdAt + it + TimeUtils.twoDays()) }
+            initializer()
+        }
+
         suspend fun create(
             rumor: Rumor,
             encryptTo: HexKey,
             signer: NostrSigner,
             expirationDelta: Long? = null,
             createdAt: Long = TimeUtils.randomWithTwoDays(),
-        ): SealEvent {
-            val msg = Rumor.toJson(rumor)
-
-            val tags =
-                expirationDelta?.let {
-                    // minimum expiration is two days in the future due to the random created at
-                    // this will make sure the even arrives and is not deleted because of the 2 days.
-                    arrayOf(ExpirationTag.assemble(createdAt + it + TimeUtils.twoDays()))
-                } ?: emptyArray()
-
-            return signer.sign(
-                createdAt = createdAt,
-                kind = KIND,
-                tags = tags,
-                content = signer.nip44Encrypt(msg, encryptTo),
-            )
-        }
+        ): SealEvent = signer.sign(build(rumor, encryptTo, signer, expirationDelta, createdAt))
     }
 }
 

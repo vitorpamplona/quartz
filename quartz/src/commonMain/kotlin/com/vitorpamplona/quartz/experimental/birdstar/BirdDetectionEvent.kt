@@ -23,10 +23,13 @@ package com.vitorpamplona.quartz.experimental.birdstar
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohash
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * Birdstar bird detection (kind 2473).
@@ -66,14 +69,14 @@ class BirdDetectionEvent(
     }
 
     /** Scientific name of the detected species, from the `n` tag (may be null). */
-    fun speciesName() = tags.firstTagValue("n")
+    fun speciesName() = tags.speciesName()
 
     /**
      * External species reference (Wikidata entity URL), from the `i` tag.
      * Only http(s) URLs are returned — UIs render this as a clickable link,
      * so other schemes are rejected here rather than at every call site.
      */
-    fun speciesReference() = tags.firstTagValue("i")?.asWebReference()
+    fun speciesReference() = tags.speciesReference()?.asWebReference()
 
     /** Publisher-provided human-readable summary, from the NIP-31 `alt` tag (may be null). */
     fun summary() = tags.alt()
@@ -98,5 +101,24 @@ class BirdDetectionEvent(
     companion object {
         const val KIND = 2473
         private const val ALT_PREFIX = "Bird detection:"
+
+        /**
+         * A detection in Birdstar's shape: the `alt` [commonName] reads back from, the species'
+         * [reference] URL right before its [scientificName], and the [geohash] it was heard at.
+         */
+        fun build(
+            scientificName: String,
+            commonName: String,
+            reference: String? = null,
+            geohash: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BirdDetectionEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            alt("$ALT_PREFIX $commonName ($scientificName)")
+            reference?.let { speciesReference(it) }
+            detectedSpecies(scientificName)
+            geohash?.let { geohash(it) }
+            initializer()
+        }
     }
 }

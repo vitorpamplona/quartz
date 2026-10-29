@@ -32,8 +32,10 @@ import com.vitorpamplona.quartz.nip01Core.tags.geohash.GeoHashTag
 import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohashes
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
+import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzChannelTypeTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ChildTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ParentTag
+import com.vitorpamplona.quartz.nip29RelayGroups.tags.SupportedKindsTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -114,7 +116,7 @@ class GroupMetadataEvent(
      * type shares the tag name with real hashtags, so only a value in the known set is a type.
      * Returns null on a vanilla NIP-29 relay, which has no such concept.
      */
-    fun buzzChannelType(): String? = tags.firstNotNullOfOrNull { if (it.size > 1 && it[0] == "t" && it[1] in BUZZ_CHANNEL_TYPES) it[1] else null }
+    fun buzzChannelType(): String? = tags.buzzChannelType()
 
     /**
      * True when this channel is a Buzz direct-message conversation rather than a named channel. The
@@ -158,11 +160,7 @@ class GroupMetadataEvent(
      * The kinds this group accepts, when constrained, e.g. `["supported_kinds", "9", "11"]`.
      * `null` (tag absent) means all kinds are accepted.
      */
-    fun supportedKinds(): List<Int>? =
-        tags
-            .firstOrNull { it.isNotEmpty() && it[0] == "supported_kinds" }
-            ?.drop(1)
-            ?.mapNotNull { it.toIntOrNull() }
+    fun supportedKinds(): List<Int>? = tags.supportedKinds()
 
     fun statusTags(): Set<GroupStatus> {
         val statuses = mutableSetOf<GroupStatus>()
@@ -187,10 +185,10 @@ class GroupMetadataEvent(
     }
 
     companion object {
-        const val BUZZ_CHANNEL_TYPE_DM = "dm"
+        const val BUZZ_CHANNEL_TYPE_DM = BuzzChannelTypeTag.DM
 
         /** Every value Buzz's `ChannelType` can serialize to. */
-        val BUZZ_CHANNEL_TYPES = setOf("stream", "forum", BUZZ_CHANNEL_TYPE_DM, "workflow")
+        val BUZZ_CHANNEL_TYPES = BuzzChannelTypeTag.TYPES
 
         const val KIND = 39000
 
@@ -245,7 +243,7 @@ class GroupMetadataEvent(
             banner?.let { add(arrayOf("banner", it)) }
             status.forEach { add(arrayOf(it.code)) }
             supportedKinds?.let { kinds ->
-                add((listOf("supported_kinds") + kinds.map { it.toString() }).toTypedArray())
+                add(SupportedKindsTag.assemble(kinds))
             }
             addAll(HashtagTag.assemble(hashtags))
             // Mip-map each geohash into every prefix so a coarser followed geohash still matches.

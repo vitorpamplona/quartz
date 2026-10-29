@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip87Ecash.MintUrlTag
 import com.vitorpamplona.quartz.nip87Ecash.cashu.CashuMintEvent
 import com.vitorpamplona.quartz.nip87Ecash.fedimint.FedimintEvent
+import com.vitorpamplona.quartz.nip87Ecash.recommendation.tags.MintKindTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -87,15 +88,12 @@ class MintRecommendationEvent(
         fun isMintRecommendation(tags: TagArray): Boolean {
             // Any `k` naming a mint's kind: a relay answering `#k=38172` may hand back an event
             // whose first `k` is something else.
-            if (tags.fastAny { it.size > 1 && it[0] == "k" && it[1].toIntOrNull().isMintKind() }) return true
-            if (tags.fastAny { it.size > 1 && it[0] == "k" && it[1].isNotBlank() }) return false
+            if (tags.fastAny { MintKindTag.parse(it)?.toIntOrNull().isMintKind() }) return true
+            if (tags.fastAny { MintKindTag.parse(it)?.isNotBlank() == true }) return false
             return tags.fastAny {
-                it.size > 1 &&
-                    (
-                        (it[0] == MintUrlTag.TAG_NAME && it[1].isNotBlank()) ||
-                            // The mint's own announcement, by address: `38172:<pubkey>:<d>`.
-                            (it[0] == "a" && (it[1].startsWith(CASHU_ADDRESS) || it[1].startsWith(FEDIMINT_ADDRESS)))
-                    )
+                MintUrlTag.parse(it)?.isNotBlank() == true ||
+                    // The mint's own announcement, by address: `38172:<pubkey>:<d>`.
+                    ATag.parseAddressId(it)?.let { address -> address.startsWith(CASHU_ADDRESS) || address.startsWith(FEDIMINT_ADDRESS) } == true
             }
         }
 

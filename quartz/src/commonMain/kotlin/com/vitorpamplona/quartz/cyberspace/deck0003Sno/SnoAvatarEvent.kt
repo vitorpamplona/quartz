@@ -23,11 +23,14 @@ package com.vitorpamplona.quartz.cyberspace.deck0003Sno
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip13Pow.hasPoWTag
 import com.vitorpamplona.quartz.nip13Pow.miner.PoWRankEvaluator
 import com.vitorpamplona.quartz.nip13Pow.tags.PoWTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * `CYBERSPACE_V2.md` §8.10 — an avatar, kind 11333: the shape an identity is
@@ -64,7 +67,7 @@ class SnoAvatarEvent(
     fun sno(fetchedPalette: SnoPalette? = null): SnoResult = SnoParser.parse(content, fetchedPalette)
 
     /** The `name` tag: the shape's name for humans. */
-    fun nameTag(): String? = tags.firstOrNull { it.size > 1 && it[0] == "name" }?.get(1)
+    fun nameTag(): String? = tags.snoName()
 
     /** The `name` tag is the only human text; the content is SNO geometry JSON and stays out. */
     override fun indexableContent() = nameTag().orEmpty()
@@ -128,5 +131,22 @@ class SnoAvatarEvent(
 
     companion object {
         const val KIND = 11333
+
+        /**
+         * The unsigned avatar: [payloadJson] is its SNO payload, empty for the default avatar.
+         *
+         * A non-default avatar is drawn only when paid: mine the template before signing, for
+         * example with `PoWMiner.mine(template, pubKey, SnoAvatarWork.required(payload))`, so
+         * its nonce commits to at least the work the payload owes (see [payment]).
+         */
+        fun build(
+            payloadJson: String = "",
+            name: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<SnoAvatarEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, payloadJson, createdAt) {
+            name?.let { avatarName(it) }
+            initializer()
+        }
     }
 }

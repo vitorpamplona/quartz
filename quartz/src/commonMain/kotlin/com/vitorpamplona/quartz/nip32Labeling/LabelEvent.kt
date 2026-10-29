@@ -39,6 +39,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.events.toETag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
+import com.vitorpamplona.quartz.nip01Core.tags.references.ReferenceTag
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelNamespaceTag
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -118,10 +119,7 @@ class LabelEvent(
     fun labeledHashtags() = tags.mapNotNull(HashtagTag::parse)
 
     /** Referenced relay URLs (label targets via `r` tag). */
-    fun labeledRelayUrls(): List<String> =
-        tags
-            .filter { it.size >= 2 && it[0] == "r" && it[1].isNotEmpty() }
-            .map { it[1] }
+    fun labeledRelayUrls(): List<String> = tags.mapNotNull(ReferenceTag::parse)
 
     companion object {
         const val KIND = 1985

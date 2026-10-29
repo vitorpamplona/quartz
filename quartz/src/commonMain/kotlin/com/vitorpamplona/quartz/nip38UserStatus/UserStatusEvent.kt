@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip38UserStatus
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -31,11 +32,19 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.aTag
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.eTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
+import com.vitorpamplona.quartz.nip30CustomEmoji.emojis
 import com.vitorpamplona.quartz.nip38UserStatus.tags.StatusEmojiTag
+import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -103,6 +112,39 @@ class UserStatusEvent(
         const val GENERAL = "general"
         const val MUSIC = "music"
 
+        /**
+         * A status of [type] (`d`: [GENERAL], [MUSIC], …) saying [msg], optionally pointing at a
+         * [url], a [profile], an [event] or an [address], with NIP-30 [emojis] for its text or
+         * Buzz's plain [statusEmoji].
+         */
+        fun build(
+            msg: String,
+            type: String = GENERAL,
+            expiration: Long? = null,
+            url: String? = null,
+            profile: PTag? = null,
+            event: ETag? = null,
+            address: ATag? = null,
+            emojis: List<EmojiUrlTag> = emptyList(),
+            statusEmoji: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<UserStatusEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, msg, createdAt) {
+            dTag(type)
+            expiration?.let { expiration(it) }
+            url?.let { statusUrl(it) }
+            profile?.let { pTag(it) }
+            event?.let { eTag(it) }
+            address?.let { aTag(it) }
+            emojis(emojis)
+            statusEmoji?.let { statusEmoji(it) }
+            initializer()
+        }
+
+        /**
+         * [addressableId] must be a valid address: a `kind:pubkey:d` (an `naddr1…` is accepted too and
+         * written as its `kind:pubkey:d`, without its relay hints); an invalid one is left out.
+         */
         suspend fun create(
             msg: String,
             type: String = GENERAL,
@@ -114,19 +156,20 @@ class UserStatusEvent(
             emojiTags: List<EmojiUrlTag>? = null,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): UserStatusEvent {
-            val tags = mutableListOf<Array<String>>()
-
-            tags.add(arrayOf("d", type))
-            expiration?.let { tags.add(arrayOf("expiration", it.toString())) }
-            url?.let { tags.add(arrayOf("r", it)) }
-            profileId?.let { tags.add(PTag.assemble(it, null)) }
-            eventId?.let { tags.add(ETag.assemble(it, null, null)) }
-            addressableId?.let { tags.add(ATag.assemble(it, null)) }
-            emojiTags?.forEach { tags.add(it.toTagArray()) }
-
-            return signer.sign(createdAt, KIND, tags.toTypedArray(), msg)
-        }
+        ): UserStatusEvent =
+            signer.sign(
+                build(
+                    msg = msg,
+                    type = type,
+                    expiration = expiration,
+                    url = url,
+                    profile = profileId?.let { PTag(it) },
+                    event = eventId?.let { ETag(it) },
+                    address = addressableId?.let { ATag.parse(it, null) },
+                    emojis = emojiTags ?: emptyList(),
+                    createdAt = createdAt,
+                ),
+            )
 
         suspend fun update(
             event: UserStatusEvent,
@@ -144,7 +187,7 @@ class UserStatusEvent(
             createdAt: Long = TimeUtils.now(),
         ): UserStatusEvent {
             val msg = ""
-            val tags = event.tags.filter { it.size > 1 && it[0] == "d" }
+            val tags = event.tags.filter(DTag::isTag)
             return signer.sign(createdAt, KIND, tags.toTypedArray(), msg)
         }
     }

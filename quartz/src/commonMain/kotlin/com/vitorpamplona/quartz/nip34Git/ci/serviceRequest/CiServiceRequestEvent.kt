@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip34Git.ci.ciSingleOrNull
 import com.vitorpamplona.quartz.nip34Git.ci.tags.RepositoryTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -59,7 +60,7 @@ class CiServiceRequestEvent(
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator asked to serve the repository (`p`). */
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys() = coordinatorKeys()
 
     override fun addressHints() = tags.mapNotNull(RepositoryTag::parseAsHint)
 
@@ -71,6 +72,9 @@ class CiServiceRequestEvent(
 
     /** The single addressed coordinator; null when absent or repeated. */
     fun coordinator() = tags.ciSingleOrNull(PTag::parseKey)
+
+    /** Every `p` key, in tag order, however many; [coordinator] reads only a single one, as coordinators do. */
+    fun coordinatorKeys(): List<HexKey> = tags.taggedUserIds()
 
     companion object {
         const val KIND = 9843

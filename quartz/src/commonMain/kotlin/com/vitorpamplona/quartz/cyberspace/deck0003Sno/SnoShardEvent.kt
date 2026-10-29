@@ -23,8 +23,12 @@ package com.vitorpamplona.quartz.cyberspace.deck0003Sno
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.cyberspace.CyberspaceCoordinate
 import com.vitorpamplona.quartz.cyberspace.CyberspacePlane
+import com.vitorpamplona.quartz.cyberspace.coordinate
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * DECK-0003 §3.2 — an object hidden at a place: a `kind 3330` bag item, whose
@@ -95,7 +99,7 @@ class SnoShardEvent(
      * bag that coordinate MUST lie inside the region the bag is encrypted to;
      * this class has no bag to check it against, so it only reports the claim.
      */
-    fun coordinate(): String? = tags.firstOrNull { it.size > 1 && it[0] == "C" }?.get(1)
+    fun coordinate(): String? = tags.coordinate()
 
     /**
      * The plane the claimed coordinate lies in, or null when there is no `C`
@@ -110,5 +114,16 @@ class SnoShardEvent(
 
     companion object {
         const val KIND = 3330
+
+        /** The unsigned shard: [payloadJson] is its SNO payload, placed at [coordinate] when given. */
+        fun build(
+            payloadJson: String,
+            coordinate: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<SnoShardEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, payloadJson, createdAt) {
+            coordinate?.let { coordinate(it) }
+            initializer()
+        }
     }
 }

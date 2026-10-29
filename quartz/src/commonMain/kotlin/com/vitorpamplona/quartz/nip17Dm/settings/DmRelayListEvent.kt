@@ -25,12 +25,14 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip17Dm.settings.tags.RelayTag
 import com.vitorpamplona.quartz.nip51Lists.relayLists.RelayListDiff
@@ -85,17 +87,26 @@ class DmRelayListEvent(
             return signer.sign(createdAt, KIND, tags, earlierVersion.content)
         }
 
+        fun build(
+            relays: List<NormalizedRelayUrl>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<DmRelayListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            dmRelays(relays)
+            initializer()
+        }
+
         suspend fun create(
             relays: List<NormalizedRelayUrl>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): DmRelayListEvent = signer.sign(createdAt, KIND, createTagArray(relays), "")
+        ): DmRelayListEvent = signer.sign(build(relays, createdAt))
 
         fun create(
             relays: List<NormalizedRelayUrl>,
             signer: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
-        ): DmRelayListEvent = signer.sign(createdAt, KIND, createTagArray(relays), "")
+        ): DmRelayListEvent = signer.sign(build(relays, createdAt))
     }
 }
 

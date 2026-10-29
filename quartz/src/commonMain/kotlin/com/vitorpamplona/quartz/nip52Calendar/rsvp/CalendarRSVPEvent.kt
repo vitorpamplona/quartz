@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.events.firstTaggedEvent
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip52Calendar.appt.tags.RSVPStatusTag
@@ -66,17 +67,19 @@ class CalendarRSVPEvent(
 
     override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.mapNotNull(PTag::parseKey)
+    /** `CALENDAR_EVENT_AUTHOR`: the author of the appointment this RSVP answers (`p`). */
+    override fun linkedPubKeys() = calendarEventAuthorKeys()
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    // NIP-52 gives an RSVP exactly one `a`: the appointment it answers.
+    /** `CALENDAR_EVENT`: the appointment this RSVP answers; NIP-52 gives an RSVP exactly one `a`. */
     override fun linkedAddressIds() = listOfNotNull(calendarEventAddress()?.toValue())
 
     // NIP-52's optional `e` tag pins the exact appointment revision this RSVP answered, next to
     // the `a` tag's coordinate. Routing on it as well reaches whoever served that revision.
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
 
+    /** `CALENDAR_EVENT`: the appointment revision this RSVP answered (`e`). */
     override fun linkedEventIds() = listOfNotNull(calendarEventId()?.eventId)
 
     fun status() = tags.firstNotNullOfOrNull(RSVPStatusTag.Companion::parse)
@@ -90,6 +93,9 @@ class CalendarRSVPEvent(
     fun calendarEventId() = firstTaggedEvent()
 
     fun calendarEventAuthor() = tags.firstNotNullOfOrNull(PTag.Companion::parse)
+
+    /** Every `p` key, in tag order. NIP-52 writes one, [calendarEventAuthor]. */
+    fun calendarEventAuthorKeys(): List<HexKey> = tags.taggedUserIds()
 
     companion object {
         const val KIND = 31925

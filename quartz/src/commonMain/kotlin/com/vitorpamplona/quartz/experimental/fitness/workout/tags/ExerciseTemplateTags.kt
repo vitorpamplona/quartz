@@ -33,6 +33,8 @@ class FormatTag {
             ensure(tag[0] == TAG_NAME) { return null }
             return tag.drop(1).filter { it.isNotEmpty() }.ifEmpty { null }
         }
+
+        fun assemble(fields: List<String>) = arrayOf(TAG_NAME) + fields
     }
 }
 
@@ -46,6 +48,8 @@ class FormatUnitsTag {
             ensure(tag[0] == TAG_NAME) { return null }
             return tag.drop(1).filter { it.isNotEmpty() }.ifEmpty { null }
         }
+
+        fun assemble(units: List<String>) = arrayOf(TAG_NAME) + units
     }
 }
 
@@ -60,6 +64,8 @@ class EquipmentTag {
             ensure(tag[1].isNotEmpty()) { return null }
             return tag[1]
         }
+
+        fun assemble(equipment: String) = arrayOf(TAG_NAME, equipment)
     }
 }
 

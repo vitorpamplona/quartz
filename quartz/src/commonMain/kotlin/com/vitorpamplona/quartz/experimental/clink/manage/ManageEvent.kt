@@ -26,10 +26,12 @@ import com.vitorpamplona.quartz.experimental.clink.tags.clinkVersion
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -103,21 +105,42 @@ class ManageEvent(
     companion object {
         const val KIND = 21003
 
+        /** The unsigned request: [request] NIP-44 encrypted to [serverPubKey]. */
+        suspend fun build(
+            request: ManageRequest,
+            serverPubKey: HexKey,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ManageEvent>.() -> Unit = {},
+        ): EventTemplate<ManageEvent> =
+            eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), serverPubKey), createdAt) {
+                pTag(serverPubKey, null)
+                clinkVersion()
+                initializer()
+            }
+
         /** Builds a request event (app side) addressed to the wallet server. */
         suspend fun createRequest(
             request: ManageRequest,
             serverPubKey: HexKey,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): ManageEvent {
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), serverPubKey)
-            return signer.sign(
-                eventTemplate(KIND, encrypted, createdAt) {
-                    pTag(serverPubKey, null)
-                    clinkVersion()
-                },
-            )
-        }
+        ): ManageEvent = signer.sign(build(request, serverPubKey, signer, createdAt))
+
+        /** The unsigned answer to [requestEvent]: [response] NIP-44 encrypted to its author, which it addresses. */
+        suspend fun build(
+            response: ManageResponse,
+            requestEvent: ManageEvent,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ManageEvent>.() -> Unit = {},
+        ): EventTemplate<ManageEvent> =
+            eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), requestEvent.pubKey), createdAt) {
+                pTag(requestEvent.pubKey, null)
+                add(ETag.assemble(requestEvent.id, null, null))
+                clinkVersion()
+                initializer()
+            }
 
         /** Builds a response event (server side) referencing the original [requestEvent]. */
         suspend fun createResponse(
@@ -125,16 +148,6 @@ class ManageEvent(
             requestEvent: ManageEvent,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): ManageEvent {
-            val appPubKey = requestEvent.pubKey
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), appPubKey)
-            return signer.sign(
-                eventTemplate(KIND, encrypted, createdAt) {
-                    pTag(appPubKey, null)
-                    add(ETag.assemble(requestEvent.id, null, null))
-                    clinkVersion()
-                },
-            )
-        }
+        ): ManageEvent = signer.sign(build(response, requestEvent, signer, createdAt))
     }
 }

@@ -21,12 +21,18 @@
 package com.vitorpamplona.quartz.experimental.birdstar
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesNameTag
+import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesReferenceTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.mapValueTagged
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.tagArray
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip31Alts.AltTag
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * Birdstar "Birdex" species collection (kind 12473).
@@ -67,7 +73,7 @@ class BirdexEvent(
     }
 
     /** Scientific names of the collected species, in event order, from the `n` tags. */
-    fun speciesNames() = tags.mapValueTagged("n") { it }
+    fun speciesNames() = tags.speciesNames()
 
     /**
      * The collected species, in event order, each paired with the external
@@ -95,13 +101,13 @@ class BirdexEvent(
             if (tag.size < 2) continue
 
             when (tag[0]) {
-                "n" -> {
+                SpeciesNameTag.TAG_NAME -> {
                     species.add(BirdexSpecies(tag[1], if (pendingIndex == index - 1) pendingReference else null))
                     pendingReference = null
                     pendingIndex = -1
                     nameIndex = index
                 }
-                "i" -> {
+                SpeciesReferenceTag.TAG_NAME -> {
                     val reference = tag[1].asWebReference()
                     val last = species.lastOrNull()
                     if (nameIndex == index - 1 && last != null && last.reference == null) {
@@ -119,13 +125,42 @@ class BirdexEvent(
     }
 
     /** Number of collected species (one `n` tag per species). */
-    fun speciesCount() = tags.count { it.size > 1 && it[0] == "n" }
+    fun speciesCount() = tags.speciesCount()
 
     /** Publisher-provided human-readable summary, from the NIP-31 `alt` tag (may be null). */
     fun summary() = tags.alt()
 
     companion object {
         const val KIND = 12473
+
+        /**
+         * The collection in Birdstar's shape: each species' `i` (when it has a reference)
+         * immediately before its `n`, the adjacency [species] pairs them by. Right after a
+         * species [species] reads with no reference (none, or one that is not a web URL) that
+         * `i` would bind back to it, so there it goes after its own `n` instead. Built as an
+         * ordered template because a [TagArrayBuilder] would group every `i` ahead of every `n`.
+         *
+         * The [initializer]'s tags go after the last species, so an `i` among them binds to that
+         * species when it has no reference: don't add `i` or `n` tags there.
+         */
+        fun build(
+            species: List<BirdexSpecies>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BirdexEvent>.() -> Unit = {},
+        ): EventTemplate<BirdexEvent> {
+            val tags = ArrayList<Array<String>>(species.size * 2 + 1)
+            tags.add(AltTag.assemble("Birdex: ${species.size} species"))
+            var previousHasReference = true
+            species.forEach {
+                val reference = it.reference?.let(SpeciesReferenceTag::assemble)
+                if (reference != null && previousHasReference) tags.add(reference)
+                tags.add(SpeciesNameTag.assemble(it.name))
+                if (reference != null && !previousHasReference) tags.add(reference)
+                // The reader's test, not just "has one": a reference that is not a web URL reads as none.
+                previousHasReference = it.reference?.asWebReference() != null
+            }
+            return EventTemplate(createdAt, KIND, tags.toTypedArray() + tagArray(initializer), "")
+        }
     }
 }
 

@@ -42,6 +42,14 @@ import com.vitorpamplona.quartz.nip94FileMetadata.tags.SummaryTag
 import com.vitorpamplona.quartz.nip99Classifieds.tags.StatusTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
+/**
+ * A reader's progress through an interactive story: the story it tracks (`A`, and the `d`
+ * coordinate), the scene the reader is at (`a`) and a read status.
+ *
+ * Not searchable: its title, summary and image are copies of the story's own, taken by [build]
+ * from the root, so indexing them would turn every reader's progress record into a duplicate
+ * hit for the story. Search finds the story itself.
+ */
 @Immutable
 class InteractiveStoryReadingStateEvent(
     id: HexKey,

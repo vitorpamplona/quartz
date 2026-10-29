@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.marmot.mip02Welcome
 
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.EncodingTag
 import com.vitorpamplona.quartz.marmot.mip02Welcome.tags.KeyPackageEventTag
+import com.vitorpamplona.quartz.marmot.mip02Welcome.tags.WelcomeGroupIdTag
 import com.vitorpamplona.quartz.marmot.mip02Welcome.tags.WelcomeRelaysTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 
@@ -30,3 +31,5 @@ fun TagArray.keyPackageEventId() = firstNotNullOfOrNull(KeyPackageEventTag::pars
 fun TagArray.welcomeRelays() = firstNotNullOfOrNull(WelcomeRelaysTag::parse)
 
 fun TagArray.welcomeEncoding() = firstNotNullOfOrNull(EncodingTag::parse)
+
+fun TagArray.welcomeGroupId() = firstNotNullOfOrNull(WelcomeGroupIdTag::parse)

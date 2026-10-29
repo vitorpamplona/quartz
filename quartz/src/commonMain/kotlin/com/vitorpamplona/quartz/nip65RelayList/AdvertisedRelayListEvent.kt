@@ -25,11 +25,13 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip65RelayList.tags.AdvertisedRelayInfo
 import com.vitorpamplona.quartz.nip65RelayList.tags.AdvertisedRelayType
@@ -107,24 +109,25 @@ class AdvertisedRelayListEvent(
             createdAt: Long = TimeUtils.now(),
         ) = create(relays, signer, createdAt)
 
+        fun build(
+            relays: List<AdvertisedRelayInfo>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<AdvertisedRelayListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            relays(relays)
+            initializer()
+        }
+
         suspend fun create(
             list: List<AdvertisedRelayInfo>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): AdvertisedRelayListEvent {
-            val tags = list.map { it.toTagArray() }.toTypedArray()
-
-            return signer.sign(createdAt, KIND, tags, "")
-        }
+        ): AdvertisedRelayListEvent = signer.sign(build(list, createdAt))
 
         fun create(
             list: List<AdvertisedRelayInfo>,
             signer: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
-        ): AdvertisedRelayListEvent {
-            val tags = list.map { it.toTagArray() }.toTypedArray()
-
-            return signer.sign(createdAt, KIND, tags, "")
-        }
+        ): AdvertisedRelayListEvent = signer.sign(build(list, createdAt))
     }
 }

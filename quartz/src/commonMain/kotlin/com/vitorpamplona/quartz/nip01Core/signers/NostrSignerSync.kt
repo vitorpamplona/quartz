@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip44Encryption.Nip44
 import com.vitorpamplona.quartz.nip57Zaps.PrivateZapEvent
 import com.vitorpamplona.quartz.nip57Zaps.PrivateZapRequestBuilder
 import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
+import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
 import com.vitorpamplona.quartz.nipBCOnchainZaps.psbt.Psbt
 import com.vitorpamplona.quartz.nipBCOnchainZaps.psbt.PsbtSigner
 
@@ -40,7 +41,9 @@ class NostrSignerSync(
     val keyPair: KeyPair = KeyPair(),
     val pubKey: HexKey = keyPair.pubKey.toHexKey(),
 ) {
-    fun <T : Event> sign(ev: EventTemplate<T>) = signNormal<T>(ev.createdAt, ev.kind, ev.tags, ev.content)
+    // Through sign(), not signNormal(): an unsigned private zap must be encrypted here, never
+    // signed as is with this key and its message in the clear.
+    fun <T : Event> sign(ev: EventTemplate<T>) = sign<T>(ev.createdAt, ev.kind, ev.tags, ev.content)
 
     fun <T : Event> sign(
         createdAt: Long,
@@ -63,7 +66,7 @@ class NostrSignerSync(
         tags: Array<Array<String>>,
     ): Boolean =
         kind == ZapRequestEvent.KIND &&
-            tags.any { t -> t.size > 1 && t[0] == "anon" && t[1].isBlank() }
+            tags.any(AnonTag::isUnsignedPrivate)
 
     fun <T : Event> signNormal(
         createdAt: Long,

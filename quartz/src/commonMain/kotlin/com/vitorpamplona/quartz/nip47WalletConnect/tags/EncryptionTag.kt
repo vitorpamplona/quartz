@@ -36,6 +36,15 @@ class EncryptionTag {
             return tag.drop(1)
         }
 
+        /** A request's scheme: the first value, as written (`nip44_v2`, `nip04`). */
+        fun parseScheme(tag: Array<String>): String? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            return tag[1]
+        }
+
+        fun assembleScheme(scheme: String) = arrayOf(TAG_NAME, scheme)
+
         // NIP-47 carries the list as ONE space-separated value (eg. ["encryption", "a b c"]);
         // [parse] still tolerates wallets that spread it across several elements.
         fun assemble(schemes: List<String>) = arrayOf(TAG_NAME, schemes.joinToString(" "))

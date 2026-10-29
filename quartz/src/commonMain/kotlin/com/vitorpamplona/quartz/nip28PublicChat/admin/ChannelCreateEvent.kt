@@ -24,15 +24,16 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.taggedATags
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelData
 import com.vitorpamplona.quartz.nip28PublicChat.base.ChannelDataNorm
+import com.vitorpamplona.quartz.nip28PublicChat.base.isEncrypted
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -66,7 +67,14 @@ class ChannelCreateEvent(
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId)
+    /** `MENTION`: addresses tagged with `a` (NIP-28 defines none on kind 40). */
+    override fun linkedAddressIds() = mentionedAddressIds()
+
+    /** Well-formed addresses tagged with `a`, in tag order. NIP-28 defines no `a` here; clients may add them. */
+    fun mentionedAddresses(): List<ATag> = tags.taggedATags()
+
+    /** Every non-empty `a` value, in tag order, unvalidated: a superset of [mentionedAddresses]. */
+    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient
@@ -74,9 +82,10 @@ class ChannelCreateEvent(
 
     override fun eventHints() = channelInfo().relays?.map { EventIdHint(id, it) } ?: emptyList()
 
+    /** This event's own id, which is the channel's id: pairs it with the relays in its content ([eventHints]). */
     override fun linkedEventIds() = listOf(id)
 
-    fun isEncrypted() = tags.any { it.has(1) && it[0] == "encrypted" && it[1] == "true" }
+    fun isEncrypted() = tags.isEncrypted()
 
     fun channelInfo(): ChannelDataNorm {
         cache?.let { return it }

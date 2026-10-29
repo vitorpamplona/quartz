@@ -24,8 +24,14 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Kind 31890: Feed Definition Event (draft NIP, PR #1181).
@@ -53,13 +59,29 @@ class FeedDefinitionEvent(
         visitor.visit(title())
     }
 
-    fun title(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
+    fun title(): String? = tags.feedTitle()
 
-    fun emoji(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "emoji" }?.get(1)
+    fun emoji(): String? = tags.feedEmoji()
 
     fun feedConfigJson(): String = content
 
     companion object {
         const val KIND = 31890
+
+        /** A feed named [title]: [configJson] is its definition, as [feedConfigJson] returns it. */
+        @OptIn(ExperimentalUuidApi::class)
+        fun build(
+            title: String,
+            configJson: String,
+            emoji: String? = null,
+            dTag: String = Uuid.random().toString(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<FeedDefinitionEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, configJson, createdAt) {
+            dTag(dTag)
+            feedTitle(title)
+            emoji?.let { feedEmoji(it) }
+            initializer()
+        }
     }
 }

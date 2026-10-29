@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.taggedEventIds
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -71,18 +72,33 @@ class CommunityDefinitionEvent(
 
     override fun eventHints() = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(ETag::parseId) + tags.mapNotNull(QTag::parseEventId)
+    /** `MENTION`: events tagged with `e` or quoted with `q` (NIP-72 defines neither on a community). */
+    override fun linkedEventIds() = mentionedEventIds() + quotedEventIds()
 
     override fun addressHints() =
         tags.mapNotNull(ATag::parseAsHint) +
             tags.mapNotNull(QTag::parseAddressAsHint) +
             tags.mapNotNull(RelayTag::parse).map { AddressHint(addressTag(), it.url) }
 
-    override fun linkedAddressIds() = tags.mapNotNull(ATag::parseAddressId) + tags.mapNotNull(QTag::parseAddressId)
+    /** `MENTION`: addresses tagged with `a` or quoted with `q` (NIP-72 defines neither on a community). */
+    override fun linkedAddressIds() = mentionedAddressIds() + quotedAddressIds()
 
     override fun pubKeyHints() = tags.mapNotNull(ModeratorTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.mapNotNull(ModeratorTag::parseKey)
+    /** `MODERATOR`: the moderators the `p` tags list. */
+    override fun linkedPubKeys() = listedModeratorKeys()
+
+    /** The ids of events tagged with `e`, in tag order. NIP-72 defines no `e` here; clients may add them. */
+    fun mentionedEventIds(): List<HexKey> = tags.taggedEventIds()
+
+    /** The ids of events quoted with `q` (NIP-18), in tag order. */
+    fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
+
+    /** The ids of addresses tagged with `a`, in tag order. NIP-72 defines no `a` here; clients may add them. */
+    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+
+    /** The ids of addresses quoted with `q` (NIP-18), in tag order. */
+    fun quotedAddressIds(): List<String> = tags.mapNotNull(QTag::parseAddressId)
 
     fun name() = tags.firstNotNullOfOrNull(NameTag::parse)
 
@@ -94,7 +110,11 @@ class CommunityDefinitionEvent(
 
     fun moderators() = tags.mapNotNull(ModeratorTag::parse)
 
-    fun moderatorKeys() = tags.mapNotNull(ModeratorTag::parseKey).plus(pubKey)
+    /** The keys of [moderators] (`p`), in tag order, without the owner. */
+    fun listedModeratorKeys(): List<HexKey> = tags.mapNotNull(ModeratorTag::parseKey)
+
+    /** [listedModeratorKeys] plus the owner, who moderates without being listed. */
+    fun moderatorKeys() = listedModeratorKeys().plus(pubKey)
 
     fun relays() = tags.mapNotNull(RelayTag::parse)
 

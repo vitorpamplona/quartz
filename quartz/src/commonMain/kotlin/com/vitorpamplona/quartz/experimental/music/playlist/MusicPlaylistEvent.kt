@@ -61,7 +61,8 @@ class MusicPlaylistEvent(
     // The tracks (`a` tags), so outbox can fetch what the playlist plays.
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    /** `CURATED`: the tracks the playlist plays (`a`). */
+    override fun linkedAddressIds(): List<String> = itemAddressIds()
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 
@@ -95,6 +96,9 @@ class MusicPlaylistEvent(
             val address = ATag.parseAddress(tag) ?: return@mapNotNull null
             if (address.kind == MusicTrackEvent.KIND) address else null
         }
+
+    /** Every `a` entry's validated address id, of any kind, in tag order; [trackAddresses] keeps only tracks. */
+    fun itemAddressIds(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
 
     override fun indexableContent(): String = listOfNotNull(title(), description(), content).joinToString("\n")
 

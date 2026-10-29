@@ -24,11 +24,14 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.MsTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * A Concord Chat Plane **message edit** (CORD-02 Appendix B, `kind:3302`).
@@ -78,5 +81,23 @@ class ConcordChatEditEvent(
 
     companion object {
         const val KIND = 3302
+
+        /**
+         * The unsigned edit rumor: [newText] replaces [targetId], bound to [channelId]/[epoch].
+         * [ChannelChat.edit] assembles the same tags into a rumor, plus any extra tags.
+         */
+        fun build(
+            channelId: HexKey,
+            epoch: Long,
+            targetId: HexKey,
+            newText: String,
+            createdAt: Long = TimeUtils.now(),
+            ms: Int = MsTag.remainderFor(createdAt),
+            initializer: TagArrayBuilder<ConcordChatEditEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, newText, createdAt) {
+            channelBinding(channelId, epoch, ms)
+            editedMessage(targetId)
+            initializer()
+        }
     }
 }

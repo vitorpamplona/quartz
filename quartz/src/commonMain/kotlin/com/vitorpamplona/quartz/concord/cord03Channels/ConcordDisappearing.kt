@@ -20,12 +20,12 @@
  */
 package com.vitorpamplona.quartz.concord.cord03Channels
 
+import com.vitorpamplona.quartz.concord.cord03Channels.tags.TimerTag
 import com.vitorpamplona.quartz.concord.cord04Roles.AuthorityResolver
 import com.vitorpamplona.quartz.concord.cord04Roles.ConcordPermissions
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
-import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.ExpirationTag
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.RumorAssembler
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -50,13 +50,11 @@ object ConcordDisappearing {
     /** The timer-notice kind, shared with NIP-17 disappearing DMs (§4). */
     const val KIND_TIMER_NOTICE = ChannelChat.KIND_TIMER_NOTICE
 
-    const val TIMER_TAG = "timer"
+    const val TIMER_TAG = TimerTag.TAG_NAME
 
     private const val KIND_DELETE = 5
     private const val KIND_TYPING = 23311
     private const val KIND_VOICE_PRESENCE = 23313
-
-    private val DECIMAL = Regex("^(0|[1-9][0-9]*)$")
 
     /** True when a rumor of [kind] must carry the expiration tag while the timer is set (§2). */
     fun expires(kind: Int): Boolean = kind != KIND_DELETE && kind != KIND_TIMER_NOTICE && kind != KIND_TYPING && kind != KIND_VOICE_PRESENCE
@@ -123,14 +121,7 @@ object ConcordDisappearing {
         epoch: Long,
         timerSecs: Long,
         createdAt: Long = TimeUtils.now(),
-    ): Event =
-        RumorAssembler.assembleRumor(
-            authorPubKey,
-            eventTemplate<Event>(KIND_TIMER_NOTICE, "", createdAt) {
-                channelBinding(channelId, epoch)
-                add(arrayOf(TIMER_TAG, timerSecs.coerceAtLeast(0).toString()))
-            },
-        )
+    ): Event = RumorAssembler.assembleRumor(authorPubKey, ConcordTimerNoticeEvent.build(channelId, epoch, timerSecs, createdAt))
 
     /**
      * True when a reader may display timer notice [rumor] (§4): a well-formed 1740 whose author holds
@@ -148,10 +139,8 @@ object ConcordDisappearing {
      */
     fun noticeTimerSecs(rumor: Event): Long? {
         if (rumor.kind != KIND_TIMER_NOTICE) return null
-        val values = rumor.tags.filter { it.size >= 2 && it[0] == TIMER_TAG }
+        val values = rumor.tags.filter(TimerTag::isTag)
         if (values.size != 1) return null
-        val raw = values[0][1]
-        if (!DECIMAL.matches(raw)) return null
-        return raw.toLongOrNull()
+        return TimerTag.parse(values[0])
     }
 }

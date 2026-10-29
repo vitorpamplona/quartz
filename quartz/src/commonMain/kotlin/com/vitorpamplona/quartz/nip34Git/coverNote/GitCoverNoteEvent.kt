@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip10Notes.BaseNoteEvent
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
@@ -88,7 +89,7 @@ class GitCoverNoteEvent(
      * `QUOTE`: events quoted with NIP-18 `q`;
      * `MENTION`: `nostr:` event URIs in the markdown body (`via: content`).
      */
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId) + tags.mapNotNull(QTag::parseEventId) + citedNIP19().eventIds()
+    override fun linkedEventIds(): List<HexKey> = rootEventIds() + quotedEventIds() + citedNIP19().eventIds()
 
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
 
@@ -96,7 +97,7 @@ class GitCoverNoteEvent(
      * `ROOT_AUTHOR`: the covered item's author (the `p` tag);
      * `MENTION`: `nostr:` profile URIs in the markdown body (`via: content`).
      */
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey) + citedNIP19().pubKeys()
+    override fun linkedPubKeys(): List<HexKey> = rootAuthorKeys() + citedNIP19().pubKeys()
 
     override fun addressHints(): List<AddressHint> = tags.mapNotNull { tag -> QAddressableTag.parse(tag)?.let { q -> q.relay?.let { AddressHint(q.address.toValue(), it) } } } + citedNIP19().addressHints()
 
@@ -104,7 +105,7 @@ class GitCoverNoteEvent(
      * `QUOTE`: addresses quoted with NIP-18 `q` (validated `kind:pubkey:d`);
      * `MENTION`: `nostr:naddr` URIs in the markdown body (`via: content`).
      */
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull { QAddressableTag.parse(it)?.address?.toValue() } + citedNIP19().addressIds()
+    override fun linkedAddressIds(): List<String> = quotedAddressIds() + citedNIP19().addressIds()
 
     /** The covered issue, patch or PR: the `root`-marked `e`, else the first well-formed `e`. */
     fun rootEvent() = tags.coverNoteRoot()
@@ -118,6 +119,18 @@ class GitCoverNoteEvent(
     fun rootKind() = tags.coverNoteRootKind()
 
     fun quotes() = tags.coverNoteQuotes()
+
+    /** Every `e` id, marked or not, in tag order; [rootEvent] picks the covered item among them. */
+    fun rootEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
+
+    /** Every `p` key, in tag order; [rootAuthor] is the first. */
+    fun rootAuthorKeys(): List<HexKey> = tags.taggedUserIds()
+
+    /** The ids of events quoted with `q` (NIP-18), in tag order. */
+    fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
+
+    /** The validated `kind:pubkey:d` ids of addresses quoted with `q` (NIP-18), in tag order. */
+    fun quotedAddressIds(): List<String> = tags.mapNotNull { QAddressableTag.parse(it)?.address?.toValue() }
 
     companion object {
         const val KIND = 1624

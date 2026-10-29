@@ -24,10 +24,12 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.muteList.tags.UserTag
@@ -67,18 +69,28 @@ class FavoritePodcastsListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicFavorites] as tags, [privateFavorites] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicFavorites: List<UserTag> = emptyList(),
+            privateFavorites: List<UserTag> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<FavoritePodcastsListEvent>.() -> Unit = {},
+        ) = eventTemplate<FavoritePodcastsListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateFavorites.map { it.toTagArray() }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            favoritePodcasts(publicFavorites)
+            initializer()
+        }
+
         suspend fun create(
             publicFavorites: List<UserTag> = emptyList(),
             privateFavorites: List<UserTag> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): FavoritePodcastsListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateFavorites.map { it.toTagArray() }.toTypedArray(), signer),
-                tags = publicFavorites.map { it.toTagArray() }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): FavoritePodcastsListEvent = signer.sign(build(publicFavorites, privateFavorites, signer, createdAt))
 
         suspend fun add(
             earlierVersion: FavoritePodcastsListEvent,

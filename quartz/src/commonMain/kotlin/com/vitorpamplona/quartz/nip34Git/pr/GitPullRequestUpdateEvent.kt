@@ -38,6 +38,7 @@ import com.vitorpamplona.quartz.nip22Comments.tags.RootEventTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -89,7 +90,7 @@ class GitPullRequestUpdateEvent(
     // Tolerant of both the multi-value and legacy repeated `clone` forms; deduped.
     fun cloneUrls(): List<String> = tags.flatMap(CloneTag::parseAll).distinct()
 
-    fun earliestUniqueCommit(): String? = tags.firstOrNull { it.size > 1 && it[0] == "r" && it[1].isNotEmpty() }?.get(1)
+    fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()
 
     fun mergeBase(): String? = tags.firstNotNullOfOrNull(MergeBaseTag::parse)
 

@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip64Chess.Color
 import com.vitorpamplona.quartz.nip64Chess.GameResult
 import com.vitorpamplona.quartz.nip64Chess.GameTermination
@@ -62,11 +63,19 @@ class JesterEvent(
     // the START_POSITION_HASH constant, which is a position digest, not an event to fetch.
     override fun eventHints(): List<EventIdHint> = tags.mapNotNull { tag -> ETag.parseAsHint(tag)?.takeIf { it.eventId != JesterProtocol.START_POSITION_HASH } }
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+    /** `ROOT`: the game's start event; `PARENT`: the move this one follows (`e`). */
+    override fun linkedEventIds(): List<HexKey> = gameEventIds()
 
     override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    /** `OPPONENT`: the other player of a private game (`p`). */
+    override fun linkedPubKeys(): List<HexKey> = opponentKeys()
+
+    /** The `e` ids, in tag order (the start event, then the move this one follows), minus START_POSITION_HASH. */
+    fun gameEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+
+    /** Every 64-char `p` key, in tag order. Jester writes one; [opponentPubkey] reads the first `p` unvalidated. */
+    fun opponentKeys(): List<HexKey> = tags.taggedUserIds()
 
     private val parsedContent: JesterContent? by lazy {
         try {
@@ -110,16 +119,16 @@ class JesterEvent(
     fun termination(): String? = parsedContent?.termination
 
     /** Get the start event ID (first e-tag) */
-    fun startEventId(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+    fun startEventId(): String? = tags.firstGameEventRef()
 
     /** Get the head/parent move ID (second e-tag, for moves) */
-    fun headEventId(): String? = tags.filter { it.size >= 2 && it[0] == "e" }.getOrNull(1)?.get(1)
+    fun headEventId(): String? = tags.gameEventRefs().getOrNull(1)
 
     /** Get opponent pubkey (p-tag, for private games) */
-    fun opponentPubkey(): String? = tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+    fun opponentPubkey(): String? = tags.jesterOpponent()
 
     /** Get all e-tags */
-    fun eTags(): List<String> = tags.filter { it.size >= 2 && it[0] == "e" }.map { it[1] }
+    fun eTags(): List<String> = tags.gameEventRefs()
 
     companion object {
         const val KIND = JesterProtocol.KIND
@@ -147,7 +156,7 @@ class JesterEvent(
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
                 // Reference the standard start position for game discovery
-                add(arrayOf("e", JesterProtocol.START_POSITION_HASH))
+                gameEventRef(JesterProtocol.START_POSITION_HASH)
                 initializer()
             }
         }
@@ -177,10 +186,10 @@ class JesterEvent(
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
                 // Reference the standard start position
-                add(arrayOf("e", JesterProtocol.START_POSITION_HASH))
+                gameEventRef(JesterProtocol.START_POSITION_HASH)
                 // Tag the opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    add(arrayOf("p", opponentPubkey))
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }
@@ -216,11 +225,11 @@ class JesterEvent(
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
                 // e-tags: [startId, headId]
-                add(arrayOf("e", startEventId))
-                add(arrayOf("e", headEventId))
+                gameEventRef(startEventId)
+                gameEventRef(headEventId)
                 // Tag opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    add(arrayOf("p", opponentPubkey))
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }
@@ -254,11 +263,11 @@ class JesterEvent(
                     termination = termination.name.lowercase(),
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
-                add(arrayOf("e", startEventId))
-                add(arrayOf("e", headEventId))
+                gameEventRef(startEventId)
+                gameEventRef(headEventId)
                 // Tag opponent for notifications (only if valid pubkey)
                 if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    add(arrayOf("p", opponentPubkey))
+                    jesterOpponent(opponentPubkey)
                 }
                 initializer()
             }
@@ -298,7 +307,7 @@ fun Event.isJesterMoveEvent(): Boolean {
         val content = JsonMapper.fromJson<JesterContent>(this.content)
         content.kind == JesterProtocol.CONTENT_KIND_MOVE &&
             content.history.isNotEmpty() &&
-            tags.count { it.size >= 2 && it[0] == "e" } == 2
+            tags.gameEventRefCount() == 2
     } catch (e: Exception) {
         false
     }

@@ -92,14 +92,65 @@ joining). Then, in the same change: add the kind to `nip50Search/SearchableKinds
 `event-store-semantics` skill's `references/searchable-kinds.md`, and regenerate
 `jvmTest/resources/indexable-content.golden` (delete it and run `IndexableContentGoldenTest`; the
 diff must show only your kind). Numbers about another event, ciphertext and key material are not
-searchable.
+searchable. A kind that carries a title but stays out of search says why in its class KDoc, starting
+`Not searchable:` (`InteractiveStoryReadingStateEvent` copies its story's title); the audit reads it.
 
 ### Builders
 
-`companion fun build(...)` returns an unsigned `EventTemplate<T>` from `eventTemplate(KIND, content,
-createdAt) { … }`, built only from the `TagArrayBuilderExt` writers, and ends in `initializer()`.
-Take references as `EventHintBundle<T>`, `ATag`, `PTag` or the kind's own tag classes, never raw
-strings. A `build()` must parse back as its own class: test it.
+Every kind has an unsigned template builder in its companion. Signing is the caller's
+(`signer.sign(template)`), so one template serves any signer, a draft, a preview and a test. The
+shape below is what most of Quartz's ~500 builders already do:
+
+```kotlin
+fun build(
+    issue: EventHintBundle<GitIssueEvent>,       // what the event is about: required, typed
+    body: String,                                // the kind's own data
+    labels: List<String> = emptyList(),          // optional parts default to absent
+    dTag: String = Uuid.random().toString(),     // addressable kinds whose `d` is only an id
+    createdAt: Long = TimeUtils.now(),
+    initializer: TagArrayBuilder<MyEvent>.() -> Unit = {},
+) = eventTemplate(KIND, body, createdAt) {
+    issue(issue)                                 // TagArrayBuilderExt writers, never arrayOf("…")
+    labels(labels)
+    initializer()                                // last, so callers add or override tags
+}
+```
+
+- **Name.** `build`. A kind with several shapes may name a builder after each one (`reply()`,
+  `buildMove()`, `createRequest()`): any companion function that returns `EventTemplate<T>`
+  counts, and the audit accepts it. Signing helpers (`create(…, signer)`, `updateX(…, signer)`)
+  stay, written as `signer.sign(build(…))`, so one function writes the tags.
+- **Parameter order.** Required references, then the kind's data, then optional data defaulting to
+  absent (`null`, `emptyList()`), then `dTag`, `createdAt: Long = TimeUtils.now()`, and the
+  `initializer` last.
+- **References are typed hint bundles.** An event the kind points at is an `EventHintBundle<K>`
+  typed to the kind it must be (`EventHintBundle<GitRepositoryEvent>`, not `<Event>`): the compiler
+  checks the target, and the builder takes the relay hint, author and address from it
+  (`toETag()`, `toATag()`, `toPTag()`, `toMarkedETag(…)`, `toQTagArray()`). Use
+  `EventHintBundle<Event>` only when any kind is valid (a report, a wake-up). A user is a `PTag` (key
+  and relay hint); an addressable target the caller may hold only by coordinate is an `ATag` or
+  `Address`. When callers often hold only an id, add an overload that takes the bare `HexKey`
+  beside the bundle one (`RoadEventConfirmationEvent`), never instead of it.
+- **Writers, not arrays.** The body calls the kind's `TagArrayBuilderExt` writers, typed to it:
+  `addUnique` for single-valued tags, `add` for repeated or ordered ones. Optional parts are
+  `x?.let { writer(it) }`; an empty list writes nothing.
+- **Content that needs a key.** Encrypted content (NIP-51 private items, NIP-59 wraps, NIP-47
+  requests) is produced inside the builder, which becomes `suspend fun build(…, signer:
+  NostrSigner, …)` and still returns the unsigned template (`FavoriteRelayListEvent.build`). When the
+  event must be signed by another key (a gift wrap's throwaway key), the builder takes that key's
+  signer for the encryption, and the caller signs with it. When the template must not be signed by
+  the user's own key (an anonymous zap request), give the class a public signing function that
+  picks the key from the template (`ZapRequestEvent.sign`), and point the builder's KDoc at it.
+- **Order-sensitive tags.** `TagArrayBuilder` groups tags by name. A kind whose tags interleave
+  (NIP-58's `a`/`e` pairs) builds the rest with the builder, appends the ordered tags, and returns
+  `EventTemplate(createdAt, KIND, tags, content)` with the type declared (`AcceptedBadgeSetEvent`).
+  Test a mixed list against the reader: a pairing by adjacency can bind a tag to the wrong
+  neighbour, and the builder must write an order the reader pairs back (`BirdexEvent.build`).
+- **Other apps' kinds.** A kind Quartz only reads still gets a builder for the shape seen in the
+  wild, so tests, relays and tools can produce it; the KDoc says whose shape it writes.
+
+A builder must parse back as its own class: sign it in a test (`NostrSignerInternal(KeyPair())`),
+read it back through `EventFactory`, and check every accessor.
 
 ## A kind other apps share
 
@@ -141,7 +192,9 @@ is searchable.
 ## Drift
 
 Many older classes predate this layout. `scripts/event-pattern-audit.py` lists them: event classes
-with no `build()`, inline tag parsing, `linkedXxx()` reading raw tags with no semantic method, a
-reference tag with no hint provider, or a title with no search. It is a heuristic, so read the class
-before changing it. When you add or change a kind, run it for the package you touch and bring what
-it lists there in line in the same change; do not widen an unrelated change into a sweep.
+with no builder (a `build()` or another companion function that returns an `EventTemplate`), inline
+tag parsing, `linkedXxx()` reading raw tags with no semantic method, a reference tag with no hint
+provider of its type (one inherited from a base class counts), or a title with no search and no `Not
+searchable:` KDoc. It is a heuristic, so read the class before changing it. When you add or change a
+kind, run it for the package you touch and bring what it lists there in line in the same change; do
+not widen an unrelated change into a sweep.

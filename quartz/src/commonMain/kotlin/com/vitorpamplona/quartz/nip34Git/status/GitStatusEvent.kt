@@ -92,10 +92,7 @@ abstract class GitStatusEvent(
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 
     /** Earliest unique commit or merge/applied commit IDs, encoded as plain `r` tags. */
-    fun referenceCommits(): List<String> =
-        tags.mapNotNull { tag ->
-            if (tag.size > 1 && tag[0] == "r" && tag[1].isNotEmpty()) tag[1] else null
-        }
+    fun referenceCommits(): List<String> = tags.referenceCommits()
 
     companion object {
         const val KIND_OPEN = 1630

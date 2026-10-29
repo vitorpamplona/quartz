@@ -25,9 +25,11 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -100,15 +102,23 @@ class ConcordCommunityListEvent(
         /** The replaceable coordinate for a member's list: `(13302, pubkey, "")`. */
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [entries] (and [residue]) encrypted to [signer]'s own key; no tags. */
+        suspend fun build(
+            entries: List<ConcordCommunityListEntry>,
+            signer: NostrSigner,
+            residue: ConcordListResidue = ConcordListResidue.EMPTY,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ConcordCommunityListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(ConcordCommunityList.encode(entries, residue), signer.pubKey), createdAt) {
+            initializer()
+        }
+
         /** Builds a signed, self-encrypted list event from [entries]. */
         suspend fun create(
             signer: NostrSigner,
             entries: List<ConcordCommunityListEntry>,
             createdAt: Long = TimeUtils.now(),
             residue: ConcordListResidue = ConcordListResidue.EMPTY,
-        ): ConcordCommunityListEvent {
-            val content = signer.nip44Encrypt(ConcordCommunityList.encode(entries, residue), signer.pubKey)
-            return signer.sign(createdAt, KIND, emptyArray(), content)
-        }
+        ): ConcordCommunityListEvent = signer.sign(build(entries, signer, residue, createdAt))
     }
 }

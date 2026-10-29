@@ -25,11 +25,13 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.remove
@@ -62,18 +64,28 @@ class SimpleGroupListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicGroups] as tags, [privateGroups] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicGroups: List<GroupTag> = emptyList(),
+            privateGroups: List<GroupTag> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<SimpleGroupListEvent>.() -> Unit = {},
+        ) = eventTemplate<SimpleGroupListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateGroups.map { it.toTagArray() }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            simpleGroups(publicGroups)
+            initializer()
+        }
+
         suspend fun create(
             publicGroups: List<GroupTag> = emptyList(),
             privateGroups: List<GroupTag> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): SimpleGroupListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateGroups.map { it.toTagArray() }.toTypedArray(), signer),
-                tags = publicGroups.map { it.toTagArray() }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): SimpleGroupListEvent = signer.sign(build(publicGroups, privateGroups, signer, createdAt))
 
         suspend fun add(
             earlierVersion: SimpleGroupListEvent,

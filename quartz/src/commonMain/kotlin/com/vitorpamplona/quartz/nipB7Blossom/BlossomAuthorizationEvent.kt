@@ -23,7 +23,9 @@ package com.vitorpamplona.quartz.nipB7Blossom
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.io.encoding.Base64
@@ -38,15 +40,18 @@ class BlossomAuthorizationEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig) {
     /** The BUD-01 verb this token allows: `upload`, `delete`, `list`, `get` or `media`. */
-    fun type() = tags.firstOrNull { it.size > 1 && it[0] == "t" }?.get(1)
+    fun type() = tags.blossomVerb()
 
     /** The blob hashes (`x` tags) the token is limited to; empty means any blob the verb reaches. */
-    fun hashes() = tags.mapNotNull { if (it.size > 1 && it[0] == "x") it[1] else null }
+    fun hashes() = tags.blossomHashes()
 
     /** BUD-11 `server` domains the token is scoped to; empty means any server accepts it. */
-    fun servers() = tags.mapNotNull { if (it.size > 1 && it[0] == "server") it[1] else null }
+    fun servers() = tags.blossomServers()
 
     fun expiration() = tags.expiration()
+
+    /** The blob size (bytes) an upload or media token is limited to. */
+    fun size() = tags.blossomSize()
 
     /**
      * This event's JSON as standard Base64 WITH padding — the same encoder as
@@ -136,6 +141,31 @@ class BlossomAuthorizationEvent(
             createdAt: Long = TimeUtils.now(),
         ) = createAuth("media", hash, size, alt, signer, servers, createdAt)
 
+        /**
+         * An unsigned token allowing [verb] on [hash] (any blob the verb reaches when null), on the
+         * [servers] given as base URLs, until [expiration]. [alt] is the human-readable `content`.
+         */
+        fun build(
+            verb: String,
+            alt: String,
+            hash: HexKey? = null,
+            size: Long? = null,
+            servers: List<String> = emptyList(),
+            expiration: Long = TimeUtils.oneHourAhead(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BlossomAuthorizationEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, alt, createdAt) {
+            verb(verb)
+            expiration(expiration)
+            size?.let { blobSize(it) }
+            hash?.let { blobHash(it) }
+            // BUD-11 `server` tags scope the token to specific domains so an upload
+            // or delete token can't be replayed against another server. The value
+            // MUST be the lowercase bare domain (no scheme/port/path).
+            serverDomains(servers.map { BlossomServerUrl.domain(it) }.filter { it.isNotBlank() }.distinct())
+            initializer()
+        }
+
         private suspend fun createAuth(
             type: String,
             hash: HexKey?,
@@ -145,26 +175,6 @@ class BlossomAuthorizationEvent(
             servers: List<String> = emptyList(),
             createdAt: Long = TimeUtils.now(),
             expiration: Long = TimeUtils.oneHourAhead(),
-        ): BlossomAuthorizationEvent {
-            // BUD-11 `server` tags scope the token to specific domains so an upload
-            // or delete token can't be replayed against another server. The value
-            // MUST be the lowercase bare domain (no scheme/port/path).
-            val serverTags =
-                servers
-                    .map { BlossomServerUrl.domain(it) }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .map { arrayOf("server", it) }
-
-            val tags =
-                listOfNotNull(
-                    arrayOf("t", type),
-                    arrayOf("expiration", expiration.toString()),
-                    fileSize?.let { arrayOf("size", it.toString()) },
-                    hash?.let { arrayOf("x", it) },
-                ) + serverTags
-
-            return signer.sign(createdAt, KIND, tags.toTypedArray(), alt)
-        }
+        ): BlossomAuthorizationEvent = signer.sign(build(type, alt, hash, fileSize, servers, expiration, createdAt))
     }
 }
