@@ -123,9 +123,6 @@ jobs:
             :quartz:compileAppleMainKotlinMetadata \
             :quartz:compileAndroidHostTest
 
-      - name: Check
-        run: ./gradlew :quartz:jvmTest :quartz:linuxX64Test
-
       - name: Build (gradle)
         run: ./gradlew :quartz:assemble
 
@@ -136,6 +133,59 @@ jobs:
         with:
           path: ~/.gradle/caches/build-cache-1
           key: release-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # The two test suites run in jobs of their own, beside `check`: one after the other in a
+  # single job they took ~19 minutes.
+  test-jvm:
+    needs: check-version
+    if: needs.check-version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Test JVM
+        run: ./gradlew :quartz:jvmTest
+
+  # The linuxX64 test binary is linked optimized (for the secp256k1 benchmark in linuxTest): that
+  # link alone took ~8 minutes in the combined job.
+  test-linux-native:
+    needs: check-version
+    if: needs.check-version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Test Linux Native
+        run: ./gradlew :quartz:linuxX64Test
 
   test-apple:
     needs: check-version
@@ -169,13 +219,24 @@ jobs:
             :quartz:iosSimulatorArm64Test \
             :quartz:compileTestKotlinIosArm64
 
-  # The release XCFramework is three optimized Kotlin/Native links, the slowest step of a
-  # release on the 3-core macOS runner; it runs alongside the tests.
-  xcframework:
+  # The release XCFramework is three optimized Kotlin/Native links of 6 to 16 minutes each on
+  # the 3-core macOS runner, the slowest step of a release. One Gradle build runs them one after
+  # the other (20 to 46 minutes), so each target links in its own job, alongside the tests, and
+  # the xcframework job puts the three together.
+  framework:
     needs: check-version
     if: needs.check-version.outputs.release == 'true'
     runs-on: macos-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - target: iosArm64
+            task: linkReleaseFrameworkIosArm64
+          - target: iosSimulatorArm64
+            task: linkReleaseFrameworkIosSimulatorArm64
+          - target: macosArm64
+            task: linkReleaseFrameworkMacosArm64
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
 
@@ -198,12 +259,54 @@ jobs:
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
 
-      - name: Build QuartzKit.xcframework
+      - name: Link the ${{ matrix.target }} framework
         run: |
           ./gradlew \
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
             -PVERSION_NAME="$VERSION" \
-            :quartz:assembleQuartzKitReleaseXCFramework
+            :quartz:${{ matrix.task }}
+
+      # Tarred because upload-artifact drops symlinks and file modes, and the macOS framework
+      # is a versioned bundle made of symlinks.
+      - name: Pack the framework and its dSYM
+        run: tar -C quartz/build/bin -cf "QuartzKit-${{ matrix.target }}.tar" "${{ matrix.target }}/releaseFramework"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: QuartzKit-${{ matrix.target }}
+          path: QuartzKit-${{ matrix.target }}.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  xcframework:
+    needs: framework
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: QuartzKit-*
+          merge-multiple: true
+
+      # What the Kotlin plugin's assembleQuartzKitReleaseXCFramework runs on the frameworks it
+      # links: one -framework per target, with its dSYM when there is one, at absolute paths.
+      - name: Build QuartzKit.xcframework
+        run: |
+          bin="$GITHUB_WORKSPACE/quartz/build/bin"
+          output="$GITHUB_WORKSPACE/quartz/build/XCFrameworks/release/QuartzKit.xcframework"
+          mkdir -p "$bin" "$(dirname "$output")"
+          args=()
+          for target in iosArm64 iosSimulatorArm64 macosArm64; do
+            tar -C "$bin" -xf "QuartzKit-$target.tar"
+            framework="$bin/$target/releaseFramework/QuartzKit.framework"
+            args+=(-framework "$framework")
+            [[ ! -d "$framework.dSYM" ]] || args+=(-debug-symbols "$framework.dSYM")
+          done
+          xcodebuild -create-xcframework "${args[@]}" -output "$output"
 
       - name: Smoke test it from Swift
         run: |
@@ -227,7 +330,7 @@ jobs:
           if-no-files-found: error
 
   tag:
-    needs: [check-version, check, test-apple, xcframework]
+    needs: [check-version, check, test-jvm, test-linux-native, test-apple, xcframework]
     runs-on: ubuntu-latest
     permissions:
       contents: write
