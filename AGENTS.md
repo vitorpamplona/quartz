@@ -71,8 +71,9 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
   `test-apple` job is the authoritative check. For `@Volatile` import `kotlin.concurrent.Volatile`;
   in tests use `assertTrue`, not `assert`.
 - JVM target is 17: a dependency can't need a newer JVM than its users.
-- Releases follow semantic versioning: a breaking change to the public API bumps the major version.
-  Amethyst pins a version, so a breaking change needs a matching change there.
+- Releases follow semantic versioning, with breaking changes held back for a major release once
+  or twice a year: see [Versioning](#versioning) before you remove, rename or change anything
+  public.
 - Commits: conventional commits (`feat:`, `fix:`, …). Never `--no-verify`.
 
 ## Verify, don't guess
@@ -148,6 +149,37 @@ Both agents read the same rules, skills and checks, laid out like Amethyst's:
   run the same pre-push scripts (spotless, agent config), and CI runs `agent_config_check.py`,
   which also checks that every path a skill cites exists and that the distributed skill's GitHub
   links point at real files.
+
+## Versioning
+
+[Semantic versioning](https://semver.org/) over Quartz's public API: every `public` declaration
+in `quartz/`, in source and binary form (marmot-kmp, cordn-kmp and other libraries ship compiled
+against it, so a signature they call must still exist at runtime), and the Swift API of
+`QuartzKit`. On top of semver:
+
+- **Majors are rare**: once or twice a year, planned in a tracking issue that lists what it
+  removes. Amethyst pins a version, so a major needs a matching change there.
+- **Minors are batched**: one goes out when a dependent needs the new API or a few weeks of
+  features have piled up, not after each merged feature. Patches go out whenever a fix is needed.
+
+Between majors, a breaking change ships as a deprecation:
+
+- Add the new API beside the old one, make the old one delegate to it, and mark it
+  `@Deprecated("Use X instead. Removed in 3.0.0.", ReplaceWith("X"))`, naming the next major.
+  Spec deprecations (`@Deprecated("Replaced by NIP-22")`) stay until the spec drops the kind; only
+  `Removed in <major>` queues a removal.
+- Adding a parameter changes the JVM signature even with a default value: keep the old signature
+  as a `@Deprecated(level = DeprecationLevel.HIDDEN)` overload so compiled dependents still link.
+- A `typealias` keeps source but not binary compatibility, so a moved or renamed class keeps its
+  old class (delegating or deprecated) until the major. A change with no compatible form waits:
+  keep its PR open until the major's window.
+- A deprecation ships in at least one minor before a major removes it. The major removes every
+  `Removed in <that major>` declaration.
+- Fixing behaviour to match the spec is a fix, not a break. A security fix with no compatible form
+  may break the API in a minor or patch; its release notes say so.
+- Conventional commits: `!` (`refactor!:`, `BREAKING CHANGE:`) marks a breaking commit and only
+  lands for a major, so `git log --oneline v<last>..main` shows whether the next release can be a
+  minor. A deprecation is a plain `feat:` or `refactor:`.
 
 ## Releasing
 
