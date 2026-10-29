@@ -147,6 +147,14 @@ class RelayListRecommendationProcessor {
                 filterValidRelays(userList, hasOnionConnection, accept),
                 relayUrlsToIgnore,
             )
+
+        /** The signature before [accept], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+        fun reliableRelaySetFor(
+            userList: List<AdvertisedRelayListEvent>,
+            relayUrlsToIgnore: Set<NormalizedRelayUrl> = emptySet(),
+            hasOnionConnection: Boolean = false,
+        ): Set<RelayRecommendation> = reliableRelaySetFor(userList, relayUrlsToIgnore, hasOnionConnection, accept = { true })
     }
 
     class RelayRecommendation(

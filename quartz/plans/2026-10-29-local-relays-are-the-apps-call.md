@@ -24,18 +24,20 @@ dialed and none ever answered.
 - **Policy** (`NormalizedRelayUrl.isDialableFromOthers()`): not local, IP literals public (overlay
   mesh allowed), no empty labels. Pure url check; `publicAddressesOnly()` is the resolve-time
   complement for `*.sslip.io` / `*.nip.io` names.
-- **Parsers**: every filtered accessor is deprecated and keeps filtering for this release so
-  third-party apps notice before they start reading local entries. The unfiltered names
+- **Parsers**: every filtered accessor is deprecated and keeps filtering until 3.0.0 so
+  third-party apps notice before they start reading local entries (changing what a name returns
+  is a breaking change, so it waits for the major). The unfiltered names
   (`allReadRelaysNorm`, `allWriteRelaysNorm`, `allRelays`, `parse*Unfiltered`, and the new
   `WelcomeEvent.allRelays`, `PublishedKeyPackage.allRelays`, `allWelcomeRelays`,
   `allKeyPackageRelays`) are the ones to use. Each `ReplaceWith` keeps the filter, so an IDE
   quick-fix never silently starts dialing a stranger's LAN. `diffFrom` compares every relay.
   The NIP-62 vanish `RelayTag.parse` changed at once: nothing dials those urls for someone else.
 - **Indexers**: `HintIndexer(accept)` and `reliableRelaySetFor(accept = …)` default to every relay,
-  as the brief asked. GrapeRank only ever reads other people's lists, so its `acceptOthersRelay`
-  defaults to `isDialableFromOthers`.
+  as the brief asked. The previous `reliableRelaySetFor` and GrapeRank `Config` signatures stay as
+  hidden overloads, so code compiled against 2.7.1 still links. GrapeRank only ever reads other
+  people's lists, so its `acceptOthersRelay` defaults to `isDialableFromOthers`.
 
-## Next release
+## 3.0.0
 
 The short names (`readRelaysNorm()`, `writeRelaysNorm()`, `DmRelayListEvent.relays()`,
 `KeyPackageRelayListEvent.relays()`, `WelcomeEvent.relays()`, …) return every relay and lose the

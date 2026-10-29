@@ -86,8 +86,8 @@ class ListBuildersTest {
             val relays = listOf(AdvertisedRelayInfo(relay1, AdvertisedRelayType.READ), AdvertisedRelayInfo(relay2, AdvertisedRelayType.BOTH))
             val event = signAndParse(AdvertisedRelayListEvent.build(relays))
             assertEquals(listOf(listOf("r", relay1.url, "read"), listOf("r", relay2.url)), event.tagList())
-            assertEquals(listOf(relay1, relay2), event.readRelaysNorm())
-            assertEquals(listOf(relay2), event.writeRelaysNorm())
+            assertEquals(listOf(relay1, relay2), event.allReadRelaysNorm())
+            assertEquals(listOf(relay2), event.allWriteRelaysNorm())
         }
 
     @Test
@@ -95,11 +95,11 @@ class ListBuildersTest {
         runTest {
             val dm = signAndParse(DmRelayListEvent.build(listOf(relay1, relay2)))
             assertEquals(listOf(listOf("relay", relay1.url), listOf("relay", relay2.url)), dm.tagList())
-            assertEquals(listOf(relay1, relay2), dm.relays())
+            assertEquals(listOf(relay1, relay2), dm.allRelays())
 
             val keyPackages = signAndParse(KeyPackageRelayListEvent.build(listOf(relay1)))
             assertEquals(listOf(listOf("relay", relay1.url)), keyPackages.tagList())
-            assertEquals(listOf(relay1), keyPackages.relays())
+            assertEquals(listOf(relay1), keyPackages.allRelays())
         }
 
     @Test

@@ -72,7 +72,7 @@ class AdvertisedRelayListEvent(
     /** Read-marked relays without local ones. Deprecated: see [AdvertisedRelayInfo.parseReadNorm]. */
     @Deprecated(
         "Drops local relays, which is the app's call: it depends on whose list this is. Use allReadRelaysNorm() for your own " +
-            "list, and filter someone else's with isDialableFromOthers(). Returns every relay in the next release.",
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
         ReplaceWith(
             "allReadRelaysNorm()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
             "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
@@ -93,7 +93,7 @@ class AdvertisedRelayListEvent(
     /** Write-marked relays without local ones. Deprecated: see [AdvertisedRelayInfo.parseWriteNorm]. */
     @Deprecated(
         "Drops local relays, which is the app's call: it depends on whose list this is. Use allWriteRelaysNorm() for your own " +
-            "list, and filter someone else's with isDialableFromOthers(). Returns every relay in the next release.",
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
         ReplaceWith(
             "allWriteRelaysNorm()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
             "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

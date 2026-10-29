@@ -30,7 +30,7 @@ fun TagArray.keyPackageEventId() = firstNotNullOfOrNull(KeyPackageEventTag::pars
 
 @Deprecated(
     "Drops local relays, so a group on a closed network gets no relays at all. Use allWelcomeRelays() and filter " +
-        "with isDialableFromOthers() when the app is not on the sender's network. Returns every relay in the next release.",
+        "with isDialableFromOthers() when the app is not on the sender's network. Returns every relay from 3.0.0.",
     ReplaceWith(
         "allWelcomeRelays()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
         "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

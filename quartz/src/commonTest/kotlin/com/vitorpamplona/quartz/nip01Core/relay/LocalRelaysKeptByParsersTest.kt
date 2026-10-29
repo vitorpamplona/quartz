@@ -40,7 +40,7 @@ import kotlin.test.assertTrue
 /**
  * Parsers and indexers return every relay a tag holds. Whether a local relay may be dialed
  * depends on whose data it came from, which only the app knows; it filters someone else's with
- * [isDialableFromOthers]. The deprecated filtered accessors keep filtering for one release.
+ * [isDialableFromOthers]. The deprecated filtered accessors keep filtering until 3.0.0.
  */
 class LocalRelaysKeptByParsersTest {
     private val pubKey = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
@@ -84,7 +84,7 @@ class LocalRelaysKeptByParsersTest {
 
     @Test
     @Suppress("DEPRECATION")
-    fun theDeprecatedFilteredNamesStillDropLocalRelaysForOneRelease() {
+    fun theDeprecatedFilteredNamesStillDropLocalRelaysUntil300() {
         assertEquals(listOf(public), nip65.writeRelaysNorm())
         assertEquals(listOf(public), nip65.readRelaysNorm())
     }
@@ -121,7 +121,7 @@ class LocalRelaysKeptByParsersTest {
             )
         assertEquals(listOf(lan, norm("ws://nas.lan:7777")), welcome.allRelays())
         @Suppress("DEPRECATION")
-        assertNull(welcome.relays(), "the deprecated name keeps dropping them for one release")
+        assertNull(welcome.relays(), "the deprecated name keeps dropping them until 3.0.0")
     }
 
     @Test

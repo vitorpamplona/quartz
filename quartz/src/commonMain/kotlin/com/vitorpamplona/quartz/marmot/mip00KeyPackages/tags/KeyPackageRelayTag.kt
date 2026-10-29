@@ -32,7 +32,7 @@ class KeyPackageRelayTag {
         /** The relay, or null when it is malformed or a localhost address. */
         @Deprecated(
             "Drops local relays, which is the app's call: it depends on whose list this is. Use parseUnfiltered and, " +
-                "for someone else's list, filter with isDialableFromOthers(). Returns every relay in the next release.",
+                "for someone else's list, filter with isDialableFromOthers(). Returns every relay from 3.0.0.",
             ReplaceWith(
                 "parseUnfiltered(tag)?.takeIf { it.isDialableFromOthers() }",
                 "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

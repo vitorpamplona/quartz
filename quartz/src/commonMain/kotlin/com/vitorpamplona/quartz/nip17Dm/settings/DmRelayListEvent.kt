@@ -56,7 +56,7 @@ class DmRelayListEvent(
     /** The relays without local ones. Deprecated: see [RelayTag.parse]. */
     @Deprecated(
         "Drops local relays, which is the app's call: it depends on whose list this is. Use allRelays() for your own " +
-            "list, and filter someone else's with isDialableFromOthers(). Returns every relay in the next release.",
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
         ReplaceWith(
             "allRelays().filter { it.isDialableFromOthers() }",
             "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

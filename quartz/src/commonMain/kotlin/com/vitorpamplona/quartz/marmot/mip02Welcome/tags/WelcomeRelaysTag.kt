@@ -40,7 +40,7 @@ class WelcomeRelaysTag {
         /** The relays without local ones, or null when none is left. */
         @Deprecated(
             "Drops local relays, which is the app's call: on a closed network every relay is local. Use parseUnfiltered " +
-                "and filter someone else's relays with isDialableFromOthers(). Returns every relay in the next release.",
+                "and filter someone else's relays with isDialableFromOthers(). Returns every relay from 3.0.0.",
             ReplaceWith(
                 "parseUnfiltered(tag)?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
                 "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

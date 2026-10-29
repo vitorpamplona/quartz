@@ -257,7 +257,30 @@ class GrapeRankCrawler(
          * connect to. Relays this operator configured are never filtered.
          */
         val acceptOthersRelay: (NormalizedRelayUrl) -> Boolean = { it.isDialableFromOthers() },
-    )
+    ) {
+        /** The constructor before [acceptOthersRelay], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            relayListDiscoveryRelays: Set<NormalizedRelayUrl>,
+            contentFallbackRelays: Set<NormalizedRelayUrl>,
+            contentAggregatorRelays: Set<NormalizedRelayUrl> = emptySet(),
+            maxRounds: Int = Int.MAX_VALUE,
+            maxHops: Int = Int.MAX_VALUE,
+            timeoutMs: Long = 10_000,
+            parkTimeoutMs: Long = 40_000,
+            diagnose: Boolean = false,
+            insertBatchSize: Int = 500,
+            drainConcurrency: Int = 48,
+            timeoutEvictStrikes: Int = 3,
+            shedDeadDiscovery: Boolean = true,
+            shardRotations: Int = 2,
+            reachabilityProbe: (suspend (NormalizedRelayUrl) -> Boolean)? = null,
+            torEnabled: Boolean = false,
+            knownDeadRelays: Set<NormalizedRelayUrl> = emptySet(),
+            knownLiveRelays: Set<NormalizedRelayUrl> = emptySet(),
+            preconnectCap: Int = 2500,
+        ) : this(relayListDiscoveryRelays, contentFallbackRelays, contentAggregatorRelays, maxRounds, maxHops, timeoutMs, parkTimeoutMs, diagnose, insertBatchSize, drainConcurrency, timeoutEvictStrikes, shedDeadDiscovery, shardRotations, reachabilityProbe, torEnabled, knownDeadRelays, knownLiveRelays, preconnectCap, { it.isDialableFromOthers() })
+    }
 
     /** What the crawl fetched — the counters the caller reports and the graph is built from. */
     class Stats(

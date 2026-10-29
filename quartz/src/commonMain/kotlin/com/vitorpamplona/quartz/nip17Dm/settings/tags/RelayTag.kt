@@ -39,12 +39,12 @@ class RelayTag {
          * Parse, dropping local-network entries.
          *
          * Deprecated: whether a local relay may be dialed depends on whose list this is, which
-         * only the app knows. Kept filtering for one release so apps notice before they start
-         * reading local entries; it will return every relay afterwards.
+         * only the app knows. Kept filtering until 3.0.0 so apps notice before they start
+         * reading local entries; it returns every relay from 3.0.0.
          */
         @Deprecated(
             "Drops local relays, which is the app's call: it depends on whose list this is. Use parseUnfiltered and, " +
-                "for someone else's list, filter with isDialableFromOthers(). Returns every relay in the next release.",
+                "for someone else's list, filter with isDialableFromOthers(). Returns every relay from 3.0.0.",
             ReplaceWith(
                 "parseUnfiltered(tag)?.takeIf { it.isDialableFromOthers() }",
                 "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",

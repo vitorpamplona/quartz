@@ -114,6 +114,26 @@ class GrapeRankUpdater(
          */
         val acceptOthersRelay: (NormalizedRelayUrl) -> Boolean = { it.isDialableFromOthers() },
     ) {
+        /** The constructor before [acceptOthersRelay], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            kinds: List<Int> = DEFAULT_KINDS,
+            down: Boolean = true,
+            up: Boolean = true,
+            syncDeletions: Boolean = true,
+            pageFallback: Boolean = true,
+            idChunk: Int = 500,
+            downloadWorkers: Int = 4,
+            reconcileConcurrency: Int = 2,
+            maxDeletionRounds: Int = 4,
+            relayConcurrency: Int = 4,
+            authorChunk: Int = 500,
+            minAuthors: Int = 1,
+            idleTimeoutMs: Long = 30_000L,
+            publishTimeoutSecs: Long = 15,
+            knownDead: Set<NormalizedRelayUrl> = emptySet(),
+        ) : this(kinds, down, up, syncDeletions, pageFallback, idChunk, downloadWorkers, reconcileConcurrency, maxDeletionRounds, relayConcurrency, authorChunk, minAuthors, idleTimeoutMs, publishTimeoutSecs, knownDead, { it.isDialableFromOthers() })
+
         /** Project the shared engine knobs onto a [NegentropyStoreSync.Config]. */
         internal fun toEngineConfig() =
             NegentropyStoreSync.Config(
