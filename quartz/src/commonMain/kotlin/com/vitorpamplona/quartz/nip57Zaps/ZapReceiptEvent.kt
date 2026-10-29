@@ -151,6 +151,9 @@ class ZapReceiptEvent(
 
     fun lnInvoice() = tags.bolt11()
 
+    /** The paid invoice's preimage, when the zap service included it. */
+    fun preimage() = tags.preimage()
+
     private fun description() = tags.zapRequestDescription()
 
     companion object {

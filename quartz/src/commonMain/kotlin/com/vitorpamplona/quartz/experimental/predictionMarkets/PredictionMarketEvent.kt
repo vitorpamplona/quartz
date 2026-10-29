@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -197,16 +198,20 @@ class PredictionMarketEvent(
             dTag: String = marketId,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<PredictionMarketEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, description?.let { "$title\n\n$it" } ?: title, createdAt) {
-            dTag(dTag)
-            marketId(marketId)
-            marketStatus(status)
-            marketEnd(endsAt)
-            marketNetwork(network)
-            category?.let { marketCategory(it) }
-            outcomes(outcomes)
-            marketData(PredictionMarketDetails.assemble(title, description, outcomes))
-            initializer()
+        ): EventTemplate<PredictionMarketEvent> {
+            // A blank id reads as no `market` tag, and the event would not parse as a market.
+            require(marketId.isNotBlank()) { "A market needs an id" }
+            return eventTemplate(KIND, description?.let { "$title\n\n$it" } ?: title, createdAt) {
+                dTag(dTag)
+                marketId(marketId)
+                marketStatus(status)
+                marketEnd(endsAt)
+                marketNetwork(network)
+                category?.let { marketCategory(it) }
+                outcomes(outcomes)
+                marketData(PredictionMarketDetails.assemble(title, description, outcomes))
+                initializer()
+            }
         }
 
         /**

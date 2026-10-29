@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.AppComponentsTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.ClientTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.EncodingTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.KeyPackageRefTag
+import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.KeyPackageRelayTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.MlsCiphersuiteTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.MlsExtensionsTag
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.MlsProposalsTag
@@ -55,3 +56,6 @@ fun <T : PublishedKeyPackage> TagArrayBuilder<T>.keyPackageRef(ref: HexKey) = ad
 fun <T : PublishedKeyPackage> TagArrayBuilder<T>.keyPackageRelays(relays: List<NormalizedRelayUrl>) = addUnique(RelaysTag.assemble(relays))
 
 fun <T : PublishedKeyPackage> TagArrayBuilder<T>.client(name: String) = addUnique(ClientTag.assemble(name))
+
+/** MIP-00 `relay` tags of a KeyPackage relay list (kind 10051): where this user publishes KeyPackages. */
+fun TagArrayBuilder<KeyPackageRelayListEvent>.relays(relays: List<NormalizedRelayUrl>) = addAll(relays.map { KeyPackageRelayTag.assemble(it) })

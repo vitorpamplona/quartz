@@ -23,4 +23,5 @@ package com.vitorpamplona.quartz.nip53LiveActivities.nestsServers
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip53LiveActivities.nestsServers.tags.NestsServerTag
 
+/** One `server` tag per Nests audio server, in the order given. */
 fun TagArrayBuilder<NestsServersEvent>.nestsServers(servers: List<NestsServer>) = addAll(servers.map { NestsServerTag.assemble(it) })

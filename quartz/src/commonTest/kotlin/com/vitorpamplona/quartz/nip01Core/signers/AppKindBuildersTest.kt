@@ -38,6 +38,11 @@ import com.vitorpamplona.quartz.experimental.ballots.BallotEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdDetectionEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdexEvent
 import com.vitorpamplona.quartz.experimental.birdstar.BirdexSpecies
+import com.vitorpamplona.quartz.experimental.clink.offers.OfferEvent
+import com.vitorpamplona.quartz.experimental.clink.offers.OfferReceipt
+import com.vitorpamplona.quartz.experimental.clink.offers.OfferRequest
+import com.vitorpamplona.quartz.experimental.clink.offers.OfferResponse
+import com.vitorpamplona.quartz.experimental.clink.tags.ClinkVersionTag
 import com.vitorpamplona.quartz.experimental.fitness.workout.ExerciseTemplateEvent
 import com.vitorpamplona.quartz.experimental.predictionMarkets.PredictionMarketEvent
 import com.vitorpamplona.quartz.experimental.predictionMarkets.PredictionMarketOutcome
@@ -140,6 +145,11 @@ class AppKindBuildersTest {
 
             val opaque = signAndParse<CyberspaceBagEvent>(CyberspaceBagEvent.build(region, "a note".encodeToByteArray()))
             assertContentEquals("a note".encodeToByteArray(), assertIs<CyberspaceBagContents.Opaque>(opaque.open(region.decryptionKey)).bytes)
+
+            // A hint below the bag's height reads as absent (§7.7), and an empty item list would open as opaque bytes.
+            val tooLow = CyberspaceHint(CyberspacePoint(point.x.alignedBase(4), point.y.alignedBase(4), point.z.alignedBase(4), point.plane), 4, 4, 4)
+            assertFailsWith<IllegalArgumentException> { CyberspaceBagEvent.build(region, "x".encodeToByteArray(), tooLow) }
+            assertFailsWith<IllegalArgumentException> { CyberspaceBagEvent.build(region, emptyList<Event>()) }
         }
 
     @Test
@@ -162,6 +172,10 @@ class AppKindBuildersTest {
             val birdstarShape = signAndParse<BirdexEvent>(BirdexEvent.build(allReferenced))
             assertEquals(listOf("alt", "i", "n", "i", "n"), birdstarShape.tags.map { it[0] })
             assertEquals(allReferenced.map { it.name to it.reference }, birdstarShape.species().map { it.name to it.reference })
+
+            // A reference that is not a web URL reads as none, so the next `i` must not bind back to its species.
+            val bareId = signAndParse<BirdexEvent>(BirdexEvent.build(listOf(BirdexSpecies("Icterus galbula", "Q805774"), BirdexSpecies("Baeolophus bicolor", WIKIDATA_2))))
+            assertEquals(listOf("Icterus galbula" to null, "Baeolophus bicolor" to WIKIDATA_2), bareId.species().map { it.name to it.reference })
         }
 
     @Test
@@ -201,6 +215,7 @@ class AppKindBuildersTest {
             assertEquals("barbell", exercise.equipment())
             assertEquals("beginner", exercise.difficulty())
             assertFailsWith<IllegalArgumentException> { ExerciseTemplateEvent.build("Squat", "", listOf("weight", "reps"), listOf("kg")) }
+            assertFailsWith<IllegalArgumentException> { ExerciseTemplateEvent.build("Squat", "", listOf("weight", ""), listOf("kg", "count")) }
         }
 
     @Test
@@ -220,6 +235,7 @@ class AppKindBuildersTest {
             assertEquals("spring-2026-council", ballot.election())
             assertEquals(answers, ballot.answers())
             assertEquals("ab".repeat(32), ballot.proofHash())
+            assertFailsWith<IllegalArgumentException> { BallotEvent.build(" ", answers) }
         }
 
     @Test
@@ -237,6 +253,7 @@ class AppKindBuildersTest {
             assertTrue(market.isDemo())
             assertEquals(PredictionMarketStatus.OPEN, market.status(now = 1_800_000_000))
             assertNull(market.socialPost())
+            assertFailsWith<IllegalArgumentException> { PredictionMarketEvent.build("", "Will it rain?", outcomes, 1_900_000_000) }
         }
 
     @Test
@@ -255,6 +272,23 @@ class AppKindBuildersTest {
             assertEquals("lnbc1invoice", receipt.lnInvoice())
             assertEquals("00".repeat(32), receipt.tags.preimage())
             assertEquals(listOf("p", "P", "e", "bolt11", "description", "preimage"), receipt.tags.map { it[0] })
+        }
+
+    @Test
+    fun clinkOfferRoundTrip() =
+        runTest {
+            val request = signAndParse<OfferEvent>(OfferEvent.build(OfferRequest(offer = "noffer1x", amount_sats = 21), bob.pubKey, alice))
+            assertEquals(listOf(listOf("p", bob.pubKey), listOf(ClinkVersionTag.TAG_NAME, ClinkVersionTag.CURRENT)), request.tagList())
+            assertEquals("noffer1x", request.decryptRequest(bob).offer)
+            assertEquals(request.tagList(), OfferEvent.createRequest(OfferRequest(offer = "noffer1x"), bob.pubKey, alice).tagList())
+
+            val response = bob.sign(OfferEvent.build(OfferResponse(bolt11 = "lnbc1"), request, bob))
+            assertEquals(request.id, response.requestId())
+            assertEquals(alice.pubKey, response.recipientPubKey())
+            assertEquals("lnbc1", response.decryptResponse(alice).bolt11)
+
+            val receipt = bob.sign(OfferEvent.build(OfferReceipt(res = "ok"), request, bob))
+            assertTrue(receipt.decryptReceipt(alice).isOk())
         }
 
     companion object {

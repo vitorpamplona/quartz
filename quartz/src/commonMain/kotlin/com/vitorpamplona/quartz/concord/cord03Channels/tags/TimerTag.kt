@@ -30,6 +30,8 @@ class TimerTag {
 
         private val DECIMAL = Regex("^(0|[1-9][0-9]*)$")
 
+        fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME
+
         /** The seconds in [tag], or null when it is not a `timer` tag or not a canonical decimal. */
         fun parse(tag: Array<String>): Long? {
             ensure(tag.has(1)) { return null }

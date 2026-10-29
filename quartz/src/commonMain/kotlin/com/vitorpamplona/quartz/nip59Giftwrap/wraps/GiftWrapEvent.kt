@@ -146,7 +146,8 @@ open class GiftWrapEvent(
         /**
          * The unsigned wrap: [event] NIP-44 encrypted by [wrapSigner] to [recipient]. NIP-59 signs a
          * wrap with a throwaway key, so [wrapSigner] is that key, and the caller signs the template
-         * with it. [expirationDelta] adds an `expiration` that far past the (randomized) [createdAt],
+         * with it: a fresh `NostrSignerSync()` per wrap, never the user's own, which would put the
+         * sender's identity on the outside of the wrap. [expirationDelta] adds an `expiration` that far past the (randomized) [createdAt],
          * plus two days so the randomization never expires the wrap before it arrives.
          */
         fun build(

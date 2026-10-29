@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -95,10 +96,14 @@ class BallotEvent(
             proofHash: String? = null,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<BallotEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, BallotContent.assemble(election, answers, createdAt), createdAt) {
-            election(election)
-            proofHash?.let { proofHash(it) }
-            initializer()
+        ): EventTemplate<BallotEvent> {
+            // A blank election reads as no `election` tag, and the event would not parse as a ballot.
+            require(election.isNotBlank()) { "A ballot names its election" }
+            return eventTemplate(KIND, BallotContent.assemble(election, answers, createdAt), createdAt) {
+                election(election)
+                proofHash?.let { proofHash(it) }
+                initializer()
+            }
         }
     }
 }

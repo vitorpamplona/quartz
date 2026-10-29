@@ -20,12 +20,22 @@
  */
 package com.vitorpamplona.quartz.nip57Zaps.tags
 
+import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrlOrNull
+import com.vitorpamplona.quartz.utils.ensure
 
 /** NIP-57 `["relays", <url>, <url>, …]`: where the zap service should publish the receipt. */
 class ZapRelaysTag {
     companion object {
         const val TAG_NAME = "relays"
+
+        /** The relays the receipt should go to; malformed URLs are skipped. Null when [tag] is not a `relays` tag. */
+        fun parse(tag: Array<String>): List<NormalizedRelayUrl>? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            return tag.mapIndexedNotNull { index, url -> if (index == 0) null else url.normalizeRelayUrlOrNull() }
+        }
 
         fun assemble(relays: Collection<NormalizedRelayUrl>) = arrayOf(TAG_NAME) + relays.map { it.url }
     }

@@ -69,11 +69,14 @@ def superclass_sources(path, src, name, depth=0):
 
 def has_builder(src):
     """A `build()` (generic or not), or any companion function that returns an unsigned EventTemplate:
-    a kind-specific builder such as `reply()` or `buildMove()` counts."""
-    if re.search(r"\bfun\s+(?:<[^>]*>\s*)?build\(", src):
+    a kind-specific builder such as `reply()` or `buildMove()` counts. A function that only calls
+    `eventTemplate(...)` to sign it inline returns the event, not a template, so it does not."""
+    code = code_only(src)
+    if re.search(r"\bfun\s+(?:<[^>]*>\s*)?build\(", code):
         return True
-    companion = src[src.find("companion object") :] if "companion object" in src else ""
-    return bool(re.search(r"\beventTemplate\s*[(<]|\)\s*:\s*EventTemplate<", companion))
+    companion = code[code.find("companion object") :] if "companion object" in code else ""
+    # A declared `): EventTemplate<…>`, or an expression body that is the template: `) = eventTemplate(`.
+    return bool(re.search(r"\)\s*:\s*EventTemplate<|\)\s*=\s*(?:eventTemplate|EventTemplate)\s*[(<]", companion))
 
 
 def class_kdoc(src, name):

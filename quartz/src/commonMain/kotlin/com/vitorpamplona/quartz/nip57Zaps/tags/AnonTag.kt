@@ -20,6 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip57Zaps.tags
 
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.utils.ensure
+
 /**
  * NIP-57 `anon`: `["anon"]` marks an anonymous zap (signed by a throwaway key); `["anon", ""]`
  * marks a private zap request before PrivateZapRequestBuilder fills in the encrypted copy.
@@ -27,6 +30,23 @@ package com.vitorpamplona.quartz.nip57Zaps.tags
 class AnonTag {
     companion object {
         const val TAG_NAME = "anon"
+
+        /** Any `anon` tag: the request's author is a throwaway or derived key, not the sender. */
+        fun isTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == TAG_NAME
+
+        /** A valueless `["anon"]`: an anonymous zap, signed by a throwaway key. */
+        fun isAnonymous(tag: Array<String>) = tag.size == 1 && tag[0] == TAG_NAME
+
+        /** A blank `["anon", ""]`: a private zap the signer still has to encrypt. */
+        fun isUnsignedPrivate(tag: Array<String>) = tag.size > 1 && tag[0] == TAG_NAME && tag[1].isBlank()
+
+        /** The encrypted request of a signed private zap, or null when [tag] carries none. */
+        fun parse(tag: Array<String>): String? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotBlank()) { return null }
+            return tag[1]
+        }
 
         fun assembleAnonymous() = arrayOf(TAG_NAME)
 

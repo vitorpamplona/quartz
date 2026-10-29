@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
 
 class PrivateZapRequestBuilder {
     fun <T> signPrivateZapRequest(
@@ -56,7 +57,7 @@ class PrivateZapRequestBuilder {
                 createdAt,
             )
 
-        val fullTagsNoAnon = tags.filter { t -> t.getOrNull(0) != "anon" }.toTypedArray()
+        val fullTagsNoAnon = tags.filterNot(AnonTag::isTag).toTypedArray()
 
         val privateEvent = PrivateZapEvent.create(signer, fullTagsNoAnon, content)
 
@@ -68,7 +69,7 @@ class PrivateZapRequestBuilder {
                 userHex.hexToByteArray(),
             )
 
-        val newTags = tags.filter { t -> t.getOrNull(0) != "anon" } + listOf(arrayOf("anon", encryptedContent))
+        val newTags = tags.filterNot(AnonTag::isTag) + listOf(AnonTag.assemblePrivate(encryptedContent))
         val newContent = ""
 
         return NostrSignerSync(KeyPair(encryptionPrivateKey)).signNormal(createdAt, kind, newTags.toTypedArray(), newContent)

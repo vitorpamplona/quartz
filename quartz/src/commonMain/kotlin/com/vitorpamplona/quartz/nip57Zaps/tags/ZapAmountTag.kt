@@ -20,10 +20,20 @@
  */
 package com.vitorpamplona.quartz.nip57Zaps.tags
 
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.utils.ensure
+
 /** NIP-57 `["amount", <millisats>]`: the amount the zapper means to pay. */
 class ZapAmountTag {
     companion object {
         const val TAG_NAME = "amount"
+
+        /** The amount in millisats, or null when [tag] is not an `amount` tag or not a number. */
+        fun parse(tag: Array<String>): Long? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            return tag[1].toLongOrNull()
+        }
 
         fun assemble(millisats: Long) = arrayOf(TAG_NAME, millisats.toString())
     }

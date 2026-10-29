@@ -138,7 +138,9 @@ fun build(
   requests) is produced inside the builder, which becomes `suspend fun build(…, signer:
   NostrSigner, …)` and still returns the unsigned template (`FavoriteRelayListEvent.build`). When the
   event must be signed by another key (a gift wrap's throwaway key), the builder takes that key's
-  signer for the encryption, and the caller signs with it.
+  signer for the encryption, and the caller signs with it. When the template must not be signed by
+  the user's own key (an anonymous zap request), give the class a public signing function that
+  picks the key from the template (`ZapRequestEvent.sign`), and point the builder's KDoc at it.
 - **Order-sensitive tags.** `TagArrayBuilder` groups tags by name. A kind whose tags interleave
   (NIP-58's `a`/`e` pairs) builds the rest with the builder, appends the ordered tags, and returns
   `EventTemplate(createdAt, KIND, tags, content)` with the type declared (`AcceptedBadgeSetEvent`).

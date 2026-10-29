@@ -139,7 +139,7 @@ object ConcordDisappearing {
      */
     fun noticeTimerSecs(rumor: Event): Long? {
         if (rumor.kind != KIND_TIMER_NOTICE) return null
-        val values = rumor.tags.filter { it.size >= 2 && it[0] == TIMER_TAG }
+        val values = rumor.tags.filter(TimerTag::isTag)
         if (values.size != 1) return null
         return TimerTag.parse(values[0])
     }

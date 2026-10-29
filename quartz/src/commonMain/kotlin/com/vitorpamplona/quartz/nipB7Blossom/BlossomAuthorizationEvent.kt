@@ -27,7 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.expiration
-import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.io.encoding.Base64
 
@@ -52,7 +51,7 @@ class BlossomAuthorizationEvent(
     fun expiration() = tags.expiration()
 
     /** The blob size (bytes) an upload or media token is limited to. */
-    fun size() = tags.firstNotNullOfOrNull(BlossomSizeTag::parse)
+    fun size() = tags.blossomSize()
 
     /**
      * This event's JSON as standard Base64 WITH padding — the same encoder as

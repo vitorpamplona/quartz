@@ -78,9 +78,9 @@ class PrivateZapEvent(
         const val ALT = "Private zap"
 
         /**
-         * The hidden copy of a private zap request: the request's [requestTags] (without its `anon`
-         * marker), kept in their order, and the zapper's [message]. The copy is encrypted into the
-         * public request's `anon` tag (PrivateZapRequestBuilder).
+         * The hidden copy of a private zap request: the request's [requestTags], kept in their
+         * order, and the zapper's [message]. Pass the tags without the request's `anon` marker,
+         * as PrivateZapRequestBuilder does: this copy is what gets encrypted into that marker.
          */
         fun build(
             requestTags: TagArray,

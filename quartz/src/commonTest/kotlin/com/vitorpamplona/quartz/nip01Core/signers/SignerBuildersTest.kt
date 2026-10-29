@@ -26,7 +26,9 @@ import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
+import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import com.vitorpamplona.quartz.nip38UserStatus.UserStatusEvent
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestPing
 import com.vitorpamplona.quartz.nip46RemoteSigner.NostrConnectEvent
@@ -109,6 +111,11 @@ class SignerBuildersTest {
 
             val emoji = parse<UserStatusEvent>(alice.sign(UserStatusEvent.build("", statusEmoji = "\uD83C\uDF34")))
             assertEquals("\uD83C\uDF34", emoji.statusEmoji())
+
+            // Both use the `emoji` name: the plain status emoji must not replace the NIP-30 ones.
+            val wave = EmojiUrlTag("wave", "https://emoji.example.com/wave.png")
+            val both = parse<UserStatusEvent>(alice.sign(UserStatusEvent.build("hi :wave:", emojis = listOf(wave), statusEmoji = "\uD83C\uDF34")))
+            assertEquals(listOf(listOf("emoji", "wave", "https://emoji.example.com/wave.png"), listOf("emoji", "\uD83C\uDF34")), both.tags.filter { it[0] == "emoji" }.map { it.toList() })
         }
 
     @Test
@@ -169,6 +176,8 @@ class SignerBuildersTest {
 
             val nip04 = parse<NwcRequestEvent>(NwcRequestEvent.createRequest(PayInvoiceMethod.create("lnbc1"), bob.pubKey, alice))
             assertEquals(listOf(listOf("p", bob.pubKey)), nip04.tagList())
+            assertTrue(nip04.content.contains("?iv="), "NIP-04 by default")
+            assertIs<PayInvoiceMethod>(nip04.decryptRequest(bob))
 
             val response = parse<NwcResponseEvent>(NwcResponseEvent.createResponse(PayInvoiceSuccessResponse(), request, bob, useNip44 = true))
             assertEquals(listOf(listOf("p", alice.pubKey), listOf("e", request.id)), response.tagList())
@@ -214,9 +223,25 @@ class SignerBuildersTest {
             assertEquals(listOf(listOf("p", bob.pubKey), listOf("relays", relay.url), listOf("anon")), anonymous.tagList())
             assertNotEquals(alice.pubKey, anonymous.pubKey)
 
-            val private = parse<ZapRequestEvent>(ZapRequestEvent.create(bob.pubKey, setOf(relay), alice, "", ZapReceiptEvent.ZapType.PRIVATE))
+            val private = parse<ZapRequestEvent>(ZapRequestEvent.create(bob.pubKey, setOf(relay), alice, "psst", ZapReceiptEvent.ZapType.PRIVATE))
             // build() writes ["anon", ""]; signing a private zap request fills it with the encrypted copy.
             assertEquals("anon", private.tags.last()[0])
             assertTrue(private.isPrivateZap())
+            assertNotEquals(alice.pubKey, private.pubKey)
+            assertEquals("", private.content)
+            val hidden = alice.decryptZapEvent(private)
+            assertEquals(alice.pubKey, hidden.pubKey)
+            assertEquals("psst", hidden.content)
+
+            // The public signing path for a build() template: an anonymous request never gets the user's key.
+            val signedAnonymously = ZapRequestEvent.sign(ZapRequestEvent.build(PTag(bob.pubKey), setOf(relay), "", ZapReceiptEvent.ZapType.ANONYMOUS), alice)
+            assertNotEquals(alice.pubKey, signedAnonymously.pubKey)
+
+            // A sync signer handed a private template encrypts it too, instead of signing it in the clear.
+            val sync = NostrSignerSync()
+            val syncPrivate = sync.sign(ZapRequestEvent.build(PTag(bob.pubKey), setOf(relay), "psst", ZapReceiptEvent.ZapType.PRIVATE))
+            assertTrue(syncPrivate.isPrivateZap())
+            assertNotEquals(sync.pubKey, syncPrivate.pubKey)
+            assertEquals("", syncPrivate.content)
         }
 }

@@ -20,10 +20,20 @@
  */
 package com.vitorpamplona.quartz.nip57Zaps.tags
 
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.utils.ensure
+
 /** NIP-57 `["lnurl", <bech32 lnurl>]`: the recipient's LNURL-pay endpoint. */
 class LnurlTag {
     companion object {
         const val TAG_NAME = "lnurl"
+
+        fun parse(tag: Array<String>): String? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotBlank()) { return null }
+            return tag[1]
+        }
 
         fun assemble(lnurl: String) = arrayOf(TAG_NAME, lnurl)
     }

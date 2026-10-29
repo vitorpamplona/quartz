@@ -26,5 +26,8 @@ import com.vitorpamplona.quartz.nip38UserStatus.tags.StatusUrlTag
 
 fun TagArrayBuilder<UserStatusEvent>.statusUrl(url: String) = addUnique(StatusUrlTag.assemble(url))
 
-/** Buzz's plain status emoji, `["emoji", "🎉"]`; NIP-30 custom emoji go through `emojis()`. */
-fun TagArrayBuilder<UserStatusEvent>.statusEmoji(emoji: String) = addUnique(StatusEmojiTag.assemble(emoji))
+/**
+ * Buzz's plain status emoji, `["emoji", "🎉"]`; NIP-30 custom emoji go through `emojis()`. Both use
+ * the `emoji` name, so this adds beside them rather than replacing the group.
+ */
+fun TagArrayBuilder<UserStatusEvent>.statusEmoji(emoji: String) = add(StatusEmojiTag.assemble(emoji))

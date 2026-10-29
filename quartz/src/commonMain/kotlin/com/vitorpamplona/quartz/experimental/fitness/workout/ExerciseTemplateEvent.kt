@@ -94,6 +94,8 @@ class ExerciseTemplateEvent(
             initializer: TagArrayBuilder<ExerciseTemplateEvent>.() -> Unit = {},
         ): EventTemplate<ExerciseTemplateEvent> {
             require(format.size == formatUnits.size) { "format has ${format.size} fields but format_units has ${formatUnits.size}" }
+            // The readers drop empty entries, which would shift every unit after one off its field.
+            require(format.none { it.isEmpty() } && formatUnits.none { it.isEmpty() }) { "format and format_units entries must not be empty" }
             return eventTemplate(KIND, instructions, createdAt) {
                 dTag(dTag)
                 title(title)

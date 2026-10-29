@@ -141,7 +141,10 @@ class UserStatusEvent(
             initializer()
         }
 
-        /** [addressableId] must be a valid `kind:pubkey:d` address; an invalid one is left out. */
+        /**
+         * [addressableId] must be a valid address: a `kind:pubkey:d` (an `naddr1…` is accepted too and
+         * written as its `kind:pubkey:d`, without its relay hints); an invalid one is left out.
+         */
         suspend fun create(
             msg: String,
             type: String = GENERAL,

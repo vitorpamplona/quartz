@@ -136,9 +136,12 @@ class BirdexEvent(
         /**
          * The collection in Birdstar's shape: each species' `i` (when it has a reference)
          * immediately before its `n`, the adjacency [species] pairs them by. Right after a
-         * species with no reference that `i` would bind back to it, so there it goes after its
-         * own `n` instead. Built as an ordered template because a [TagArrayBuilder] would group
-         * every `i` ahead of every `n`.
+         * species [species] reads with no reference (none, or one that is not a web URL) that
+         * `i` would bind back to it, so there it goes after its own `n` instead. Built as an
+         * ordered template because a [TagArrayBuilder] would group every `i` ahead of every `n`.
+         *
+         * The [initializer]'s tags go after the last species, so an `i` among them binds to that
+         * species when it has no reference: don't add `i` or `n` tags there.
          */
         fun build(
             species: List<BirdexSpecies>,
@@ -153,7 +156,8 @@ class BirdexEvent(
                 if (reference != null && previousHasReference) tags.add(reference)
                 tags.add(SpeciesNameTag.assemble(it.name))
                 if (reference != null && !previousHasReference) tags.add(reference)
-                previousHasReference = reference != null
+                // The reader's test, not just "has one": a reference that is not a web URL reads as none.
+                previousHasReference = it.reference?.asWebReference() != null
             }
             return EventTemplate(createdAt, KIND, tags.toTypedArray() + tagArray(initializer), "")
         }

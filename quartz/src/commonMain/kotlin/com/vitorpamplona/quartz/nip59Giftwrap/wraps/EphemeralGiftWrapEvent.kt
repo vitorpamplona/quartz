@@ -59,7 +59,10 @@ class EphemeralGiftWrapEvent(
         const val KIND = 21059
         const val ALT = "Ephemeral encrypted event"
 
-        /** The unsigned wrap: [event] NIP-44 encrypted by [wrapSigner], the throwaway key that signs it, to [recipient]. */
+        /**
+         * The unsigned wrap: [event] NIP-44 encrypted by [wrapSigner] to [recipient]. [wrapSigner] is
+         * the throwaway key that also signs it: a fresh `NostrSignerSync()` per wrap, never the user's own.
+         */
         fun build(
             event: Event,
             recipient: PTag,

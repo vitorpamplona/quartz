@@ -25,6 +25,9 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstOrNull
+import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -42,6 +45,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip29RelayGroups.groupId
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -86,17 +90,17 @@ class ZapRequestEvent(
     /** The zapped addressables (`a`), as validated address ids. */
     fun zappedAddresses(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
 
-    fun isPrivateZap() = tags.any { t -> t.size >= 2 && t[0] == "anon" && t[1].isNotBlank() }
+    fun isPrivateZap() = tags.fastAny { AnonTag.parse(it) != null }
 
     /**
      * True when the request carries an `anon` tag — a private zap (encrypted payload)
      * or an anonymous zap (blank value). In both cases [pubKey] is an ephemeral
      * throwaway key, not the sender's real identity.
      */
-    fun hasAnonTag() = tags.any { t -> t.isNotEmpty() && t[0] == "anon" }
+    fun hasAnonTag() = tags.fastAny(AnonTag::isTag)
 
     fun getAnonTag(): String {
-        val anonTag = tags.firstOrNull { t -> t.size >= 2 && t[0] == "anon" }
+        val anonTag = tags.fastFirstOrNull { it.has(1) && AnonTag.isTag(it) }
         if (anonTag != null) {
             val encNote = anonTag[1]
             if (encNote.isNotBlank()) {
@@ -114,8 +118,9 @@ class ZapRequestEvent(
 
         /**
          * A zap request for [zappedEvent], paying [recipient] (its author when null), with the
-         * receipt published to [relays]. [zapType] writes the `anon` marker: an ANONYMOUS request
-         * must be signed by a throwaway key, a PRIVATE one goes through PrivateZapRequestBuilder.
+         * receipt published to [relays]. [zapType] writes the `anon` marker. Sign the result with
+         * [sign], not the user's signer directly: an ANONYMOUS request must be signed by a
+         * throwaway key, or its `anon` tag hides nothing.
          */
         fun build(
             zappedEvent: Event,
@@ -148,7 +153,7 @@ class ZapRequestEvent(
             }
         }
 
-        /** A zap request for a user's profile, paying [user], with the receipt published to [relays]. */
+        /** A zap request for a user's profile, paying [user], with the receipt published to [relays]. Sign it with [sign]. */
         fun build(
             user: PTag,
             relays: Set<NormalizedRelayUrl>,
@@ -185,13 +190,16 @@ class ZapRequestEvent(
             }
         }
 
-        /** Signs [template] with [signer], or with a throwaway key when the zap is anonymous. */
-        private suspend fun sign(
+        /**
+         * Signs a [build] template: an anonymous request (a valueless `anon` tag) with a fresh
+         * throwaway key, any other with [signer], which encrypts a private one (`["anon", ""]`)
+         * under the key it derives for it.
+         */
+        suspend fun sign(
             template: EventTemplate<ZapRequestEvent>,
-            zapType: ZapReceiptEvent.ZapType,
             signer: NostrSigner,
         ): ZapRequestEvent =
-            if (zapType == ZapReceiptEvent.ZapType.ANONYMOUS) {
+            if (template.tags.fastAny(AnonTag::isAnonymous)) {
                 NostrSignerInternal(KeyPair()).sign(template)
             } else {
                 signer.sign(template)
@@ -210,7 +218,7 @@ class ZapRequestEvent(
             createdAt: Long = TimeUtils.now(),
         ): ZapRequestEvent {
             val template = build(zappedEvent, relays, message, zapType, toUserPubHex?.let { PTag(it) }, pollOption, amountMillisats, lnurl, createdAt)
-            return sign(template, zapType, signer)
+            return sign(template, signer)
         }
 
         suspend fun create(
@@ -222,7 +230,7 @@ class ZapRequestEvent(
             amountMillisats: Long? = null,
             lnurl: String? = null,
             createdAt: Long = TimeUtils.now(),
-        ): ZapRequestEvent = sign(build(PTag(userHex), relays, message, zapType, amountMillisats, lnurl, createdAt), zapType, signer)
+        ): ZapRequestEvent = sign(build(PTag(userHex), relays, message, zapType, amountMillisats, lnurl, createdAt), signer)
     }
 }
 

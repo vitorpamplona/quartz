@@ -26,10 +26,12 @@ import com.vitorpamplona.quartz.experimental.clink.tags.clinkVersion
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -103,21 +105,42 @@ class DebitEvent(
     companion object {
         const val KIND = 21002
 
+        /** The unsigned request: [request] NIP-44 encrypted to [servicePubKey]. */
+        suspend fun build(
+            request: DebitRequest,
+            servicePubKey: HexKey,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<DebitEvent>.() -> Unit = {},
+        ): EventTemplate<DebitEvent> =
+            eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), servicePubKey), createdAt) {
+                pTag(servicePubKey, null)
+                clinkVersion()
+                initializer()
+            }
+
         /** Builds a request event (requestor side) addressed to the debit service. */
         suspend fun createRequest(
             request: DebitRequest,
             servicePubKey: HexKey,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): DebitEvent {
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(request), servicePubKey)
-            return signer.sign(
-                eventTemplate(KIND, encrypted, createdAt) {
-                    pTag(servicePubKey, null)
-                    clinkVersion()
-                },
-            )
-        }
+        ): DebitEvent = signer.sign(build(request, servicePubKey, signer, createdAt))
+
+        /** The unsigned answer to [requestEvent]: [response] NIP-44 encrypted to its author, which it addresses. */
+        suspend fun build(
+            response: DebitResponse,
+            requestEvent: DebitEvent,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<DebitEvent>.() -> Unit = {},
+        ): EventTemplate<DebitEvent> =
+            eventTemplate(KIND, signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), requestEvent.pubKey), createdAt) {
+                pTag(requestEvent.pubKey, null)
+                add(ETag.assemble(requestEvent.id, null, null))
+                clinkVersion()
+                initializer()
+            }
 
         /** Builds a response event (service side) referencing the original [requestEvent]. */
         suspend fun createResponse(
@@ -125,16 +148,6 @@ class DebitEvent(
             requestEvent: DebitEvent,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): DebitEvent {
-            val requestorPubKey = requestEvent.pubKey
-            val encrypted = signer.nip44Encrypt(OptimizedJsonMapper.toJson(response), requestorPubKey)
-            return signer.sign(
-                eventTemplate(KIND, encrypted, createdAt) {
-                    pTag(requestorPubKey, null)
-                    add(ETag.assemble(requestEvent.id, null, null))
-                    clinkVersion()
-                },
-            )
-        }
+        ): DebitEvent = signer.sign(build(response, requestEvent, signer, createdAt))
     }
 }

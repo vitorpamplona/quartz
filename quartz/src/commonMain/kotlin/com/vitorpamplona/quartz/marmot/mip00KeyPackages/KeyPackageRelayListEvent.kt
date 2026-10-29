@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.marmot.mip00KeyPackages
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.marmot.mip00KeyPackages.tags.KeyPackageRelayTag
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
@@ -30,8 +31,6 @@ import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -75,7 +74,7 @@ class KeyPackageRelayListEvent(
      * own configuration is not attacker-supplied, and silently dropping it
      * makes a deliberately configured local relay look unconfigured.
      */
-    fun relays(): List<NormalizedRelayUrl> = tags.mapNotNull(RelayTag::parse)
+    fun relays(): List<NormalizedRelayUrl> = tags.mapNotNull(KeyPackageRelayTag::parse)
 
     /**
      * Every relay in this list, including local ones.
@@ -86,7 +85,7 @@ class KeyPackageRelayListEvent(
      * the user never chose. Sending a KeyPackage somewhere the user did not
      * pick is a worse outcome than the one the filter guards against.
      */
-    fun allRelays(): List<NormalizedRelayUrl> = tags.mapNotNull(RelayTag::parseUnfiltered)
+    fun allRelays(): List<NormalizedRelayUrl> = tags.mapNotNull(KeyPackageRelayTag::parseUnfiltered)
 
     companion object {
         const val KIND = 10051
@@ -95,17 +94,12 @@ class KeyPackageRelayListEvent(
 
         fun createAddressTag(pubKey: HexKey): String = Address.assemble(KIND, pubKey, FIXED_D_TAG)
 
-        private fun createTagArray(relays: List<NormalizedRelayUrl>): Array<Array<String>> =
-            relays
-                .map { RelayTag.assemble(it) }
-                .toTypedArray()
-
         fun build(
             relays: List<NormalizedRelayUrl>,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<KeyPackageRelayListEvent>.() -> Unit = {},
         ) = eventTemplate(KIND, "", createdAt) {
-            keyPackageRelays(relays)
+            relays(relays)
             initializer()
         }
 
@@ -129,31 +123,11 @@ class KeyPackageRelayListEvent(
         ): KeyPackageRelayListEvent {
             val tags =
                 earlierVersion.tags
-                    .filter { it.isEmpty() || it[0] != RelayTag.TAG_NAME }
-                    .plus(relays.map { RelayTag.assemble(it) })
+                    .filter { it.isEmpty() || it[0] != KeyPackageRelayTag.TAG_NAME }
+                    .plus(relays.map { KeyPackageRelayTag.assemble(it) })
                     .toTypedArray()
 
             return signer.sign(createdAt, KIND, tags, earlierVersion.content)
         }
     }
-}
-
-/** MIP-00 `relay` tags: where this user publishes KeyPackages. */
-fun TagArrayBuilder<KeyPackageRelayListEvent>.keyPackageRelays(relays: List<NormalizedRelayUrl>) = addAll(relays.map { RelayTag.assemble(it) })
-
-/**
- * Relay tag parser for KeyPackage relay list events.
- * Uses the standard "relay" tag name.
- */
-private object RelayTag {
-    const val TAG_NAME = "relay"
-
-    fun parse(tag: Array<String>): NormalizedRelayUrl? = parseUnfiltered(tag)?.takeUnless { it.isLocalHost() }
-
-    fun parseUnfiltered(tag: Array<String>): NormalizedRelayUrl? {
-        if (tag.size < 2 || tag[0] != TAG_NAME || tag[1].isEmpty()) return null
-        return RelayUrlNormalizer.normalizeOrNull(tag[1])
-    }
-
-    fun assemble(relay: NormalizedRelayUrl) = arrayOf(TAG_NAME, relay.url)
 }
