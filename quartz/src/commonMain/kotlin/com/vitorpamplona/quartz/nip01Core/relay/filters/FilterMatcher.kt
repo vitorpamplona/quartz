@@ -47,7 +47,7 @@ object FilterMatcher {
         until: Long? = null,
     ): Boolean {
         if (ids != null && !ids.contains(event.id)) return false
-        if (kinds != null && !kinds.contains(event.kind)) return false
+        if (kinds != null && !containsKind(kinds, event.kind)) return false
         if (authors != null && !authors.contains(event.pubKey)) return false
 
         // AND between keys, OR between values: the event must carry at least one of each key's values.
@@ -97,6 +97,15 @@ object FilterMatcher {
             val tag = tags[i]
             if (tag.size > 1 && tag[0] == name && tag[1] == value) return true
         }
+        return false
+    }
+
+    /** `kinds.contains(kind)` without boxing [kind]: this runs once per live subscription per accepted event. */
+    private fun containsKind(
+        kinds: List<Int>,
+        kind: Int,
+    ): Boolean {
+        for (i in kinds.indices) if (kinds[i] == kind) return true
         return false
     }
 }
