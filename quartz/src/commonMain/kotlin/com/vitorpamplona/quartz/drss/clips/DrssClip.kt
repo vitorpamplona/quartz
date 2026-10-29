@@ -52,10 +52,11 @@ object DrssClip {
         return HighlightEvent.build(
             quote = text,
             comment = note?.ifBlank { null },
-            address = episode.toTag(),
             author = episodeAuthor,
             createdAt = createdAt,
         ) {
+            // Here rather than as build's address, which leaves out the relay the episode is on.
+            add(episode.toATagArray())
             add(KindTag.assemble(episode.kind))
             add(ClipTimeTag.assemble(ClipTimeTag.START, startMillis))
             add(ClipTimeTag.assemble(ClipTimeTag.END, endMillis))

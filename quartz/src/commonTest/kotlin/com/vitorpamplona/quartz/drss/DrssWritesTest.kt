@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.drss.readWriteLists.DrssReadWriteListsEvent
 import com.vitorpamplona.quartz.drss.readWriteLists.tags.ListRoleTag
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip78AppData.AppSpecificDataEvent
@@ -194,6 +195,10 @@ class DrssWritesTest {
         assertEquals(episode.pubKeyHex, clip.author())
         assertEquals("the flags part", clip.comment())
         assertEquals("", clip.quote())
+
+        val relay = RelayUrlNormalizer.normalizeOrNull("wss://relay.nostr.io")
+        val hinted = DrssClip.build(ATag(episode.kind, episode.pubKeyHex, episode.dTag, relay), episode.pubKeyHex, 0, 30_000).parse()
+        assertEquals(relay, hinted.tags.firstOrNull { it[0] == "a" }?.getOrNull(2)?.let(RelayUrlNormalizer::normalizeOrNull), "keeps where the episode is")
 
         val plain = HighlightEvent.build("a quote", address = episode.toTag()).parse()
         assertNull(plain.clipRangeMillis(), "a text highlight is no clip")
