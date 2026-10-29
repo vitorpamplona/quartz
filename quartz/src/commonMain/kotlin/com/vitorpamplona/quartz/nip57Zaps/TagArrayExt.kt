@@ -23,8 +23,11 @@ package com.vitorpamplona.quartz.nip57Zaps
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip57Zaps.tags.Bolt11Tag
+import com.vitorpamplona.quartz.nip57Zaps.tags.PreimageTag
 import com.vitorpamplona.quartz.nip57Zaps.tags.ZapRequestDescriptionTag
 
 fun TagArray.bolt11() = fastFirstNotNullOfOrNull(Bolt11Tag::parse)
 
 fun TagArray.zapRequestDescription() = fastFirstNotNullOfOrNull(ZapRequestDescriptionTag::parse)
+
+fun TagArray.preimage() = fastFirstNotNullOfOrNull(PreimageTag::parse)

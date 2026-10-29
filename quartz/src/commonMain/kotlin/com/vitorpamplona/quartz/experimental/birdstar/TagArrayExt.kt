@@ -21,9 +21,15 @@
 package com.vitorpamplona.quartz.experimental.birdstar
 
 import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesNameTag
+import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesReferenceTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 
 /** Scientific names of the collected species, in tag order (`n`). */
+fun TagArray.speciesName() = fastFirstNotNullOfOrNull(SpeciesNameTag::parse)
+
+fun TagArray.speciesReference() = fastFirstNotNullOfOrNull(SpeciesReferenceTag::parse)
+
 fun TagArray.speciesNames() = mapNotNull(SpeciesNameTag::parse)
 
 fun TagArray.speciesCount() = count(SpeciesNameTag::isTag)

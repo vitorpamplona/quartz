@@ -25,17 +25,25 @@ import com.vitorpamplona.quartz.experimental.zapPolls.tags.PollOptionTag
 import com.vitorpamplona.quartz.lightning.LnInvoiceUtil
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.aTag
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.eTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.tags.ZapSenderTag
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
 class ZapReceiptEvent(
@@ -148,6 +156,32 @@ class ZapReceiptEvent(
     companion object {
         const val KIND = 9735
         const val ALT = "Zap event"
+
+        /**
+         * The receipt a zap service publishes once [bolt11] is paid (NIP-57 Appendix E): the
+         * request's recipient, zapped event and address copied over, its author as the sender,
+         * and the request itself as the `description`. [createdAt] should be when the invoice
+         * was paid.
+         */
+        fun build(
+            request: ZapRequestEvent,
+            bolt11: String,
+            preimage: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ZapReceiptEvent>.() -> Unit = {},
+        ): EventTemplate<ZapReceiptEvent> {
+            val recipient = requireNotNull(request.tags.fastFirstNotNullOfOrNull(PTag::parse)) { "A zap request names its recipient in a p tag" }
+            return eventTemplate(KIND, "", createdAt) {
+                pTag(recipient)
+                zapSender(request.pubKey)
+                request.tags.fastFirstNotNullOfOrNull(ETag::parse)?.let { eTag(it) }
+                request.tags.fastFirstNotNullOfOrNull(ATag::parse)?.let { aTag(it) }
+                bolt11(bolt11)
+                zapRequest(request)
+                preimage?.let { preimage(it) }
+                initializer()
+            }
+        }
     }
 
     enum class ZapType {

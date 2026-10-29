@@ -23,10 +23,13 @@ package com.vitorpamplona.quartz.experimental.ps1saves
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * PlayStation 1 memory-card save block (kind 38192).
@@ -73,16 +76,16 @@ class Ps1SaveEvent(
     }
 
     /** Human-readable save name, from the `title` tag (may be null). */
-    fun saveTitle() = tags.firstTagValue("title")
+    fun saveTitle() = tags.saveTitle()
 
     /** PS1 save filename / game product code, from the `filename` tag (may be null). */
-    fun filename() = tags.firstTagValue("filename")
+    fun filename() = tags.saveFilename()
 
     /** Game region, from the `region` tag (may be null). */
-    fun region() = tags.firstTagValue("region")
+    fun region() = tags.saveRegion()
 
     /** Block number within the card, from the `block` tag (null when missing or not a number). */
-    fun blockNumber() = tags.firstTagValue("block")?.toIntOrNull()
+    fun blockNumber() = tags.blockNumber()
 
     /** Publisher-provided human-readable summary, from the NIP-31 `alt` tag (may be null). */
     fun summary() = tags.alt()
@@ -102,5 +105,35 @@ class Ps1SaveEvent(
 
     companion object {
         const val KIND = 38192
+
+        /**
+         * One memory-card block: [blockHex] is its raw bytes in hex, [cardId] the card it belongs
+         * to, [hash] the block's SHA-256 when the publisher computes one. A save's first block
+         * ([state] `first`) carries its [title], [filename] and [region], and the `alt` built from them.
+         */
+        fun build(
+            cardId: String,
+            block: Int,
+            blockHex: String,
+            hash: HexKey? = null,
+            state: String? = null,
+            filename: String? = null,
+            region: String? = null,
+            title: String? = null,
+            dTag: String = "$cardId-$block",
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<Ps1SaveEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, blockHex, createdAt) {
+            dTag(dTag)
+            memoryCard(cardId)
+            blockNumber(block)
+            hash?.let { blockHash(it) }
+            state?.let { blockState(it) }
+            filename?.let { saveFilename(it) }
+            region?.let { saveRegion(it) }
+            title?.let { saveTitle(it) }
+            if (title != null && filename != null) alt("PS1 save '$title' ($filename)")
+            initializer()
+        }
     }
 }

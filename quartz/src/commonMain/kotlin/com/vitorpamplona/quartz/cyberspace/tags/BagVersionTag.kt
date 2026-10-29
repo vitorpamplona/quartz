@@ -33,5 +33,7 @@ class BagVersionTag {
             ensure(tag[0] == TAG_NAME) { return null }
             return tag[1]
         }
+
+        fun assemble(version: String) = arrayOf(TAG_NAME, version)
     }
 }

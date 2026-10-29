@@ -33,5 +33,7 @@ class HeightTag {
             ensure(tag[0] == TAG_NAME) { return null }
             return tag[1]
         }
+
+        fun assemble(height: Int) = arrayOf(TAG_NAME, height.toString())
     }
 }

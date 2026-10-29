@@ -24,7 +24,10 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -175,6 +178,36 @@ class PredictionMarketEvent(
     companion object {
         const val KIND = 38000
         const val DEMO_NETWORK = "demo"
+        const val ACTIVE_STATUS = "active"
+
+        /**
+         * A market in the current shape: everything in tags, the details again as the `data`
+         * JSON, and a social post of the same words as `content`. Play money ([DEMO_NETWORK])
+         * unless [network] says otherwise.
+         */
+        fun build(
+            marketId: String,
+            title: String,
+            outcomes: List<PredictionMarketOutcome>,
+            endsAt: Long,
+            description: String? = null,
+            category: String? = null,
+            network: String = DEMO_NETWORK,
+            status: String = ACTIVE_STATUS,
+            dTag: String = marketId,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<PredictionMarketEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, description?.let { "$title\n\n$it" } ?: title, createdAt) {
+            dTag(dTag)
+            marketId(marketId)
+            marketStatus(status)
+            marketEnd(endsAt)
+            marketNetwork(network)
+            category?.let { marketCategory(it) }
+            outcomes(outcomes)
+            marketData(PredictionMarketDetails.assemble(title, description, outcomes))
+            initializer()
+        }
 
         /**
          * True when a kind-38000 event is shaped like a prediction market: it names a `market`,

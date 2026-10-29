@@ -142,6 +142,8 @@ fun build(
 - **Order-sensitive tags.** `TagArrayBuilder` groups tags by name. A kind whose tags interleave
   (NIP-58's `a`/`e` pairs) builds the rest with the builder, appends the ordered tags, and returns
   `EventTemplate(createdAt, KIND, tags, content)` with the type declared (`AcceptedBadgeSetEvent`).
+  Test a mixed list against the reader: a pairing by adjacency can bind a tag to the wrong
+  neighbour, and the builder must write an order the reader pairs back (`BirdexEvent.build`).
 - **Other apps' kinds.** A kind Quartz only reads still gets a builder for the shape seen in the
   wild, so tests, relays and tools can produce it; the KDoc says whose shape it writes.
 

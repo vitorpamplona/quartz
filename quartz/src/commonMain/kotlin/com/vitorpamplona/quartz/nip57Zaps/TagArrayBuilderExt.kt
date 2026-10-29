@@ -22,15 +22,20 @@ package com.vitorpamplona.quartz.nip57Zaps
 
 import com.vitorpamplona.quartz.experimental.zapPolls.tags.PollOptionTag
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.kinds.KindTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.GroupIdTag
 import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
+import com.vitorpamplona.quartz.nip57Zaps.tags.Bolt11Tag
 import com.vitorpamplona.quartz.nip57Zaps.tags.LnurlTag
+import com.vitorpamplona.quartz.nip57Zaps.tags.PreimageTag
 import com.vitorpamplona.quartz.nip57Zaps.tags.ZapAmountTag
 import com.vitorpamplona.quartz.nip57Zaps.tags.ZapRelaysTag
+import com.vitorpamplona.quartz.nip57Zaps.tags.ZapRequestDescriptionTag
+import com.vitorpamplona.quartz.nip57Zaps.tags.ZapSenderTag
 
 fun TagArrayBuilder<ZapRequestEvent>.receiptRelays(relays: Collection<NormalizedRelayUrl>) = addUnique(ZapRelaysTag.assemble(relays))
 
@@ -52,3 +57,12 @@ fun TagArrayBuilder<ZapRequestEvent>.lnurl(lnurl: String) = addUnique(LnurlTag.a
 fun TagArrayBuilder<ZapRequestEvent>.anonymous() = addUnique(AnonTag.assembleAnonymous())
 
 fun TagArrayBuilder<ZapRequestEvent>.privateZap() = addUnique(AnonTag.assemblePrivate())
+
+fun TagArrayBuilder<ZapReceiptEvent>.zapSender(sender: HexKey) = addUnique(ZapSenderTag.assemble(sender))
+
+fun TagArrayBuilder<ZapReceiptEvent>.bolt11(invoice: String) = addUnique(Bolt11Tag.assemble(invoice))
+
+/** The zap request this receipt answers, as its JSON (NIP-57's `description`). */
+fun TagArrayBuilder<ZapReceiptEvent>.zapRequest(request: ZapRequestEvent) = addUnique(ZapRequestDescriptionTag.assemble(request.toJson()))
+
+fun TagArrayBuilder<ZapReceiptEvent>.preimage(preimage: String) = addUnique(PreimageTag.assemble(preimage))

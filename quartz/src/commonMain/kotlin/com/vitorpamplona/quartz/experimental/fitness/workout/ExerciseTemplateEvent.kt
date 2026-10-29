@@ -28,8 +28,16 @@ import com.vitorpamplona.quartz.experimental.fitness.workout.tags.FormatUnitsTag
 import com.vitorpamplona.quartz.experimental.fitness.workout.tags.TitleTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
+import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * NIP-101e (draft) exercise template, kind 33401, as published by POWR. An
@@ -71,5 +79,31 @@ class ExerciseTemplateEvent(
     companion object {
         const val KIND = 33401
         const val ALT_DESCRIPTION = "Exercise template"
+
+        /** An exercise: [instructions] explain it, [format] names what each set records and [formatUnits] its units, one per field. */
+        @OptIn(ExperimentalUuidApi::class)
+        fun build(
+            title: String,
+            instructions: String,
+            format: List<String>,
+            formatUnits: List<String>,
+            equipment: String? = null,
+            difficulty: String? = null,
+            dTag: String = Uuid.random().toString(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ExerciseTemplateEvent>.() -> Unit = {},
+        ): EventTemplate<ExerciseTemplateEvent> {
+            require(format.size == formatUnits.size) { "format has ${format.size} fields but format_units has ${formatUnits.size}" }
+            return eventTemplate(KIND, instructions, createdAt) {
+                dTag(dTag)
+                title(title)
+                format(format)
+                formatUnits(formatUnits)
+                equipment?.let { equipment(it) }
+                difficulty?.let { difficulty(it) }
+                alt(ALT_DESCRIPTION)
+                initializer()
+            }
+        }
     }
 }
