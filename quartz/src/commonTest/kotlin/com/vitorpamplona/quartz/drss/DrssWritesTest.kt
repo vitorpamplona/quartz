@@ -198,7 +198,14 @@ class DrssWritesTest {
 
         val relay = RelayUrlNormalizer.normalizeOrNull("wss://relay.nostr.io")
         val hinted = DrssClip.build(ATag(episode.kind, episode.pubKeyHex, episode.dTag, relay), episode.pubKeyHex, 0, 30_000).parse()
-        assertEquals(relay, hinted.tags.firstOrNull { it[0] == "a" }?.getOrNull(2)?.let(RelayUrlNormalizer::normalizeOrNull), "keeps where the episode is")
+        assertEquals(
+            relay,
+            hinted.tags
+                .firstOrNull { it[0] == "a" }
+                ?.getOrNull(2)
+                ?.let(RelayUrlNormalizer::normalizeOrNull),
+            "keeps where the episode is",
+        )
 
         val plain = HighlightEvent.build("a quote", address = episode.toTag()).parse()
         assertNull(plain.clipRangeMillis(), "a text highlight is no clip")
