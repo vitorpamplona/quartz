@@ -28,10 +28,29 @@ numbers) parses back as the `UnrecognizedKind…Event`, as drss's own empty ones
 | 30104 | `DrssProvenanceFolderEvent` | every `a` names a 31985 record or a 30104 folder | voting-round results |
 | 31341 | `DrssShowEvent` | `p` → show bot, `status`, `alt`, JSON settings | nobody |
 | 31985 | `DrssProvenanceEvent` | `L` = `systems.buildtall.provenance` | Ditto ratings, a game log |
+| 30078 | `DrssReadWriteListsEvent` | `d` = `read-write-lists`, an `a` per designated list, marked `read` or `write`, or unmarked for both | every app's NIP-78 preferences (`AppSpecificDataEvent`) |
 
 `EventFactory` builds the drss class when its shape matches and an `UnrecognizedKind…Event`
 otherwise (addressable, never indexed, no links). Kind-level probes (`EventFactory.probe`) answer as
 the drss class. The reader's other events use standard kinds that
 Quartz already types: NIP-51 follow sets of feed bots (30000), bookmark sets of feed URLs from an
-OPML import (30003), article curation sets (30004), NIP-78 preferences (30078), clips as NIP-84
+OPML import (30003), article curation sets (30004), clips as NIP-84
 highlights (9802), and its Android app's NIP-94 file metadata (1063) and release sets (30063).
+
+## Writing
+
+drss keeps a reader's lists in standard kinds: the feeds a reader follows are NIP-51 follow sets
+(30000) and saved articles are article curation sets (30004), arranged in list folders (30101).
+The read-and-write preference names the folder the river reads and the one follows and saves go
+into; with no role on its `a`, the same folder does both, as drss writes it. The role markers
+follow NIP-65's `read` / `write` and are inferred: drss's only public preferences carry none.
+
+- `DrssListFolderEvent.addChild` / `removeChild` / `retitle` and `DrssProvenanceFolderEvent`'s
+  `addChild` / `removeChild` keep the folder's other tags. A folder cannot lose its last child; delete
+  it instead.
+- `DrssListenProgressEvent.next(earlier, …)` writes progress by drss's rules: the playhead is the resume
+  point and goes when the episode ends, the first completion stands, and plays only grow.
+  `DrssListenPass` counts a play when playback crosses 90% of the episode, and again only after the
+  listener goes back below 10%. drss saves every minute while playing (`RELAY_SAVE_INTERVAL_SECONDS`),
+  on pause and at the end.
+
