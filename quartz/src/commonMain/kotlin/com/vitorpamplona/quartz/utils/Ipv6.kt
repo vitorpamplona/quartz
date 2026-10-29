@@ -194,6 +194,19 @@ object Ipv6 {
         return parse(if (zoneAt < 0) address else address.substring(0, zoneAt)) != null
     }
 
+    /**
+     * The IPv4 address an IPv4-mapped (`::ffff:a.b.c.d`) or IPv4-compatible (`::a.b.c.d`)
+     * address carries, or null for any other address. Both reach that IPv4 host when dialed, so
+     * a range check has to judge them by it. `::` and `::1` read as `0.0.0.0` and `0.0.0.1`.
+     */
+    fun embeddedIpv4(bytes: ByteArray): ByteArray? {
+        for (i in 0 until 10) if (bytes[i] != ZERO) return null
+        val mapped = bytes[10] == ALL_ONES && bytes[11] == ALL_ONES
+        val compatible = bytes[10] == ZERO && bytes[11] == ZERO
+        if (!mapped && !compatible) return null
+        return bytes.copyOfRange(12, 16)
+    }
+
     /** `::1` — the IPv6 loopback, twin of 127.0.0.1. */
     fun isLoopback(bytes: ByteArray): Boolean {
         for (i in 0 until 15) if (bytes[i] != ZERO) return false

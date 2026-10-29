@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.single.newSubId
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
@@ -249,7 +250,37 @@ class GrapeRankCrawler(
          * back to warming just the busiest [WARM_POOL_SIZE] relays (the old behavior).
          */
         val preconnectCap: Int = 2500,
-    )
+        /**
+         * Which relays found in OTHER people's data the crawl may dial: their kind:10002
+         * write relays and the relay hints in their follow lists. Defaults to [isDialableFromOthers], because a stranger's
+         * `ws://127.0.0.1` or `ws://192.168.1.5` names their machine, not a relay we should
+         * connect to. Relays this operator configured are never filtered.
+         */
+        val acceptOthersRelay: (NormalizedRelayUrl) -> Boolean = { it.isDialableFromOthers() },
+    ) {
+        /** The constructor before [acceptOthersRelay], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            relayListDiscoveryRelays: Set<NormalizedRelayUrl>,
+            contentFallbackRelays: Set<NormalizedRelayUrl>,
+            contentAggregatorRelays: Set<NormalizedRelayUrl> = emptySet(),
+            maxRounds: Int = Int.MAX_VALUE,
+            maxHops: Int = Int.MAX_VALUE,
+            timeoutMs: Long = 10_000,
+            parkTimeoutMs: Long = 40_000,
+            diagnose: Boolean = false,
+            insertBatchSize: Int = 500,
+            drainConcurrency: Int = 48,
+            timeoutEvictStrikes: Int = 3,
+            shedDeadDiscovery: Boolean = true,
+            shardRotations: Int = 2,
+            reachabilityProbe: (suspend (NormalizedRelayUrl) -> Boolean)? = null,
+            torEnabled: Boolean = false,
+            knownDeadRelays: Set<NormalizedRelayUrl> = emptySet(),
+            knownLiveRelays: Set<NormalizedRelayUrl> = emptySet(),
+            preconnectCap: Int = 2500,
+        ) : this(relayListDiscoveryRelays, contentFallbackRelays, contentAggregatorRelays, maxRounds, maxHops, timeoutMs, parkTimeoutMs, diagnose, insertBatchSize, drainConcurrency, timeoutEvictStrikes, shedDeadDiscovery, shardRotations, reachabilityProbe, torEnabled, knownDeadRelays, knownLiveRelays, preconnectCap, { it.isDialableFromOthers() })
+    }
 
     /** What the crawl fetched — the counters the caller reports and the graph is built from. */
     class Stats(
@@ -544,6 +575,9 @@ class GrapeRankCrawler(
             if (deadTimeoutStrikes[authority] != null) deadTimeoutStrikes.merge(authority, 0) { _, _ -> 0 }
         }
 
+        /** [pubkey]'s kind:10002 write relays that [Config.acceptOthersRelay] lets us dial, or null when none. */
+        suspend fun othersWriteRelays(pubkey: HexKey): List<NormalizedRelayUrl>? = relaysOf(pubkey)?.allWriteRelaysNorm()?.filter(config.acceptOthersRelay)?.ifEmpty { null }
+
         /**
          * A relay is out of the routing pool if it hard/transient-failed (per-URL
          * [deadRelays]) or its whole authority was timeout-evicted ([deadHosts]) and has
@@ -675,7 +709,7 @@ class GrapeRankCrawler(
             var fresh = 0
             for (tag in contacts.follows()) {
                 follows.add(tag.pubKey)
-                tag.relayUri?.let { relayHints.getOrPut(tag.pubKey) { ConcurrentSet() }.add(it) }
+                tag.relayUri?.let { if (config.acceptOthersRelay(it)) relayHints.getOrPut(tag.pubKey) { ConcurrentSet() }.add(it) }
                 if (tag.pubKey !in hopOf) {
                     hopOf[tag.pubKey] = nextHop
                     fresh++
@@ -936,7 +970,7 @@ class GrapeRankCrawler(
             // Route each reporter to their own write relays (fallback: backbone).
             val perRelayAuthors = HashMap<NormalizedRelayUrl, MutableSet<HexKey>>()
             for (author in idsByAuthor.keys) {
-                val write = relaysOf(author)?.writeRelaysNorm()?.takeIf { it.isNotEmpty() } ?: backbone
+                val write = othersWriteRelays(author) ?: backbone
                 for (relay in write) if (!isDead(relay)) perRelayAuthors.getOrPut(relay) { HashSet() }.add(author)
             }
             if (perRelayAuthors.isEmpty()) return
@@ -996,7 +1030,7 @@ class GrapeRankCrawler(
             val perRelay = HashMap<NormalizedRelayUrl, MutableSet<HexKey>>()
 
             for (pk in pubkeys) {
-                val write = relaysOf(pk)?.writeRelaysNorm()?.takeIf { it.isNotEmpty() }
+                val write = othersWriteRelays(pk)
                 write?.forEach { writeRelayFreq.merge(it, 1) { a, b -> a + b } }
                 val relays =
                     when {

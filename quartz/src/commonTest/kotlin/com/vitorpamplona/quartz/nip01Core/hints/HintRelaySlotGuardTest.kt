@@ -118,8 +118,9 @@ class HintRelaySlotGuardTest {
         assertNull(RelayUrlNormalizer.normalizeHintOrNull(null))
         assertNull(RelayUrlNormalizer.normalizeHintOrNull(""))
         assertNull(RelayUrlNormalizer.normalizeHintOrNull("wss://"))
-        // The forgiving normalizer is what made these fake relays.
-        assertEquals("wss://inspired-by/", RelayUrlNormalizer.normalizeOrNull("inspired-by")?.url)
+        // The forgiving normalizer is what made these fake relays. A single-label host is local
+        // (no CA signs one), so it gets plain ws://.
+        assertEquals("ws://inspired-by/", RelayUrlNormalizer.normalizeOrNull("inspired-by")?.url)
 
         assertEquals(relay, RelayUrlNormalizer.normalizeHintOrNull("wss://relay.damus.io")?.url)
         assertEquals(relay, RelayUrlNormalizer.normalizeHintOrNull("wss://relay.damus.io/")?.url)

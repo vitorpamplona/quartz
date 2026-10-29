@@ -62,8 +62,25 @@ class WelcomeEvent(
     /** Event ID of the KeyPackage that was consumed for this invitation */
     fun keyPackageEventId() = tags.keyPackageEventId()
 
-    /** Relays where the new member should look for Group Events */
+    /** Relays where the new member should look for Group Events, local ones dropped. */
+    @Deprecated(
+        "Drops local relays, so a group on a closed network gets no relays at all. Use allRelays() and filter with " +
+            "isDialableFromOthers() when the app is not on the sender's network. Returns every relay from 3.0.0.",
+        ReplaceWith(
+            "allRelays()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun relays() = tags.welcomeRelays()
+
+    /**
+     * Every relay where the new member should look for Group Events, local ones included. The
+     * Welcome comes from someone else: their LAN relay is only ours on a closed network the app
+     * knows it shares, so filter with
+     * [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers] otherwise.
+     */
+    fun allRelays() = tags.allWelcomeRelays()
 
     /** Content encoding (must be "base64") */
     fun encoding() = tags.welcomeEncoding()

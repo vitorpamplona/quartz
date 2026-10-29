@@ -74,6 +74,91 @@ object Ipv4 {
         return i == to
     }
 
+    /**
+     * Parses `[from, to)` the way `inet_aton` does, and so the way the resolvers below OkHttp do:
+     * one to four dot-separated parts, each decimal, octal (`0177`) or hex (`0x7f`), where the
+     * last part fills every byte the earlier ones left (`127.1` and `2130706433` are both
+     * 127.0.0.1). Null when the region is not such a literal.
+     *
+     * [parse] is the strict form, right for formatting; this one answers "which address would a
+     * dial reach", which is the only question a private-address check may ask. Reading
+     * `0x7f000001` as a host name calls a loopback url public.
+     */
+    fun parseInetAton(
+        text: String,
+        from: Int,
+        to: Int,
+    ): ByteArray? {
+        // Cheapest possible rejection of a DNS host: every part starts with a digit.
+        if (from >= to || text[from] !in '0'..'9') return null
+        val parts = LongArray(4)
+        var count = 0
+        var i = from
+        while (true) {
+            if (count == 4) return null
+            var end = i
+            while (end < to && text[end] != '.') end++
+            parts[count++] = parsePart(text, i, end) ?: return null
+            if (end == to) break
+            i = end + 1
+        }
+
+        var result = 0L
+        for (k in 0 until count - 1) {
+            if (parts[k] > 255L) return null
+            result = result or (parts[k] shl (8 * (3 - k)))
+        }
+        val tail = parts[count - 1]
+        if (tail > (1L shl (8 * (5 - count))) - 1L) return null
+        result = result or tail
+
+        return byteArrayOf(
+            (result ushr 24).toByte(),
+            (result ushr 16).toByte(),
+            (result ushr 8).toByte(),
+            result.toByte(),
+        )
+    }
+
+    /** One `inet_aton` part in `[from, to)`: decimal, `0`-prefixed octal or `0x` hex. */
+    private fun parsePart(
+        text: String,
+        from: Int,
+        to: Int,
+    ): Long? {
+        if (from >= to) return null
+        val radix: Int
+        var i = from
+        if (to - from > 1 && text[from] == '0' && (text[from + 1] == 'x' || text[from + 1] == 'X')) {
+            radix = 16
+            i += 2
+            if (i == to) return null
+        } else if (to - from > 1 && text[from] == '0') {
+            radix = 8
+            i += 1
+        } else {
+            radix = 10
+        }
+        var value = 0L
+        while (i < to) {
+            val digit = asciiDigit(text[i])
+            if (digit < 0 || digit >= radix) return null
+            value = value * radix + digit
+            if (value > 0xFFFFFFFFL) return null
+            i++
+        }
+        return value
+    }
+
+    // ASCII only: `digitToInt` also reads other scripts' digits, which no resolver does.
+    private fun asciiDigit(c: Char): Int =
+        when (c) {
+            in '0'..'9' -> c - '0'
+            in 'a'..'f' -> c - 'a' + 10
+            in 'A'..'F' -> c - 'A' + 10
+            else -> -1
+        }
+
     /** `127.0.0.0/8` — the whole loopback block, not just 127.0.0.1. */
     fun isLoopback(bytes: ByteArray): Boolean = octet(bytes, 0) == 127
 
@@ -88,6 +173,13 @@ object Ipv4 {
 
     /** `169.254.0.0/16` — link-local / APIPA, reachable only on the local segment. */
     fun isLinkLocal(bytes: ByteArray): Boolean = octet(bytes, 0) == 169 && octet(bytes, 1) == 254
+
+    /**
+     * `100.64.0.0/10` — RFC 6598 shared address space: carrier-grade NAT, and the range Tailscale
+     * assigns node addresses from. Not routable on the internet, so from a host on a tailnet (or
+     * on a cloud that uses the block inside) it reaches private machines.
+     */
+    fun isSharedAddressSpace(bytes: ByteArray): Boolean = octet(bytes, 0) == 100 && octet(bytes, 1) in 64..127
 
     /** `0.0.0.0/8` — "this network"; never a routable relay. */
     fun isUnspecified(bytes: ByteArray): Boolean = octet(bytes, 0) == 0

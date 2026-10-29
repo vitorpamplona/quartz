@@ -50,12 +50,26 @@ class DmRelayListEvent(
     DiffableEvent<RelayListDiff> {
     override fun diffFrom(older: Event): RelayListDiff? {
         if (older !is DmRelayListEvent || older.pubKey != pubKey) return null
-        return RelayListDiff(ListDiff.of(older.relays(), relays(), { it }), ContentChange.NONE)
+        return RelayListDiff(ListDiff.of(older.allRelays(), allRelays(), { it }), ContentChange.NONE)
     }
 
+    /** The relays without local ones. Deprecated: see [RelayTag.parse]. */
+    @Deprecated(
+        "Drops local relays, which is the app's call: it depends on whose list this is. Use allRelays() for your own " +
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
+        ReplaceWith(
+            "allRelays().filter { it.isDialableFromOthers() }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun relays(): List<NormalizedRelayUrl> = tags.mapNotNull(RelayTag::parse)
 
-    /** Every relay in this list, local ones included. For reading back our OWN list. */
+    /**
+     * Every relay in this list, local ones included. As is for the user's OWN list; filter
+     * someone else's with [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]
+     * before dialing.
+     */
     fun allRelays(): List<NormalizedRelayUrl> = tags.mapNotNull(RelayTag::parseUnfiltered)
 
     companion object {

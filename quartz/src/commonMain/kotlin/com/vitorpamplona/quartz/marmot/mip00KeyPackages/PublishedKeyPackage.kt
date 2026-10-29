@@ -83,7 +83,19 @@ sealed interface PublishedKeyPackage : IEvent {
     fun keyPackageRef() = tags.keyPackageRef()
 
     /** Relays where this KeyPackage is published (MIP-era only; the current profile omits the tag). */
+    @Deprecated(
+        "Drops local relays, which is the app's call. Use allRelays() and filter someone else's relays with " +
+            "isDialableFromOthers(). Returns every relay from 3.0.0.",
+        ReplaceWith(
+            "allRelays()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun relays() = tags.keyPackageRelays()
+
+    /** Every relay where this KeyPackage is published, local ones included. */
+    fun allRelays() = tags.allKeyPackageRelays()
 
     /** Optional client name */
     fun clientName() = tags.clientName()

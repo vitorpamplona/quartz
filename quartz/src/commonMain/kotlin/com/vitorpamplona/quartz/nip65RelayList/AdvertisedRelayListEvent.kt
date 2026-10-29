@@ -69,16 +69,44 @@ class AdvertisedRelayListEvent(
 
     fun readRelays() = tags.mapNotNull(AdvertisedRelayInfo::parseRead).ifEmpty { null }
 
+    /** Read-marked relays without local ones. Deprecated: see [AdvertisedRelayInfo.parseReadNorm]. */
+    @Deprecated(
+        "Drops local relays, which is the app's call: it depends on whose list this is. Use allReadRelaysNorm() for your own " +
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
+        ReplaceWith(
+            "allReadRelaysNorm()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun readRelaysNorm() = tags.mapNotNull(AdvertisedRelayInfo::parseReadNorm).ifEmpty { null }
 
-    /** Read-marked relays including local ones. For reading back OUR OWN list. */
+    /**
+     * Every read-marked relay, local ones included. As is for the user's OWN list; filter
+     * someone else's with [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]
+     * before dialing.
+     */
     fun allReadRelaysNorm() = tags.mapNotNull(AdvertisedRelayInfo::parseReadNormUnfiltered).ifEmpty { null }
 
     fun writeRelays() = tags.mapNotNull(AdvertisedRelayInfo::parseWrite).ifEmpty { null }
 
+    /** Write-marked relays without local ones. Deprecated: see [AdvertisedRelayInfo.parseWriteNorm]. */
+    @Deprecated(
+        "Drops local relays, which is the app's call: it depends on whose list this is. Use allWriteRelaysNorm() for your own " +
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay from 3.0.0.",
+        ReplaceWith(
+            "allWriteRelaysNorm()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun writeRelaysNorm() = tags.mapNotNull(AdvertisedRelayInfo::parseWriteNorm).ifEmpty { null }
 
-    /** Write-marked relays including local ones. For reading back OUR OWN list. */
+    /**
+     * Every write-marked relay, local ones included. As is for the user's OWN list; filter
+     * someone else's with [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]
+     * before dialing.
+     */
     fun allWriteRelaysNorm() = tags.mapNotNull(AdvertisedRelayInfo::parseWriteNormUnfiltered).ifEmpty { null }
 
     companion object {

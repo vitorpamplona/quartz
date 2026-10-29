@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip01Core.hints
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.hints.bloom.BloomFilterMurMur3
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.cache.LargeCache
 
@@ -32,8 +31,16 @@ import com.vitorpamplona.quartz.utils.cache.LargeCache
  * many large bloom filters for collections of very few items, this class uses
  * only one mega bloom filter per type and uses the hashcode of the relay uri
  * as seed differentiator in the hash function.
+ *
+ * [accept] decides which relays are indexed at all, and defaults to every relay. Hints come
+ * from other people's events, and the app is about to dial what [hintsForKey] and friends
+ * return, so an app that does should pass
+ * [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]: a stranger's
+ * `ws://192.168.1.10` hint names their LAN, not a relay we should connect to.
  */
-class HintIndexer {
+class HintIndexer(
+    private val accept: (NormalizedRelayUrl) -> Boolean = { true },
+) {
     // 5MB for events
     private val eventHints = BloomFilterMurMur3(40_000_000, 10)
 
@@ -50,7 +57,7 @@ class HintIndexer {
         relay: NormalizedRelayUrl,
         bloom: BloomFilterMurMur3,
     ) {
-        if (!relay.isLocalHost()) {
+        if (accept(relay)) {
             relayDB.put(relay, relay)
             bloom.add(id, relay.hashCode())
         }

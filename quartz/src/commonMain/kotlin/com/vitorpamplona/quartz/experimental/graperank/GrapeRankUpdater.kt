@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropyStoreSync
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip56Reports.ReportEvent
@@ -105,7 +106,34 @@ class GrapeRankUpdater(
          * out; this never drops a *live* author-advertised relay. See RelayReachabilityStore.
          */
         val knownDead: Set<NormalizedRelayUrl> = emptySet(),
+        /**
+         * Which relays found in OTHER people's data the reconcile may dial: their kind:10002
+         * write relays. Defaults to [isDialableFromOthers], because a stranger's
+         * `ws://127.0.0.1` or `ws://192.168.1.5` names their machine, not a relay we should
+         * connect to. Relays this operator configured are never filtered.
+         */
+        val acceptOthersRelay: (NormalizedRelayUrl) -> Boolean = { it.isDialableFromOthers() },
     ) {
+        /** The constructor before [acceptOthersRelay], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            kinds: List<Int> = DEFAULT_KINDS,
+            down: Boolean = true,
+            up: Boolean = true,
+            syncDeletions: Boolean = true,
+            pageFallback: Boolean = true,
+            idChunk: Int = 500,
+            downloadWorkers: Int = 4,
+            reconcileConcurrency: Int = 2,
+            maxDeletionRounds: Int = 4,
+            relayConcurrency: Int = 4,
+            authorChunk: Int = 500,
+            minAuthors: Int = 1,
+            idleTimeoutMs: Long = 30_000L,
+            publishTimeoutSecs: Long = 15,
+            knownDead: Set<NormalizedRelayUrl> = emptySet(),
+        ) : this(kinds, down, up, syncDeletions, pageFallback, idChunk, downloadWorkers, reconcileConcurrency, maxDeletionRounds, relayConcurrency, authorChunk, minAuthors, idleTimeoutMs, publishTimeoutSecs, knownDead, { it.isDialableFromOthers() })
+
         /** Project the shared engine knobs onto a [NegentropyStoreSync.Config]. */
         internal fun toEngineConfig() =
             NegentropyStoreSync.Config(
@@ -240,7 +268,7 @@ class GrapeRankUpdater(
     private fun groupByWriteRelay(latest: Map<HexKey, AdvertisedRelayListEvent>): Map<NormalizedRelayUrl, Set<HexKey>> {
         val relayToAuthors = HashMap<NormalizedRelayUrl, MutableSet<HexKey>>()
         for ((author, list) in latest) {
-            val writes = list.writeRelaysNorm() ?: continue
+            val writes = list.allWriteRelaysNorm()?.filter(config.acceptOthersRelay) ?: continue
             for (relay in writes) relayToAuthors.getOrPut(relay) { HashSet() }.add(author)
         }
         return relayToAuthors

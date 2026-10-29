@@ -20,6 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip60Cashu.mintApi
 
+import com.vitorpamplona.quartz.utils.Ipv4
+import com.vitorpamplona.quartz.utils.Ipv6
+
 /**
  * Thrown when a mint URL is refused before any request is issued. The message is
  * user-facing: it is surfaced verbatim in the "could not redeem" dialog.
@@ -150,50 +153,17 @@ object CashuMintUrlValidator {
      * hex (`0x…`), because that is what a C resolver — and therefore a lot of the
      * stack below us — will happily accept. Returns the address as an unsigned
      * 32-bit value in a [Long], or null when [host] is not an IPv4 literal at all.
+     *
+     * The parse is [Ipv4.parseInetAton], the one the relay classifier
+     * ([com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer.isLocalHost])
+     * uses, so a mint and a relay spelled the same way get the same answer.
      */
     fun parseIpv4(host: String): Long? {
-        if (host.isEmpty()) return null
-        val parts = host.split('.')
-        if (parts.size > 4) return null
-
-        val values = ArrayList<Long>(parts.size)
-        for (part in parts) {
-            values.add(parseIpv4Part(part) ?: return null)
-        }
-
-        // The last part absorbs every byte the earlier parts didn't name:
-        // "127.1" is 127.0.0.1, "2130706433" is 127.0.0.1.
-        val n = values.size
-        var result = 0L
-        for (i in 0 until n - 1) {
-            val v = values[i]
-            if (v > 255L) return null
-            result = result or (v shl (8 * (3 - i)))
-        }
-        val tailMax = (1L shl (8 * (4 - (n - 1)))) - 1L
-        val tail = values[n - 1]
-        if (tail > tailMax) return null
-        return result or tail
-    }
-
-    private fun parseIpv4Part(part: String): Long? {
-        if (part.isEmpty()) return null
-        return when {
-            part.startsWith("0x") || part.startsWith("0X") -> {
-                val digits = part.substring(2)
-                if (digits.isEmpty() || !digits.all { it.isHexDigit() }) return null
-                digits.toLongOrNull(16)
-            }
-            part.length > 1 && part[0] == '0' -> {
-                val digits = part.substring(1)
-                if (!digits.all { it in '0'..'7' }) return null
-                digits.toLongOrNull(8)
-            }
-            else -> {
-                if (!part.all { it in '0'..'9' }) return null
-                part.toLongOrNull()
-            }
-        }?.takeIf { it >= 0 && it <= 0xFFFFFFFFL }
+        val bytes = Ipv4.parseInetAton(host, 0, host.length) ?: return null
+        return ((bytes[0].toLong() and 0xFF) shl 24) or
+            ((bytes[1].toLong() and 0xFF) shl 16) or
+            ((bytes[2].toLong() and 0xFF) shl 8) or
+            (bytes[3].toLong() and 0xFF)
     }
 
     private fun isPrivateIpv4(addr: Long): Boolean {
@@ -217,68 +187,12 @@ object CashuMintUrlValidator {
     // IPv6
     // ------------------------------------------------------------------
 
-    /** Parses an IPv6 literal (with optional `::` run and optional trailing IPv4) into 16 bytes. */
-    fun parseIpv6(literal: String): ByteArray? {
-        // A zone id (fe80::1%wlan0) doesn't change which range we're in.
-        val text = literal.substringBefore('%')
-        if (text.isEmpty()) return null
-
-        val out = ByteArray(16)
-        val doubleColon = text.indexOf("::")
-        if (text.indexOf("::", doubleColon + 1) >= 0) return null // more than one "::"
-
-        val headText = if (doubleColon >= 0) text.substring(0, doubleColon) else text
-        val tailText = if (doubleColon >= 0) text.substring(doubleColon + 2) else ""
-
-        val head = splitGroups(headText) ?: return null
-        val tail = splitGroups(tailText) ?: return null
-
-        // A trailing dotted-quad ("::ffff:127.0.0.1") counts as the last two groups.
-        val headBytes = groupsToBytes(head) ?: return null
-        val tailBytes = groupsToBytes(tail) ?: return null
-
-        if (doubleColon < 0) {
-            if (headBytes.size != 16) return null
-            return headBytes
-        }
-        if (headBytes.size + tailBytes.size > 14) return null // "::" must stand for >= 1 group
-
-        headBytes.copyInto(out, 0)
-        tailBytes.copyInto(out, 16 - tailBytes.size)
-        return out
-    }
-
-    private fun splitGroups(text: String): List<String>? {
-        if (text.isEmpty()) return emptyList()
-        val groups = text.split(':')
-        if (groups.any { it.isEmpty() }) return null
-        return groups
-    }
-
-    private fun groupsToBytes(groups: List<String>): ByteArray? {
-        val bytes = ArrayList<Byte>(16)
-        for ((index, group) in groups.withIndex()) {
-            if (group.contains('.')) {
-                // Only legal as the final element, and only in strict dotted-quad form.
-                if (index != groups.size - 1) return null
-                val quad = group.split('.')
-                if (quad.size != 4) return null
-                for (q in quad) {
-                    if (q.isEmpty() || q.length > 3 || !q.all { it in '0'..'9' }) return null
-                    val v = q.toInt()
-                    if (v > 255) return null
-                    bytes.add(v.toByte())
-                }
-            } else {
-                if (group.length > 4 || !group.all { it.isHexDigit() }) return null
-                val v = group.toInt(16)
-                bytes.add(((v shr 8) and 0xFF).toByte())
-                bytes.add((v and 0xFF).toByte())
-            }
-        }
-        if (bytes.size > 16) return null
-        return bytes.toByteArray()
-    }
+    /**
+     * Parses an IPv6 literal (with optional `::` run and optional trailing IPv4) into 16 bytes,
+     * through the same [Ipv6.parse] the relay classifier uses. A zone id (`fe80::1%wlan0`)
+     * doesn't change which range we're in.
+     */
+    fun parseIpv6(literal: String): ByteArray? = Ipv6.parse(literal.substringBefore('%'))
 
     private fun isPrivateIpv6(addr: ByteArray): Boolean {
         // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) carry an
@@ -312,6 +226,4 @@ object CashuMintUrlValidator {
 
         return false
     }
-
-    private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 }

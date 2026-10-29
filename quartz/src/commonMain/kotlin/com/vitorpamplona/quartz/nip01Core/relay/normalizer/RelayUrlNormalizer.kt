@@ -24,6 +24,7 @@ import androidx.collection.LruCache
 import com.vitorpamplona.quartz.utils.Ipv4
 import com.vitorpamplona.quartz.utils.Ipv6
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.PublicAddress
 import com.vitorpamplona.quartz.utils.Rfc3986
 import kotlinx.coroutines.CancellationException
 import kotlin.contracts.ExperimentalContracts
@@ -55,38 +56,81 @@ class RelayUrlNormalizer {
             val start = hostStart(url)
             val end = hostEnd(url, start)
             if (end <= start) return false
+            if (url[start] == '[') return isPrivateIpv6(url, start, end)
             val hostEnd = hostEndWithoutPort(url, start, end)
+            if (hostEnd <= start) return false
             return isPrivateIpv4(url, start, hostEnd) ||
-                // RFC 6761: `localhost` and anything under it — the same rule SurgeDns applies
-                // when deciding whether a loopback answer is legitimate. A substring test would
-                // also match `notlocalhost.example.com`, which is registrable.
-                regionEquals(url, "localhost", start, hostEnd) ||
-                regionEndsWith(url, ".localhost", start, hostEnd) ||
-                regionEquals(url, "umbrel", start, hostEnd) ||
-                regionEndsWith(url, ".local", start, hostEnd) ||
-                isPrivateIpv6(url, start, end)
+                // A name with no dot never reaches a public DNS answer: the resolver completes
+                // it from the machine's search domains, or reads it from /etc/hosts or mDNS.
+                // That covers `localhost`, `umbrel` and every LAN box (`beelink`, `nas`), and
+                // also the scheme pasted twice (`wss://wss/nos.lol`), whose host is `wss`.
+                // Local-only domains (`.local`, `.lan`, ...) follow the same rule.
+                isLocalName(url, start, hostEnd)
+        }
+
+        /** A name with no dot, or one under a [hasLocalSuffix] domain. */
+        private fun isLocalName(
+            url: String,
+            start: Int,
+            end: Int,
+        ): Boolean {
+            val lastDot = url.lastIndexOf('.', end - 1)
+            return lastDot < start || hasLocalSuffix(url, start, lastDot, end)
+        }
+
+        /**
+         * Names that only resolve inside a machine or a LAN: RFC 6761 `.localhost` (the rule
+         * SurgeDns applies to loopback answers), RFC 6762 mDNS `.local`, RFC 8375 `.home.arpa`,
+         * ICANN's private-use `.internal`, and the home-router conventions no registry will ever
+         * delegate (`.localdomain`, `.lan`, `.home`, `.intranet`). Matched as a whole label: a
+         * substring test would also match `notlocalhost.example.com`, which is registrable.
+         *
+         * Keyed on the last label's length so a public name costs one comparison at most.
+         */
+        private fun hasLocalSuffix(
+            url: String,
+            start: Int,
+            lastDot: Int,
+            end: Int,
+        ): Boolean {
+            val tld = lastDot + 1
+            return when (end - tld) {
+                3 -> regionEquals(url, "lan", tld, end)
+                4 -> regionEquals(url, "home", tld, end) || (regionEquals(url, "arpa", tld, end) && regionEndsWith(url, ".home.arpa", start, end))
+                5 -> regionEquals(url, "local", tld, end)
+                8 -> regionEquals(url, "internal", tld, end) || regionEquals(url, "intranet", tld, end)
+                9 -> regionEquals(url, "localhost", tld, end)
+                11 -> regionEquals(url, "localdomain", tld, end)
+                else -> false
+            }
         }
 
         /**
          * The IPv4 ranges that are never a public relay: `127.0.0.0/8` loopback, the RFC 1918
-         * private blocks, `169.254.0.0/16` link-local and `0.0.0.0/8`.
+         * private blocks, `169.254.0.0/16` link-local, `100.64.0.0/10` shared address space
+         * (CGNAT, Tailscale) and `0.0.0.0/8`.
          *
          * Parsed rather than substring-matched, which was wrong both ways: `contains("192.168.")`
          * missed `10.0.0.5` and `172.16.3.4` — so a LAN relay was given `wss://` and dialed
          * through Tor — while matching `192.168.evil.com`, a registrable domain that could
-         * therefore exempt itself from Tor.
+         * therefore exempt itself from Tor. Parsed as `inet_aton` does, because that is what the
+         * resolver does with `127.1`, `2130706433` or `0x7f.0.0.1` when the url is dialed.
          */
         private fun isPrivateIpv4(
             url: String,
             start: Int,
             end: Int,
         ): Boolean {
-            val bytes = Ipv4.parse(url, start, end) ?: return false
-            return Ipv4.isLoopback(bytes) ||
+            val bytes = Ipv4.parseInetAton(url, start, end) ?: return false
+            return isPrivateIpv4(bytes)
+        }
+
+        private fun isPrivateIpv4(bytes: ByteArray): Boolean =
+            Ipv4.isLoopback(bytes) ||
                 Ipv4.isPrivate(bytes) ||
                 Ipv4.isLinkLocal(bytes) ||
+                Ipv4.isSharedAddressSpace(bytes) ||
                 Ipv4.isUnspecified(bytes)
-        }
 
         fun isOnion(url: String): Boolean {
             val start = hostStart(url)
@@ -113,6 +157,38 @@ class RelayUrlNormalizer {
         }
 
         /**
+         * Whether a relay url that came from SOMEONE ELSE's data may be dialed. See
+         * [NormalizedRelayUrl.isDialableFromOthers] for the rule; this is its implementation.
+         */
+        fun isDialableFromOthers(url: String): Boolean {
+            val start = hostStart(url)
+            val end = hostEnd(url, start)
+            if (end <= start) return false
+
+            // One parse, and stricter than [isLocalHost] on every branch, so nothing local is
+            // ever dialable: [PublicAddress] refuses every private, loopback, link-local and
+            // shared range (IPv4-mapped forms included) and everything outside global unicast.
+            if (url[start] == '[') {
+                val bytes = ipv6HostOf(url, start, end) ?: return false
+                // The overlay is reachable from anywhere on the mesh; everything else must be
+                // global unicast, outside the documentation and protocol blocks.
+                return Ipv6.isOverlayMesh(bytes) || PublicAddress.isPublic(bytes)
+            }
+
+            val hostEnd = hostEndWithoutPort(url, start, end)
+            if (hostEnd <= start) return false
+            Ipv4.parseInetAton(url, start, hostEnd)?.let { return PublicAddress.isPublic(it) }
+            if (isLocalName(url, start, hostEnd)) return false
+
+            // An empty label (`.tailed9020.ts.net`, `relay..example`) is a typo, not a host.
+            if (url[start] == '.') return false
+            for (i in start until hostEnd - 1) {
+                if (url[i] == '.' && url[i + 1] == '.') return false
+            }
+            return true
+        }
+
+        /**
          * The IPv6 twins of the literals in [isLocalHost]: `::1` (127.0.0.1), `fc00::/7` unique
          * local addresses (192.168.0.0/16) and `fe80::/10` link-local. All three name a host that
          * only exists on this machine or this LAN, which is what every caller of [isLocalHost]
@@ -125,6 +201,8 @@ class RelayUrlNormalizer {
             end: Int,
         ): Boolean {
             val bytes = ipv6HostOf(url, start, end) ?: return false
+            // `::ffff:192.168.1.5` and `::127.0.0.1` reach that IPv4 address; `::` is unspecified.
+            Ipv6.embeddedIpv4(bytes)?.let { return isPrivateIpv4(it) }
             return Ipv6.isLoopback(bytes) || Ipv6.isUniqueLocal(bytes) || Ipv6.isLinkLocal(bytes)
         }
 

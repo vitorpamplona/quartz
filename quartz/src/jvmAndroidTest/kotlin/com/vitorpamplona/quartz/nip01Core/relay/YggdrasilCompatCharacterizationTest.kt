@@ -150,7 +150,8 @@ class YggdrasilCompatCharacterizationTest {
         assertEquals("ws://localhost:4869/", "localhost:4869".normalizeRelayUrl().url)
         // addressable-event pointer, not a relay
         assertEquals(null, RelayUrlNormalizer.normalizeOrNull("31990:abcdef:mydtag"))
-        // two hex-looking groups are a host and a port, not an address
-        assertEquals("wss://abcd:1234/", "abcd:1234".normalizeRelayUrl().url)
+        // two hex-looking groups are a host and a port, not an address; a single-label host,
+        // so local and plain ws://
+        assertEquals("ws://abcd:1234/", "abcd:1234".normalizeRelayUrl().url)
     }
 }

@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip62RequestToVanish.tags
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.utils.ensure
 
 class RelayTag {
@@ -55,16 +54,20 @@ class RelayTag {
             return RelayUrlNormalizer.normalizeOrNull(value) == relay
         }
 
+        /**
+         * The relay this request names, local ones included: a request to vanish from the
+         * author's own LAN relay is as valid as any other. Nothing dials these urls on someone
+         * else's behalf; an app that does filters with
+         * [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers] first.
+         */
         fun parse(tag: Array<String>): NormalizedRelayUrl? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotEmpty()) { return null }
+            // The everywhere marker is not a relay; the lenient parser would make it `ws://all_relays/`.
+            ensure(tag[1] != EVERYWHERE) { return null }
 
-            val relay = RelayUrlNormalizer.normalizeOrNull(tag[1])
-
-            ensure(relay != null && !relay.isLocalHost()) { return null }
-
-            return relay
+            return RelayUrlNormalizer.normalizeOrNull(tag[1])
         }
 
         fun assemble(relay: NormalizedRelayUrl) = arrayOf(TAG_NAME, relay.url)
