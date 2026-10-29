@@ -21,17 +21,21 @@
 package com.vitorpamplona.quartz.drss.listFolder
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.drss.DrssListPicture
 import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
 import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.onlyAddressesOfKinds
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.update
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -67,6 +71,12 @@ class DrssListFolderEvent(
     AddressHintProvider,
     SearchableEvent {
     fun title() = tags.title()
+
+    /** The folder's picture (`image`), as drss sets it; see [DrssListPicture]. */
+    fun image() = DrssListPicture.image(tags)
+
+    /** A small copy of [image] (`thumb`), when drss made one. */
+    fun thumb() = DrssListPicture.thumb(tags)
 
     fun language() = tags.language()
 
@@ -129,5 +139,29 @@ class DrssListFolderEvent(
             children(children)
             initializer()
         }
+
+        /** [earlier] with [child] at the end; unchanged when it already holds that list. */
+        fun addChild(
+            earlier: DrssListFolderEvent,
+            child: ATag,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssListFolderEvent> = earlier.update(createdAt) { addUniqueValueIfNew(child.toATagArray()) }
+
+        /**
+         * [earlier] without [child]. Taking out the last child leaves no folder drss can read: it
+         * parses back as an [UnrecognizedKind30101Event], so delete the folder instead.
+         */
+        fun removeChild(
+            earlier: DrssListFolderEvent,
+            child: Address,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssListFolderEvent> = earlier.update(createdAt) { remove(ATag.TAG_NAME, child.toValue()) }
+
+        /** [earlier] under a new [title]. */
+        fun retitle(
+            earlier: DrssListFolderEvent,
+            title: String,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssListFolderEvent> = earlier.update(createdAt) { title(title) }
     }
 }

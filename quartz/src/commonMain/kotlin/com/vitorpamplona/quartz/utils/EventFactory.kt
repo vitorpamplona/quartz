@@ -128,6 +128,7 @@ import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
 import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind30104Event
 import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind31985Event
+import com.vitorpamplona.quartz.drss.readWriteLists.DrssReadWriteListsEvent
 import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.experimental.agora.FundraiserEvent
 import com.vitorpamplona.quartz.experimental.attestations.attestation.AttestationEvent
@@ -657,7 +658,12 @@ class EventFactory {
                 AppDefinitionEvent.KIND -> AppDefinitionEvent(id, pubKey, createdAt, tags, content, sig)
                 AppRecommendationEvent.KIND -> AppRecommendationEvent(id, pubKey, createdAt, tags, content, sig)
                 AppDataEvent.KIND -> AppDataEvent(id, pubKey, createdAt, tags, content, sig)
-                AppSpecificDataEvent.KIND -> AppSpecificDataEvent(id, pubKey, createdAt, tags, content, sig)
+                AppSpecificDataEvent.KIND ->
+                    if (DrssReadWriteListsEvent.isReadWriteLists(tags)) {
+                        DrssReadWriteListsEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        AppSpecificDataEvent(id, pubKey, createdAt, tags, content, sig)
+                    }
                 AttestationEvent.KIND -> AttestationEvent(id, pubKey, createdAt, tags, content, sig)
                 AttestationRequestEvent.KIND -> AttestationRequestEvent(id, pubKey, createdAt, tags, content, sig)
                 AttestorRecommendationEvent.KIND -> AttestorRecommendationEvent(id, pubKey, createdAt, tags, content, sig)

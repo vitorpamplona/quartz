@@ -29,7 +29,9 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.update
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -98,5 +100,22 @@ class DrssEventListEvent(
             items(items)
             initializer()
         }
+
+        /** [earlier] with [item] at the end; unchanged when it already holds that event. */
+        fun addItem(
+            earlier: DrssEventListEvent,
+            item: ListItemTag,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssEventListEvent> = earlier.update(createdAt) { addUniqueValueIfNew(item.toTagArray()) }
+
+        /**
+         * [earlier] without the event [eventId]. A list cannot lose its last item: it would parse
+         * back as an [UnrecognizedKind30102Event], so delete the list instead.
+         */
+        fun removeItem(
+            earlier: DrssEventListEvent,
+            eventId: HexKey,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssEventListEvent> = earlier.update(createdAt) { remove(ListItemTag.TAG_NAME, eventId) }
     }
 }
