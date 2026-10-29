@@ -64,36 +64,45 @@ class RelayUrlNormalizer {
                 // it from the machine's search domains, or reads it from /etc/hosts or mDNS.
                 // That covers `localhost`, `umbrel` and every LAN box (`beelink`, `nas`), and
                 // also the scheme pasted twice (`wss://wss/nos.lol`), whose host is `wss`.
-                isSingleLabel(url, start, hostEnd) ||
-                LOCAL_SUFFIXES.any { regionEndsWith(url, it, start, hostEnd) }
+                // Local-only domains (`.local`, `.lan`, ...) follow the same rule.
+                isLocalName(url, start, hostEnd)
         }
 
-        /**
-         * Names that only resolve inside a machine or a LAN. RFC 6761 `.localhost` (the rule
-         * SurgeDns applies to loopback answers), RFC 6762 mDNS `.local`, RFC 8375 `.home.arpa`,
-         * ICANN's private-use `.internal`, and the home-router conventions no registry will ever
-         * delegate. Matched as a whole label: a substring test would also match
-         * `notlocalhost.example.com`, which is registrable.
-         */
-        private val LOCAL_SUFFIXES =
-            arrayOf(
-                ".localhost",
-                ".local",
-                ".localdomain",
-                ".lan",
-                ".home",
-                ".home.arpa",
-                ".internal",
-                ".intranet",
-            )
-
-        private fun isSingleLabel(
+        /** A name with no dot, or one under a [hasLocalSuffix] domain. */
+        private fun isLocalName(
             url: String,
             start: Int,
             end: Int,
         ): Boolean {
-            for (i in start until end) if (url[i] == '.') return false
-            return true
+            val lastDot = url.lastIndexOf('.', end - 1)
+            return lastDot < start || hasLocalSuffix(url, start, lastDot, end)
+        }
+
+        /**
+         * Names that only resolve inside a machine or a LAN: RFC 6761 `.localhost` (the rule
+         * SurgeDns applies to loopback answers), RFC 6762 mDNS `.local`, RFC 8375 `.home.arpa`,
+         * ICANN's private-use `.internal`, and the home-router conventions no registry will ever
+         * delegate (`.localdomain`, `.lan`, `.home`, `.intranet`). Matched as a whole label: a
+         * substring test would also match `notlocalhost.example.com`, which is registrable.
+         *
+         * Keyed on the last label's length so a public name costs one comparison at most.
+         */
+        private fun hasLocalSuffix(
+            url: String,
+            start: Int,
+            lastDot: Int,
+            end: Int,
+        ): Boolean {
+            val tld = lastDot + 1
+            return when (end - tld) {
+                3 -> regionEquals(url, "lan", tld, end)
+                4 -> regionEquals(url, "home", tld, end) || (regionEquals(url, "arpa", tld, end) && regionEndsWith(url, ".home.arpa", start, end))
+                5 -> regionEquals(url, "local", tld, end)
+                8 -> regionEquals(url, "internal", tld, end) || regionEquals(url, "intranet", tld, end)
+                9 -> regionEquals(url, "localhost", tld, end)
+                11 -> regionEquals(url, "localdomain", tld, end)
+                else -> false
+            }
         }
 
         /**
@@ -155,8 +164,10 @@ class RelayUrlNormalizer {
             val start = hostStart(url)
             val end = hostEnd(url, start)
             if (end <= start) return false
-            if (isLocalHost(url)) return false
 
+            // One parse, and stricter than [isLocalHost] on every branch, so nothing local is
+            // ever dialable: [PublicAddress] refuses every private, loopback, link-local and
+            // shared range (IPv4-mapped forms included) and everything outside global unicast.
             if (url[start] == '[') {
                 val bytes = ipv6HostOf(url, start, end) ?: return false
                 // The overlay is reachable from anywhere on the mesh; everything else must be
@@ -165,7 +176,9 @@ class RelayUrlNormalizer {
             }
 
             val hostEnd = hostEndWithoutPort(url, start, end)
+            if (hostEnd <= start) return false
             Ipv4.parseInetAton(url, start, hostEnd)?.let { return PublicAddress.isPublic(it) }
+            if (isLocalName(url, start, hostEnd)) return false
 
             // An empty label (`.tailed9020.ts.net`, `relay..example`) is a typo, not a host.
             if (url[start] == '.') return false
