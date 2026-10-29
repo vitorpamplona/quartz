@@ -34,7 +34,7 @@ dialed and none ever answered.
   The NIP-62 vanish `RelayTag.parse` changed at once: nothing dials those urls for someone else.
 - **Indexers**: `HintIndexer(accept)` and `reliableRelaySetFor(accept = …)` default to every relay,
   as the brief asked. The previous `reliableRelaySetFor` and GrapeRank `Config` signatures stay as
-  hidden overloads, so code compiled against 2.7.1 still links. GrapeRank only ever reads other
+  hidden overloads, so code compiled against 2.7.2 still links. GrapeRank only ever reads other
   people's lists, so its `acceptOthersRelay` defaults to `isDialableFromOthers`.
 
 ## 3.0.0
