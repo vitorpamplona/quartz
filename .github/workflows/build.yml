@@ -38,9 +38,13 @@ jobs:
 
       # Writes the Gradle cache on push to main, reads it on PRs and other branches.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The native metadata compiles and assemble's Apple and Linux klibs need the toolchain.
+      - name: Cache Kotlin/Native toolchain
+        uses: ./.github/actions/cache-konan
 
       # The metadata compiles resolve commonMain against only the deps every target shares,
       # which is the Apple classpath: a dependency that reaches the JVM transitively (okio via
@@ -53,6 +57,29 @@ jobs:
             :quartz:compileCommonMainKotlinMetadata \
             :quartz:compileAppleMainKotlinMetadata \
             :quartz:compileAndroidHostTest
+
+      - name: Build (gradle)
+        run: ./gradlew :quartz:assemble
+
+  # Its own job, beside build: lint, JVM tests and assemble one after the other took ~18 min.
+  test-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Test JVM (gradle)
         run: ./gradlew :quartz:jvmTest
@@ -74,9 +101,6 @@ jobs:
         with:
           name: Quartz JVM Test Reports
           path: quartz/build/reports/tests
-
-      - name: Build (gradle)
-        run: ./gradlew :quartz:assemble
 
   # Runs the whole suite on a Linux Native frontend, which also catches a commonMain or
   # commonTest source reaching for a JVM-only API on a target that, unlike Apple, has no
@@ -101,18 +125,12 @@ jobs:
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # The Kotlin/Native toolchain (compiler, LLVM, sysroot) lands in ~/.konan, which
-      # setup-gradle does not cache. Keyed on the version catalog so a Kotlin bump refreshes it.
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
+        uses: ./.github/actions/cache-konan
 
       - name: Test Linux Native
         run: ./gradlew :quartz:linuxX64Test
@@ -152,16 +170,12 @@ jobs:
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
+        uses: ./.github/actions/cache-konan
 
       # iosSimulatorArm64Test runs the suite on the simulator, exercising secp256k1 and the
       # CommonCrypto-backed primitives on a real Apple toolchain. iosArm64 has no simulator to
@@ -173,15 +187,20 @@ jobs:
             :quartz:iosSimulatorArm64Test \
             :quartz:compileTestKotlinIosArm64
 
-      # Swift Package Manager users get QuartzKit.xcframework (see Package.swift). Build its debug
-      # variant (the release one is an optimized link that takes many minutes here) and run a
-      # Swift program against it, so a framework Swift can't import or call fails the PR.
+      # Swift Package Manager users get QuartzKit.xcframework (see Package.swift). Link a debug
+      # framework (the release one is an optimized link that takes many minutes here) and run a
+      # Swift program against it, so a framework Swift can't import or call fails the PR. The
+      # program runs on this Mac, so it only needs the macOS slice: linking the two iOS debug
+      # frameworks as well took ~3.5 of this step's 7 minutes, and the release links all three.
       - name: Swift smoke test
         run: |
           ./gradlew \
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
-            :quartz:assembleQuartzKitDebugXCFramework
-          cp -R quartz/build/XCFrameworks/debug/QuartzKit.xcframework swift/QuartzKitSmoke/
+            :quartz:linkDebugFrameworkMacosArm64
+          framework="$GITHUB_WORKSPACE/quartz/build/bin/macosArm64/debugFramework/QuartzKit.framework"
+          args=(-framework "$framework")
+          [[ ! -d "$framework.dSYM" ]] || args+=(-debug-symbols "$framework.dSYM")
+          xcodebuild -create-xcframework "${args[@]}" -output swift/QuartzKitSmoke/QuartzKit.xcframework
           swift run --package-path swift/QuartzKitSmoke
 
       - name: iOS Test Report

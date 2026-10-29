@@ -98,7 +98,7 @@ it before stating it: write the failing case first, watch it fail, then explain.
 
 Before pushing, the pre-push hook runs `spotlessCheck`, `verifyKmpPurity`, the common and Apple
 metadata compiles, `compileAndroidHostTest` (it holds the Android README samples) and `jvmTest`,
-the same list as CI's build job.
+the same list as CI's `build` and `test-jvm` jobs.
 
 ## Dependency licensing
 
@@ -193,7 +193,9 @@ to pass on the same commit (it runs no tests of its own), commits `Package.swift
 `VERSION_NAME`) with `tools/release/prepare-release.sh` on that commit, tags it `v<version>`,
 opens the GitHub release with the zip, merges that commit into `main` (which may have moved
 meanwhile) and publishes to Maven Central, reusing the build job's build cache. If `Test/Build`
-failed or was cancelled on that commit, re-run it, then re-run the release's `tested` job.
+failed or was cancelled on that commit, re-run it, then re-run the release's `tested` job. Only one
+release waits behind a running one: a third version bump in that window cancels the waiting run,
+so that version is never released by its push; run it from the Actions tab if it should exist.
 GitHub Actions must be allowed to push to `main`. If only the `maven` job fails, re-run it: it
 publishes from the tag. It needs
 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and `SIGNING_PASSWORD`, the same
