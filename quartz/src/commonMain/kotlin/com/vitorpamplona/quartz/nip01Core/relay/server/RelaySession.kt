@@ -177,6 +177,18 @@ class RelaySession(
         }
     }
 
+    /** [sendRaw] for a live `EVENT` frame, in parts, to a [LiveFrameSink]. */
+    private fun sendLive(
+        framePrefix: String,
+        body: String,
+    ) {
+        try {
+            (sink as LiveFrameSink).liveEvent(framePrefix, body)
+        } catch (e: Exception) {
+            Log.w("ClientSession") { "Failed to send to ${e.message}" }
+        }
+    }
+
     override fun close() {
         cancelAllSubscriptions()
         onClose(this)
@@ -478,15 +490,23 @@ class RelaySession(
                             // matching subscription): splice it into the same
                             // per-sub frame prefix as the stored replay, no
                             // per-event EventMessage or re-serialize.
-                            onEachLive = { _, body ->
-                                sendRaw(
-                                    buildString(framePrefix.length + body.length + 1) {
-                                        append(framePrefix)
-                                        append(body)
-                                        append(']')
-                                    },
-                                )
-                            },
+                            // A LiveFrameSink takes the prefix and the shared
+                            // body apart, so it can encode the body once per
+                            // event across all its sockets.
+                            onEachLive =
+                                if (sink is LiveFrameSink) {
+                                    { _, body -> sendLive(framePrefix, body) }
+                                } else {
+                                    { _, body ->
+                                        sendRaw(
+                                            buildString(framePrefix.length + body.length + 1) {
+                                                append(framePrefix)
+                                                append(body)
+                                                append(']')
+                                            },
+                                        )
+                                    }
+                                },
                             onEose = { eose() },
                         )
                     }
