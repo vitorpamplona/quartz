@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip65RelayList
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isOnion
 import com.vitorpamplona.quartz.utils.mapOfSet
 
@@ -43,17 +42,18 @@ class RelayListRecommendationProcessor {
             }
 
         /**
-         * filter onion and local host from write relays
-         * for each user pubkey, a list of valid relays.
+         * For each user pubkey, the write relays we can and may dial: onion ones only with
+         * [hasOnionConnection], and only those [accept] lets through.
          */
         private fun filterValidRelays(
             userList: List<AdvertisedRelayListEvent>,
             hasOnionConnection: Boolean = false,
+            accept: (NormalizedRelayUrl) -> Boolean = { true },
         ): Map<HexKey, Set<NormalizedRelayUrl>> =
             mapOfSet {
                 userList.forEach { event ->
-                    event.writeRelaysNorm()?.forEach { relay ->
-                        if (!relay.isLocalHost() && (hasOnionConnection || !relay.isOnion())) {
+                    event.allWriteRelaysNorm()?.forEach { relay ->
+                        if (accept(relay) && (hasOnionConnection || !relay.isOnion())) {
                             add(event.pubKey, relay)
                         }
                     }
@@ -129,13 +129,22 @@ class RelayListRecommendationProcessor {
             return returningSet
         }
 
+        /**
+         * The fewest relays that reach every user in [userList] through their write relays.
+         *
+         * [accept] decides which of those relays may be dialed and defaults to every relay.
+         * The lists are other people's, so an app that dials the result should pass
+         * [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]: a
+         * stranger's `ws://100.100.10.10:4848` names their tailnet, not ours.
+         */
         fun reliableRelaySetFor(
             userList: List<AdvertisedRelayListEvent>,
             relayUrlsToIgnore: Set<NormalizedRelayUrl> = emptySet(),
             hasOnionConnection: Boolean = false,
+            accept: (NormalizedRelayUrl) -> Boolean = { true },
         ): Set<RelayRecommendation> =
             reliableRelaySetFor(
-                filterValidRelays(userList, hasOnionConnection),
+                filterValidRelays(userList, hasOnionConnection, accept),
                 relayUrlsToIgnore,
             )
     }

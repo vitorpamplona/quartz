@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isLocalHost
 import com.vitorpamplona.quartz.utils.ensure
 
@@ -80,23 +81,27 @@ class AdvertisedRelayInfo(
         /**
          * Read-marked relays, with local-network entries dropped.
          *
-         * The drop is for lists that came from SOMEONE ELSE: a NIP-65 list is
-         * attacker-supplied input, an entry naming `127.0.0.1` or an RFC 1918
-         * address would aim our connection at our own machine or LAN, and
-         * `isLocalHost` is also what exempts a relay from Tor. Use
-         * [parseReadNormUnfiltered] to read back a list this account published
-         * itself.
+         * Deprecated: whether a local relay may be dialed depends on whose list this is, which
+         * only the app knows. Kept filtering for one release so apps notice before they start
+         * reading local entries; it will return every relay afterwards.
          */
+        @Deprecated(
+            "Drops local relays, which is the app's call: it depends on whose list this is. Use parseReadNormUnfiltered and, " +
+                "for someone else's list, filter with isDialableFromOthers(). Returns every relay in the next release.",
+            ReplaceWith(
+                "parseReadNormUnfiltered(tag)?.takeIf { it.isDialableFromOthers() }",
+                "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+            ),
+        )
         fun parseReadNorm(tag: Array<String>): NormalizedRelayUrl? = parseReadNormUnfiltered(tag)?.takeUnless { it.isLocalHost() }
 
         /**
-         * Read-marked relays including local ones, for reading back OUR OWN
-         * list.
+         * Every read-marked relay, local ones included. Use it as is for the user's OWN list,
+         * and filter someone else's with [isDialableFromOthers] before dialing.
          *
-         * A user who configured a local relay meant it, and the filtered form
-         * reports their write set as empty — which every publisher then treats
-         * as "unconfigured" and answers with a default relay set the user never
-         * chose.
+         * A user who configured a local relay meant it, and a filtered form reports their set
+         * as empty — which every publisher then treats as "unconfigured" and answers with a
+         * default relay set the user never chose.
          */
         fun parseReadNormUnfiltered(tag: Array<String>): NormalizedRelayUrl? {
             ensure(tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()) { return null }
@@ -109,9 +114,17 @@ class AdvertisedRelayInfo(
         }
 
         /** Write-marked relays, local ones dropped. See [parseReadNorm]. */
+        @Deprecated(
+            "Drops local relays, which is the app's call: it depends on whose list this is. Use parseWriteNormUnfiltered and, " +
+                "for someone else's list, filter with isDialableFromOthers(). Returns every relay in the next release.",
+            ReplaceWith(
+                "parseWriteNormUnfiltered(tag)?.takeIf { it.isDialableFromOthers() }",
+                "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+            ),
+        )
         fun parseWriteNorm(tag: Array<String>): NormalizedRelayUrl? = parseWriteNormUnfiltered(tag)?.takeUnless { it.isLocalHost() }
 
-        /** Write-marked relays including local ones, for OUR OWN list. See [parseReadNormUnfiltered]. */
+        /** Every write-marked relay, local ones included. See [parseReadNormUnfiltered]. */
         fun parseWriteNormUnfiltered(tag: Array<String>): NormalizedRelayUrl? {
             ensure(tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()) { return null }
 

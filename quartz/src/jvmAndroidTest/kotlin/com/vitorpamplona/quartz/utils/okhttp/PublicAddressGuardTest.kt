@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.utils.okhttp
 
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers
 import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -149,5 +151,31 @@ class PublicAddressGuardTest {
         assertEquals(1, dns.lookup("public.example").size)
         assertFailsWith<NonPublicAddressException> { dns.lookup("mixed.example") }
         assertFailsWith<NonPublicAddressException> { dns.lookup("rebind.example") }
+    }
+
+    @Test
+    fun relayNamesThatResolveToPrivateAddressesAreRefusedAtResolveTime() {
+        // Seen in production relay lists. Both are public names, so the url classifier
+        // (isDialableFromOthers) lets them through; sslip.io and nip.io answer with the address
+        // spelled in the name, which this stub does without touching the network.
+        val wildcardDns =
+            Dns { host ->
+                when (host) {
+                    "192-168-0-12.sslip.io" -> listOf(InetAddress.getByName("192.168.0.12"))
+                    "10.0.2.2.nip.io" -> listOf(InetAddress.getByName("10.0.2.2"))
+                    else -> listOf(InetAddress.getByName("1.1.1.1"))
+                }
+            }
+        listOf("ws://192-168-0-12.sslip.io:7447/", "ws://10.0.2.2.nip.io:7447/").forEach { relay ->
+            assertEquals(true, RelayUrlNormalizer.normalizeOrNull(relay)?.isDialableFromOthers(), relay)
+            // A real call, refused at resolution: no socket is opened.
+            val call =
+                OkHttpClient
+                    .Builder()
+                    .publicAddressesOnly(direct = true, dns = wildcardDns)
+                    .build()
+                    .newCall(Request.Builder().url(relay).build())
+            assertFailsWith<NonPublicAddressException>(relay) { call.execute() }
+        }
     }
 }

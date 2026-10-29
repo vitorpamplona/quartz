@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.tags.references
 
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.utils.Rfc3986
 
 class HttpUrlFormatter {
@@ -40,9 +41,10 @@ class HttpUrlFormatter {
 
         fun addSchemeIfNeeded(url: String): String =
             if (!url.startsWith("https://") && !url.startsWith("http://")) {
-                // TODO: How to identify relays on the local network?
-                val isLocalHost = url.contains("127.0.0.1") || url.contains("localhost")
-                if (url.endsWith(".onion") || url.endsWith(".onion/") || isLocalHost) {
+                // Anchored to the host: a substring test also matched `localhost` or `127.0.0.1`
+                // in the path, and gave a public server a plain-text scheme.
+                val host = url.trim()
+                if (RelayUrlNormalizer.isOnion(host) || RelayUrlNormalizer.isLocalHost(host)) {
                     "http://${url.trim()}"
                 } else {
                     "https://${url.trim()}"

@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropyStoreSync
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip56Reports.ReportEvent
@@ -105,6 +106,13 @@ class GrapeRankUpdater(
          * out; this never drops a *live* author-advertised relay. See RelayReachabilityStore.
          */
         val knownDead: Set<NormalizedRelayUrl> = emptySet(),
+        /**
+         * Which relays found in OTHER people's data the reconcile may dial: their kind:10002
+         * write relays. Defaults to [isDialableFromOthers], because a stranger's
+         * `ws://127.0.0.1` or `ws://192.168.1.5` names their machine, not a relay we should
+         * connect to. Relays this operator configured are never filtered.
+         */
+        val acceptOthersRelay: (NormalizedRelayUrl) -> Boolean = { it.isDialableFromOthers() },
     ) {
         /** Project the shared engine knobs onto a [NegentropyStoreSync.Config]. */
         internal fun toEngineConfig() =
@@ -240,7 +248,7 @@ class GrapeRankUpdater(
     private fun groupByWriteRelay(latest: Map<HexKey, AdvertisedRelayListEvent>): Map<NormalizedRelayUrl, Set<HexKey>> {
         val relayToAuthors = HashMap<NormalizedRelayUrl, MutableSet<HexKey>>()
         for ((author, list) in latest) {
-            val writes = list.writeRelaysNorm() ?: continue
+            val writes = list.allWriteRelaysNorm()?.filter(config.acceptOthersRelay) ?: continue
             for (relay in writes) relayToAuthors.getOrPut(relay) { HashSet() }.add(author)
         }
         return relayToAuthors

@@ -43,7 +43,19 @@ fun TagArray.encoding() = firstNotNullOfOrNull(EncodingTag::parse)
 
 fun TagArray.keyPackageRef() = firstNotNullOfOrNull(KeyPackageRefTag::parse)
 
+@Deprecated(
+    "Drops local relays, which is the app's call. Use allKeyPackageRelays() and filter someone else's relays with " +
+        "isDialableFromOthers(). Returns every relay in the next release.",
+    ReplaceWith(
+        "allKeyPackageRelays()?.filter { it.isDialableFromOthers() }?.ifEmpty { null }",
+        "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+    ),
+)
+@Suppress("DEPRECATION")
 fun TagArray.keyPackageRelays() = firstNotNullOfOrNull(RelaysTag::parse)
+
+/** Every relay of the `relays` tag, local ones included. */
+fun TagArray.allKeyPackageRelays() = firstNotNullOfOrNull(RelaysTag::parseUnfiltered)
 
 fun TagArray.clientName() = firstNotNullOfOrNull(ClientTag::parse)
 

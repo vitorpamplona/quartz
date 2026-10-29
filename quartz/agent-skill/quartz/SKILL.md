@@ -90,6 +90,15 @@ backpressure is not the relay's silence); wrap a call in `withTimeoutOrNull` for
 Build them through the normalizer, not the constructor: it repairs the url and interns it, so
 every spelling of a relay is one shared instance.
 
+Relay-list parsers (`allWriteRelaysNorm()`, `allReadRelaysNorm()`, `DmRelayListEvent.allRelays()`,
+`WelcomeEvent.allRelays()`) return every relay, `localhost` and LAN ones included, because
+whether one may be dialed depends on whose data it is. A local relay in the user's OWN list is
+theirs to use. One in SOMEONE ELSE's list, hint or Welcome names their machine, so filter with
+`relay.isDialableFromOthers()` before dialing it, and pass the same predicate to `HintIndexer`
+and `RelayListRecommendationProcessor.reliableRelaySetFor(accept = …)`. It reads the url only:
+wire `publicAddressesOnly()` into the OkHttp client that dials others' relays to refuse names
+that resolve to private addresses.
+
 ## Keys, events and publishing
 
 ```kotlin

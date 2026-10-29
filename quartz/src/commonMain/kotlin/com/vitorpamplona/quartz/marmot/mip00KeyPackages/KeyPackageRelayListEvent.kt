@@ -58,32 +58,35 @@ class KeyPackageRelayListEvent(
     DiffableEvent<RelayListDiff> {
     override fun diffFrom(older: Event): RelayListDiff? {
         if (older !is KeyPackageRelayListEvent || older.pubKey != pubKey) return null
-        return RelayListDiff(ListDiff.of(older.relays(), relays(), { it }), ContentChange.NONE)
+        return RelayListDiff(ListDiff.of(older.allRelays(), allRelays(), { it }), ContentChange.NONE)
     }
 
     /**
      * Relays from this list, with local-network entries dropped.
      *
-     * The drop is for lists that came from SOMEONE ELSE. A relay list is
-     * attacker-supplied input, and an entry pointing at `127.0.0.1` or a
-     * RFC 1918 address would aim our connection at our own machine or LAN. It
-     * is also what exempts a relay from Tor, so an unfiltered entry could
-     * quietly strip a relay's own onion routing.
-     *
-     * Use [allRelays] to read back a list this account published itself; our
-     * own configuration is not attacker-supplied, and silently dropping it
-     * makes a deliberately configured local relay look unconfigured.
+     * Deprecated: whether a local relay may be dialed depends on whose list this is, which
+     * only the app knows. Kept filtering for one release so apps notice before they start
+     * reading local entries; it will return every relay afterwards.
      */
+    @Deprecated(
+        "Drops local relays, which is the app's call: it depends on whose list this is. Use allRelays() for your own " +
+            "list, and filter someone else's with isDialableFromOthers(). Returns every relay in the next release.",
+        ReplaceWith(
+            "allRelays().filter { it.isDialableFromOthers() }",
+            "com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers",
+        ),
+    )
+    @Suppress("DEPRECATION")
     fun relays(): List<NormalizedRelayUrl> = tags.mapNotNull(KeyPackageRelayTag::parse)
 
     /**
      * Every relay in this list, including local ones.
      *
-     * For reading back OUR OWN published list. A user who configured a local
-     * relay meant it, and [relays] would report their list as empty — which a
-     * publisher then treats as "unconfigured" and answers with a default set
-     * the user never chose. Sending a KeyPackage somewhere the user did not
-     * pick is a worse outcome than the one the filter guards against.
+     * As is for the user's OWN published list. A user who configured a local relay meant it,
+     * and a filtered form would report their list as empty — which a publisher then treats as
+     * "unconfigured" and answers with a default set the user never chose. For someone else's
+     * list, filter with [com.vitorpamplona.quartz.nip01Core.relay.normalizer.isDialableFromOthers]
+     * before dialing: their local relay names their machine, not ours.
      */
     fun allRelays(): List<NormalizedRelayUrl> = tags.mapNotNull(KeyPackageRelayTag::parseUnfiltered)
 
