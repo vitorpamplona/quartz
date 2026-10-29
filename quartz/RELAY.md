@@ -48,6 +48,19 @@ fun main() {
 
 That's it. You now have a NIP-01 compliant relay running on `ws://localhost:7777`.
 
+### Sinks
+
+`serve(send = …)` wraps the callback in a `SessionSink`. Pass your own `SessionSink` to
+`connect`/`serve` instead when the transport wants typed frames: `message(Message)` for frames the
+engine built as a `Message`, `raw(json)` for `EVENT` frames it spliced as text.
+
+A transport that fans one event out to many sockets can also implement `LiveFrameSink`. Live
+`EVENT` frames then arrive through `liveEvent(framePrefix, body)` instead of `raw`, with the frame
+being `framePrefix + body + "]"`. On `NostrServer`, `body` is serialized once per event and is the
+same `String` instance for every subscription it reaches, so the transport can encode it to bytes
+once and reuse them. Stored replays, and every frame under a policy that filters outgoing events,
+still use `raw`/`message`.
+
 ## Event Store
 
 ### SQLite (Persistent)
@@ -462,6 +475,8 @@ quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/
 │   ├── NostrServer.kt          # Storage-backed engine (IEventStore)
 │   ├── EventSourceServer.kt    # Non-storage engine (search/redirector/computed)
 │   ├── RelaySession.kt         # Per-connection handler (stable .id)
+│   ├── SessionSink.kt          # Where a session's frames go (typed or raw)
+│   ├── LiveFrameSink.kt        # Optional: live EVENT frames as prefix + shared body
 │   ├── ConnectionRegistry.kt   # Live-connection bookkeeping + gauge
 │   ├── RelayServerListener.kt  # Connection open/close observability hook
 │   ├── NegSessionRegistry.kt   # NIP-77 negentropy per-connection state
