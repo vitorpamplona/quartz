@@ -6,11 +6,12 @@ name: Release
 #
 # Don't push the tag by hand. Swift Package Manager reads Package.swift at the release tag, so
 # that file must already name the release's QuartzKit.xcframework.zip and its checksum when the
-# tag is cut. The workflow therefore builds the framework first, then commits Package.swift (and
-# VERSION_NAME, for a run from the Actions tab), tags that commit v<version>, pushes both,
-# creates the GitHub release with the zip, and publishes to Maven Central.
+# tag is cut. The workflow therefore builds the framework first and waits for Test/Build
+# (build.yml) to pass on the same commit, then commits Package.swift (and VERSION_NAME, for a run
+# from the Actions tab), tags that commit v<version>, pushes both, creates the GitHub release
+# with the zip, and publishes to Maven Central.
 #
-# The tag sits on the release commit, a child of the commit the jobs tested, so a PR merged
+# The tag sits on the release commit, a child of the commit Test/Build tested, so a PR merged
 # while the release builds can't end up in it; that commit is then merged into wherever main
 # has moved. Pushing to main needs GitHub Actions allowed to push there (a bypass in the branch
 # ruleset when main is protected). That push does not start this workflow again: pushes made
@@ -86,11 +87,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release=true" >> "$GITHUB_OUTPUT"
 
-  check:
+  # Compiles every target for the maven job, which builds the same sources (the release commit
+  # only changes Package.swift and VERSION_NAME): it restores this cache instead of compiling
+  # them all again after the tag. The tests and linters are Test/Build's; see the tested job.
+  build:
     needs: check-version
     if: needs.check-version.outputs.release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       # The version the maven job publishes with, so its compiles match these and come from the
       # build cache this job hands over.
@@ -115,113 +119,18 @@ jobs:
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
 
-      - name: Linter (gradle)
-        run: |
-          ./gradlew spotlessCheck \
-            :quartz:verifyKmpPurity \
-            :quartz:compileCommonMainKotlinMetadata \
-            :quartz:compileAppleMainKotlinMetadata \
-            :quartz:compileAndroidHostTest
-
       - name: Build (gradle)
         run: ./gradlew :quartz:assemble
 
-      # The maven job compiles the same sources (the release commit only changes Package.swift
-      # and VERSION_NAME): it restores this cache instead of compiling every target again.
       - name: Save the build cache for the maven job
         uses: actions/cache/save@v6
         with:
           path: ~/.gradle/caches/build-cache-1
           key: release-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
 
-  # The two test suites run in jobs of their own, beside `check`: one after the other in a
-  # single job they took ~19 minutes.
-  test-jvm:
-    needs: check-version
-    if: needs.check-version.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6.1.0
-        with:
-          distribution: 'temurin'
-          java-version: 21
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Test JVM
-        run: ./gradlew :quartz:jvmTest
-
-  # The linuxX64 test binary is linked optimized (for the secp256k1 benchmark in linuxTest): that
-  # link alone took ~8 minutes in the combined job.
-  test-linux-native:
-    needs: check-version
-    if: needs.check-version.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6.1.0
-        with:
-          distribution: 'temurin'
-          java-version: 21
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
-
-      - name: Test Linux Native
-        run: ./gradlew :quartz:linuxX64Test
-
-  test-apple:
-    needs: check-version
-    if: needs.check-version.outputs.release == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6.1.0
-        with:
-          distribution: 'temurin'
-          java-version: 21
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
-
-      - name: Test iOS
-        run: |
-          ./gradlew \
-            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
-            :quartz:iosSimulatorArm64Test \
-            :quartz:compileTestKotlinIosArm64
-
   # The release XCFramework is three optimized Kotlin/Native links of 6 to 16 minutes each on
   # the 3-core macOS runner, the slowest step of a release. One Gradle build runs them one after
-  # the other (20 to 46 minutes), so each target links in its own job, alongside the tests, and
+  # the other (20 to 46 minutes), so each target links in its own job, in parallel, and
   # the xcframework job puts the three together.
   framework:
     needs: check-version
@@ -329,8 +238,45 @@ jobs:
             QuartzKit.xcframework.zip.sha256
           if-no-files-found: error
 
+  # The tests and linters are Test/Build's (build.yml): the push to main that starts a release
+  # starts it on the same commit, and a run from the Actions tab releases a commit it already
+  # ran on. Instead of running them all a second time, the release tags only once that run has
+  # passed. Its slowest job, test-apple (17 to 21 minutes), takes about as long as the
+  # framework links, so this job starts after them and waits a few minutes at most.
+  tested:
+    needs: xcframework
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+
+    steps:
+      - name: Wait for Test/Build to pass on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while true; do
+            run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?branch=main&head_sha=$GITHUB_SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | [.status, (.conclusion // "none"), .html_url] | @tsv')"
+            if [[ -z "$run" ]]; then
+              echo "::error::Test/Build has no run on $GITHUB_SHA (pushes made by GitHub Actions start none). While main is still at that commit, run Test/Build on main from the Actions tab, then re-run this job."
+              exit 1
+            fi
+            IFS=$'\t' read -r status conclusion url <<< "$run"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "Test/Build passed on $GITHUB_SHA: $url"
+                exit 0
+              fi
+              echo "::error::Test/Build ended '$conclusion' on $GITHUB_SHA: $url. Fix or re-run it, then re-run this job."
+              exit 1
+            fi
+            echo "Test/Build is $status: $url"
+            sleep 60
+          done
+
   tag:
-    needs: [check-version, check, test-jvm, test-linux-native, test-apple, xcframework]
+    needs: [check-version, build, xcframework, tested]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -423,7 +369,7 @@ jobs:
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: konan-${{ runner.os }}-
 
-      - name: Restore the check job's build cache
+      - name: Restore the build job's build cache
         uses: actions/cache/restore@v6
         with:
           path: ~/.gradle/caches/build-cache-1

@@ -5,12 +5,17 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # For a commit on main that has no run: pushes made by GitHub Actions (the release workflow's
+  # merge of a release commit) start none, and the release workflow tags only a tested commit.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push cancels the older run on a PR branch, but every commit on main keeps its own run:
+# the release workflow waits for the one on the commit it releases.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,8 +83,10 @@ jobs:
   # Foundation to fall back on. Before this job existed in Amethyst nothing ran linuxX64:
   # a copy-on-write LargeCache with O(n) writes and a non-atomic read-copy-write sat
   # unnoticed, and TestResourceLoader stayed a TODO() that failed every vector suite there.
+  #
+  # This job and test-apple start beside build, not after it: waiting on build (~18 min) made
+  # the run take ~35 min, and a release waits for this workflow on the commit it releases.
   test-linux-native:
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -131,7 +138,6 @@ jobs:
   # 4 GB (gradle.properties asks for 6) and the test binaries link unoptimized (see
   # quartz/build.gradle.kts): an optimized iOS test link alone took 12 minutes here.
   test-apple:
-    needs: build
     runs-on: macos-latest
     timeout-minutes: 60
 
