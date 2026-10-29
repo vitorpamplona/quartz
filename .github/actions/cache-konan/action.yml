@@ -1,0 +1,27 @@
+name: Cache the Kotlin/Native toolchain
+description: >-
+  Restores and saves ~/.konan (the Kotlin/Native compiler, LLVM, sysroots), which setup-gradle
+  does not cache. Run it after checkout and before the first Gradle build.
+
+# Keyed on the Kotlin version alone: the toolchain changes only with it, while a key on the
+# whole version catalog changed with every dependency bump and saved another ~800 MB copy of
+# the same toolchain each time. No restore-keys either, so a Kotlin bump downloads the new
+# toolchain once instead of restoring the old one and saving both.
+runs:
+  using: composite
+  steps:
+    - name: Read the Kotlin version
+      id: kotlin
+      shell: bash
+      run: |
+        version="$(sed -n 's/^kotlin = "\(.*\)"$/\1/p' gradle/libs.versions.toml)"
+        if [[ -z "$version" ]]; then
+          echo "::error::No 'kotlin = \"…\"' line in gradle/libs.versions.toml"
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v6
+      with:
+        path: ~/.konan
+        key: konan-${{ runner.os }}-${{ runner.arch }}-${{ steps.kotlin.outputs.version }}

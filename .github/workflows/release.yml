@@ -6,11 +6,12 @@ name: Release
 #
 # Don't push the tag by hand. Swift Package Manager reads Package.swift at the release tag, so
 # that file must already name the release's QuartzKit.xcframework.zip and its checksum when the
-# tag is cut. The workflow therefore builds the framework first, then commits Package.swift (and
-# VERSION_NAME, for a run from the Actions tab), tags that commit v<version>, pushes both,
-# creates the GitHub release with the zip, and publishes to Maven Central.
+# tag is cut. The workflow therefore builds the framework first and waits for Test/Build
+# (build.yml) to pass on the same commit, then commits Package.swift (and VERSION_NAME, for a run
+# from the Actions tab), tags that commit v<version>, pushes both, creates the GitHub release
+# with the zip, and publishes to Maven Central.
 #
-# The tag sits on the release commit, a child of the commit the jobs tested, so a PR merged
+# The tag sits on the release commit, a child of the commit Test/Build tested, so a PR merged
 # while the release builds can't end up in it; that commit is then merged into wherever main
 # has moved. Pushing to main needs GitHub Actions allowed to push there (a bypass in the branch
 # ruleset when main is protected). That push does not start this workflow again: pushes made
@@ -27,6 +28,9 @@ on:
         required: true
         type: string
 
+# One release at a time. GitHub keeps only one run waiting behind the running one: a newer run
+# cancels the waiting one, so a version bumped while another release waits is never released
+# by its push. Its run shows as cancelled; release it from the Actions tab if it should exist.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -86,11 +90,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "release=true" >> "$GITHUB_OUTPUT"
 
-  check:
+  # Compiles every target for the maven job, which builds the same sources (the release commit
+  # only changes Package.swift and VERSION_NAME): it restores this cache instead of compiling
+  # them all again after the tag. The tests and linters are Test/Build's; see the tested job.
+  build:
     needs: check-version
     if: needs.check-version.outputs.release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       # The version the maven job publishes with, so its compiles match these and come from the
       # build cache this job hands over.
@@ -106,76 +113,38 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
-
-      - name: Linter (gradle)
-        run: |
-          ./gradlew spotlessCheck \
-            :quartz:verifyKmpPurity \
-            :quartz:compileCommonMainKotlinMetadata \
-            :quartz:compileAppleMainKotlinMetadata \
-            :quartz:compileAndroidHostTest
-
-      - name: Check
-        run: ./gradlew :quartz:jvmTest :quartz:linuxX64Test
+        uses: ./.github/actions/cache-konan
 
       - name: Build (gradle)
         run: ./gradlew :quartz:assemble
 
-      # The maven job compiles the same sources (the release commit only changes Package.swift
-      # and VERSION_NAME): it restores this cache instead of compiling every target again.
       - name: Save the build cache for the maven job
         uses: actions/cache/save@v6
         with:
           path: ~/.gradle/caches/build-cache-1
           key: release-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
 
-  test-apple:
+  # The release XCFramework is three optimized Kotlin/Native links of 6 to 16 minutes each on
+  # the 3-core macOS runner, the slowest step of a release. One Gradle build runs them one after
+  # the other (20 to 46 minutes), so each target links in its own job, in parallel, and
+  # the xcframework job puts the three together.
+  framework:
     needs: check-version
     if: needs.check-version.outputs.release == 'true'
     runs-on: macos-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6.1.0
-        with:
-          distribution: 'temurin'
-          java-version: 21
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
-
-      - name: Test iOS
-        run: |
-          ./gradlew \
-            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
-            :quartz:iosSimulatorArm64Test \
-            :quartz:compileTestKotlinIosArm64
-
-  # The release XCFramework is three optimized Kotlin/Native links, the slowest step of a
-  # release on the 3-core macOS runner; it runs alongside the tests.
-  xcframework:
-    needs: check-version
-    if: needs.check-version.outputs.release == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - target: iosArm64
+            task: linkReleaseFrameworkIosArm64
+          - target: iosSimulatorArm64
+            task: linkReleaseFrameworkIosSimulatorArm64
+          - target: macosArm64
+            task: linkReleaseFrameworkMacosArm64
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
 
@@ -189,21 +158,59 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
+        uses: ./.github/actions/cache-konan
 
-      - name: Build QuartzKit.xcframework
+      - name: Link the ${{ matrix.target }} framework
         run: |
           ./gradlew \
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
             -PVERSION_NAME="$VERSION" \
-            :quartz:assembleQuartzKitReleaseXCFramework
+            :quartz:${{ matrix.task }}
+
+      # Tarred because upload-artifact drops symlinks and file modes, and the macOS framework
+      # is a versioned bundle made of symlinks.
+      - name: Pack the framework and its dSYM
+        run: tar -C quartz/build/bin -cf "QuartzKit-${{ matrix.target }}.tar" "${{ matrix.target }}/releaseFramework"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: QuartzKit-${{ matrix.target }}
+          path: QuartzKit-${{ matrix.target }}.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  xcframework:
+    needs: framework
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: QuartzKit-*
+          merge-multiple: true
+
+      # What the Kotlin plugin's assembleQuartzKitReleaseXCFramework runs on the frameworks it
+      # links: one -framework per target, with its dSYM when there is one, at absolute paths.
+      - name: Build QuartzKit.xcframework
+        run: |
+          bin="$GITHUB_WORKSPACE/quartz/build/bin"
+          output="$GITHUB_WORKSPACE/quartz/build/XCFrameworks/release/QuartzKit.xcframework"
+          mkdir -p "$bin" "$(dirname "$output")"
+          args=()
+          for target in iosArm64 iosSimulatorArm64 macosArm64; do
+            tar -C "$bin" -xf "QuartzKit-$target.tar"
+            framework="$bin/$target/releaseFramework/QuartzKit.framework"
+            args+=(-framework "$framework")
+            [[ ! -d "$framework.dSYM" ]] || args+=(-debug-symbols "$framework.dSYM")
+          done
+          xcodebuild -create-xcframework "${args[@]}" -output "$output"
 
       - name: Smoke test it from Swift
         run: |
@@ -226,8 +233,55 @@ jobs:
             QuartzKit.xcframework.zip.sha256
           if-no-files-found: error
 
+  # The tests and linters are Test/Build's (build.yml): the push to main that starts a release
+  # starts it on the same commit, and a run from the Actions tab releases a commit it already
+  # ran on. Instead of running them all a second time, the release tags only once that run has
+  # passed. Its slowest job, test-apple (17 to 21 minutes), takes about as long as the
+  # framework links, so this job starts after them and waits a few minutes at most.
+  tested:
+    needs: xcframework
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+
+    steps:
+      - name: Wait for Test/Build to pass on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          errors=0
+          while true; do
+            if ! run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?branch=main&head_sha=$GITHUB_SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | [.status, (.conclusion // "none"), .html_url] | @tsv')"; then
+              errors=$((errors + 1))
+              if (( errors >= 5 )); then
+                echo "::error::The GitHub API failed 5 times in a row; re-run this job."
+                exit 1
+              fi
+              sleep 30
+              continue
+            fi
+            errors=0
+            if [[ -z "$run" ]]; then
+              echo "::error::Test/Build has no run on $GITHUB_SHA (pushes made by GitHub Actions start none). While main is still at that commit, run Test/Build on main from the Actions tab, then re-run this job."
+              exit 1
+            fi
+            IFS=$'\t' read -r status conclusion url <<< "$run"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "Test/Build passed on $GITHUB_SHA: $url"
+                exit 0
+              fi
+              echo "::error::Test/Build ended '$conclusion' on $GITHUB_SHA: $url. Fix or re-run it, then re-run this job."
+              exit 1
+            fi
+            echo "Test/Build is $status: $url"
+            sleep 60
+          done
+
   tag:
-    needs: [check-version, check, test-apple, xcframework]
+    needs: [check-version, build, xcframework, tested]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -245,10 +299,21 @@ jobs:
           name: QuartzKit.xcframework
 
       # On the commit these jobs tested, not on main: main may have moved since, and the tag
-      # must hold exactly what was tested.
+      # must hold exactly what was tested. A re-run of this job after the tag was pushed (the
+      # GitHub release failed, say) keeps that tag, as long as it names this run's zip: a new
+      # release commit would have another SHA, and the tag can't be pushed twice.
       - name: Commit and tag the release
         run: |
-          tools/release/prepare-release.sh "$VERSION" "$(cat QuartzKit.xcframework.zip.sha256)"
+          checksum="$(cat QuartzKit.xcframework.zip.sha256)"
+          if git rev-parse --quiet --verify "refs/tags/v$VERSION" > /dev/null; then
+            if ! git show "v$VERSION:Package.swift" | grep -qF "checksum: \"$checksum\""; then
+              echo "::error::v$VERSION is already tagged, with another QuartzKit.xcframework.zip checksum than this run built"
+              exit 1
+            fi
+            echo "::notice::v$VERSION is already tagged with this run's zip: releasing that tag"
+            exit 0
+          fi
+          tools/release/prepare-release.sh "$VERSION" "$checksum"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(release): v$VERSION" -- gradle.properties Package.swift
@@ -256,7 +321,7 @@ jobs:
           git push origin "v$VERSION"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: v${{ env.VERSION }}
@@ -269,16 +334,29 @@ jobs:
       # A fast-forward when main hasn't moved, else a merge (the release commit only touches
       # Package.swift and VERSION_NAME), retried if main moves again in between. The release is
       # already out by now, so a failure here is a warning, not a reason to skip Maven Central.
+      #
+      # When the previous release reached main after this one started, main's Package.swift
+      # already holds that release's url and checksum, on the lines this release rewrites. That
+      # conflict resolves to this release's lines: releases run one at a time, so it is the
+      # newest. Any other conflict is left for a person.
       - name: Bring the release commit into main
         continue-on-error: true
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           release="v$VERSION^{commit}"
+          message="chore(release): merge v$VERSION into main"
           for attempt in 1 2 3 4 5; do
             git fetch --quiet origin main
             git checkout --quiet --detach origin/main
             if git merge-base --is-ancestor HEAD "$release"; then
               target="$(git rev-parse "$release")"
-            elif git merge --no-ff --quiet -m "chore(release): merge v$VERSION into main" "$release"; then
+            elif git merge --no-ff --quiet -m "$message" "$release"; then
+              target="$(git rev-parse HEAD)"
+            elif [[ "$(git diff --name-only --diff-filter=U)" == "Package.swift" ]]; then
+              git checkout --theirs -- Package.swift
+              git add Package.swift
+              git commit --quiet -m "$message"
               target="$(git rev-parse HEAD)"
             else
               git merge --abort || true
@@ -311,16 +389,12 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v6
-        with:
-          path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: konan-${{ runner.os }}-
+        uses: ./.github/actions/cache-konan
 
-      - name: Restore the check job's build cache
+      - name: Restore the build job's build cache
         uses: actions/cache/restore@v6
         with:
           path: ~/.gradle/caches/build-cache-1
