@@ -23,11 +23,10 @@ package com.vitorpamplona.quartz.nipB7Blossom
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.expiration
-import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomHashTag
-import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
-import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomVerbTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.io.encoding.Base64
 
@@ -50,6 +49,9 @@ class BlossomAuthorizationEvent(
     fun servers() = tags.blossomServers()
 
     fun expiration() = tags.expiration()
+
+    /** The blob size (bytes) an upload or media token is limited to. */
+    fun size() = tags.blossomSize()
 
     /**
      * This event's JSON as standard Base64 WITH padding — the same encoder as
@@ -139,6 +141,31 @@ class BlossomAuthorizationEvent(
             createdAt: Long = TimeUtils.now(),
         ) = createAuth("media", hash, size, alt, signer, servers, createdAt)
 
+        /**
+         * An unsigned token allowing [verb] on [hash] (any blob the verb reaches when null), on the
+         * [servers] given as base URLs, until [expiration]. [alt] is the human-readable `content`.
+         */
+        fun build(
+            verb: String,
+            alt: String,
+            hash: HexKey? = null,
+            size: Long? = null,
+            servers: List<String> = emptyList(),
+            expiration: Long = TimeUtils.oneHourAhead(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BlossomAuthorizationEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, alt, createdAt) {
+            verb(verb)
+            expiration(expiration)
+            size?.let { blobSize(it) }
+            hash?.let { blobHash(it) }
+            // BUD-11 `server` tags scope the token to specific domains so an upload
+            // or delete token can't be replayed against another server. The value
+            // MUST be the lowercase bare domain (no scheme/port/path).
+            serverDomains(servers.map { BlossomServerUrl.domain(it) }.filter { it.isNotBlank() }.distinct())
+            initializer()
+        }
+
         private suspend fun createAuth(
             type: String,
             hash: HexKey?,
@@ -148,26 +175,6 @@ class BlossomAuthorizationEvent(
             servers: List<String> = emptyList(),
             createdAt: Long = TimeUtils.now(),
             expiration: Long = TimeUtils.oneHourAhead(),
-        ): BlossomAuthorizationEvent {
-            // BUD-11 `server` tags scope the token to specific domains so an upload
-            // or delete token can't be replayed against another server. The value
-            // MUST be the lowercase bare domain (no scheme/port/path).
-            val serverTags =
-                servers
-                    .map { BlossomServerUrl.domain(it) }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .map { BlossomServerTag.assemble(it) }
-
-            val tags =
-                listOfNotNull(
-                    BlossomVerbTag.assemble(type),
-                    arrayOf("expiration", expiration.toString()),
-                    fileSize?.let { arrayOf("size", it.toString()) },
-                    hash?.let { BlossomHashTag.assemble(it) },
-                ) + serverTags
-
-            return signer.sign(createdAt, KIND, tags.toTypedArray(), alt)
-        }
+        ): BlossomAuthorizationEvent = signer.sign(build(type, alt, hash, fileSize, servers, expiration, createdAt))
     }
 }

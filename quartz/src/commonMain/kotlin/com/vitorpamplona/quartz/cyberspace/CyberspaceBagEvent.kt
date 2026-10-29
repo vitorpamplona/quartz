@@ -22,11 +22,17 @@ package com.vitorpamplona.quartz.cyberspace
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.crypto.aes.AESGCM
+import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.KotlinSerializationMapper
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
+import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.serialization.json.JsonArray
 import kotlin.io.encoding.Base64
 
@@ -186,6 +192,57 @@ class CyberspaceBagEvent(
         const val KEY_BYTES = 32
         const val NONCE_BYTES = 12
         const val TAG_BYTES = 16
+
+        /**
+         * The unsigned bag: [plaintext] sealed under [region]'s key with a fresh nonce (§7.6),
+         * addressed by its `lookup_id` and height. [hint], when given, adds the `hint` tag and
+         * the sector tags §10 requires with it. §7.7 reads a hint below the bag's height as
+         * absent, so [hint] must be at least [region]'s height on every axis.
+         */
+        fun build(
+            region: RegionKeyMaterial,
+            plaintext: ByteArray,
+            hint: CyberspaceHint? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<CyberspaceBagEvent>.() -> Unit = {},
+        ): EventTemplate<CyberspaceBagEvent> {
+            require(hint == null || minOf(hint.heightX, hint.heightY, hint.heightZ) >= region.height) {
+                "A hint must be at least the bag's height (${region.height}) on every axis"
+            }
+            return eventTemplate(KIND, "", createdAt) {
+                dTag(region.lookupId)
+                height(region.height)
+                bagVersion(VERSION)
+                bagCiphertext(ALGORITHM, Base64.encode(seal(region.decryptionKey, plaintext)))
+                hint?.let { sweepHint(it) }
+                initializer()
+            }
+        }
+
+        /**
+         * A bag of [items], the shape §7.6 has readers try first: a JSON array of events. An empty
+         * array would open as opaque bytes, not as a bag of no items, so [items] must not be empty.
+         */
+        fun build(
+            region: RegionKeyMaterial,
+            items: List<Event>,
+            hint: CyberspaceHint? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<CyberspaceBagEvent>.() -> Unit = {},
+        ): EventTemplate<CyberspaceBagEvent> {
+            require(items.isNotEmpty()) { "A bag of items needs at least one item" }
+            return build(region, items.joinToString(",", "[", "]") { it.toJson() }.encodeToByteArray(), hint, createdAt, initializer)
+        }
+
+        /** `nonce || ciphertext || tag` under [key], the payload [open] reads. */
+        private fun seal(
+            key: ByteArray,
+            plaintext: ByteArray,
+        ): ByteArray {
+            require(key.size == KEY_BYTES) { "A region key is $KEY_BYTES bytes, was ${key.size}" }
+            val nonce = RandomInstance.bytes(NONCE_BYTES)
+            return nonce + AESGCM(key, nonce).encrypt(plaintext)
+        }
 
         /**
          * §7.6's two plaintext shapes, in the order it requires: "Readers MUST

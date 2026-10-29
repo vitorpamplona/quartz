@@ -25,9 +25,12 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
 
@@ -94,15 +97,24 @@ class ConcordCommunityListFragmentEvent(
             return d.toInt()
         }
 
+        /** The unsigned fragment [index]: [plaintext] encrypted to [signer]'s own key, `d` = the index. */
+        suspend fun build(
+            index: Int,
+            plaintext: String,
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ConcordCommunityListFragmentEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, signer.nip44Encrypt(plaintext, signer.pubKey), createdAt) {
+            dTag(index.toString())
+            initializer()
+        }
+
         /** Encrypts [plaintext] to self and signs it as fragment [index]. */
         suspend fun create(
             signer: NostrSigner,
             index: Int,
             plaintext: String,
             createdAt: Long = TimeUtils.now(),
-        ): ConcordCommunityListFragmentEvent {
-            val content = signer.nip44Encrypt(plaintext, signer.pubKey)
-            return signer.sign(createdAt, KIND, arrayOf(arrayOf("d", index.toString())), content)
-        }
+        ): ConcordCommunityListFragmentEvent = signer.sign(build(index, plaintext, signer, createdAt))
     }
 }

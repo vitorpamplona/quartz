@@ -23,16 +23,21 @@ package com.vitorpamplona.quartz.experimental.agora
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.firstTagValueAsLong
-import com.vitorpamplona.quartz.nip01Core.core.mapValueTagged
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.metadata.tags.BannerTag
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip01Core.tags.publishedAt.PublishedAtProvider
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
+import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Agora fundraiser / crowdfunding campaign (kind 33863).
@@ -82,16 +87,16 @@ class FundraiserEvent(
     fun coverImage() = banner() ?: image()
 
     /** Fundraising target in sats, from the `goal` tag. */
-    fun goal() = tags.firstTagValueAsLong("goal")
+    fun goal() = tags.goal()
 
     /** Deadline (unix seconds) from the `deadline` tag. */
-    fun deadline() = tags.firstTagValueAsLong("deadline")
+    fun deadline() = tags.deadline()
 
     /**
      * On-chain donation addresses from the `w` tags (Bitcoin / silent payment;
      * may be empty). Display/copy only — Amethyst does not send on-chain.
      */
-    fun wallets() = tags.mapValueTagged("w") { it }
+    fun wallets() = tags.wallets()
 
     fun topics() = tags.hashtags()
 
@@ -105,5 +110,34 @@ class FundraiserEvent(
     companion object {
         const val KIND = 33863
         const val ALT_DESCRIPTION = "Fundraiser campaign"
+
+        /** A campaign: [description] is its story, [goal] the target in sats, [wallets] where donations go. */
+        @OptIn(ExperimentalUuidApi::class)
+        fun build(
+            title: String,
+            description: String,
+            goal: Long? = null,
+            deadline: Long? = null,
+            wallets: List<String> = emptyList(),
+            banner: String? = null,
+            image: String? = null,
+            topics: List<String> = emptyList(),
+            publishedAt: Long? = null,
+            dTag: String = Uuid.random().toString(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<FundraiserEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, description, createdAt) {
+            dTag(dTag)
+            title(title)
+            banner?.let { banner(it) }
+            image?.let { image(it) }
+            goal?.let { goal(it) }
+            deadline?.let { deadline(it) }
+            if (wallets.isNotEmpty()) wallets(wallets)
+            if (topics.isNotEmpty()) hashtags(topics)
+            publishedAt?.let { publishedAt(it) }
+            alt(ALT_DESCRIPTION)
+            initializer()
+        }
     }
 }

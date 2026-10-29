@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomHashTag
 import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomServerTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomVerbTag
 
 fun TagArray.blossomVerb() = fastFirstNotNullOfOrNull(BlossomVerbTag::parse)
@@ -31,3 +32,5 @@ fun TagArray.blossomVerb() = fastFirstNotNullOfOrNull(BlossomVerbTag::parse)
 fun TagArray.blossomHashes() = mapNotNull(BlossomHashTag::parse)
 
 fun TagArray.blossomServers() = mapNotNull(BlossomServerTag::parse)
+
+fun TagArray.blossomSize() = fastFirstNotNullOfOrNull(BlossomSizeTag::parse)

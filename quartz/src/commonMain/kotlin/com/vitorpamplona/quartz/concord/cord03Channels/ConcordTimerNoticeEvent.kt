@@ -23,6 +23,9 @@ package com.vitorpamplona.quartz.concord.cord03Channels
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * A Concord **timer notice** (CORD-08 §4, `kind:1740`): the inline "Alice set disappearing messages
@@ -46,5 +49,18 @@ class ConcordTimerNoticeEvent(
 
     companion object {
         const val KIND = ChannelChat.KIND_TIMER_NOTICE
+
+        /** The unsigned timer notice: [timerSecs] (`0` = off) bound to [channelId] at [epoch]. Never expires (CORD-08). */
+        fun build(
+            channelId: HexKey,
+            epoch: Long,
+            timerSecs: Long,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<ConcordTimerNoticeEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            channelBinding(channelId, epoch)
+            timer(timerSecs)
+            initializer()
+        }
     }
 }

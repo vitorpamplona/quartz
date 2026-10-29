@@ -20,6 +20,13 @@
  */
 package com.vitorpamplona.quartz.experimental.predictionMarkets
 
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketCategoryTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketDataTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketEndTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketNetworkTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketStatusTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.MarketTag
+import com.vitorpamplona.quartz.experimental.predictionMarkets.tags.OutcomeTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
@@ -27,18 +34,12 @@ import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 /** The first non-blank value of a tag named [name], or null. */
 private fun TagArray.firstNonBlankValue(name: String): String? = fastFirstNotNullOfOrNull { if (it.size > 1 && it[0] == name && it[1].isNotBlank()) it[1] else null }
 
-/** The first non-blank value among [first] and then [second], in that priority order. */
-private fun TagArray.firstNonBlankValue(
-    first: String,
-    second: String,
-): String? = firstNonBlankValue(first) ?: firstNonBlankValue(second)
-
-fun TagArray.marketId() = firstNonBlankValue("market")
+fun TagArray.marketId() = fastFirstNotNullOfOrNull(MarketTag::parse)
 
 fun TagArray.marketTitle() = firstNonBlankValue("title")
 
 /** The JSON blob of the `data` tag BAO Markets attaches to its current event shape. */
-fun TagArray.marketData() = firstNonBlankValue("data")
+fun TagArray.marketData() = fastFirstNotNullOfOrNull(MarketDataTag::parse)
 
 fun TagArray.marketType() = firstNonBlankValue("type")
 
@@ -47,14 +48,14 @@ fun TagArray.marketType() = firstNonBlankValue("type")
  * older `state` and the one-letter `s`. BAO Markets writes all three but lets them drift apart
  * (an "active" status next to an "ended" state), and `status` is the one it keeps current.
  */
-fun TagArray.marketStatusValues(): List<String> = listOfNotNull(firstNonBlankValue("status"), firstNonBlankValue("state"), firstNonBlankValue("s"))
+fun TagArray.marketStatusValues(): List<String> = listOfNotNull(fastFirstNotNullOfOrNull(MarketStatusTag::parse), firstNonBlankValue("state"), firstNonBlankValue("s"))
 
 /** When betting closes, unix seconds. */
-fun TagArray.marketEnd() = firstNonBlankValue("end")?.trim()?.toLongOrNull()
+fun TagArray.marketEnd() = fastFirstNotNullOfOrNull(MarketEndTag::parse)?.trim()?.toLongOrNull()
 
-fun TagArray.marketNetwork() = firstNonBlankValue("network", "n")
+fun TagArray.marketNetwork() = fastFirstNotNullOfOrNull(MarketNetworkTag::parse) ?: firstNonBlankValue("n")
 
-fun TagArray.marketCategory() = firstNonBlankValue("category", "c")
+fun TagArray.marketCategory() = fastFirstNotNullOfOrNull(MarketCategoryTag::parse) ?: firstNonBlankValue("c")
 
 /**
  * Every `outcome` tag, in order, once per id and at most [PredictionMarketOutcome.MAX]. The BAO
@@ -63,8 +64,9 @@ fun TagArray.marketCategory() = firstNonBlankValue("category", "c")
 fun TagArray.marketOutcomes(): List<PredictionMarketOutcome> {
     val result = LinkedHashMap<String, PredictionMarketOutcome>(4)
     fastForEach {
-        if (result.size < PredictionMarketOutcome.MAX && it.size > 1 && it[0] == "outcome" && it[1].isNotBlank() && it[1] !in result) {
-            result[it[1]] = PredictionMarketOutcome(it[1], it.getOrNull(2)?.ifBlank { null } ?: it[1])
+        if (result.size < PredictionMarketOutcome.MAX) {
+            val outcome = OutcomeTag.parse(it)
+            if (outcome != null && outcome.id !in result) result[outcome.id] = outcome
         }
     }
     return result.values.toList()

@@ -23,9 +23,11 @@ package com.vitorpamplona.quartz.concord.cord03Channels
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.ChannelTag
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.EpochTag
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.MsTag
+import com.vitorpamplona.quartz.concord.cord03Channels.tags.TimerTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
 
 /**
  * The Concord Chat Plane binding, added to any standard event (kind 9 chat, 7
@@ -59,3 +61,8 @@ fun <T : Event> TagArrayBuilder<T>.channelBinding(
     epoch(epoch)
     ms(ms)
 }
+
+/** The single `["e", <id>]` naming the message an edit replaces (CORD-02 Appendix B): no relay hint, no marker. */
+fun TagArrayBuilder<ConcordChatEditEvent>.editedMessage(targetId: HexKey) = addUnique(ETag.assemble(targetId, null, null))
+
+fun TagArrayBuilder<ConcordTimerNoticeEvent>.timer(timerSecs: Long) = addUnique(TimerTag.assemble(timerSecs))

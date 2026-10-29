@@ -21,16 +21,21 @@
 package com.vitorpamplona.quartz.experimental.edits
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.experimental.edits.tags.EditSummaryTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.events.ETag
+import com.vitorpamplona.quartz.nip01Core.tags.events.toETag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.toPTag
+import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -81,6 +86,31 @@ class TextNoteModificationEvent(
     companion object {
         const val KIND = 1010
 
+        /** [content] replaces [editedNote]'s text; [notify] is its author, when that is someone else. */
+        fun build(
+            content: String,
+            editedNote: ETag,
+            notify: PTag? = null,
+            summary: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<TextNoteModificationEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, content, createdAt) {
+            editedNote(editedNote)
+            notify?.let { notify(it) }
+            summary?.let { editSummary(it) }
+            initializer()
+        }
+
+        /** Edits [editedNote], carrying its relay hint and author; [notifyAuthor] when editing someone else's note. */
+        fun build(
+            content: String,
+            editedNote: EventHintBundle<TextNoteEvent>,
+            notifyAuthor: Boolean = false,
+            summary: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<TextNoteModificationEvent>.() -> Unit = {},
+        ) = build(content, editedNote.toETag(), if (notifyAuthor) editedNote.toPTag() else null, summary, createdAt, initializer)
+
         suspend fun create(
             content: String,
             eventId: HexKey,
@@ -88,18 +118,6 @@ class TextNoteModificationEvent(
             summary: String?,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): TextNoteModificationEvent {
-            val tags = mutableListOf(arrayOf("e", eventId))
-
-            notify?.let {
-                tags.add(arrayOf("p", it))
-            }
-
-            summary?.let {
-                tags.add(EditSummaryTag.assemble(it))
-            }
-
-            return signer.sign(createdAt, KIND, tags.toTypedArray(), content)
-        }
+        ): TextNoteModificationEvent = signer.sign(build(content, ETag(eventId), notify?.let { PTag(it) }, summary, createdAt))
     }
 }

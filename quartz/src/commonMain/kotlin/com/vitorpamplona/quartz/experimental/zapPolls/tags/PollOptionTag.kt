@@ -47,5 +47,8 @@ class PollOptionTag(
             index: Int,
             descriptor: String,
         ) = arrayOf(TAG_NAME, index.toString(), descriptor)
+
+        /** The choice a zap votes for: `["poll_option", <index>]`, without the option's text. */
+        fun assembleVote(index: Int) = arrayOf(TAG_NAME, index.toString())
     }
 }

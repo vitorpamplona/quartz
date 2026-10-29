@@ -24,8 +24,12 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * A ballot cast in an auditable-voting app (kind 38000).
@@ -81,5 +85,25 @@ class BallotEvent(
 
         /** True when a kind-38000 event is a ballot: it names the `election` it is cast in. */
         fun isBallot(tags: TagArray): Boolean = tags.hasElection()
+
+        /**
+         * A ballot in the voting app's current shape: `election` and `proof-hash` tags and the
+         * `responses` JSON. Ballots in the wild carry no `d` tag, so this writes none.
+         */
+        fun build(
+            election: String,
+            answers: List<BallotAnswer>,
+            proofHash: String? = null,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<BallotEvent>.() -> Unit = {},
+        ): EventTemplate<BallotEvent> {
+            // A blank election reads as no `election` tag, and the event would not parse as a ballot.
+            require(election.isNotBlank()) { "A ballot names its election" }
+            return eventTemplate(KIND, BallotContent.assemble(election, answers, createdAt), createdAt) {
+                election(election)
+                proofHash?.let { proofHash(it) }
+                initializer()
+            }
+        }
     }
 }

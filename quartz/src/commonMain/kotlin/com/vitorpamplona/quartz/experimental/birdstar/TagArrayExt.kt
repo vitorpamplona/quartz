@@ -21,7 +21,15 @@
 package com.vitorpamplona.quartz.experimental.birdstar
 
 import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesNameTag
+import com.vitorpamplona.quartz.experimental.birdstar.tags.SpeciesReferenceTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+
+/** The first species' scientific name (`n`), as written. */
+fun TagArray.speciesName() = fastFirstNotNullOfOrNull(SpeciesNameTag::parse)
+
+/** The first species reference (`i`), as written; callers check it is a web URL. */
+fun TagArray.speciesReference() = fastFirstNotNullOfOrNull(SpeciesReferenceTag::parse)
 
 /** Scientific names of the collected species, in tag order (`n`). */
 fun TagArray.speciesNames() = mapNotNull(SpeciesNameTag::parse)

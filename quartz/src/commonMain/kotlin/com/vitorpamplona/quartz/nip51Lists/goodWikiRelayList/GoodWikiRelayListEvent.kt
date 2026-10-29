@@ -24,9 +24,11 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.relayLists.tags.RelayTag
@@ -54,18 +56,28 @@ class GoodWikiRelayListEvent(
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, "")
 
+        /** The unsigned list: [publicRelays] as tags, [privateRelays] NIP-44 encrypted to [signer]'s own key in `content`. */
+        suspend fun build(
+            publicRelays: List<NormalizedRelayUrl> = emptyList(),
+            privateRelays: List<NormalizedRelayUrl> = emptyList(),
+            signer: NostrSigner,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<GoodWikiRelayListEvent>.() -> Unit = {},
+        ) = eventTemplate<GoodWikiRelayListEvent>(
+            kind = KIND,
+            description = PrivateTagsInContent.encryptNip44(privateRelays.map { RelayTag.assemble(it) }.toTypedArray(), signer),
+            createdAt = createdAt,
+        ) {
+            goodWikiRelays(publicRelays)
+            initializer()
+        }
+
         suspend fun create(
             publicRelays: List<NormalizedRelayUrl> = emptyList(),
             privateRelays: List<NormalizedRelayUrl> = emptyList(),
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): GoodWikiRelayListEvent =
-            resign(
-                content = PrivateTagsInContent.encryptNip44(privateRelays.map { RelayTag.assemble(it) }.toTypedArray(), signer),
-                tags = publicRelays.map { RelayTag.assemble(it) }.toTypedArray(),
-                signer = signer,
-                createdAt = createdAt,
-            )
+        ): GoodWikiRelayListEvent = signer.sign(build(publicRelays, privateRelays, signer, createdAt))
 
         suspend fun add(
             earlierVersion: GoodWikiRelayListEvent,

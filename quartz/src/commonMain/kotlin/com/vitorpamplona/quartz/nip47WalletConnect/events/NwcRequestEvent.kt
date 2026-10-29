@@ -24,13 +24,16 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.PayInvoiceMethod
 import com.vitorpamplona.quartz.nip47WalletConnect.rpc.Request
-import com.vitorpamplona.quartz.nip47WalletConnect.tags.EncryptionTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -66,6 +69,7 @@ class NwcRequestEvent(
 
     companion object {
         const val KIND = 23194
+        const val NIP44_V2 = "nip44_v2"
 
         suspend fun create(
             lnInvoice: String,
@@ -82,31 +86,37 @@ class NwcRequestEvent(
                 useNip44,
             )
 
+        /** The unsigned request: [request] encrypted by [signer] to [walletService] (NIP-44 when [useNip44], else NIP-04). */
+        suspend fun build(
+            request: Request,
+            walletService: HexKey,
+            signer: NostrSigner,
+            useNip44: Boolean = false,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<NwcRequestEvent>.() -> Unit = {},
+        ): EventTemplate<NwcRequestEvent> {
+            val serializedRequest = OptimizedJsonMapper.toJson(request)
+            val encrypted =
+                if (useNip44) {
+                    signer.nip44Encrypt(serializedRequest, walletService)
+                } else {
+                    signer.nip04Encrypt(serializedRequest, walletService)
+                }
+
+            return eventTemplate(KIND, encrypted, createdAt) {
+                pTag(PTag(walletService))
+                if (useNip44) encryptionScheme(NIP44_V2)
+                initializer()
+            }
+        }
+
         suspend fun createRequest(
             request: Request,
             walletServicePubkey: String,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
             useNip44: Boolean = false,
-        ): NwcRequestEvent {
-            val serializedRequest = OptimizedJsonMapper.toJson(request)
-
-            val tags =
-                if (useNip44) {
-                    arrayOf(arrayOf("p", walletServicePubkey), EncryptionTag.assembleScheme("nip44_v2"))
-                } else {
-                    arrayOf(arrayOf("p", walletServicePubkey))
-                }
-
-            val encrypted =
-                if (useNip44) {
-                    signer.nip44Encrypt(serializedRequest, walletServicePubkey)
-                } else {
-                    signer.nip04Encrypt(serializedRequest, walletServicePubkey)
-                }
-
-            return signer.sign(createdAt, KIND, tags, encrypted)
-        }
+        ): NwcRequestEvent = signer.sign(build(request, walletServicePubkey, signer, useNip44, createdAt))
     }
 }
 

@@ -26,8 +26,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * The market fields BAO Markets writes as JSON — in the `data` tag of its current shape, or as the
@@ -50,6 +54,18 @@ class PredictionMarketDetails(
     val feePercent: Double?,
 ) {
     companion object {
+        /** The `data` JSON of the current shape: the question, its description and the outcome labels. */
+        fun assemble(
+            title: String,
+            description: String?,
+            outcomes: List<PredictionMarketOutcome>,
+        ): String =
+            buildJsonObject {
+                put("title", title)
+                description?.let { put("description", it) }
+                putJsonArray("outcomes") { outcomes.forEach { add(it.label) } }
+            }.toString()
+
         /** Parses [json] into details, or null when it is not a JSON object. Never throws. */
         fun parse(json: String?): PredictionMarketDetails? {
             if (json == null || !looksLikeJsonObject(json)) return null

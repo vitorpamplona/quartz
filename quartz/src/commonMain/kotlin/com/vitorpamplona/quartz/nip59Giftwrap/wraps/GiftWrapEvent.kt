@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip59Giftwrap.wraps
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -30,10 +31,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
-import com.vitorpamplona.quartz.nip40Expiration.ExpirationTag
+import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -142,6 +144,26 @@ open class GiftWrapEvent(
         const val ALT = "Encrypted event"
 
         /**
+         * The unsigned wrap: [event] NIP-44 encrypted by [wrapSigner] to [recipient]. NIP-59 signs a
+         * wrap with a throwaway key, so [wrapSigner] is that key, and the caller signs the template
+         * with it: a fresh `NostrSignerSync()` per wrap, never the user's own, which would put the
+         * sender's identity on the outside of the wrap. [expirationDelta] adds an `expiration` that far past the (randomized) [createdAt],
+         * plus two days so the randomization never expires the wrap before it arrives.
+         */
+        fun build(
+            event: Event,
+            recipient: PTag,
+            wrapSigner: NostrSignerSync,
+            expirationDelta: Long? = null,
+            createdAt: Long = TimeUtils.randomWithTwoDays(),
+            initializer: TagArrayBuilder<GiftWrapEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, wrapSigner.nip44Encrypt(event.toJson(), recipient.pubKey), createdAt) {
+            recipient(recipient)
+            expirationDelta?.let { expiration(createdAt + it + TimeUtils.twoDays()) }
+            initializer()
+        }
+
+        /**
          * Build a NIP-59 gift wrap addressed to `recipientPubKey`.
          *
          * Per NIP-17 §Publishing, the `p` tag on the wrap MAY carry the
@@ -167,25 +189,7 @@ open class GiftWrapEvent(
         ): GiftWrapEvent {
             val signer = NostrSignerSync(KeyPair()) // GiftWrap is always a random key
 
-            val tags =
-                expirationDelta?.let {
-                    // minimum expiration is two days in the future due to the random created at
-                    // this will make sure the even arrives and is not deleted because of the 2 days.
-                    arrayOf(
-                        PTag.assemble(recipientPubKey, recipientRelayHint),
-                        ExpirationTag.assemble(createdAt + it + TimeUtils.twoDays()),
-                    )
-                } ?: arrayOf(
-                    PTag.assemble(recipientPubKey, recipientRelayHint),
-                )
-
-            val template =
-                EventTemplate<GiftWrapEvent>(
-                    createdAt = createdAt,
-                    kind = KIND,
-                    tags = tags,
-                    content = signer.nip44Encrypt(event.toJson(), recipientPubKey),
-                )
+            val template = build(event, PTag(recipientPubKey, recipientRelayHint), signer, expirationDelta, createdAt)
 
             val readyToSign = templateConversion(template, signer.pubKey)
 

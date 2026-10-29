@@ -21,6 +21,12 @@
 package com.vitorpamplona.quartz.cyberspace.deck0003Sno
 
 import com.vitorpamplona.quartz.cyberspace.deck0003Sno.tags.SnoNameTag
+import com.vitorpamplona.quartz.cyberspace.tags.CoordinateTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 
 fun TagArrayBuilder<SnoObjectEvent>.snoName(name: String) = add(SnoNameTag.assemble(name))
+
+fun TagArrayBuilder<SnoAvatarEvent>.avatarName(name: String) = addUnique(SnoNameTag.assemble(name))
+
+/** The exact coordinate a shard is placed at (§7.6). */
+fun TagArrayBuilder<SnoShardEvent>.coordinate(coordinate: String) = addUnique(CoordinateTag.assemble(coordinate))

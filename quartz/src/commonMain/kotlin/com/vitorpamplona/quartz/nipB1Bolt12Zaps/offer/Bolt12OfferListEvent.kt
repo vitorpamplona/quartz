@@ -25,10 +25,12 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nipB1Bolt12Zaps.tags.OfferTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -96,16 +98,25 @@ class Bolt12OfferListEvent(
             return signer.sign(createdAt, KIND, tags, earlierVersion.content)
         }
 
+        fun build(
+            offers: List<String>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<Bolt12OfferListEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, "", createdAt) {
+            offers(offers)
+            initializer()
+        }
+
         suspend fun create(
             offers: List<String>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): Bolt12OfferListEvent = signer.sign(createdAt, KIND, createTagArray(offers), "")
+        ): Bolt12OfferListEvent = signer.sign(build(offers, createdAt))
 
         fun create(
             offers: List<String>,
             signer: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
-        ): Bolt12OfferListEvent = signer.sign(createdAt, KIND, createTagArray(offers), "")
+        ): Bolt12OfferListEvent = signer.sign(build(offers, createdAt))
     }
 }

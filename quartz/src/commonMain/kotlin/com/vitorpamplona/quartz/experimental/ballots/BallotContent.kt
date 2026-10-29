@@ -27,6 +27,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * The JSON `content` of a [BallotEvent]. Three shapes are seen in the wild, tried in order:
@@ -44,6 +48,28 @@ class BallotContent(
     val proofHash: String?,
 ) {
     companion object {
+        /**
+         * The `responses` shape, as the voting app writes it: the [election], each answer as a
+         * `question_id`/`value` pair, and the [timestamp] the ballot was cast at.
+         */
+        fun assemble(
+            election: String,
+            answers: List<BallotAnswer>,
+            timestamp: Long,
+        ): String =
+            buildJsonObject {
+                put("election_id", election)
+                putJsonArray("responses") {
+                    answers.forEach {
+                        addJsonObject {
+                            put("question_id", it.question)
+                            put("value", it.answer)
+                        }
+                    }
+                }
+                put("timestamp", timestamp)
+            }.toString()
+
         /** Parses [json], or returns null when it is not a JSON object. Never throws. */
         fun parse(json: String): BallotContent? {
             if (!looksLikeJsonObject(json)) return null
