@@ -22,13 +22,16 @@ package com.vitorpamplona.quartz.drss.provenance
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.drss.onlyAddressesOfKinds
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.update
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -97,5 +100,19 @@ class DrssProvenanceFolderEvent(
             children(children)
             initializer()
         }
+
+        /** [earlier] with [child], a provenance record or sub-folder, at the end; unchanged when it already holds it. */
+        fun addChild(
+            earlier: DrssProvenanceFolderEvent,
+            child: ATag,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssProvenanceFolderEvent> = earlier.update(createdAt) { addUniqueValueIfNew(child.toATagArray()) }
+
+        /** [earlier] without [child]. The last child cannot go: see [DrssListFolderEvent.removeChild]. */
+        fun removeChild(
+            earlier: DrssProvenanceFolderEvent,
+            child: Address,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssProvenanceFolderEvent> = earlier.update(createdAt) { remove(ATag.TAG_NAME, child.toValue()) }
     }
 }

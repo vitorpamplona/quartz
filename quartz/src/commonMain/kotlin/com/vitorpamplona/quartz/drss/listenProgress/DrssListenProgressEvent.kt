@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
@@ -120,6 +121,36 @@ class DrssListenProgressEvent(
             completedAt?.let { completed(it) }
             plays?.let { plays(it) }
             initializer()
+        }
+
+        /**
+         * The record to save after [earlier], by drss's rules: [position] is the resume point, and
+         * goes once the episode [ended]; a completion is never lost and the first one stands; the
+         * play count only grows, by one when this save [countsAPlay] (see [DrssListenPass]). Reaching
+         * the end or counting a play completes the episode.
+         */
+        fun next(
+            earlier: DrssListenProgressEvent?,
+            episode: ATag,
+            position: Long?,
+            durationInSeconds: Long?,
+            countsAPlay: Boolean = false,
+            ended: Boolean = false,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssListenProgressEvent> {
+            val earlierCompletion = earlier?.completedAt()
+            val completedAt = earlierCompletion ?: if (ended || countsAPlay) createdAt else null
+            // A completion recorded before drss counted plays stands for one.
+            val earlierPlays = earlier?.plays() ?: if (earlierCompletion != null) 1L else 0L
+            val plays = earlierPlays + if (countsAPlay) 1 else 0
+            return build(
+                episode = episode,
+                position = if (ended) null else position?.coerceAtLeast(0),
+                durationInSeconds = durationInSeconds?.takeIf { it > 0 } ?: earlier?.durationInSeconds(),
+                completedAt = completedAt,
+                plays = plays.takeIf { it > 0 },
+                createdAt = createdAt,
+            )
         }
     }
 }

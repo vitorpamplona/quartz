@@ -69,7 +69,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nip58Badges/` | BadgeAwardEvent 8, ProfileBadgesEvent 10008, AcceptedBadgeSetEvent 30008, BadgeDefinitionEvent 30009 |
 | `nip59Giftwrap/` | SealEvent 13, GiftWrapEvent 1059, EphemeralGiftWrapEvent 21059 |
 | `nip5aStaticWebsites/` | SiteSnapshotEvent 5128, RootSiteEvent 15128, NamedSiteEvent 35128 |
-| `nip5dNapplets/` | NappletSnapshotEvent 5129 (`snapshot/`), RootNappletEvent 15129 (`root/`), NamedNappletEvent 35129 (`named/`); shared `NappletManifest` and `tags/` |
+| `nip5dNapplets/` | NappletSnapshotEvent 5129, RootNappletEvent 15129, NamedNappletEvent 35129 |
 | `nip60Cashu/` | CashuMintQuoteEvent 7374, CashuTokenEvent 7375, CashuSpendingHistoryEvent 7376, CashuWalletEvent 17375 |
 | `nip61Nutzaps/` | NutzapEvent 9321, NutzapInfoEvent 10019 |
 | `nip62RequestToVanish/` | RequestToVanishEvent 62 |
@@ -124,7 +124,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `concord/` | ConcordChatEditEvent 3302, ControlEditionEvent 3308, ConcordWebxdc 3310, ConcordCommunityListEvent 13302, ConcordInviteListEvent 13303, VoicePresence 23313, ConcordBrokerToken 27235, ConcordInviteBundleEvent 33301, ConcordCommunityListFragmentEvent 33302 |
 | `contextvm/` | (no event kinds: tags/utilities) |
 | `cyberspace/` | SnoShardEvent 3330, SnoAvatarEvent 11333, CyberspaceBagEvent 33330, SnoObjectEvent 33331 |
-| `drss/` | DrssListenProgressEvent 30054, DrssFeedListEvent 30100, DrssListFolderEvent 30101, DrssEventListEvent 30102, DrssProvenanceFolderEvent 30104, DrssShowEvent 31341, DrssProvenanceEvent 31985 |
+| `drss/` | DrssListenProgressEvent 30054, DrssReadWriteListsEvent 30078, DrssFeedListEvent 30100, DrssListFolderEvent 30101, DrssEventListEvent 30102, DrssProvenanceFolderEvent 30104, DrssShowEvent 31341, DrssProvenanceEvent 31985 |
 | `feedDefinition/` | FeedDefinitionEvent 31890 |
 | `kinds/` | (no event kinds: tags/utilities) |
 | `lightning/` | (no event kinds: tags/utilities) |

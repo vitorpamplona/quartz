@@ -29,8 +29,10 @@ class EventFactory {
 past HotSpot's 8,000-byte JIT limit; add a kind to any part and keep each under the limit
 (`EventFactoryJitSizeTest`). Kinds other apps share pick their class from tags and fall back
 to an `UnrecognizedKind…Event` (38000, 30301/30302, 30405/30406, 38384–38386, 30054, drss's
-30100, 30101, 30102, 30104 and 31985); `probe(kind)` must answer as the primary class for those. Unknown
-kinds round-trip as plain `Event`.
+30100, 30101, 30102, 30104 and 31985); `probe(kind)` must answer as the primary class for those. A
+kind every app writes its own way can split on one `d` instead: 30078 builds drss's
+`DrssReadWriteListsEvent` for `d` = `read-write-lists` and the generic `AppSpecificDataEvent` for
+the rest. Unknown kinds round-trip as plain `Event`.
 
 ## Adding a kind — the registrations
 
