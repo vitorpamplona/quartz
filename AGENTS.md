@@ -152,23 +152,15 @@ Both agents read the same rules, skills and checks, laid out like Amethyst's:
 
 ## Versioning
 
-Semantic versioning over Quartz's public API: every `public` declaration in `quartz/`, in source
-and binary form (marmot-kmp, cordn-kmp and other libraries ship compiled against it, so a
-signature they call must still exist at runtime), and the Swift API of `QuartzKit`. The major
-number moves once or twice a year; breaking changes wait for it instead of forcing it.
+[Semantic versioning](https://semver.org/) over Quartz's public API: every `public` declaration
+in `quartz/`, in source and binary form (marmot-kmp, cordn-kmp and other libraries ship compiled
+against it, so a signature they call must still exist at runtime), and the Swift API of
+`QuartzKit`. On top of semver:
 
-- **Patch `X.Y.Z+1`**: bug fixes, performance, docs, internal refactors, dependency updates that
-  change nothing a dependent sees. No public declaration added, removed or changed. Release
-  whenever a fix is needed. Fixing behaviour to match the spec is a fix, not a break.
-- **Minor `X.Y+1.0`**: anything a dependent can adopt without touching their code: new kinds,
-  classes, functions and overloads, new deprecations, a new dependency or a raised minimum of one.
-  Batch them: a minor goes out when a dependent needs the new API or a few weeks of features have
-  piled up, not after each merged feature. A release with no new public API is a patch.
-- **Major `X+1.0.0`**: the only release that removes a public declaration or changes one
-  incompatibly (renamed, moved, a changed signature, return type or nullability, a class made
-  `sealed`/`final`/`abstract`, a dependency's type dropped from the API, a behaviour change
-  dependents must code around). At most twice a year, planned in a tracking issue that lists what
-  it removes. Amethyst pins a version, so a major needs a matching change there.
+- **Majors are rare**: once or twice a year, planned in a tracking issue that lists what it
+  removes. Amethyst pins a version, so a major needs a matching change there.
+- **Minors are batched**: one goes out when a dependent needs the new API or a few weeks of
+  features have piled up, not after each merged feature. Patches go out whenever a fix is needed.
 
 Between majors, a breaking change ships as a deprecation:
 
@@ -183,13 +175,11 @@ Between majors, a breaking change ships as a deprecation:
   keep its PR open until the major's window.
 - A deprecation ships in at least one minor before a major removes it. The major removes every
   `Removed in <that major>` declaration.
-- A security fix with no compatible form may break the API in a minor or patch; its release notes
-  say so.
+- Fixing behaviour to match the spec is a fix, not a break. A security fix with no compatible form
+  may break the API in a minor or patch; its release notes say so.
 - Conventional commits: `!` (`refactor!:`, `BREAKING CHANGE:`) marks a breaking commit and only
-  lands for a major. A deprecation is a plain `feat:` or `refactor:`.
-
-To pick the next version, read `git log --oneline v<last>..main`: any `!` commit means a major or
-a rework into a deprecation, never a minor; any new public API means a minor; otherwise a patch.
+  lands for a major, so `git log --oneline v<last>..main` shows whether the next release can be a
+  minor. A deprecation is a plain `feat:` or `refactor:`.
 
 ## Releasing
 

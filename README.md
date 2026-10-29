@@ -222,14 +222,9 @@ change in Amethyst, build Amethyst with `-PquartzDir=../quartz`.
 
 ## Versioning
 
-Releases follow [semantic versioning](https://semver.org/), source and binary:
-
-- **Patch** (`2.7.1`): bug fixes only, released whenever one is needed.
-- **Minor** (`2.8.0`): new API, batched every few weeks. Never removes or breaks anything; an API
-  on its way out is marked `@Deprecated` with a `ReplaceWith` and the major that removes it.
-- **Major** (`3.0.0`): removes what earlier minors deprecated, once or twice a year.
-
-Each release is tagged `v<version>` and listed on the
+Releases follow [semantic versioning](https://semver.org/), source and binary. Majors come once or
+twice a year; between them, an API on its way out keeps working, marked `@Deprecated` with a
+`ReplaceWith` and the major that removes it. Each release is tagged `v<version>` and listed on the
 [releases page](https://github.com/vitorpamplona/quartz/releases). Until 1.19.0 Quartz was
 released from the Amethyst repo with the app's version number.
 
