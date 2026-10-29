@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.drss.listFolder
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.drss.DrssListPicture
 import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
 import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.onlyAddressesOfKinds
@@ -70,6 +71,12 @@ class DrssListFolderEvent(
     AddressHintProvider,
     SearchableEvent {
     fun title() = tags.title()
+
+    /** The folder's picture (`image`), as drss sets it; see [DrssListPicture]. */
+    fun image() = DrssListPicture.image(tags)
+
+    /** A small copy of [image] (`thumb`), when drss made one. */
+    fun thumb() = DrssListPicture.thumb(tags)
 
     fun language() = tags.language()
 

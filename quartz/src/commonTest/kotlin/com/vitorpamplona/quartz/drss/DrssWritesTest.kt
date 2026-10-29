@@ -20,6 +20,10 @@
  */
 package com.vitorpamplona.quartz.drss
 
+import com.vitorpamplona.quartz.drss.clips.DrssClip
+import com.vitorpamplona.quartz.drss.clips.clipRangeMillis
+import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
+import com.vitorpamplona.quartz.drss.eventList.tags.ListItemTag
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenPass
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
@@ -31,6 +35,8 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip78AppData.AppSpecificDataEvent
+import com.vitorpamplona.quartz.nip84Highlights.HighlightEvent
+import com.vitorpamplona.quartz.nip94FileMetadata.tags.ThumbTag
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -177,5 +183,48 @@ class DrssWritesTest {
         val added = DrssProvenanceFolderEvent.addChild(root, other).parse()
         assertEquals(listOf(record, other), added.children())
         assertEquals(listOf(other), DrssProvenanceFolderEvent.removeChild(added, record.let { Address(it.kind, it.pubKeyHex, it.dTag) }).parse().children())
+    }
+
+    @Test
+    fun aClipIsAHighlightOfTheEpisodeWithItsRange() {
+        val clip = DrssClip.build(episode, episode.pubKeyHex, startMillis = 754_000, endMillis = 784_000, note = "the flags part").parse()
+        assertIs<HighlightEvent>(clip)
+        assertEquals(754_000L..784_000L, clip.clipRangeMillis())
+        assertEquals(episode.toTag(), clip.inPost()?.toTag())
+        assertEquals(episode.pubKeyHex, clip.author())
+        assertEquals("the flags part", clip.comment())
+        assertEquals("", clip.quote())
+
+        val plain = HighlightEvent.build("a quote", address = episode.toTag()).parse()
+        assertNull(plain.clipRangeMillis(), "a text highlight is no clip")
+    }
+
+    @Test
+    fun collectionsGainAndLoseItems() {
+        val a = ListItemTag("aa".repeat(32), null, 1_000)
+        val b = ListItemTag("bb".repeat(32), null, 2_000)
+        val list = DrssEventListEvent.build("papers", listOf(a), title = "papers").parse()
+
+        val added = DrssEventListEvent.addItem(list, b).parse()
+        assertEquals(listOf(a.eventId, b.eventId), added.itemIds())
+        assertEquals(listOf(a.eventId, b.eventId), DrssEventListEvent.addItem(added, b).parse().itemIds(), "no duplicate")
+        assertEquals(listOf(b.eventId), DrssEventListEvent.removeItem(added, a.eventId).parse().itemIds())
+    }
+
+    @Test
+    fun aPictureReplacesTheOldOneAndItsThumbnail() {
+        val folder = DrssListFolderEvent.build("drss", "DRSS lists", listOf(ATag(30000, me, "drss-feeds"))).parse()
+        val withPicture = DrssListPicture.set(folder, "https://blossom.example/a.jpg", ThumbTag("https://cdn.example/a-192.jpg", "cc".repeat(32))).parse()
+        assertEquals("https://blossom.example/a.jpg", withPicture.image())
+        assertEquals("https://cdn.example/a-192.jpg", withPicture.thumb()?.imageUrl)
+        assertEquals("https://cdn.example/a-192.jpg", DrssListPicture.preview(withPicture.tags))
+        assertEquals(1, withPicture.children().size, "the children stay")
+
+        val replaced = DrssListPicture.set(withPicture, "https://blossom.example/b.jpg").parse()
+        assertEquals("https://blossom.example/b.jpg", replaced.image())
+        assertNull(replaced.thumb(), "the old thumbnail showed the old picture")
+
+        val cleared = DrssListPicture.set(replaced, null).parse()
+        assertNull(cleared.image())
     }
 }
