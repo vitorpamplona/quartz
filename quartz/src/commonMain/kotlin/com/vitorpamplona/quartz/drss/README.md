@@ -54,3 +54,14 @@ follow NIP-65's `read` / `write` and are inferred: drss's only public preference
   listener goes back below 10%. drss saves every minute while playing (`RELAY_SAVE_INTERVAL_SECONDS`),
   on pause and at the end.
 
+- `DrssEventListEvent.addItem` / `removeItem` edit the older collections (30102), which drss still
+  edits but no longer creates. A collection cannot lose its last item; delete it instead.
+- `DrssListPicture.set(list, image, thumb)` gives a folder or NIP-51 set its picture: `image` and,
+  when there is one, a `thumb` (about 192 px on the shorter side, with its SHA-256) that readers draw
+  first; `preview(tags)` picks it. A new picture drops the old thumbnail. Feed lists (30100) and
+  the older collections (30102) carry no picture: their shapes allow no other tags.
+- `DrssClip.build(episode, author, startMillis, endMillis, text, note)` makes an audio clip: a NIP-84
+  highlight (9802) of the episode whose `start_ms` / `end_ms` tags hold the range, its transcript as
+  the content when there is one, and the listener's note as the `comment`. drss builds clips on its
+  server and none are public yet, so the range tags are inferred from its reader; `ClipTimeTag` keeps
+  them in one place.
