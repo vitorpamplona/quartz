@@ -226,25 +226,41 @@ class FilterIndex<S : Any> {
      * candidate to handle negative constraints.
      *
      * Iteration order is insertion-stable per call but otherwise
-     * unspecified. Allocates only the result set — dimensions are
-     * probed with the event's own fields, no key wrappers.
+     * unspecified. When every candidate sits in one bucket (the common
+     * live-feed case) that bucket's immutable set is returned as-is,
+     * uncopied; only an event reaching several buckets allocates their
+     * union. Dimensions are probed with the event's own fields, no key
+     * wrappers.
      */
     fun candidatesFor(event: Event): Set<S> {
         val s = state.load()
         if (s.assignments.isEmpty()) return emptySet()
-        val result = LinkedHashSet<S>()
-        if (s.unindexed.isNotEmpty()) result.addAll(s.unindexed)
-        s.ids[event.id]?.let { result.addAll(it) }
-        s.authors[event.pubKey]?.let { result.addAll(it) }
-        s.kinds[event.kind]?.let { result.addAll(it) }
+        var result: Set<S>? = s.unindexed.ifEmpty { null }
+        result = result.plusBucket(s.ids[event.id])
+        result = result.plusBucket(s.authors[event.pubKey])
+        result = result.plusBucket(s.kinds[event.kind])
         if (s.tags.isNotEmpty()) {
             for (tag in event.tags) {
                 if (tag.size >= 2 && isIndexableTagName(tag[0])) {
-                    s.tags[tag[0]]?.get(tag[1])?.let { result.addAll(it) }
+                    result = result.plusBucket(s.tags[tag[0]]?.get(tag[1]))
                 }
             }
         }
-        return result
+        return result ?: emptySet()
+    }
+
+    /**
+     * [candidatesFor]'s accumulator: null until a non-empty bucket is
+     * reached, then that bucket itself, then — once a second, different
+     * bucket shows up — a [LinkedHashSet] union owned by this call. A
+     * [PersistentSet] here is always a borrowed bucket, never mutated.
+     */
+    private fun Set<S>?.plusBucket(bucket: PersistentSet<S>?): Set<S>? {
+        if (bucket.isNullOrEmpty() || bucket === this) return this
+        if (this == null) return bucket
+        val union = if (this is PersistentSet<S>) LinkedHashSet(this) else this as LinkedHashSet<S>
+        union.addAll(bucket)
+        return union
     }
 
     /**

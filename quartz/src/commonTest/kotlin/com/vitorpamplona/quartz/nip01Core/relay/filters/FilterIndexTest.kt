@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class FilterIndexTest {
@@ -304,5 +305,47 @@ class FilterIndexTest {
         }
         assertTrue(index.isEmpty())
         assertTrue(index.candidatesFor(event(pubkey = authorA)).isEmpty())
+    }
+
+    @Test
+    fun singleBucketIsReturnedUncopied() {
+        // Every candidate in one bucket: the bucket's immutable set is the
+        // answer, so two events reaching it get the very same instance.
+        val index = FilterIndex<Sub>()
+        index.register(Filter(kinds = listOf(1)), Sub("s1"))
+        index.register(Filter(kinds = listOf(1)), Sub("s2"))
+
+        val first = index.candidatesFor(event(id = "1".repeat(64), kind = 1))
+        val second = index.candidatesFor(event(id = "2".repeat(64), kind = 1))
+        assertEquals(setOf(Sub("s1"), Sub("s2")), first)
+        assertSame(first, second)
+    }
+
+    @Test
+    fun repeatedTagReachingTheSameBucketStaysUncopied() {
+        val index = FilterIndex<Sub>()
+        index.register(Filter(tags = mapOf("p" to listOf(pTag1))), Sub("s"))
+
+        val tags = arrayOf(arrayOf("p", pTag1), arrayOf("p", pTag1))
+        assertSame(index.candidatesFor(event(tags = tags)), index.candidatesFor(event(tags = arrayOf(arrayOf("p", pTag1)))))
+    }
+
+    @Test
+    fun unionAcrossBucketsLeavesTheBucketsUntouched() {
+        // A union starts from a copy of the first bucket: adding the second
+        // must not leak into the index's own sets.
+        val index = FilterIndex<Sub>()
+        val byKind = Sub("byKind")
+        val byTag1 = Sub("byTag1")
+        val byTag2 = Sub("byTag2")
+        index.register(Filter(kinds = listOf(1)), byKind)
+        index.register(Filter(tags = mapOf("p" to listOf(pTag1))), byTag1)
+        index.register(Filter(tags = mapOf("p" to listOf(pTag2))), byTag2)
+
+        val all = index.candidatesFor(event(kind = 1, tags = arrayOf(arrayOf("p", pTag1), arrayOf("p", pTag2))))
+        assertEquals(setOf(byKind, byTag1, byTag2), all)
+
+        assertEquals(setOf(byKind), index.candidatesFor(event(kind = 1)))
+        assertEquals(setOf(byTag1), index.candidatesFor(event(kind = 7, tags = arrayOf(arrayOf("p", pTag1)))))
     }
 }
