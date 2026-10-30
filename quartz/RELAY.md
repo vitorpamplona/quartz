@@ -521,6 +521,11 @@ admins' token ids apart from everyone else's, so no flood of valid tokens from s
 roll a used admin token out of the replay set. Any other NIP-98 endpoint that admits only some
 authors should do the same, and can use `Nip98AuthVerifier.preverify` for its own pre-body check.
 
+`BanStore` holds the state the RPCs change and does no I/O. Persist all of it with
+`toJson()` from its `onMutation` hook and `seedFromJson(text)` at boot: every ban and allow list
+with reasons, the kind sets, NIP-43 roles and assignments, and invite codes. A malformed file
+throws and loads nothing, so refuse to start rather than run with no bans and overwrite the file.
+
 ## Observability
 
 Both servers take an optional `RelayServerListener` and expose a live
