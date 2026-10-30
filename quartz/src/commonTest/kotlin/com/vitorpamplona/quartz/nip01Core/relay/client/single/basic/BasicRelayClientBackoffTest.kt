@@ -260,6 +260,29 @@ class BasicRelayClientBackoffTest {
     }
 
     /**
+     * A resolver that did not answer throws the same type as a name that does not exist. A pool
+     * reconnecting at once can overrun it, and those names resolve a second later, so they take
+     * the ordinary backoff rather than five minutes.
+     */
+    @Test
+    fun `a resolver timeout is retried on the ordinary backoff`() {
+        val builder = FakeWebsocketBuilder()
+        val clock = MutableClock()
+        val client = newClient(builder, clock)
+
+        client.connect()
+        builder.lastListener.onFailure(UnknownHostException("relay.example: Temporary failure in name resolution"), null, null)
+
+        runTicks(client, builder, clock, totalSeconds = 60) { listener ->
+            listener.onFailure(UnknownHostException("relay.example: Temporary failure in name resolution"), null, null)
+        }
+        assertTrue(
+            builder.connectAttempts > 2,
+            "Expected a resolver timeout to be re-dialled within a minute, got ${builder.connectAttempts} dial(s)",
+        )
+    }
+
+    /**
      * The safety valve for the eager verdict above: DNS is a property of the network, not of
      * the relay. A captive portal or a filtering resolver forges NXDOMAIN for hosts that are
      * perfectly reachable elsewhere, and Tor resolves at the exit node rather than locally.

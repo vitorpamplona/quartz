@@ -21,7 +21,9 @@
 package com.vitorpamplona.quartz.nip01Core.relay
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
@@ -67,6 +69,50 @@ class NostrClientReconnectDebounceTest {
             return delegate.build(url, out)
         }
     }
+
+    /**
+     * A socket that dials and never answers, the state every relay of a fresh subscription is in,
+     * and costs what OkHttp's dial costs the caller: a thread start each.
+     */
+    private class SilentBuilder : WebsocketBuilder {
+        val built = AtomicInteger(0)
+
+        override fun build(
+            url: NormalizedRelayUrl,
+            out: WebSocketListener,
+        ): WebSocket {
+            built.incrementAndGet()
+            Thread.sleep(10)
+            return object : WebSocket {
+                override fun needsReconnect() = false
+
+                override fun connect() {}
+
+                override fun disconnect() {}
+
+                override fun send(msg: String) = true
+            }
+        }
+    }
+
+    /**
+     * A client starts with nothing to reconnect. Its first debounce tick used to be a full
+     * reconnect, which tore down and redialed every socket a subscription made in the client's
+     * first 200ms: a subscription over a whole relay fleet right after start dialed much of it
+     * twice. 50 dials at 10ms each keep the subscribe call past that tick.
+     */
+    @Test
+    fun aSubscriptionMadeAtStartIsDialedOnce() =
+        runBlocking {
+            val builder = SilentBuilder()
+            val client = NostrClient(builder, scope)
+            val relays = (1..50).map { RelayUrlNormalizer.normalize("wss://relay$it.example/") }
+            client.subscribe("start", relays.associateWith { listOf(Filter(kinds = listOf(1))) }, null)
+            delay(1_000)
+
+            assertEquals(relays.size, builder.built.get(), "each relay dialed once")
+            client.disconnect()
+        }
 
     @Test
     fun aFullReconnectSurvivesARoutineOneInsideTheDebounceWindow() =

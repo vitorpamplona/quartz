@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
@@ -290,7 +291,11 @@ open class BasicRelayClient(
                 // filtering resolver forges NXDOMAIN; Tor resolves at the exit node instead),
                 // and both a network-identity change and a transport/Tor change clear the
                 // backoff outright — see IRelayClient.resetBackoff.
-                val unresolvedHost = typeName == "UnknownHostException"
+                //
+                // Except a resolver that did not answer, which throws the same type: a pool
+                // reconnecting at once can overrun it, and five minutes per relay is the cost
+                // of a burst, not of a dead domain. That one takes the ordinary backoff.
+                val unresolvedHost = typeName == "UnknownHostException" && !isResolverTimeout(msg)
 
                 if (code != null || unresolvedHost || t.message?.endsWith("Host unreachable") == true) {
                     dontTryAgainForALongTime()
