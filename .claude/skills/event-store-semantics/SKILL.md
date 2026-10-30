@@ -53,8 +53,8 @@ beats a rule; fix the rule.
   `p` recipient · **W07** rows immutable · **W08** batch: savepoint per row · **W09** failures
   classified by querying the DB, not driver text.
 - **D01** kind-5 by id, same owner, no time check · **D02** by address, `created_at <=` ·
-  **D03** cross-author kind-5 inert · **D04** re-insert blocking · **D05** kind-5 can delete a
-  kind-5 (known quirk) · **D06/D07** NIP-62 vanish relay-scoped, strict delete / inclusive block
+  **D03** cross-author kind-5 inert · **D04** re-insert blocking · **D05** a kind-5 against a
+  kind-5 or kind-62 has no effect (no delete, no block) · **D06/D07** NIP-62 vanish relay-scoped, strict delete / inclusive block
   · **D08** manual deletes create no blocking.
 - **C01** count = deduped match set honoring per-filter limits.
 - **S01** search extensions stripped before FTS · **S02** bm25 relevance order · **S03** search
@@ -145,6 +145,6 @@ Search tests: `commonTest/.../nip50Search/SearchQueryTest.kt`, `SearchableKindsT
 
 ## For parity implementers
 
-Cite rule ids in divergence notes ("diverges from STORE-D05: we no-op deletion-of-a-deletion").
+Cite rule ids in divergence notes ("diverges from STORE-F08: we break same-second ties by id").
 F06 (hash-based tags) and F08 (unordered same-second ties) are where the reference itself has
 slack, so a byte-for-byte diff there may not be your bug.

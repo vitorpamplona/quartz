@@ -441,6 +441,26 @@ class FsParityTest {
             assertParity(Filter(authors = listOf(signer.pubKey), kinds = listOf(DeletionRequestEvent.KIND)), "deletion present")
         }
 
+    @Test
+    fun `deletion of a deletion has no effect in either store (STORE-D05)`() =
+        runBlocking {
+            val n1 = note("deleted", 10)
+            val n2 = note("also deleted", 11)
+            val first = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n1), createdAt = 30))
+            val second = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(first), createdAt = 40))
+            // The other arrival order: the deletion of the deletion lands first.
+            val third = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n2), createdAt = 50))
+            val fourth = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(third), createdAt = 60))
+
+            listOf(n1, first, second, fourth, n2, third, n1).forEach { insertBoth(it) }
+
+            val kind5s = Filter(authors = listOf(signer.pubKey), kinds = listOf(DeletionRequestEvent.KIND))
+            assertParity(kind5s, "every deletion stays")
+            assertEquals(4, fs.query<Event>(kind5s).size)
+            assertParity(Filter(ids = listOf(n1.id, n2.id)), "targets stay deleted")
+            assertEquals(0, fs.query<Event>(Filter(ids = listOf(n1.id, n2.id))).size)
+        }
+
     // ------------------------------------------------------------------
     // Multi-filter union
     // ------------------------------------------------------------------

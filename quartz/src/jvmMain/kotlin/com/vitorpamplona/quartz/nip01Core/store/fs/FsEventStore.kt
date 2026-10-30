@@ -229,8 +229,12 @@ open class FsEventStore(
      */
     private fun tombstoneRejection(event: Event): String? {
         val ownerPubKey = indexer.ownerPubKey(event)
-        val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
-        if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return RejectionReason.DELETED
+        // A kind 5 against a kind 5 or a kind 62 has no effect (NIP-09, NIP-62), so an id
+        // tombstone never blocks one; the vanish horizon below still does (NIP-62 deletes them).
+        if (!event.isImmuneToDeletionRequests()) {
+            val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
+            if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return RejectionReason.DELETED
+        }
         if (event is AddressableEvent && event.kind.isAddressable()) {
             val cutoff = tombstones.addrTombstoneCutoff(event.kind, event.pubKey, event.dTag())
             if (cutoff != null && event.createdAt <= cutoff) return RejectionReason.DELETED
@@ -262,6 +266,10 @@ open class FsEventStore(
 
         for (targetId in deletion.deleteEventIds()) {
             val targetEvent = readEvent(targetId)
+            // Deleting a deletion or a vanish request has no effect: no cascade, no tombstone.
+            // A target not stored yet still gets its tombstone; [tombstoneRejection] ignores it
+            // for those kinds when the target arrives.
+            if (targetEvent != null && targetEvent.isImmuneToDeletionRequests()) continue
             if (targetEvent != null && indexer.ownerHash(targetEvent) == ownerHashOfDeletion) {
                 indexer.unlink(targetEvent)
                 val targetSlot = slots.slotPathFor(targetEvent)
@@ -667,3 +675,6 @@ open class FsEventStore(
         }
     }
 }
+
+/** Kind 5 deletion requests and kind 62 vanish requests: a kind 5 against them has no effect. */
+private fun Event.isImmuneToDeletionRequests() = kind == DeletionRequestEvent.KIND || kind == RequestToVanishEvent.KIND

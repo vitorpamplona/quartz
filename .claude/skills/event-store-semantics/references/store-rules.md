@@ -202,13 +202,15 @@ named by a stored kind-5 from the same owner with `deletion.created_at >= event.
 Note the asymmetry with D01: a *backdated* id-deletion (older `created_at` than its target)
 still deletes on arrival, but would not block a later re-insert.
 
-**STORE-D05 — a kind-5 CAN delete another kind-5, and doing so un-blocks its targets.**
-Nothing excludes kind 5 from the id path (D01). Deleting a deletion removes its tombstone rows
-from `event_tags`, so events it had deleted become re-insertable. **Status: known quirk, not a
-considered decision.** NIP-09 leaves it open; at least one external implementation
-(vespa-eventstore) deliberately diverges by treating deletion-of-a-deletion as a no-op, which is
-the safer reading (tombstones shouldn't be revocable). If you change this, update this rule and
-the changelog — parity suites key off it.
+**STORE-D05 — a kind-5 against a kind-5 or a kind-62 has no effect.** NIP-09 ("Publishing a
+deletion request event against a deletion request has no effect") and NIP-62 (the same for a
+request to vanish). The id path (D01) skips kinds 5 and 62 (`kind NOT IN (5, 62)`), and the
+`reject_deleted_events` trigger (D04) runs only `WHEN NEW.kind NOT IN (5, 62)`, so a kind-5 naming
+one neither deletes it nor blocks it from arriving later, and tombstones are never revocable by
+another kind-5. Neither kind is replaceable/addressable, so no `a` tag reaches them. Vanish
+(D07) and manual deletes (D08) still remove kind 5s. Existing databases get the new trigger
+from the v5 → v6 migration. The filesystem store matches (`FsEventStore.tombstoneRejection`,
+`processDeletion`), as does vespa-eventstore.
 
 **STORE-D06 — NIP-62 vanish is relay-scoped.** A kind-62 only cascades when
 `shouldVanishFrom(relay)` — its `relay` tags name this store's `relay` URL or `ALL_RELAYS`.
@@ -324,6 +326,10 @@ use): fall back to an operator default, or no gate.
 ## Semantics changelog
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
+
+- 2026-10-30 (pending) D05 — a kind-5 no longer deletes a kind-5 or a kind-62, and no longer
+  blocks one from being inserted (SQLite schema v6 replaces the trigger; the fs store matches).
+  Previously the same author's second kind-5 removed the first and un-blocked its targets.
 
 - 2026-10-30 (pending) O01, O02 — written. The `StoreQueryContext` contract used to say the
   observer "must never change which events match" while listing trust floors as an example; it

@@ -23,11 +23,13 @@ package com.vitorpamplona.quartz.nip01Core.store.sqlite
 import androidx.sqlite.SQLiteException
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.nip23LongContent.LongFormContentEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
+import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -242,7 +244,8 @@ class DeletionTest : BaseDBTest() {
                 DELETE FROM event_headers
                 WHERE
                     id IN ("ca29c211f","ca29c211d") AND
-                    pubkey_owner_hash = "1573573083296714675"
+                    pubkey_owner_hash = "1573573083296714675" AND
+                    kind NOT IN (5, 62)
                 ├── SEARCH event_headers USING INDEX event_headers_id (id=?)
                 ├── SEARCH event_vanish USING INTEGER PRIMARY KEY (rowid=?)
                 ├── SEARCH event_expirations USING INTEGER PRIMARY KEY (rowid=?)
@@ -440,13 +443,12 @@ class DeletionTest : BaseDBTest() {
         }
 
     @Test
-    fun testKind5CanBeDeletedByAnotherKind5OfSameAuthor() =
+    fun testKind5AgainstAKind5HasNoEffect() =
         forEachDB { db ->
-            // Pinning current behavior: a kind-5 event is treated like any
-            // other event for ownership purposes — the same author can issue
-            // a second deletion that removes the first. Cross-author
-            // deletion of a kind-5 must NOT work.
-            val target = signer.sign(TextNoteEvent.build("target"))
+            // NIP-09: "Publishing a deletion request event against a deletion request has no
+            // effect." Neither the author's own second kind-5 nor a stranger's removes the first,
+            // and the first keeps blocking its target (STORE-D05).
+            val target = signer.sign(TextNoteEvent.build("target", createdAt = 50))
             val firstDeletion = signer.sign(DeletionRequestEvent.build(listOf(target), createdAt = 100))
 
             db.insert(target)
@@ -454,24 +456,54 @@ class DeletionTest : BaseDBTest() {
             db.assertQuery(null, Filter(ids = listOf(target.id)))
             db.assertQuery(firstDeletion, Filter(ids = listOf(firstDeletion.id)))
 
-            // Stranger cannot delete the kind-5.
             val stranger = NostrSignerSync()
-            val strangerDeletion =
-                stranger.sign(DeletionRequestEvent.build(listOf(firstDeletion), createdAt = 200))
-            db.insert(strangerDeletion)
+            db.insert(stranger.sign(DeletionRequestEvent.build(listOf(firstDeletion), createdAt = 200)))
             db.assertQuery(firstDeletion, Filter(ids = listOf(firstDeletion.id)))
 
-            // Same author can delete their previous kind-5.
-            val secondDeletion =
-                signer.sign(DeletionRequestEvent.build(listOf(firstDeletion), createdAt = 300))
+            val secondDeletion = signer.sign(DeletionRequestEvent.build(listOf(firstDeletion), createdAt = 300))
             db.insert(secondDeletion)
-            db.assertQuery(null, Filter(ids = listOf(firstDeletion.id)))
+            db.assertQuery(firstDeletion, Filter(ids = listOf(firstDeletion.id)))
             db.assertQuery(secondDeletion, Filter(ids = listOf(secondDeletion.id)))
 
-            // First deletion now blocked from re-insertion (own e-tag in event_tags).
+            // The tombstone was not revoked: the target stays blocked.
             assertFailsWith<SQLiteException> {
-                db.insert(firstDeletion)
+                db.insert(target)
             }
+        }
+
+    @Test
+    fun testKind5NamingAKind5DoesNotBlockItsLaterArrival() =
+        forEachDB { db ->
+            val target = signer.sign(TextNoteEvent.build("target"))
+            val firstDeletion = signer.sign(DeletionRequestEvent.build(listOf(target), createdAt = 100))
+            val secondDeletion = signer.sign(DeletionRequestEvent.build(listOf(firstDeletion), createdAt = 300))
+
+            // The deletion of the deletion arrives first; the deletion it names must still be
+            // accepted when it shows up, and still delete its own target.
+            db.insert(secondDeletion)
+            db.insert(target)
+            db.insert(firstDeletion)
+
+            db.assertQuery(firstDeletion, Filter(ids = listOf(firstDeletion.id)))
+            db.assertQuery(null, Filter(ids = listOf(target.id)))
+        }
+
+    @Test
+    fun testKind5AgainstAVanishRequestHasNoEffect() =
+        forEachDB { db ->
+            // NIP-62: "Publishing a deletion request event (Kind 5) against a request to vanish
+            // has no effect." The vanish is out of this store's scope here (D06), so it is stored
+            // as a plain event and only the kind-5 rule decides whether it survives.
+            val elsewhere = RelayUrlNormalizer.normalize("wss://elsewhere.example.com")
+            val vanish = signer.sign(RequestToVanishEvent.build(elsewhere, createdAt = 100))
+            val deletion = signer.sign(DeletionRequestEvent.build(listOf(vanish), createdAt = 300))
+
+            db.insert(deletion)
+            db.insert(vanish)
+            db.assertQuery(vanish, Filter(ids = listOf(vanish.id)))
+
+            db.insert(signer.sign(DeletionRequestEvent.build(listOf(vanish), createdAt = 400)))
+            db.assertQuery(vanish, Filter(ids = listOf(vanish.id)))
         }
 
     @Test
