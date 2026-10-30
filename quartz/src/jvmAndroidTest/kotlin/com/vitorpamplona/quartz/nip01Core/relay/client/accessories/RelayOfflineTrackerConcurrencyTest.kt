@@ -38,8 +38,10 @@ import kotlin.test.assertTrue
  * Each relay reports its connection callbacks on its own thread (OkHttp's dispatcher, one per
  * relay), so a burst of relays failing at once, as on a network change, writes
  * [RelayOfflineTracker.cannotConnectRelays] from many threads at the same time. As a plain
- * `var x = x + y` that lost writes, and its unsafely published sets crashed a reader with
- * `ConcurrentModificationException` from inside `Set.plus` (seen on 1.19.0, ARM).
+ * `var x = x + y` that lost writes, and a set published without a barrier could change under a
+ * thread iterating it: Amethyst 1.19.0 crashed on ARM with `ConcurrentModificationException`
+ * inside the next failure's `Set.plus`. That crash needs a weak memory model to show; the lost
+ * writes show on any JVM, so they are what this test pins.
  */
 class RelayOfflineTrackerConcurrencyTest {
     private class CapturingClient(
@@ -52,48 +54,63 @@ class RelayOfflineTrackerConcurrencyTest {
         }
     }
 
+    private suspend fun onEachInParallel(
+        relays: List<FakeRelayClient>,
+        action: (FakeRelayClient) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val workers = 32
+        (0 until workers)
+            .map { workerId ->
+                async {
+                    relays.forEachIndexed { idx, relay ->
+                        if (idx % workers == workerId) action(relay)
+                    }
+                }
+            }.awaitAll()
+    }
+
     @Test
-    fun concurrentFailuresAreAllRecordedAndConnectsClearThem() {
+    fun concurrentFailuresAndConnectsAreAllRecorded() {
         runBlocking {
             repeat(20) { burst ->
                 val client = CapturingClient()
                 val tracker = RelayOfflineTracker(client)
-                val listener = client.captured ?: error("RelayOfflineTracker did not register a listener")
+                try {
+                    val listener = client.captured ?: error("RelayOfflineTracker did not register a listener")
 
-                val relays =
-                    (0 until 512).map {
-                        FakeRelayClient(NormalizedRelayUrl("wss://relay-$burst-$it.example/"), connected = false)
+                    val relays =
+                        (0 until 1024).map {
+                            FakeRelayClient(NormalizedRelayUrl("wss://relay-$burst-$it.example/"), connected = false)
+                        }
+                    val (first, second) = relays.chunked(512)
+
+                    // Failures only: every one must be recorded.
+                    onEachInParallel(first) { listener.onCannotConnect(it, "failed") }
+
+                    val offline = tracker.cannotConnectRelays
+                    assertEquals(first.size, offline.size, "burst $burst lost ${first.size - offline.size} failures")
+                    assertTrue(first.all { it.url in offline }, "burst $burst recorded a relay that never failed")
+
+                    // Removals racing additions: half of the first batch reconnects while the
+                    // second batch fails, each list split over the same workers.
+                    val reconnecting = first.filterIndexed { idx, _ -> idx % 2 == 0 }.toSet()
+                    val stillDown = first.filterNot { it in reconnecting }
+                    // Interleaved, so every worker both removes and adds.
+                    val mixed = reconnecting.zip(second).flatMap { (up, down) -> listOf(up, down) }
+                    onEachInParallel(mixed + second.drop(reconnecting.size)) { relay ->
+                        if (relay in reconnecting) listener.onConnected(relay, 0, false) else listener.onCannotConnect(relay, "failed")
                     }
-                val workers = 32
 
-                withContext(Dispatchers.IO) {
-                    (0 until workers)
-                        .map { workerId ->
-                            async {
-                                relays.forEachIndexed { idx, relay ->
-                                    if (idx % workers == workerId) listener.onCannotConnect(relay, "failed")
-                                }
-                            }
-                        }.awaitAll()
+                    val expected = (stillDown + second).map { it.url }.toSet()
+                    assertEquals(expected, tracker.cannotConnectRelays, "burst $burst lost a write while connects and failures raced")
+
+                    // Connects only: every one must clear its relay.
+                    onEachInParallel(relays) { listener.onConnected(it, 0, false) }
+
+                    assertTrue(tracker.cannotConnectRelays.isEmpty(), "burst $burst kept ${tracker.cannotConnectRelays.size} relays that connected")
+                } finally {
+                    tracker.destroy()
                 }
-
-                val offline = tracker.cannotConnectRelays
-                assertEquals(relays.size, offline.size, "burst $burst lost ${relays.size - offline.size} failures")
-                assertTrue(relays.all { it.url in offline }, "burst $burst recorded a relay that never failed")
-
-                withContext(Dispatchers.IO) {
-                    (0 until workers)
-                        .map { workerId ->
-                            async {
-                                relays.forEachIndexed { idx, relay ->
-                                    if (idx % workers == workerId) listener.onConnected(relay, 0, false)
-                                }
-                            }
-                        }.awaitAll()
-                }
-
-                assertTrue(tracker.cannotConnectRelays.isEmpty(), "burst $burst kept ${tracker.cannotConnectRelays.size} relays that connected")
-                tracker.destroy()
             }
         }
     }

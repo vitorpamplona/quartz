@@ -40,14 +40,19 @@ class RelayOfflineTracker(
 
     // Swapped whole by compare-and-set: every relay reports on its own thread, so a burst of
     // failures (a network change) writes this from many threads at once. As a plain
-    // `x = x + y` it lost writes, and a set published without a barrier crashed the next
-    // writer's `Set.plus` with ConcurrentModificationException on ARM.
+    // `x = x + y` it lost writes, and a set published without a barrier could change under a
+    // thread iterating it: Amethyst 1.19.0 crashed with ConcurrentModificationException in
+    // the next failure's `Set.plus` on ARM. Copy-on-write fits the use: writes are rare
+    // transitions, while feeds read a stable snapshot on every filter assembly.
     private val offline = MutableStateFlow(setOf<NormalizedRelayUrl>())
 
     var cannotConnectRelays: Set<NormalizedRelayUrl>
         get() = offline.value
+
+        @Deprecated("Races the relay callbacks: a write through it can drop a failure reported meanwhile. Removed in 3.0.0.")
         set(value) {
-            offline.value = value
+            // A copy, so a caller still holding a mutable set cannot change it under a reader.
+            offline.value = value.toSet()
         }
 
     private val clientListener =
@@ -57,14 +62,17 @@ class RelayOfflineTracker(
                 pingMillis: Int,
                 compressed: Boolean,
             ) {
-                // Every connect lands here: skip the copy when the relay was never offline.
-                offline.update { if (relay.url in it) it - relay.url else it }
+                // Every connect lands here and almost none were offline: answer those without a lock.
+                if (relay.url !in offline.value) return
+                offline.update { it - relay.url }
             }
 
             override fun onCannotConnect(
                 relay: IRelayClient,
                 errorMessage: String,
             ) {
+                // A dead relay fails again on each retry: nothing to change after the first time.
+                if (relay.url in offline.value) return
                 offline.update { if (relay.url in it) it else it + relay.url }
             }
         }
