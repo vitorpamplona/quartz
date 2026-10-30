@@ -329,12 +329,21 @@ open class FsEventStore(
         return out
     }
 
+    /**
+     * A deduplicated union with per-filter limits, presented as ONE newest-first list (STORE-F07),
+     * as the SQLite store's `UNION … ORDER BY created_at DESC` is: each filter's own page comes
+     * back newest first, so concatenating them put a later filter's newer events after an earlier
+     * filter's older ones. When every filter searches, each branch keeps its relevance order
+     * instead (STORE-S02 orders such a REQ by relevance, not time).
+     */
     override suspend fun <T : Event> query(filters: List<Filter>): List<T> {
+        if (filters.size == 1) return query(filters[0])
         val seen = HashSet<HexKey>()
         val out = mutableListOf<T>()
         filters.forEach { f ->
             query<T>(f) { if (seen.add(it.id)) out.add(it) }
         }
+        if (!filters.all { !it.search.isNullOrBlank() }) out.sortByDescending { it.createdAt }
         return out
     }
 
@@ -364,14 +373,13 @@ open class FsEventStore(
         }
     }
 
+    /** The streaming form of [query]: a multi-filter union is collected and ordered first. */
     override suspend fun <T : Event> query(
         filters: List<Filter>,
         onEach: (T) -> Unit,
     ) {
-        val seen = HashSet<HexKey>()
-        filters.forEach { f ->
-            query<T>(f) { if (seen.add(it.id)) onEach(it) }
-        }
+        if (filters.size == 1) return query(filters[0], onEach)
+        query<T>(filters).forEach(onEach)
     }
 
     override suspend fun count(filter: Filter): Int {

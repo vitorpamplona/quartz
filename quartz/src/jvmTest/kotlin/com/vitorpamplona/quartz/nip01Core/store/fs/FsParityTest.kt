@@ -111,6 +111,15 @@ class FsParityTest {
         assertEquals(sqliteIds, fsIds, "ordered parity mismatch: $message")
     }
 
+    private suspend fun assertParityOrdered(
+        filters: List<Filter>,
+        message: String = "",
+    ) {
+        val sqliteIds = sqlite.query<Event>(filters).map { it.id }
+        val fsIds = fs.query<Event>(filters).map { it.id }
+        assertEquals(sqliteIds, fsIds, "ordered parity mismatch: $message")
+    }
+
     private fun note(
         body: String,
         ts: Long,
@@ -483,6 +492,20 @@ class FsParityTest {
                 sqlite.query<Event>(filters).map { it.id }.toSet(),
                 fs.query<Event>(filters).map { it.id }.toSet(),
             )
+        }
+
+    @Test
+    fun `multi-filter union is one newest-first order (STORE-F07)`() =
+        runBlocking {
+            // The second filter's events are the newer ones: concatenating per filter put them last.
+            listOf(note("a1", 1), note("a2", 3), note("b1", 2, s = otherSigner), note("b2", 4, s = otherSigner)).forEach { insertBoth(it) }
+            val filters = listOf(Filter(authors = listOf(signer.pubKey)), Filter(authors = listOf(otherSigner.pubKey)))
+
+            assertParityOrdered(filters)
+            assertEquals(listOf(4L, 3L, 2L, 1L), fs.query<Event>(filters).map { it.createdAt })
+            val streamed = mutableListOf<Long>()
+            fs.query<Event>(filters) { streamed += it.createdAt }
+            assertEquals(listOf(4L, 3L, 2L, 1L), streamed)
         }
 
     // ------------------------------------------------------------------

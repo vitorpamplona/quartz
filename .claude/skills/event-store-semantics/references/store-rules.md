@@ -327,6 +327,9 @@ use): fall back to an operator default, or no gate.
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
 
+- 2026-10-30 (pending) F07 — the filesystem store now returns a multi-filter REQ in one merged
+  `created_at DESC` order (it concatenated per filter); found by the conformance battery.
+
 - 2026-10-30 (pending) D05 — a kind-5 no longer deletes a kind-5 or a kind-62, and no longer
   blocks one from being inserted (SQLite schema v6 replaces the trigger; the fs store matches).
   Previously the same author's second kind-5 removed the first and un-blocked its targets.
