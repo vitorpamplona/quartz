@@ -20,8 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip85TrustedAssertions.users
 
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.ActiveHoursEndTag
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.ActiveHoursStartTag
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.FirstCreatedAtTag
@@ -44,6 +46,15 @@ import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.ZapCountReceiv
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.ZapCountSentTag
 
 fun TagArray.rank() = fastFirstNotNullOfOrNull(RankTag::parse)
+
+/** [rank] clamped to NIP-85's 0..100 scale, with 0 kept as a value: see [RankTag.parseBounded]. */
+fun TagArray.boundedRank() = fastFirstNotNullOfOrNull(RankTag::parseBounded)
+
+/**
+ * The pubkey a kind 30382 card is about: its `d` tag when that is exactly a pubkey (64 lowercase
+ * hex characters, [UserAssertionEvent.isSubjectPubKey]), else null.
+ */
+fun TagArray.subjectPubKey(): HexKey? = dTag().takeIf(UserAssertionEvent::isSubjectPubKey)
 
 fun TagArray.followerCount() = fastFirstNotNullOfOrNull(FollowerCountTag::parse)
 

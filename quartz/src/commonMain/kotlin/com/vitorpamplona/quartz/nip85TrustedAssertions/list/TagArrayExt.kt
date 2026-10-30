@@ -21,8 +21,20 @@
 package com.vitorpamplona.quartz.nip85TrustedAssertions.list
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip85TrustedAssertions.list.tags.ServiceProviderTag
+import com.vitorpamplona.quartz.nip85TrustedAssertions.list.tags.ServiceType
 
 fun TagArray.serviceProviders() = mapNotNull(ServiceProviderTag::parse)
 
 fun TagArray.serviceProviderSet() = mapNotNullTo(mutableSetOf(), ServiceProviderTag::parse)
+
+/**
+ * Every usable delegation to [service], in tag order. NIP-85 lets a list name several providers
+ * for one service; an entry whose relay slot does not normalize is skipped, as in
+ * [serviceProviders].
+ */
+fun TagArray.providersFor(service: ServiceType): List<ServiceProviderTag> = mapNotNull { tag -> ServiceProviderTag.parse(tag)?.takeIf { it.service == service } }
+
+/** The first usable delegation to [service], or null: see [TrustProviderListEvent.providerFor]. */
+fun TagArray.providerFor(service: ServiceType): ServiceProviderTag? = fastFirstNotNullOfOrNull { tag -> ServiceProviderTag.parse(tag)?.takeIf { it.service == service } }
