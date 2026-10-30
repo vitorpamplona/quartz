@@ -310,4 +310,34 @@ class LiveSubscriptionTest {
             assertTrue(sink.frames.isEmpty())
             assertEquals(1, sink.messages.count { it is EoseMessage })
         }
+
+    /** A wrapper whose registration itself fails, e.g. a gate refusing the REQ outright. */
+    private class RefusingBackend(
+        val inner: LiveEventStore,
+    ) : LiveSubscriptionBackend,
+        SessionBackend by inner {
+        override fun openSubscription(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onLive: LiveListener,
+        ): LiveSubscription = throw IllegalStateException("too many searches")
+    }
+
+    @Test
+    fun aRegistrationThatThrowsEndsWithClosed() =
+        runTest {
+            val store = GatedStore(EventStore(null))
+            val sink = Frames()
+            val backend = RefusingBackend(LiveEventStore(store, AcceptingIngest))
+            val session = RelaySession(backend, EmptyPolicy, CoroutineScope(StandardTestDispatcher(testScheduler) + Job()), sink, onClose = {})
+
+            session.receive("""["REQ","s",{"kinds":[1]}]""")
+
+            val closed = sink.messages.single() as ClosedMessage
+            assertEquals("s", closed.subId)
+            assertTrue(closed.message.contains("too many searches"))
+            // The failed REQ holds no slot: the same id can be opened again.
+            session.receive("""["CLOSE","s"]""")
+            assertTrue((sink.messages.last() as ClosedMessage).message.contains("no such subscription"))
+        }
 }

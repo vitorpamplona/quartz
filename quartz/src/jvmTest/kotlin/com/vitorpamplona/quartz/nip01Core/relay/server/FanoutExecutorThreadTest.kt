@@ -33,7 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -60,8 +60,9 @@ class FanoutExecutorThreadTest {
         override val liveExecutor: Loop,
         val eoses: AtomicInteger,
     ) : LiveFrameSink {
-        /** Live event ids per subscription, in arrival order. */
-        val received = Collections.synchronizedMap(HashMap<String, MutableList<String>>())
+        /** Live event ids per subscription, in arrival order: written on the loop only, read once [frames] says done. */
+        val received = ConcurrentHashMap<String, MutableList<String>>()
+        val frames = AtomicInteger()
         val wrongThread = AtomicInteger()
 
         override fun message(message: Message) {
@@ -77,6 +78,7 @@ class FanoutExecutorThreadTest {
             if (Thread.currentThread() !== liveExecutor.thread) wrongThread.incrementAndGet()
             val id = OptimizedJsonMapper.fromJson(body).id
             received.getOrPut(framePrefix) { mutableListOf() }.add(id)
+            frames.incrementAndGet()
         }
     }
 
@@ -115,7 +117,7 @@ class FanoutExecutorThreadTest {
 
             val expected = events.map { it.id }
             withTimeout(10_000) {
-                while (sinks.any { s -> s.received.values.sumOf { it.size } < 2 * events.size }) delay(1)
+                while (sinks.any { it.frames.get() < 2 * events.size }) delay(1)
             }
             sinks.forEach { sink ->
                 assertEquals(0, sink.wrongThread.get())

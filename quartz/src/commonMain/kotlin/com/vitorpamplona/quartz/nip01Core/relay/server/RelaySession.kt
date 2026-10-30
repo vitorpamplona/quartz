@@ -468,7 +468,14 @@ class RelaySession(
         // Registered before this returns, so the slot is in [subscriptions] before any
         // CLOSE can look for it; live events may already be arriving on the listener.
         val req = LiveReq(cmd.subId, framePrefix)
-        val subscription = live.openSubscription(requestContext, filters, req)
+        val subscription =
+            try {
+                live.openSubscription(requestContext, filters, req)
+            } catch (e: Exception) {
+                // A wrapper refusing the REQ outright (a gate) answers like a failed replay.
+                send(ClosedMessage.of(cmd.subId, MachineReadablePrefix.ERROR, e.message ?: "query failed"))
+                return
+            }
         req.subscription = subscription
         subscriptions.put(cmd.subId, req)
 
@@ -486,14 +493,16 @@ class RelaySession(
                         // policy can veto it per session.
                         subscription.replay(
                             onEach = { event ->
-                                if (policy.canSendToSession(event)) send(EventMessage(cmd.subId, event))
+                                if (!req.closed && policy.canSendToSession(event)) send(EventMessage(cmd.subId, event))
                             },
-                            onEose = eose,
+                            onEose = { if (!req.closed) eose() },
                         )
                     } else {
+                        // A replay that ignores cancellation keeps producing rows after a
+                        // CLOSE: none of them, nor its EOSE, may reach the client.
                         subscription.replayRaw(
-                            onEachStored = { raw -> sendStored(framePrefix, raw, probe) },
-                            onEose = eose,
+                            onEachStored = { raw -> if (!req.closed) sendStored(framePrefix, raw, probe) },
+                            onEose = { if (!req.closed) eose() },
                         )
                     }
                 } catch (e: CancellationException) {
@@ -534,6 +543,10 @@ class RelaySession(
         @Volatile
         var replay: Job? = null
 
+        /** Set by [cancel]: CLOSE, a replaced sub id or a disconnect. */
+        @Volatile
+        var closed = false
+
         override fun onLive(
             event: Event,
             body: String,
@@ -546,6 +559,7 @@ class RelaySession(
         }
 
         fun cancel() {
+            closed = true
             replay?.cancel()
             subscription.cancel()
         }
