@@ -78,7 +78,7 @@ suspend fun INostrClient.fetchAllPagesResuming(
     return walkEachFilter(filters, onEvent) { walk, deliver ->
         val filter = walk.singleOrNull()
         if (filter == null || filter.isRankedSearch()) {
-            walkPages(relay, walk, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, deliver)
+            walkPages(relay, walk, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, null, deliver)
         } else {
             resumingWalk(relay, filter, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, resumeBackoff, onResume, deliver)
         }
@@ -125,6 +125,7 @@ private suspend fun INostrClient.resumingWalk(
                 },
                 pageSize,
                 throttleBackoff,
+                null,
             ) { event ->
                 if (cursor.alreadyDelivered(event)) return@walkPages
                 onEvent(event)

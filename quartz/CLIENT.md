@@ -417,6 +417,9 @@ Things worth knowing:
 - Only `PagedFetchResult.End.DRAINED` proves the relay has nothing more; the other
   endings (`IDLE`, `CLOSED`, `AUTH_REQUIRED`, …) say why the walk stopped, and
   `message` carries the relay's own words.
+- `fetchAllPages(…, onPage = { page -> … })` reports every REQ of the walk once it ends
+  (`PageReport`: what was asked, received, delivered, dropped as duplicate or not matching,
+  elapsed time, ending and the relay's message), refusals the walk recovered from included.
 - A relay that requires NIP-42 AUTH is waited on while a `RelayAuthenticator` attached
   to the client answers the challenge, instead of being reported as empty.
 - There are more: `fetchAllWithHooks` (verify/store each event as it arrives, with
