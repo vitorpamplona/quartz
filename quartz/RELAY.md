@@ -494,6 +494,27 @@ The engine frames `count`/`approximate`/`hll` onto the wire
 relays over the same corpus merge with `HyperLogLog.merge(...)` into a
 deduplicated cross-relay estimate.
 
+## NIP-86 admin over HTTP
+
+`Nip86HttpHandler` (`nip86RelayManagement/server/`) runs the whole NIP-86 request: size cap,
+NIP-98 verification bound to `publicUrl`, the allow-list, parse, dispatch. NIP-98 binds the token
+to the body's sha256, so `handle(header, body)` needs the body; call `preauthorize(header)` first
+and a stranger, or a stale, forged or misbound token, is refused before a byte is read:
+
+```kotlin
+val handler = Nip86HttpHandler(Nip86Server(banStore, info, purge, admins), "https://relay.example.com/")
+
+handler.preauthorize(authorization)?.let { refusal -> return respond(refusal) } // 401 / 403
+val body = readBodyAtMost(handler.maxBodyBytes)                                    // the adapter bounds the read
+respond(handler.handle(authorization, body))
+```
+
+`preauthorize` records nothing; `handle` still checks the payload hash and spends the token.
+The handler passes the allow-list to `Nip98AuthVerifier.verify(…, acceptsAuthor)`, which keeps
+admins' token ids apart from everyone else's, so no flood of valid tokens from strangers can
+roll a used admin token out of the replay set. Any other NIP-98 endpoint that admits only some
+authors should do the same, and can use `Nip98AuthVerifier.preverify` for its own pre-body check.
+
 ## Observability
 
 Both servers take an optional `RelayServerListener` and expose a live
