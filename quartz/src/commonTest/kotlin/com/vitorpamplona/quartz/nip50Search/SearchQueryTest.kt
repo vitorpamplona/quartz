@@ -343,4 +343,29 @@ class SearchQueryTest {
         // No extensions -> the original string comes back untouched.
         assertEquals("best \"nostr apps\" -spam", SearchQuery.stripExtensions("best \"nostr apps\" -spam"))
     }
+
+    @Test
+    fun observerIsAValidatedLowercasePubKey() {
+        val key = "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"
+        assertEquals(key, SearchQuery.parse("bitcoin observer:$key").observer)
+        assertEquals(key, SearchQuery.parse("observer:${key.uppercase()}").observer)
+        // Not a pubkey: absent, never passed through. Hex.isHex64 alone would take the first.
+        assertNull(SearchQuery.parse("observer:${key}zz").observer)
+        assertNull(SearchQuery.parse("observer:npub1xyz").observer)
+        assertNull(SearchQuery.parse("bitcoin").observer)
+        assertEquals(key, SearchQuery.parse("observer:$key").extension(SearchQuery.OBSERVER)?.lowercase())
+    }
+
+    @Test
+    fun languageCodeIsThePrimarySubtag() {
+        assertEquals("pt", SearchQuery.parse("language:pt-BR").languageCode)
+        assertEquals("es", SearchQuery.parse("language:es_419").languageCode)
+        assertEquals("en", SearchQuery.parse("language:EN").languageCode)
+        assertEquals("fil", SearchQuery.parse("language:fil").languageCode)
+        // The raw value stays available as typed.
+        assertEquals("pt-BR", SearchQuery.parse("language:pt-BR").language)
+        assertNull(SearchQuery.parse("language:portuguese").languageCode)
+        assertNull(SearchQuery.parse("language:1").languageCode)
+        assertNull(SearchQuery.parse("bitcoin").languageCode)
+    }
 }

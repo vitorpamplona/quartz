@@ -70,7 +70,7 @@ class SQLiteEventStore(
          * `addressable_idx` (`kind, pubkey, d_tag`) — both start with these two columns.
          */
         private const val SUPERSEDED_CONSTRAINT = "UNIQUE constraint failed: event_headers.kind, event_headers.pubkey"
-        const val DATABASE_VERSION = 5
+        const val DATABASE_VERSION = 6
     }
 
     val seedModule = SeedModule()
@@ -228,6 +228,11 @@ class SQLiteEventStore(
                     // contentless table keyed by event_headers.row_id. The old
                     // rowids can't be remapped, so drop and repopulate.
                     fullTextSearchModule.migrateV4ToContentless(db)
+                }
+                5 -> {
+                    // Upgrade from version 5 to 6: kind 5 and kind 62 events are no
+                    // longer blocked by a kind 5 that names them (NIP-09 / NIP-62).
+                    deletionModule.migrateV5ExemptDeletionAndVanishRequests(db)
                 }
             }
         }

@@ -1,4 +1,4 @@
-# Store rules (STORE-F/W/D/C/S/N)
+# Store rules (STORE-F/W/D/C/S/N/O)
 
 The full behavioral contract of the SQLite `EventStore`, as numbered rules. Paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/store/`. When you change
@@ -202,13 +202,15 @@ named by a stored kind-5 from the same owner with `deletion.created_at >= event.
 Note the asymmetry with D01: a *backdated* id-deletion (older `created_at` than its target)
 still deletes on arrival, but would not block a later re-insert.
 
-**STORE-D05 — a kind-5 CAN delete another kind-5, and doing so un-blocks its targets.**
-Nothing excludes kind 5 from the id path (D01). Deleting a deletion removes its tombstone rows
-from `event_tags`, so events it had deleted become re-insertable. **Status: known quirk, not a
-considered decision.** NIP-09 leaves it open; at least one external implementation
-(vespa-eventstore) deliberately diverges by treating deletion-of-a-deletion as a no-op, which is
-the safer reading (tombstones shouldn't be revocable). If you change this, update this rule and
-the changelog — parity suites key off it.
+**STORE-D05 — a kind-5 against a kind-5 or a kind-62 has no effect.** NIP-09 ("Publishing a
+deletion request event against a deletion request has no effect") and NIP-62 (the same for a
+request to vanish). The id path (D01) skips kinds 5 and 62 (`kind NOT IN (5, 62)`), and the
+`reject_deleted_events` trigger (D04) runs only `WHEN NEW.kind NOT IN (5, 62)`, so a kind-5 naming
+one neither deletes it nor blocks it from arriving later, and tombstones are never revocable by
+another kind-5. Neither kind is replaceable/addressable, so no `a` tag reaches them. Vanish
+(D07) and manual deletes (D08) still remove kind 5s. Existing databases get the new trigger
+from the v5 → v6 migration. The filesystem store matches (`FsEventStore.tombstoneRejection`,
+`processDeletion`), as does vespa-eventstore.
 
 **STORE-D06 — NIP-62 vanish is relay-scoped.** A kind-62 only cascades when
 `shouldVanishFrom(relay)` — its `relay` tags name this store's `relay` URL or `ALL_RELAYS`.
@@ -290,6 +292,27 @@ non-itemizable cases).
 
 ---
 
+## Caller identity / observer lens (STORE-O)
+
+The built-in stores ignore the observer; these rules bound what an observer-relative store
+(Vespa's web-of-trust store, a "for-you" backend) may do with it. Normative text:
+`StoreQueryContext.kt` KDoc.
+
+**STORE-O01 — the observer is a lens, and a lens may gate.** `coroutineContext[StoreQueryContext]`
+carries the connection's NIP-42 identities. A store may **rank** by them and may **gate** by
+them — answer a subset of the filter's match set (a trust floor). It may never **widen** (return
+an event the filter does not match), and `query`, `count` and `snapshotIdsForNegentropy` under
+the same observer answer the same set. Whether a caller may read at all stays in the relay
+policy; a gate is not access control.
+
+**STORE-O02 — the observer is the first key that authenticated.** `authenticatedUsers`
+iterates in authentication order (`RelaySession` appends with `Set.plus`, which keeps order;
+re-authenticating a key does not move it) and `observer` is its first element, so a connection
+that adds a second identity keeps its lens. Absent element = unauthenticated (or direct store
+use): fall back to an operator default, or no gate.
+
+---
+
 ## Configuration presets
 
 - **Client default** (`DefaultIndexingStrategy()`): FTS on (synchronous), optional indexes off,
@@ -303,6 +326,18 @@ non-itemizable cases).
 ## Semantics changelog
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
+
+- 2026-10-30 (pending) F07 — the filesystem store now returns a multi-filter REQ in one merged
+  `created_at DESC` order (it concatenated per filter); found by the conformance battery.
+
+- 2026-10-30 (pending) D05 — a kind-5 no longer deletes a kind-5 or a kind-62, and no longer
+  blocks one from being inserted (SQLite schema v6 replaces the trigger; the fs store matches).
+  Previously the same author's second kind-5 removed the first and un-blocked its targets.
+
+- 2026-10-30 (pending) O01, O02 — written. The `StoreQueryContext` contract used to say the
+  observer "must never change which events match" while listing trust floors as an example; it
+  now allows gating (subset only, consistent across query/count/snapshot), and `observer` is
+  defined as the first authenticated key instead of "one of" an unordered set.
 
 - 2026-10-16 (pending) F05 — a `tagsAll` `#d` is no longer ignored on the tag-join/union/count/
   delete paths; `delete(Filter(tagsAll = {"d": [x]}))` used to delete every row.

@@ -42,7 +42,8 @@ import com.vitorpamplona.quartz.utils.Hex
  *  - the newest card per subject wins (addressable supersession);
  *  - a card whose rank is 0, or that has no rank, is a removal: Brainstorm publishes a
  *    rank-0 card before the kind-5 that deletes it, "so that even if the relay rejects kind 5,
- *    the score is effectively zeroed out";
+ *    the score is effectively zeroed out". A reader that keeps 0 as a score (a store ranking
+ *    or flooring on it) uses `UserAssertionEvent.boundedRank()` instead;
  *  - a kind-5 by the provider removes the subject's card when it is not newer than the
  *    deletion (`a` tag `30382:<provider>:<subject>`), or the exact card (`e` tag);
  *  - [removeEventIds] drops cards a negentropy full check found the relay no longer has;
@@ -141,12 +142,7 @@ class TrustNetworkBuilder(
     }
 
     /** A card's `d` tag names a pubkey: 64 lowercase hex characters, as NIP-01 writes them. */
-    private fun isSubject(subject: String?): Boolean {
-        // isHex64 reads only the first 64 characters: "<pubkey>:v2" is another address.
-        if (subject == null || subject.length != 64 || !Hex.isHex64(subject)) return false
-        for (c in subject) if (c in 'A'..'F') return false
-        return true
-    }
+    private fun isSubject(subject: String?): Boolean = UserAssertionEvent.isSubjectPubKey(subject)
 
     private fun addDeletion(event: Event): Boolean {
         val prefix = "${UserAssertionEvent.KIND}:$provider:"

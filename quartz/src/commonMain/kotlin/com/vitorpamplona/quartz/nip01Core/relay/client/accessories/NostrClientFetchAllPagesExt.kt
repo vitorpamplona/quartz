@@ -149,6 +149,56 @@ data class PagedFetchResult(
 }
 
 /**
+ * One REQ of a [fetchAllPages] walk, reported to its `onPage` once the page has ended: what was
+ * asked, what the relay sent, what reached `onEvent`, and how the page ended. Every REQ is
+ * reported, re-asks included (a limit the relay refused, a throttled page asked again), so the
+ * reports are the walk as the relay saw it.
+ *
+ * `received` counts every EVENT on the page's subscription; each lands in exactly one of
+ * [delivered], [duplicates] or [unmatched], except an event whose `onEvent` threw (the walk then
+ * ends with that exception).
+ */
+class PageReport(
+    val relay: NormalizedRelayUrl,
+    /** The filters this REQ put on the wire: the caller's, with this page's `until` and `limit`. */
+    val asked: List<Filter>,
+    /** EVENTs that arrived on this page's subscription. */
+    val received: Int,
+    /** Events handed to `onEvent`: new to the walk and matching an asked filter that still needed them. */
+    val delivered: Int,
+    /**
+     * Events the walk had already delivered: the boundary second the inclusive `until` re-fetches,
+     * an event the relay repeated on the page, a page re-served after an AUTH.
+     */
+    val duplicates: Int,
+    /**
+     * Events matching no asked filter that still needed them: a relay ignoring the filter's kinds,
+     * authors, tags or `since` (or one sending past a met limit). Dropped by the walk.
+     */
+    val unmatched: Int,
+    /** Of [received], how many were newer than the `until` this page asked for. */
+    val aboveUntil: Int,
+    /** From the REQ going out to the page's ending, in milliseconds. */
+    val elapsedMs: Long,
+    val ending: Ending,
+    /** The relay's words for a [Ending.CLOSED] / [Ending.AUTH_REQUIRED] page, or the transport's error for [Ending.CANNOT_CONNECT]. */
+    val message: String?,
+    /** The NIP-67 hints on the page's EOSE (`finish`, `more`, `auth`), or null. */
+    val eoseHints: List<String>?,
+) {
+    /** How one page ended, before the walk decides what it means. */
+    enum class Ending {
+        EOSE,
+        CLOSED,
+        AUTH_REQUIRED,
+        CANNOT_CONNECT,
+
+        /** No EOSE, CLOSED or error within the idle window. */
+        IDLE,
+    }
+}
+
+/**
  * Whether a [fetchAllPages] page is over. Its subscription outlives it by one page (see
  * `openSubId` there), so its listener checks this before acting on anything the relay still
  * sends: written by the walk, and by the listener itself when the connection ends; read on the
@@ -343,6 +393,11 @@ class PageRetryBackoff(
  *   it takes.
  * @param throttleBackoff How an empty page the relay's earlier answers contradict is re-asked
  *   (see above). [PageRetryBackoff.NONE] takes every empty EOSEd page at its word.
+ * @param onPage      Hears every REQ once its page has ended, re-asks included: the filters
+ *   asked, what crossed the socket and what was delivered, duplicated or dropped as not
+ *   matching, how long it took, how it ended and the relay's words ([PageReport]). The events
+ *   delivered since the previous report are this page's. For profiling a relay or explaining an
+ *   empty walk; it changes nothing about the walk. Runs on the walk's coroutine: keep it cheap.
  * @param onEvent     Called once for every distinct event delivered, in page order.
  * @return What was delivered and WHY the walk stopped — see [PagedFetchResult].
  *   The reason is part of the answer, not a detail: `downloaded` cannot tell
@@ -357,11 +412,23 @@ suspend fun INostrClient.fetchAllPages(
     onNewPage: ((Long) -> Unit)? = null,
     pageSize: Int? = null,
     throttleBackoff: PageRetryBackoff = PageRetryBackoff.DEFAULT,
+    onPage: ((PageReport) -> Unit)? = null,
     onEvent: suspend (Event) -> Unit,
 ): PagedFetchResult {
     require(pageSize == null || pageSize > 0) { "pageSize must be positive: $pageSize" }
-    return walkEachFilter(filters, onEvent) { walk, deliver -> walkPages(relay, walk, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, deliver) }
+    return walkEachFilter(filters, onEvent) { walk, deliver -> walkPages(relay, walk, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, onPage, deliver) }
 }
+
+@Deprecated("Kept for binary compatibility; use the overload with onPage.", level = DeprecationLevel.HIDDEN)
+suspend fun INostrClient.fetchAllPages(
+    relay: NormalizedRelayUrl,
+    filters: List<Filter>,
+    idleTimeoutMs: Long = 30_000L,
+    onNewPage: ((Long) -> Unit)? = null,
+    pageSize: Int? = null,
+    throttleBackoff: PageRetryBackoff = PageRetryBackoff.DEFAULT,
+    onEvent: suspend (Event) -> Unit,
+): PagedFetchResult = fetchAllPages(relay, filters, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, null, onEvent)
 
 /**
  * [fetchAllPages]' split of [filters] into walks, run one after another by [walk]: the search
@@ -502,6 +569,7 @@ internal suspend fun INostrClient.walkPages(
     onNewPage: ((Long) -> Unit)?,
     pageSize: Int?,
     throttleBackoff: PageRetryBackoff,
+    onPage: ((PageReport) -> Unit)?,
     onEvent: suspend (Event) -> Unit,
 ): PagedFetchResult {
     // Waiting out an `auth-required:` page refusal is worth something only when this client has
@@ -721,6 +789,9 @@ internal suspend fun INostrClient.walkPages(
             // page twice (1002 for a 500-event page), and against that "largest page" every
             // honest 500 after it looked short, so the walk paused seven times for nothing.
             var repeatsDropped = 0
+            // For [PageReport]: every received event lands in delivered, duplicates or unmatched.
+            var duplicates = 0
+            var unmatched = 0
 
             // Diagnostics only: how the relay ordered and repeated this page's events.
             val pageIdsSeen: HashSet<HexKey>? = if (walkIds != null) HashSet() else null
@@ -812,12 +883,18 @@ internal suspend fun INostrClient.walkPages(
                                     }
                                     // Drop a boundary-second event we already delivered on an
                                     // earlier page (the inclusive re-fetch returns it again).
-                                    if (boundary != null && event.createdAt == boundary && event.id in seenAtBoundary) return
+                                    if (boundary != null && event.createdAt == boundary && event.id in seenAtBoundary) {
+                                        duplicates++
+                                        return
+                                    }
                                     // The relay re-serving this page after an EOSE "auth" hint: skip what
                                     // this page already delivered.
                                     if (reServing && pageIds != null) {
                                         val seenOnPage = reServedIds ?: HashSet(pageIds).also { reServedIds = it }
-                                        if (event.id in seenOnPage) return
+                                        if (event.id in seenOnPage) {
+                                            duplicates++
+                                            return
+                                        }
                                     }
                                     // Drop an event the relay sends twice on one page: purplepag.es,
                                     // measured, repeats 59-84 events per 500-event page, and each repeat
@@ -830,6 +907,7 @@ internal suspend fun INostrClient.walkPages(
                                     }
                                     if (!runIds.add(event.id) || (firstPageIds != null && !firstPageIds.add(event.id))) {
                                         repeatsDropped++
+                                        duplicates++
                                         return
                                     }
 
@@ -858,6 +936,7 @@ internal suspend fun INostrClient.walkPages(
                                             if (!rankedSearch[index]) advancesCursor = true
                                         }
                                     }
+                                    if (!atLeastOne) unmatched++
                                     if (atLeastOne) {
                                         try {
                                             onEvent(event)
@@ -1044,6 +1123,32 @@ internal suspend fun INostrClient.walkPages(
                 val reason = if (pageEnd == PageSignal.CLOSED || pageEnd == PageSignal.AUTH_REQUIRED || pageEnd == PageSignal.CANNOT_CONNECT) " ($refusal)" else ""
                 val shape = if (pageIdsSeen != null) " outOfOrder=$outOfOrder aboveUntil=$aboveBoundary repeatedOnPage=$repeatedOnPage deliveredBefore=$deliveredBefore" else ""
                 "${relay.url} REQ #$reqCount -> received=$received delivered=$delivered end=${pageEnd ?: "IDLE"}$reason$shape hints=$eoseHints in ${pageStart.elapsedNow().inWholeMilliseconds}ms"
+            }
+
+            if (onPage != null) {
+                val ending =
+                    when (pageEnd) {
+                        PageSignal.EOSE -> PageReport.Ending.EOSE
+                        PageSignal.CLOSED -> PageReport.Ending.CLOSED
+                        PageSignal.AUTH_REQUIRED -> PageReport.Ending.AUTH_REQUIRED
+                        PageSignal.CANNOT_CONNECT -> PageReport.Ending.CANNOT_CONNECT
+                        null -> PageReport.Ending.IDLE
+                    }
+                onPage(
+                    PageReport(
+                        relay = relay,
+                        asked = activeFilters.map { it.value },
+                        received = received,
+                        delivered = delivered,
+                        duplicates = duplicates,
+                        unmatched = unmatched,
+                        aboveUntil = aboveBoundary,
+                        elapsedMs = pageStart.elapsedNow().inWholeMilliseconds,
+                        ending = ending,
+                        message = refusal.takeIf { ending == PageReport.Ending.CLOSED || ending == PageReport.Ending.AUTH_REQUIRED || ending == PageReport.Ending.CANNOT_CONNECT },
+                        eoseHints = eoseHints,
+                    ),
+                )
             }
 
             // An EOSEd empty page that the relay's own earlier answers say cannot be empty:
@@ -1355,6 +1460,7 @@ suspend fun INostrClient.fetchAllPages(
     onNewPage: ((Long) -> Unit)? = null,
     pageSize: Int? = null,
     throttleBackoff: PageRetryBackoff = PageRetryBackoff.DEFAULT,
+    onPage: ((PageReport) -> Unit)? = null,
     onEvent: suspend (Event) -> Unit,
 ): PagedFetchResult =
     fetchAllPages(
@@ -1364,8 +1470,20 @@ suspend fun INostrClient.fetchAllPages(
         onNewPage = onNewPage,
         pageSize = pageSize,
         throttleBackoff = throttleBackoff,
+        onPage = onPage,
         onEvent = onEvent,
     )
+
+@Deprecated("Kept for binary compatibility; use the overload with onPage.", level = DeprecationLevel.HIDDEN)
+suspend fun INostrClient.fetchAllPages(
+    relay: String,
+    filters: List<Filter>,
+    idleTimeoutMs: Long = 30_000L,
+    onNewPage: ((Long) -> Unit)? = null,
+    pageSize: Int? = null,
+    throttleBackoff: PageRetryBackoff = PageRetryBackoff.DEFAULT,
+    onEvent: suspend (Event) -> Unit,
+): PagedFetchResult = fetchAllPages(RelayUrlNormalizer.normalize(relay), filters, idleTimeoutMs, onNewPage, pageSize, throttleBackoff, null, onEvent)
 
 private fun List<String>?.hasHint(hint: String) = this != null && contains(hint)
 
@@ -1379,8 +1497,5 @@ private fun List<String>?.hasHint(hint: String) = this != null && contains(hint)
  */
 internal fun Filter.isRankedSearch(): Boolean {
     val query = SearchQuery.parse(search ?: return false)
-    return query.hasText || query.extension(OBSERVER_EXTENSION) != null
+    return query.hasText || query.extension(SearchQuery.OBSERVER) != null
 }
-
-/** search.brainstorm.world's trust-ranking token: `observer:<64-hex pubkey>`. Not a NIP-50 key. */
-private const val OBSERVER_EXTENSION = "observer"

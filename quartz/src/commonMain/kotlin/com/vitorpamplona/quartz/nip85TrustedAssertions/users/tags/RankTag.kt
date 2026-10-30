@@ -34,6 +34,25 @@ class RankTag {
             return tag[1].toIntOrNull()
         }
 
+        /** The bounds of NIP-85's rank: an integer normalized to 0..100. */
+        val SCALE = 0..100
+
+        /**
+         * [parse], clamped onto NIP-85's normalized [SCALE] (0..100): providers are not trusted to
+         * stay on scale, so a negative rank reads as 0 and an over-scale one as 100. Null only when
+         * the tag is not a rank tag or its value is not an integer.
+         *
+         * Rank 0 is a VALUE here ("the provider scores this subject at the bottom"), which is
+         * what a store that ranks or floors on the score needs. Quartz's trust index
+         * (`memberRank`, used by `TrustNetworkBuilder`) reads it differently on purpose: there a
+         * card with rank 0 or no rank is a removal, because Brainstorm zeroes a card before the
+         * kind 5 that deletes it. Pick the reading your consumer means; do not mix them over one
+         * index.
+         *
+         * @see com.vitorpamplona.quartz.nip85TrustedAssertions.users.index.TrustNetworkBuilder
+         */
+        fun parseBounded(tag: Array<String>): Int? = parse(tag)?.coerceIn(SCALE)
+
         fun assemble(rank: Int) = arrayOf(TAG_NAME, rank.toString())
     }
 }

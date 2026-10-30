@@ -263,7 +263,13 @@ Always stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's ch
 and timestamp but not its signature, and a `policyBuilder` replaces the default `VerifyPolicy`.
 On its own, anyone can AUTH as any pubkey, and EVENTs with bad signatures are stored.
 
-`FullAuthPolicy` already implements the full NIP-42 challenge/verify handshake — you should not re-implement it. To bridge auth to an external system (e.g. exchange the verified event for a backend JWT), override the `suspend` `authorize` hook. It runs after the NIP-42 checks pass (and after the rest of the policy chain approves), and the pubkey is recorded only once it returns — so it can do network/disk I/O, and throwing from it rejects the login (`OK false`) with the connection left unauthenticated (nothing was committed).
+A relay that answers at more than one address (clearnet and a `.onion`) passes them all:
+`FullAuthPolicy(relays = setOf(clearnet, onion))` (or `OptionalAuthPolicy(setOf(…))`) accepts an
+AUTH whose `relay` tag names any of them, since a client signs the address it dialled. Every
+`relay` tag of the event is considered, and a default port spelled out (`:443`, `:80`) is the
+same address.
+
+`FullAuthPolicy` already implements the full NIP-42 challenge/verify handshake — you should not re-implement it. To bridge auth to an external system (e.g. exchange the verified event for a backend JWT), override the `suspend` `authorize` hook. It runs after the NIP-42 checks pass (and after the rest of the policy chain approves), and the pubkey is recorded only once it returns — so it can do network/disk I/O, and throwing from it rejects the login (`OK false`) with the connection left unauthenticated (nothing was committed). From a subclass, `sendToClient(message)` answers on the connection (a `NOTICE` after a login) and `connectionScope` is its `RequestContext`.
 
 ### Composing Policies
 
@@ -328,6 +334,10 @@ q.domain       // "example.com"
 q.nsfwIncluded // false  (NIP-50 default is true when the token is absent)
 ```
 
+`q.languageCode` reads `language:pt-BR` as `pt`, and `q.observer` reads the non-NIP-50
+`observer:<pubkey>` lens (`SearchQuery.OBSERVER`) as 64 lowercase hex, or null when the value is
+not a hex pubkey. A web-of-trust store ranks by it the way it ranks by `StoreQueryContext`.
+
 `Filter.search` reaches every backend **verbatim**, extension tokens included
 — the relay layer never rewrites it. Which extensions are directives and which
 are noise is a property of the store, so the `IEventStore` contract puts the
@@ -345,8 +355,12 @@ constraint. Relays like geode therefore comply out of the box, and
 Observer-relative stores (web-of-trust ranking, "for-you" relevance) read the
 caller's NIP-42-authenticated pubkeys from the coroutine context via
 `StoreQueryContext` — `LiveEventStore` installs it around every REQ/COUNT store
-call for authenticated connections. It is ranking context only: it may reorder
-results, never change which events match.
+call for authenticated connections. It is a lens over the filter's match set:
+the store may reorder by it and may gate by it (answer a subset, e.g. a trust
+floor), but never return an event the filter doesn't match, and `query`, `count`
+and negentropy snapshots must agree for the same observer. Access control stays
+in the relay policy. `observer` is the first key that authenticated on the
+connection, so the lens is deterministic when a connection carries several.
 
 A search/redirector relay is just a custom policy (or, for computed results, a
 custom `IEventStore` whose `query` answers the REQ) that reads the parsed query:
@@ -413,6 +427,27 @@ class MyRelayTest {
     }
 }
 ```
+
+### Checking a custom `IEventStore` against the reference
+
+A store of your own (Postgres, Vespa, a filesystem layout) can be diffed against Quartz's SQLite
+store with the conformance battery in `nip01Core.store.conformance`. It is plain main-source
+code with no test-framework dependency, so it runs from a unit test, a CI job or a benchmark:
+
+```kotlin
+val corpus = ConformanceCorpus.generate(ConformanceCorpus.Config(size = 5_000))
+StoreConformance.load(reference, corpus) // EventStore(null)
+StoreConformance.load(candidate, corpus) // your store
+val report = StoreConformance.compare(reference, candidate, StoreConformance.battery(corpus))
+assertTrue(report.ok, report.summary())
+```
+
+The seeded corpus exercises replaceable and addressable supersession, NIP-09 deletions by id and
+by address, deletions of deletions and re-offered events; the battery compares result sets,
+newest-first order and NIP-45 counts over kind, author, id, tag, time-window and multi-filter
+REQs. Each check names the STORE-* rules it exercises (`report.suspectRules`), the same ids the
+`event-store-semantics` rules use. NIP-50 search is left out on purpose: relevance order is each
+engine's own. Quartz's filesystem store runs it in `FsParityTest`.
 
 ## Limits (NIP-11) — enforce and advertise from one source
 
@@ -493,6 +528,32 @@ The engine frames `count`/`approximate`/`hll` onto the wire
 (`["COUNT", id, {"count":N,"hll":"<512-hex>"}]`). Register arrays built by two
 relays over the same corpus merge with `HyperLogLog.merge(...)` into a
 deduplicated cross-relay estimate.
+
+## NIP-86 admin over HTTP
+
+`Nip86HttpHandler` (`nip86RelayManagement/server/`) runs the whole NIP-86 request: size cap,
+NIP-98 verification bound to `publicUrl`, the allow-list, parse, dispatch. NIP-98 binds the token
+to the body's sha256, so `handle(header, body)` needs the body; call `preauthorize(header)` first
+and a stranger, or a stale, forged or misbound token, is refused before a byte is read:
+
+```kotlin
+val handler = Nip86HttpHandler(Nip86Server(banStore, info, purge, admins), "https://relay.example.com/")
+
+handler.preauthorize(authorization)?.let { refusal -> return respond(refusal) } // 401 / 403
+val body = readBodyAtMost(handler.maxBodyBytes)                                    // the adapter bounds the read
+respond(handler.handle(authorization, body))
+```
+
+`preauthorize` records nothing; `handle` still checks the payload hash and spends the token.
+The handler passes the allow-list to `Nip98AuthVerifier.verify(…, acceptsAuthor)`, which keeps
+admins' token ids apart from everyone else's, so no flood of valid tokens from strangers can
+roll a used admin token out of the replay set. Any other NIP-98 endpoint that admits only some
+authors should do the same, and can use `Nip98AuthVerifier.preverify` for its own pre-body check.
+
+`BanStore` holds the state the RPCs change and does no I/O. Persist all of it with
+`toJson()` from its `onMutation` hook and `seedFromJson(text)` at boot: every ban and allow list
+with reasons, the kind sets, NIP-43 roles and assignments, and invite codes. A malformed file
+throws and loads nothing, so refuse to start rather than run with no bans and overwrite the file.
 
 ## Observability
 

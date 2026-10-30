@@ -396,10 +396,20 @@ class Url(
 
     companion object {
         private const val DEFAULT_SCHEME = "https"
+
+        /**
+         * Each scheme's default port, which RFC 3986 section 6.2.3 says a normalizer drops: a
+         * url carrying it names the same socket as one without it. `ws` and `wss` share
+         * http's and https's (RFC 6455 section 3); missing them here kept `wss://relay:443/`
+         * a different relay url from `wss://relay/`, so one relay was dialed, counted and
+         * keyed twice.
+         */
         private val SCHEME_PORT_MAP: Map<String, Int> =
             mapOf(
                 "http" to 80,
                 "https" to 443,
+                "ws" to 80,
+                "wss" to 443,
                 "ftp" to 21,
             )
     }

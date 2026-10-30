@@ -205,4 +205,53 @@ class Nip86HttpHandlerTest {
             assertTrue(ok.json.contains(Nip86Method.SUPPORTED_METHODS))
         }
     }
+
+    @Test
+    fun aFloodOfNonAdminTokensCannotMakeAUsedAdminTokenReplayable() {
+        runBlocking {
+            val h = handler()
+            val body = supportedMethodsBody
+            val used = signedHeader(body)
+            assertIs<Nip86HttpHandler.Response.Ok>(h.handle(used, body))
+
+            // Each stranger signs a distinct event id, each verifies, and none is an admin.
+            repeat(Nip98AuthVerifier.MAX_REPLAY_ENTRIES + 64) {
+                val r = h.handle(signedHeader(body, signer = NostrSignerSync(KeyPair())), body)
+                assertIs<Nip86HttpHandler.Response.NotAdmin>(r)
+            }
+
+            val replay = assertIs<Nip86HttpHandler.Response.BadAuth>(h.handle(used, body), "a replayed admin token must not dispatch")
+            assertTrue(replay.reason.contains("replay"))
+        }
+    }
+
+    @Test
+    fun preauthorizeRefusesBeforeTheBodyIsRead() {
+        runBlocking {
+            val h = handler()
+            val body = supportedMethodsBody
+            assertIs<Nip86HttpHandler.Response.MissingAuth>(h.preauthorize(null))
+            assertIs<Nip86HttpHandler.Response.BadAuth>(h.preauthorize("Bearer abc"))
+            assertIs<Nip86HttpHandler.Response.BadAuth>(h.preauthorize(signedHeader(body, url = "https://other-relay.example.com/")))
+            assertIs<Nip86HttpHandler.Response.NotAdmin>(h.preauthorize(signedHeader(body, signer = intruderSigner)))
+        }
+    }
+
+    @Test
+    fun preauthorizeAdmitsAnAdminWithoutSpendingTheToken() {
+        runBlocking {
+            val h = handler()
+            val body = supportedMethodsBody
+            val header = signedHeader(body)
+            assertNull(h.preauthorize(header), "an admin's token lets the adapter read the body")
+            assertNull(h.preauthorize(header), "a pre-check never records the token")
+            assertIs<Nip86HttpHandler.Response.Ok>(h.handle(header, body))
+            // The body binding is still checked once the body arrives.
+            val other = JsonMapper.toJson(Nip86Request(method = Nip86Method.LIST_BANNED_PUBKEYS)).encodeToByteArray()
+            val swapped = signedHeader(body)
+            assertNull(h.preauthorize(swapped))
+            val swappedBody = assertIs<Nip86HttpHandler.Response.BadAuth>(h.handle(swapped, other))
+            assertTrue(swappedBody.reason.contains("payload hash"))
+        }
+    }
 }

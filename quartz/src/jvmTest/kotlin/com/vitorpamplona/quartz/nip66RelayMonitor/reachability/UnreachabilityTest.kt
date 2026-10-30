@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip66RelayMonitor.reachability
 
 import java.io.EOFException
 import java.net.ConnectException
+import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
@@ -39,9 +40,40 @@ class UnreachabilityTest {
 
     @Test
     fun `a connection that never opened is unreachable`() {
-        assertTrue(proves(UnknownHostException("no such host")))
+        assertTrue(proves(UnknownHostException("relay.example: Name or service not known")))
+        assertTrue(proves(UnknownHostException("relay.example: No address associated with hostname")))
+        assertTrue(proves(UnknownHostException("nodename nor servname provided, or not known")))
+        assertTrue(proves(UnknownHostException("No such host is known (relay.example)")))
         assertTrue(proves(ConnectException("connection refused")))
         assertTrue(proves(SSLHandshakeException("cert expired")))
+    }
+
+    @Test
+    fun `our own resolver or route failing is not the relay's`() {
+        // EAI_AGAIN is the resolver not answering, which is every host at once.
+        assertFalse(proves(UnknownHostException("relay.example: Temporary failure in name resolution")))
+        assertFalse(proves(ConnectException("Network is unreachable")))
+        assertFalse(proves(NoRouteToHostException("Network is unreachable (connect failed)")))
+        // A failed lookup the JVM answers from its negative cache carries the name and no reason.
+        assertFalse(proves(UnknownHostException("relay.example")))
+        assertFalse(proves(UnknownHostException()))
+        assertTrue(Unreachability.ourSide(UnknownHostException("relay.example: Temporary failure in name resolution")))
+        assertTrue(Unreachability.ourSide(ConnectException("Network is unreachable")))
+        assertFalse(Unreachability.ourSide(ConnectException("Connection refused")))
+        assertFalse(Unreachability.ourSide(RuntimeException()))
+    }
+
+    @Test
+    fun `a wrapped failure is judged by its cause too`() {
+        // OkHttp rethrows a dial failure as `Failed to connect to <address>` with the socket's
+        // own exception as the cause: the words that put it on this box are one level down.
+        val wrapped = ConnectException("Failed to connect to relay.example/1.2.3.4:443").apply { initCause(ConnectException("Network is unreachable")) }
+        assertTrue(Unreachability.ourSide(wrapped))
+        assertFalse(proves(wrapped))
+
+        val refused = ConnectException("Failed to connect to relay.example/1.2.3.4:443").apply { initCause(ConnectException("Connection refused")) }
+        assertFalse(Unreachability.ourSide(refused))
+        assertTrue(proves(refused))
     }
 
     @Test

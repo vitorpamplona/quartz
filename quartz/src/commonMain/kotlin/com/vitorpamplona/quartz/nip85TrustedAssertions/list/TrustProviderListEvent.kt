@@ -37,6 +37,7 @@ import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.removeParsing
 import com.vitorpamplona.quartz.nip85TrustedAssertions.list.tags.ServiceProviderTag
+import com.vitorpamplona.quartz.nip85TrustedAssertions.list.tags.ServiceType
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -65,6 +66,18 @@ class TrustProviderListEvent(
     }
 
     fun serviceProviders() = tags.serviceProviders()
+
+    /**
+     * The provider this list names for [service] (e.g. `ProviderTypes.rank`): the FIRST usable
+     * public entry for it. NIP-85 allows several providers per service and leaves the choice to
+     * the reader; taking the first in tag order is how a lens resolves one key per service, so
+     * every reader of the same list lands on the same provider. Public tags only: for NIP-44
+     * private entries, decrypt with `privateTags(signer)` and call [TagArray.providerFor] on them.
+     */
+    fun providerFor(service: ServiceType) = tags.providerFor(service)
+
+    /** Every usable public entry for [service], in tag order: see [TagArray.providersFor]. */
+    fun providersFor(service: ServiceType) = tags.providersFor(service)
 
     companion object {
         const val KIND = 10040

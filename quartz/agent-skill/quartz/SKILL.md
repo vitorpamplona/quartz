@@ -1,6 +1,6 @@
 ---
 name: quartz
-description: Building on Quartz, the Kotlin Multiplatform Nostr library (com.vitorpamplona.quartz): NostrClient + a WebsocketBuilder, fetchAll/fetchFirst/fetchAllPages/publishAndConfirm, typed event builders, NostrSigner, NIP-19/NIP-05/NIP-44. Use in projects that depend on Quartz.
+description: Building on Quartz, the Kotlin Multiplatform Nostr library (com.vitorpamplona.quartz): NostrClient, fetchAll/fetchAllPages/publishAndConfirm, typed event builders, NostrSigner, NIP-19/NIP-44, NIP-85 assertions, IEventStore conformance, NIP-50 SearchQuery. Use in projects that depend on Quartz.
 ---
 
 # Quartz (Nostr for Kotlin Multiplatform)
@@ -17,6 +17,14 @@ The full guides live in the repo:
   how to structure a feed-style app on top of it.
 - [One-shot relay operations](https://github.com/vitorpamplona/quartz/blob/main/quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/README.md) —
   the catalog of `fetch*`, `count`, publish and negentropy helpers.
+
+Two references beside this file go deeper, read them when the task touches them:
+
+- `references/nip85-trusted-assertions.md` — kind 10040 provider lists and 30382–30385
+  assertions: subjects, `providerFor`, rank readings, building and downloading cards.
+- `references/search-and-stores.md` — running your own `IEventStore` or search engine: the
+  conformance battery, `StoreQueryContext`, the `SearchQuery` grammar, `EventSearchMatcher`,
+  which text each kind indexes, `SubjectReferences`.
 
 ## Setup
 
@@ -134,11 +142,26 @@ suspend fun post(client: NostrClient) {
   - **Gift wraps** (NIP-59) and NIP-17 DMs: use `GiftWrapEvent.create(...)`, which signs each
     wrap with a fresh key, or `NIP17Factory` for whole messages. A wrap signed by the user's
     key puts the sender's identity on the outside.
+- **Re-publishing a replaceable or addressable event** (a profile, a relay list, your own
+  NIP-66 record): stamp it `TimeUtils.nextCreatedAt(previous?.createdAt)`, i.e. now, or one
+  second past the version it replaces. A replacement stamped at or before the stored one is
+  rejected. A NIP-66 monitor edits its own 30166 with `RelayDiscoveryEvent.edit(relay, current,
+  owns) { … }`, which keeps every tag `owns` does not claim (another writer's, or unknown ones).
+- **The address an event occupies** (the key supersession compares under, what a NIP-09 `a` tag
+  names): `event.addressTagOrNull()` (`kind:pubkey:d`) or `event.addressOrNull()` (`Address`) in
+  `nip01Core.core`. Dispatched on the kind, so it works on a plain `Event` too; null for regular
+  and ephemeral kinds. `event.supersedes(other)` is the NIP-01 winner rule (newest, then lowest id).
+- **What a pointer event is about** (a NIP-32 label's targets, a NIP-85 assertion's `d` subject, a
+  Trusted List's members with their scores, a NIP-51 people list's `p`s):
+  `SubjectReferences.of(event)` in `nip01Core.hints`, kind-dispatched, values canonical. Mentions
+  and threading links are the hint providers' (`linkedPubKeys()`, …), not subjects.
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
   (NIP-55) signers implement the same class.
 - `Event.verify()` checks the id and signature of events you receive from relays.
+- `event.toJson()` and `Event.fromJson(json)` / `Event.fromJsonOrNull(json)` (de)serialize one
+  event; parsing returns the kind's typed subclass (`as? TextNoteEvent`).
 - Nostr JSON goes through `OptimizedJsonMapper`: Kite (`nip01Core.kite`, Quartz's own reader
   and writer) for events, relay frames, filters, tags, rumors, templates and NIP-46/NIP-55
   signer messages, and kotlinx.serialization for everything else, on every target.
@@ -147,6 +170,9 @@ suspend fun post(client: NostrClient) {
 
 - **Parse anything a user pastes** (npub, nprofile, note, nevent, naddr, `nostr:` URIs):
   `Nip19Parser.uriToRoute(text)` in `nip19Bech32`.
+- **Read a PUBLIC key from config or a form**: `decodePublicKeyOnlyAsHexOrNull(input)` in
+  `nip19Bech32` (npub, nprofile, `nostr:` URI, or 64 hex). Not `decodePublicKeyAsHexOrNull`:
+  it also accepts an nsec and returns its pubkey, so a pasted secret is silently accepted.
 - **Resolve a user to a pubkey** from hex, npub, nprofile or a NIP-05 `name@domain`:
   `resolveUserHexOrNull(input, nip05Client)` in `nip05DnsIdentifiers`. Pass a
   `Nip05Client` to enable the NIP-05 lookup; without one only key formats resolve.
@@ -169,3 +195,9 @@ suspend fun post(client: NostrClient) {
 Quartz also contains a relay server (event stores, policies, NIP-11, NIP-42, NIP-77) and a
 standalone Ktor relay built on it (`geode`). Start from the relay guide linked above rather
 than wiring `NostrServer` from scratch.
+
+Implementing your own `IEventStore`? Diff it against Quartz's SQLite store with
+`StoreConformance` and `ConformanceCorpus` (`nip01Core.store.conformance`): it reports every
+set, order or COUNT mismatch with the STORE-* rules it breaks. An observer-relative store reads
+the caller's NIP-42 identity from `StoreQueryContext` (first authenticated key) and may rank and
+gate by it, never widen past the filter.

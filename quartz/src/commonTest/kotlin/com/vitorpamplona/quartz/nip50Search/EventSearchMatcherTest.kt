@@ -157,4 +157,52 @@ class EventSearchMatcherTest {
             assertFalse(matcher.match(miss))
         }
     }
+
+    @Test
+    fun aDashWordIsAnExclusionNotARequiredTerm() {
+        // SearchQuery's grammar: `-word` excludes. Read as a term it required the text "-spam".
+        assertTrue(matches("bitcoin -spam", note("bitcoin is money")))
+        assertFalse(matches("bitcoin -spam", note("bitcoin spam here")))
+        assertFalse(matches("bitcoin -SPAM", note("Bitcoin Spam")))
+        assertFalse(EventSearchMatcher("-spam").isEmpty)
+        // An exclusions-only search is recall minus the excluded word.
+        assertTrue(matches("-spam", note("bitcoin is money")))
+        assertFalse(matches("-spam", note("this is spam")))
+    }
+
+    @Test
+    fun anExclusionIsAWholeWord() {
+        // `-art` drops a note about art, not one about a start or an artist.
+        assertTrue(matches("-art", note("a fresh start for the artist")))
+        assertFalse(matches("-art", note("modern art, again")))
+        // An exclusion that tokenizes into several words drops the run, as the store reads it.
+        assertFalse(matches("-don't", note("I don't know")))
+        assertTrue(matches("-don't", note("don know t")))
+    }
+
+    @Test
+    fun anExcludedPhraseDropsOnlyTheRun() {
+        assertFalse(matches("bitcoin -\"hello world\"", note("bitcoin: hello world")))
+        assertTrue(matches("bitcoin -\"hello world\"", note("bitcoin: hello there, world")))
+    }
+
+    @Test
+    fun anExclusionInAnyIndexedFieldDrops() {
+        val article = note("the body", arrayOf(arrayOf("title", "Lightning spam")), kind = 30023)
+        assertFalse(matches("body -spam", article))
+        // Text the kind does not index cannot exclude it either.
+        assertTrue(matches("body -bitcoin", note("the body", arrayOf(arrayOf("t", "bitcoin")))))
+    }
+
+    @Test
+    fun aPhraseIsAWordRunAcrossPunctuationAndCase() {
+        // Words adjacent and in order, as a token index reads the phrase; punctuation and case
+        // between them do not matter, a word that only starts with the last one does.
+        assertTrue(matches("\"nostr apps\"", note("Best Nostr-Apps of 2026")))
+        assertFalse(matches("\"nostr app\"", note("best nostr apps")))
+        assertFalse(matches("\"apps nostr\"", note("best nostr apps")))
+        // A phrase with no word characters falls back to its literal text.
+        assertTrue(matches("\"\u26a1\"", note("zap \u26a1 me")))
+        assertFalse(matches("\"\u26a1\"", note("zap me")))
+    }
 }

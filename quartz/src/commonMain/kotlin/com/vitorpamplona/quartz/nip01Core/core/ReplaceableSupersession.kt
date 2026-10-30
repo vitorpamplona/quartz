@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.core
 
+import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.delay
 
@@ -35,6 +36,36 @@ fun Event.supersedes(existing: Event): Boolean =
         createdAt > existing.createdAt -> true
         createdAt < existing.createdAt -> false
         else -> id < existing.id
+    }
+
+/**
+ * The NIP-01 address this event occupies, as an `a`-tag value (`kind:pubkey:d`), or `null` for a
+ * kind that has none (regular and ephemeral kinds).
+ *
+ * Dispatched on [Event.kind], never on the runtime class, so a plain [Event] — one parsed without
+ * `EventFactory`, or rebuilt from a store row — gets the same answer its typed subclass would
+ * ([BaseReplaceableEvent.addressTag], [BaseAddressableEvent.addressTag]):
+ *
+ * - **replaceable** ([isReplaceable]: 0, 3, 10000–19999): `kind:pubkey:`, the fixed empty d-tag
+ *   ([BaseReplaceableEvent.FIXED_D_TAG]) even when the event carries a stray `d` tag;
+ * - **addressable** ([isAddressable]: 30000–39999): `kind:pubkey:<first d value>`, or the empty d
+ *   when there is no valued `d` tag.
+ *
+ * This is the key [supersedes] compares versions under, and what a NIP-09 `a` tag names.
+ */
+fun Event.addressTagOrNull(): String? =
+    when {
+        kind.isReplaceable() -> Address.assemble(kind, pubKey, BaseReplaceableEvent.FIXED_D_TAG)
+        kind.isAddressable() -> Address.assemble(kind, pubKey, tags.dTag())
+        else -> null
+    }
+
+/** [addressTagOrNull] as a typed [Address]: same kind dispatch, same d-tag rule. */
+fun Event.addressOrNull(): Address? =
+    when {
+        kind.isReplaceable() -> Address(kind, pubKey, BaseReplaceableEvent.FIXED_D_TAG)
+        kind.isAddressable() -> Address(kind, pubKey, tags.dTag())
+        else -> null
     }
 
 /**

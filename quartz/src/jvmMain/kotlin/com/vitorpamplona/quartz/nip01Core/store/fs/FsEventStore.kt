@@ -229,8 +229,12 @@ open class FsEventStore(
      */
     private fun tombstoneRejection(event: Event): String? {
         val ownerPubKey = indexer.ownerPubKey(event)
-        val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
-        if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return RejectionReason.DELETED
+        // A kind 5 against a kind 5 or a kind 62 has no effect (NIP-09, NIP-62), so an id
+        // tombstone never blocks one; the vanish horizon below still does (NIP-62 deletes them).
+        if (!event.isImmuneToDeletionRequests()) {
+            val tombstoneAuthor = tombstones.idTombstoneOwnerPubKey(event.id)
+            if (tombstoneAuthor != null && tombstoneAuthor == ownerPubKey) return RejectionReason.DELETED
+        }
         if (event is AddressableEvent && event.kind.isAddressable()) {
             val cutoff = tombstones.addrTombstoneCutoff(event.kind, event.pubKey, event.dTag())
             if (cutoff != null && event.createdAt <= cutoff) return RejectionReason.DELETED
@@ -262,6 +266,10 @@ open class FsEventStore(
 
         for (targetId in deletion.deleteEventIds()) {
             val targetEvent = readEvent(targetId)
+            // Deleting a deletion or a vanish request has no effect: no cascade, no tombstone.
+            // A target not stored yet still gets its tombstone; [tombstoneRejection] ignores it
+            // for those kinds when the target arrives.
+            if (targetEvent != null && targetEvent.isImmuneToDeletionRequests()) continue
             if (targetEvent != null && indexer.ownerHash(targetEvent) == ownerHashOfDeletion) {
                 indexer.unlink(targetEvent)
                 val targetSlot = slots.slotPathFor(targetEvent)
@@ -321,12 +329,21 @@ open class FsEventStore(
         return out
     }
 
+    /**
+     * A deduplicated union with per-filter limits, presented as ONE newest-first list (STORE-F07),
+     * as the SQLite store's `UNION … ORDER BY created_at DESC` is: each filter's own page comes
+     * back newest first, so concatenating them put a later filter's newer events after an earlier
+     * filter's older ones. When every filter searches, each branch keeps its relevance order
+     * instead (STORE-S02 orders such a REQ by relevance, not time).
+     */
     override suspend fun <T : Event> query(filters: List<Filter>): List<T> {
+        if (filters.size == 1) return query(filters[0])
         val seen = HashSet<HexKey>()
         val out = mutableListOf<T>()
         filters.forEach { f ->
             query<T>(f) { if (seen.add(it.id)) out.add(it) }
         }
+        if (!filters.all { !it.search.isNullOrBlank() }) out.sortByDescending { it.createdAt }
         return out
     }
 
@@ -356,14 +373,13 @@ open class FsEventStore(
         }
     }
 
+    /** The streaming form of [query]: a multi-filter union is collected and ordered first. */
     override suspend fun <T : Event> query(
         filters: List<Filter>,
         onEach: (T) -> Unit,
     ) {
-        val seen = HashSet<HexKey>()
-        filters.forEach { f ->
-            query<T>(f) { if (seen.add(it.id)) onEach(it) }
-        }
+        if (filters.size == 1) return query(filters[0], onEach)
+        query<T>(filters).forEach(onEach)
     }
 
     override suspend fun count(filter: Filter): Int {
@@ -667,3 +683,6 @@ open class FsEventStore(
         }
     }
 }
+
+/** Kind 5 deletion requests and kind 62 vanish requests: a kind 5 against them has no effect. */
+private fun Event.isImmuneToDeletionRequests() = kind == DeletionRequestEvent.KIND || kind == RequestToVanishEvent.KIND
