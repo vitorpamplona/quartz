@@ -472,7 +472,7 @@ fun decodePublicKeyOnlyAsHexOrNull(key: String): HexKey? =
         when (val parsed = Nip19Parser.uriToRoute(key)?.entity) {
             is NPub -> parsed.hex.takeIf { it.length == 64 }
             is NProfile -> parsed.hex.takeIf { it.length == 64 }
-            null -> key.takeIf { it.length == 64 && Hex.isHex64(it) }?.lowercase()
+            null -> key.takeIf { Hex.isHexKey(it) }?.lowercase()
             else -> null
         }
     } catch (e: Exception) {

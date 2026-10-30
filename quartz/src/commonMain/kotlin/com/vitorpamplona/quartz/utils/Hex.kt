@@ -109,10 +109,17 @@ object Hex {
     }
 
     /**
+     * True when [hex] is exactly 64 hex digits (upper or lower case): the shape of a pubkey,
+     * an event id or a sha256. [isHex64] plus the length check it leaves to its caller.
+     */
+    fun isHexKey(hex: String?): Boolean = hex != null && hex.length == 64 && isHex64(hex)
+
+    /**
      * Validates the first 64 chars of [hex] as hex digits — the fast path for
      * checking a 32-byte pubkey or event id. ~30% faster than [isHex] because
      * the length is fixed and the checks are unrolled. Assumes [hex] is at least
-     * 64 chars long; it does not verify the total length.
+     * 64 chars long; it does not verify the total length: `isHex64(key + "zz")` is
+     * true. To ask "is this a pubkey / event id / sha256", use [isHexKey].
      */
     fun isHex64(hex: String): Boolean =
         try {
