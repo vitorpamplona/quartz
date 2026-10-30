@@ -58,6 +58,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(NamecoinLookupException.NameNotFound("d/example")),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             assertNull(resolver.resolve("example.bit"))
         }
@@ -69,6 +70,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(NamecoinLookupException.NameExpired("d/stale")),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             assertNull(resolver.resolve("stale.bit"))
         }
@@ -80,6 +82,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(NamecoinLookupException.ServersUnreachable()),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             assertNull(resolver.resolve("dead.bit"))
         }
@@ -91,6 +94,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(CancellationException("cancelled")),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             try {
                 resolver.resolve("cancel.bit")
@@ -107,6 +111,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(NamecoinLookupException.NameNotFound("d/example")),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             val outcome = resolver.resolveDetailed("example.bit")
             assertTrue("expected NameNotFound, got $outcome", outcome is NamecoinResolveOutcome.NameNotFound)
@@ -120,6 +125,7 @@ class NamecoinNameResolverExceptionTest {
                 NamecoinNameResolver(
                     electrumxClient = throwingClient(NamecoinLookupException.ServersUnreachable()),
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             val outcome = resolver.resolveDetailed("dead.bit")
             assertTrue(
@@ -148,6 +154,7 @@ class NamecoinNameResolverExceptionTest {
                             ): NameShowResult? = throw NamecoinLookupException.ServersUnreachable(RuntimeException("simulated"))
                         },
                     lookupTimeoutMs = 500L,
+                    serverListProvider = { emptyList() },
                 )
             assertNull(resolver.resolve("boom.bit"))
         }

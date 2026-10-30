@@ -345,7 +345,7 @@ class NamecoinImportTest {
                         """.trimIndent(),
                     )
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
 
             // Bare `.bit` resolves to root entry.
             val rootResult = resolver.resolve("testls.bit")
@@ -386,7 +386,7 @@ class NamecoinImportTest {
                         """.trimIndent(),
                     )
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val outcome = resolver.resolveDetailed("m@testls.bit")
             assertTrue("expected Success, got $outcome", outcome is NamecoinResolveOutcome.Success)
             outcome as NamecoinResolveOutcome.Success
@@ -410,7 +410,7 @@ class NamecoinImportTest {
                         """{"ip":"1.2.3.4"}""", // no nostr field even after merge
                     )
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val outcome = resolver.resolveDetailed("testls.bit")
             assertTrue(
                 "expected NoNostrField, got $outcome",
@@ -434,7 +434,7 @@ class NamecoinImportTest {
                         """.trimIndent(),
                     )
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val result = resolver.resolve("plain.bit")
             assertNotNull(result)
             assertEquals(
@@ -467,7 +467,7 @@ class NamecoinImportTest {
                         """.trimIndent(),
                     )
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val result = resolver.resolve("m@testls.bit")
             assertNotNull(result)
             assertEquals(
@@ -493,7 +493,7 @@ class NamecoinImportTest {
                     )
                     // dd/missing is intentionally NOT registered.
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val result = resolver.resolve("testls.bit")
             assertNotNull(result)
             assertEquals(
@@ -516,7 +516,7 @@ class NamecoinImportTest {
                 FakeElectrumXClient().apply {
                     register("d/broken", truncated)
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val outcome = resolver.resolveDetailed("_@broken.bit")
             assertTrue(
                 "expected MalformedRecord, got $outcome",
@@ -544,7 +544,7 @@ class NamecoinImportTest {
                 FakeElectrumXClient().apply {
                     register("d/arr", """["not","an","object"]""")
                 }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L)
+            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
             val outcome = resolver.resolveDetailed("_@arr.bit")
             assertTrue(
                 "expected MalformedRecord, got $outcome",

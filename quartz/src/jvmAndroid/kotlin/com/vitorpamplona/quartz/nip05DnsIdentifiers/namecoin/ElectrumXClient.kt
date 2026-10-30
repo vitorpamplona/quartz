@@ -105,7 +105,7 @@ class ElectrumXClient(
      */
     suspend fun nameShow(
         identifier: String,
-        server: ElectrumxServer = DEFAULT_ELECTRUMX_SERVERS.first(),
+        server: ElectrumxServer,
     ): NameShowResult? =
         withContext(Dispatchers.IO) {
             val mutex = serverMutexes.getOrPut("${server.host}:${server.port}") { Mutex() }
@@ -123,11 +123,18 @@ class ElectrumXClient(
             }
         }
 
+    @Suppress("DEPRECATION")
+    @Deprecated(
+        "Quartz no longer picks ElectrumX servers: pass one. Removed in 3.0.0.",
+        ReplaceWith("nameShow(identifier, server)"),
+    )
+    suspend fun nameShow(identifier: String): NameShowResult? = nameShow(identifier, DEFAULT_ELECTRUMX_SERVERS.first())
+
     /**
      * Try each server in order until one succeeds.
      *
      * @param identifier Full Namecoin name, e.g. "d/example"
-     * @param servers    Ordered server list to try; defaults to [DEFAULT_ELECTRUMX_SERVERS]
+     * @param servers    Ordered server list to try
      * @throws NamecoinLookupException.NameNotFound if the name definitively doesn't exist
      * @throws NamecoinLookupException.NameExpired if the name has expired
      * @throws NamecoinLookupException.ServersUnreachable if all servers failed with connection errors
@@ -613,30 +620,17 @@ class ElectrumXClient(
         if (!server.useSsl) return baseSocket
 
         // Upgrade to TLS over the already-connected (possibly proxied) socket.
-        // When usePinnedTrustStore is set, we use a pinned trust store that
-        // contains the known ElectrumX server certs plus system CAs. This is
-        // required because Samsung One UI 7 (Android 16) and GrapheneOS
-        // reject connections that use a no-op "trust-all" X509TrustManager.
-        val sslFactory =
-            if (server.host.endsWith(".onion")) {
-                // .onion addresses: prefer the pinned factory (the .onion server's
-                // cert is already in PINNED_ELECTRUMX_CERTS). Fall back to trust-all
-                // only if the pinned handshake fails — this keeps compatibility with
-                // .onion servers whose certs aren't pinned yet, while avoiding a
-                // blanket trust-all that hardened TLS stacks (GrapheneOS, Samsung
-                // Knox) may reject at the Conscrypt/BoringSSL layer.
-                cachedPinnedSslFactory()
-            } else if (server.usePinnedTrustStore) {
-                cachedPinnedSslFactory()
-            } else {
-                SSLSocketFactory.getDefault() as SSLSocketFactory
-            }
+        // Pinned servers get a trust store of their own pins plus the system
+        // CAs. A real trust store, instead of a no-op "trust-all"
+        // X509TrustManager, is required because Samsung One UI 7 (Android 16)
+        // and GrapheneOS reject connections that use the latter.
+        val sslFactory = sslFactoryFor(server)
         val sslSocket: Socket
         try {
             sslSocket = sslFactory.createSocket(baseSocket, server.host, server.port, true)
         } catch (e: javax.net.ssl.SSLHandshakeException) {
             if (server.host.endsWith(".onion")) {
-                // Pinned factory failed for .onion — fall back to trust-all.
+                // Pinned or system factory failed for .onion — fall back to trust-all.
                 // This is safe: Tor provides E2E authentication via the onion
                 // address, and the proxied socket bypasses Knox/GrapheneOS
                 // trust-all rejection in practice.
@@ -670,8 +664,8 @@ class ElectrumXClient(
      * Fallback SSLSocketFactory for .onion addresses when the pinned
      * factory fails (e.g. cert rotated, unknown .onion server).
      *
-     * Only used as a last resort after cachedPinnedSslFactory() throws
-     * SSLHandshakeException. This is safe because:
+     * Only used as a last resort after the factory from sslFactoryFor()
+     * throws SSLHandshakeException. This is safe because:
      * 1. The connection is already end-to-end encrypted by Tor.
      * 2. The onion address IS the server's identity proof (public key hash).
      * 3. Proxied sockets via Tor SOCKS typically bypass OEM trust-all
@@ -679,8 +673,8 @@ class ElectrumXClient(
      *
      * Note: GrapheneOS or future Android versions may reject trust-all
      * TrustManagers even for proxied sockets. If this fallback stops
-     * working, the .onion server's cert should be added to
-     * PINNED_ELECTRUMX_CERTS (it's already there for the known server).
+     * working, the .onion server's cert should be pinned in its
+     * [ElectrumxServer.pinnedCertsPem].
      */
     private fun onionSslFactory(): SSLSocketFactory {
         val trustAll =
@@ -709,49 +703,75 @@ class ElectrumXClient(
         return ctx.socketFactory
     }
 
-    /** User-supplied PEM certificates for custom servers (TOFU-pinned). */
+    /** Trust stores built from each server's own pins, keyed by those pins. */
+    private val serverFactories = ConcurrentHashMap<List<String>, SSLSocketFactory>()
+
+    /**
+     * Picks the trust store for one server:
+     * - its own [ElectrumxServer.pinnedCertsPem] plus the system CAs, when it has pins;
+     * - the deprecated shared store, for `usePinnedTrustStore` and for unpinned
+     *   `.onion` hosts (which always used it), until 3.0.0;
+     * - the system CAs otherwise.
+     */
+    @Suppress("DEPRECATION")
+    private fun sslFactoryFor(server: ElectrumxServer): SSLSocketFactory =
+        if (server.pinnedCertsPem.isNotEmpty()) {
+            serverFactories.getOrPut(server.pinnedCertsPem) { buildPinnedSslFactory(server.pinnedCertsPem) }
+        } else if (server.usePinnedTrustStore || server.host.endsWith(".onion")) {
+            cachedLegacyPinnedSslFactory()
+        } else {
+            SSLSocketFactory.getDefault() as SSLSocketFactory
+        }
+
+    /** User-supplied PEM certificates for the deprecated shared trust store. */
     private val dynamicCerts = mutableListOf<String>()
 
-    /** Lazy-cached SSLSocketFactory for pinned certs. Thread-safe via volatile + DCL. */
+    /** Lazy-cached shared SSLSocketFactory. Thread-safe via volatile + DCL. */
     @Volatile
-    private var pinnedFactory: SSLSocketFactory? = null
+    private var legacyPinnedFactory: SSLSocketFactory? = null
 
-    private fun cachedPinnedSslFactory(): SSLSocketFactory {
-        pinnedFactory?.let { return it }
+    private fun cachedLegacyPinnedSslFactory(): SSLSocketFactory {
+        legacyPinnedFactory?.let { return it }
         synchronized(this) {
-            pinnedFactory?.let { return it }
-            return buildPinnedSslFactory().also { pinnedFactory = it }
+            legacyPinnedFactory?.let { return it }
+            return buildPinnedSslFactory(LEGACY_PINNED_CERTS + dynamicCerts).also { legacyPinnedFactory = it }
         }
     }
 
     /**
-     * Add a PEM-encoded certificate to the dynamic trust store.
-     * Typically called after the user confirms a cert fingerprint via
-     * the "Test Connection" flow in settings.
+     * Add a PEM-encoded certificate to the shared trust store that servers
+     * with `usePinnedTrustStore` use. Every certificate in it is accepted for
+     * every such server.
      *
      * Invalidates the cached factory so the next connection picks it up.
      */
+    @Deprecated(
+        "Pin the certificate on its server instead: server.copy(pinnedCertsPem = listOf(pem)). Removed in 3.0.0.",
+    )
     fun addPinnedCert(pem: String) {
         synchronized(this) {
             dynamicCerts.add(pem)
-            pinnedFactory = null // force rebuild
+            legacyPinnedFactory = null // force rebuild
         }
     }
 
     /**
-     * Replace all dynamic certs (e.g. loaded from preferences on startup).
+     * Replace all certificates added to the shared trust store.
      */
+    @Deprecated(
+        "Pin each certificate on its server instead, in ElectrumxServer.pinnedCertsPem. Removed in 3.0.0.",
+    )
     fun setDynamicCerts(pems: List<String>) {
         synchronized(this) {
             dynamicCerts.clear()
             dynamicCerts.addAll(pems)
-            pinnedFactory = null
+            legacyPinnedFactory = null
         }
     }
 
     /**
-     * Build an SSLSocketFactory that trusts the pinned ElectrumX server
-     * certificates plus the system CA store.
+     * Build an SSLSocketFactory that trusts the given PEM certificates plus
+     * the system CA store.
      *
      * Previous versions used a "trust-all" TrustManager, but Samsung
      * devices running One UI 7 (Android 16) silently reject connections
@@ -765,7 +785,7 @@ class ElectrumXClient(
      * - All OEMs: SSLContext("TLSv1.2") is preferred over ("TLS") which may
      *   resolve to TLS 1.0 on older Conscrypt forks.
      */
-    private fun buildPinnedSslFactory(): SSLSocketFactory {
+    private fun buildPinnedSslFactory(pems: List<String>): SSLSocketFactory {
         val ks =
             try {
                 KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
@@ -776,9 +796,8 @@ class ElectrumXClient(
 
         val cf = CertificateFactory.getInstance("X.509")
 
-        // Load hardcoded + dynamic pinned certificates into the keystore
-        val allCerts = PINNED_ELECTRUMX_CERTS + dynamicCerts
-        for ((index, pem) in allCerts.withIndex()) {
+        // Load the pinned certificates into the keystore
+        for ((index, pem) in pems.withIndex()) {
             try {
                 val cert = cf.generateCertificate(ByteArrayInputStream(pem.toByteArray(Charsets.US_ASCII)))
                 ks.setCertificateEntry("electrumx_$index", cert)
@@ -836,72 +855,10 @@ class ElectrumXClient(
         private const val OP_PUSHDATA2: Byte = 0x4d
 
         /**
-         * PEM-encoded certificates for the well-known Namecoin ElectrumX servers.
-         *
-         * These are self-signed certificates that cannot be verified by the
-         * system CA store. We pin them explicitly so that connections succeed
-         * on devices with strict TLS enforcement (e.g. Samsung One UI 7).
-         *
-         * To update: `echo | openssl s_client -connect HOST:PORT 2>/dev/null | openssl x509 -outform PEM`
-         * For .onion: `python3 -c "import socks,ssl,socket,base64; s=socks.socksocket(); s.set_proxy(socks.SOCKS5,'127.0.0.1',9050); s.connect(('HOST',PORT)); ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT); ctx.check_hostname=False; ctx.verify_mode=ssl.CERT_NONE; ss=ctx.wrap_socket(s); print(base64.encodebytes(ss.getpeercert(True)).decode())"`
+         * The shared trust store's built-in certificates, for servers that
+         * still set the deprecated `usePinnedTrustStore`. Removed in 3.0.0.
          */
-        private val PINNED_ELECTRUMX_CERTS =
-            listOf(
-                // nmc2.bitcoins.sk:57002 / 46.229.238.187:57002 — expires 2030-10-22
-                """
------BEGIN CERTIFICATE-----
-MIID+TCCAuGgAwIBAgIUdmJGukmfPvqmAYpTfuGcjRoYHJ8wDQYJKoZIhvcNAQEL
-BQAwgYsxCzAJBgNVBAYTAlNLMREwDwYDVQQIDAhTbG92YWtpYTETMBEGA1UEBwwK
-QnJhdGlzbGF2YTEUMBIGA1UECgwLYml0Y29pbnMuc2sxGTAXBgNVBAMMEG5tYzIu
-Yml0Y29pbnMuc2sxIzAhBgkqhkiG9w0BCQEWFGRlYWZib3lAY2ljb2xpbmEub3Jn
-MB4XDTIwMTAyNDE5MjQzOVoXDTMwMTAyMjE5MjQzOVowgYsxCzAJBgNVBAYTAlNL
-MREwDwYDVQQIDAhTbG92YWtpYTETMBEGA1UEBwwKQnJhdGlzbGF2YTEUMBIGA1UE
-CgwLYml0Y29pbnMuc2sxGTAXBgNVBAMMEG5tYzIuYml0Y29pbnMuc2sxIzAhBgkq
-hkiG9w0BCQEWFGRlYWZib3lAY2ljb2xpbmEub3JnMIIBIjANBgkqhkiG9w0BAQEF
-AAOCAQ8AMIIBCgKCAQEAzBUkZNDfaz7kc28l5tDKohJjekWmz1ynzfGx3ZLsqOZE
-c+kNfcMaWU+zT/j0mV6pX6KSH7G9pPAku+8PRdKRq+d63wiJDEjGSaFztQWKW6L1
-vTxgCK5gu+Eir3BkTagJObsrLKS+T6qH610/3+btGgoR3lunB5TzCgB/9oQanjDW
-zjg2CwmxgR5Iw1Eqfenx7zkSK33FSXSF2SvbUs1Atj2oPU4DLivyrx0RaUmaPemn
-cmcpnax+py4pQeB6dJWU1INhzXt3hTJRyoqsSGY3vCECIKIBIkh8GsYjAX4z+Y9y
-6pJx0da2b88qPWdsoxaIMvrQiuWknDrSJwAyw2Yd8QIDAQABo1MwUTAdBgNVHQ4E
-FgQUT2J83B2/9jxGGdFeWrxMohTzHNwwHwYDVR0jBBgwFoAUT2J83B2/9jxGGdFe
-WrxMohTzHNwwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAsbxX
-wN8tZaXOybImMZCQS7zfxmKl2IAcqu+R01KPfnIfrFqXPsGDDl3rYLkwh1O4/hYQ
-NKNW9KTxoJxuBmAkm7EXQQh1XUUzajdEDqDBVRyvR0Z2MdMYnMSAiiMXMl2wUZnc
-QXYftBo0HbtfsaJjImQdDjmlmRPSzE/RW6iUe+1cesKBC7e8nVf69Yu/fxO4m083
-VWwAstlWJfk1GyU7jzVc8svealg/oIiDoOMe6CFSLx1BDv2FeHSpRdqd3fn+AC73
-bK2N2smrHUOQnFijuiFw3WOrjERi0eMhjVNfVu9W9ZYa/Wd6SdIzV55LbG+NpmSf
-5W7ix41hRvdT6cTAJA==
------END CERTIFICATE-----
-                """.trimIndent(),
-                // relay.testls.bit:50012 — expires 2036-04-30
-                // (served on :50002 until 2026-10-08, when the box's default
-                // 50001/50002 ports switched to the LE-cert electrumx2 endpoint)
-                // Self-signed RSA-2048 cert (CN=relay.testls.bit) served by
-                // ElectrumX-NMC alongside the Namecoin-anchored Nostr relay.
-                // SHA-256 (DER): BB:0B:35:E6:42:35:A7:94:E1:57:B6:9A:CD:72:DA:4C:CC:16:A4:D8:1D:0F:F6:B1:D8:F7:FD:FC:6C:CA:6C:BA
-                """
------BEGIN CERTIFICATE-----
-MIIDFzCCAf+gAwIBAgIUAz+Ky5Lu2u1QchHKTwQIStWD8fQwDQYJKoZIhvcNAQEL
-BQAwGzEZMBcGA1UEAwwQcmVsYXkudGVzdGxzLmJpdDAeFw0yNjA1MDMwNjEyNDBa
-Fw0zNjA0MzAwNjEyNDBaMBsxGTAXBgNVBAMMEHJlbGF5LnRlc3Rscy5iaXQwggEi
-MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCngMim0wilCdclMyIIBRAeFBjE
-HWA0l5n3ebCtyepYmyXUrbth2TDdyMHiUNVvE3f7RSAUFtE+Tjb9+xzmLf04qlbC
-i3b2DV3xdVOZpRCI4kybmraYG6lRLQJ5I/N8NWgPsFgcy2mZF3q0yMVEkzGAKqUT
-QGZd2eBs/OVicbCWKmgyhXlnqGeHIs4iKOqenHKSZ8QE5bhAKaMn+Q116QEdBg12
-svGNoSZSlX8hDNUf5N5pOcsK8vj0Yb0ypJOd0J5eVpYS/KA0oMMwALnEs0H17hfO
-IIaWqrbfaqmdR67uzUfci2EoiwQJrXSy7WkNiVX0ikN02VlUPCb2OaSABmwjAgMB
-AAGjUzBRMB0GA1UdDgQWBBSgnHYFU93wufP131xk5w843VWhATAfBgNVHSMEGDAW
-gBSgnHYFU93wufP131xk5w843VWhATAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3
-DQEBCwUAA4IBAQAiVC5RJj/Y3S5uNYraPmRLQrgPui9eGlWDh6LeZvjftACA3WiN
-XabJtTmHxOFFwxmBtzGVCWKR6udETHyfqaq0me/XoYLjGstYTd14GfoV9Klx7Glh
-gLOgqC3Do04o2xnXxhPh00c0jUggKdI05KLVAc4dLfU/XDrOfxBl4XHZY4lYz4CF
-bn+n5Q1cqqcGqoJIHl2cgDdrxSMigIpsunjk8cJXO+hsteA/Pd1UUY5plvE9nbNv
-hy4QgfNqjy36b0Nbm7Fc9Te9W6zgXjHM+q7KhuQvTfKh2sHbCJzRcy7Chgwqyrfq
-NsK0JcBkyRPB+fXmEoE/Xmj/UnOD0fZCCanD
------END CERTIFICATE-----
-                """.trimIndent(),
-            )
+        private val LEGACY_PINNED_CERTS = listOf(NMC2_BITCOINS_SK_CERT_PEM, RELAY_TESTLS_BIT_CERT_PEM)
     }
 
     private fun buildRpcRequest(
