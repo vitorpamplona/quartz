@@ -185,3 +185,9 @@ suspend fun post(client: NostrClient) {
 Quartz also contains a relay server (event stores, policies, NIP-11, NIP-42, NIP-77) and a
 standalone Ktor relay built on it (`geode`). Start from the relay guide linked above rather
 than wiring `NostrServer` from scratch.
+
+Implementing your own `IEventStore`? Diff it against Quartz's SQLite store with
+`StoreConformance` and `ConformanceCorpus` (`nip01Core.store.conformance`): it reports every
+set, order or COUNT mismatch with the STORE-* rules it breaks. An observer-relative store reads
+the caller's NIP-42 identity from `StoreQueryContext` (first authenticated key) and may rank and
+gate by it, never widen past the filter.

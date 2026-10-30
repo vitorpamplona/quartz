@@ -428,6 +428,27 @@ class MyRelayTest {
 }
 ```
 
+### Checking a custom `IEventStore` against the reference
+
+A store of your own (Postgres, Vespa, a filesystem layout) can be diffed against Quartz's SQLite
+store with the conformance battery in `nip01Core.store.conformance`. It is plain main-source
+code with no test-framework dependency, so it runs from a unit test, a CI job or a benchmark:
+
+```kotlin
+val corpus = ConformanceCorpus.generate(ConformanceCorpus.Config(size = 5_000))
+StoreConformance.load(reference, corpus) // EventStore(null)
+StoreConformance.load(candidate, corpus) // your store
+val report = StoreConformance.compare(reference, candidate, StoreConformance.battery(corpus))
+assertTrue(report.ok, report.summary())
+```
+
+The seeded corpus exercises replaceable and addressable supersession, NIP-09 deletions by id and
+by address, deletions of deletions and re-offered events; the battery compares result sets,
+newest-first order and NIP-45 counts over kind, author, id, tag, time-window and multi-filter
+REQs. Each check names the STORE-* rules it exercises (`report.suspectRules`), the same ids the
+`event-store-semantics` rules use. NIP-50 search is left out on purpose: relevance order is each
+engine's own. Quartz's filesystem store runs it in `FsParityTest`.
+
 ## Limits (NIP-11) — enforce and advertise from one source
 
 `RelayLimits` is the single source of truth for the relay's operational limits.

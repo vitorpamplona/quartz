@@ -24,6 +24,8 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.store.conformance.ConformanceCorpus
+import com.vitorpamplona.quartz.nip01Core.store.conformance.StoreConformance
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
@@ -36,6 +38,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Parity matrix: drive both [EventStore] (SQLite) and [FsEventStore]
@@ -448,6 +451,19 @@ class FsParityTest {
             assertParity(Filter(authors = listOf(signer.pubKey), kinds = listOf(0)), "metadata winner")
             assertParity(Filter(authors = listOf(signer.pubKey), kinds = listOf(LongFormContentEvent.KIND)), "articles set")
             assertParity(Filter(authors = listOf(signer.pubKey), kinds = listOf(DeletionRequestEvent.KIND)), "deletion present")
+        }
+
+    @Test
+    fun `the store conformance battery finds no divergence`() =
+        runBlocking {
+            // The battery any external store runs against the SQLite reference: sets, order and
+            // counts over a seeded corpus that exercises supersession, deletions and re-offers.
+            val corpus = ConformanceCorpus.generate(ConformanceCorpus.Config(size = 3_000))
+            StoreConformance.load(sqlite, corpus)
+            StoreConformance.load(fs, corpus)
+
+            val report = StoreConformance.compare(sqlite, fs, StoreConformance.battery(corpus))
+            assertTrue(report.ok, report.summary())
         }
 
     @Test

@@ -152,6 +152,13 @@ Search tests: `commonTest/.../nip50Search/SearchQueryTest.kt`, `SearchableKindsT
 
 ## For parity implementers
 
+Run the conformance battery first: `nip01Core/store/conformance/` (`ConformanceCorpus.generate`,
+`StoreConformance.load` / `battery` / `compare`) diffs a candidate `IEventStore` against the SQLite
+reference (sets, order, counts) and keys each mismatch to the rules below (`report.suspectRules`).
+It lives in `commonMain` so external stores get it from the published artifact;
+`jvmTest/.../store/fs/FsParityTest.kt` and `commonTest/.../store/conformance/StoreConformanceTest.kt`
+run it. Add a check there when you add a rule.
+
 Cite rule ids in divergence notes ("diverges from STORE-F08: we break same-second ties by id").
 F06 (hash-based tags) and F08 (unordered same-second ties) are where the reference itself has
 slack, so a byte-for-byte diff there may not be your bug.
