@@ -107,6 +107,12 @@ and `RelayListRecommendationProcessor.reliableRelaySetFor(accept = …)`. It rea
 wire `publicAddressesOnly()` into the OkHttp client that dials others' relays to refuse names
 that resolve to private addresses.
 
+Holding hundreds or thousands of relays at once on OkHttp: each open websocket holds one
+`Dispatcher` slot and one thread until it closes, so set `maxRequests` above the most sockets held
+at once (at the default 64 the rest queue silently). Resolve through `SurgeDns()`, which caches
+answers and, through its default `BoundedDns`, asks at most 64 names at once. `quartz/CLIENT.md`,
+"Holding many relays at once", has the client.
+
 ## Keys, events and publishing
 
 ```kotlin
