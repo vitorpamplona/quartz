@@ -47,8 +47,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
  * reading [authenticatedUsers].
  */
 open class OptionalAuthPolicy(
-    relay: NormalizedRelayUrl,
-) : FullAuthPolicy(relay) {
+    relays: Set<NormalizedRelayUrl>,
+) : FullAuthPolicy(relays) {
+    /** A relay that answers at one address. */
+    constructor(relay: NormalizedRelayUrl) : this(setOf(relay))
+
     override fun accept(cmd: EventCmd): PolicyResult<EventCmd> = PolicyResult.Accepted(cmd)
 
     override fun accept(cmd: ReqCmd): PolicyResult<ReqCmd> = PolicyResult.Accepted(cmd)

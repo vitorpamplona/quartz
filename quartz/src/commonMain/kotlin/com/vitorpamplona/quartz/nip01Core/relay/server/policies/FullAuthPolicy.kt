@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.server.policies
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.AuthCmd
@@ -33,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
+import com.vitorpamplona.quartz.nip42RelayAuth.tags.RelayTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -41,7 +43,7 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  *
  * Implements the full NIP-42 challenge/verify handshake: [onConnect] sends the
  * [challenge] and [accept] (AuthCmd) validates the returned event (expiration,
- * freshness, challenge match, relay match). This policy runs the auth *logic*
+ * freshness, challenge match, and a `relay` tag naming one of [relays]). This policy runs the auth *logic*
  * but does not *own* the authenticated-identity store: the engine-owned
  * connection [scope] holds it. [accept] does NOT mutate state, and
  * [onAuthenticated] only votes `true` (after [authorize]) — the engine performs
@@ -55,11 +57,28 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * To bridge to an external auth system, override [authorize] (a `suspend` hook)
  * and do the post-verification I/O there — e.g. exchange the verified event for
  * a backend session token. Throwing from it rejects the login (`OK false`) and
- * the pubkey is never recorded.
+ * the pubkey is never recorded. [sendToClient] reaches the client from there (a
+ * `NOTICE` after a login), and [connectionScope] is the connection's context.
  */
 open class FullAuthPolicy(
-    val relay: NormalizedRelayUrl,
+    /**
+     * Every address this relay answers at (a clearnet url and its `.onion`, say): an AUTH event
+     * naming any of them authenticates, since a client signs the address it dialled. Not empty.
+     * Build the policy per connection from the current set, and a newly published address is
+     * accepted from the next connection on.
+     */
+    val relays: Set<NormalizedRelayUrl>,
 ) : IRelayPolicy {
+    /** A relay that answers at one address. */
+    constructor(relay: NormalizedRelayUrl) : this(setOf(relay))
+
+    init {
+        require(relays.isNotEmpty()) { "FullAuthPolicy needs at least one relay address" }
+    }
+
+    /** The first of [relays]: the relay's primary address (insertion order of the set). */
+    val relay: NormalizedRelayUrl = relays.first()
+
     /** The challenge string sent to this client for NIP-42 authentication. */
     val challenge: String = RandomInstance.randomChars(32)
 
@@ -70,6 +89,25 @@ open class FullAuthPolicy(
      * built fresh per connection.
      */
     private lateinit var scope: RequestContext
+
+    /** The connection's channel to the client, captured at [onConnect]. */
+    private var send: ((Message) -> Unit)? = null
+
+    /**
+     * The engine-owned connection scope this policy was connected with (its id, the client's
+     * address, the live [RequestContext.authenticatedUsers]), for subclasses that gate on more
+     * than the identity. Read-only; valid from [onConnect] on.
+     */
+    protected val connectionScope: RequestContext get() = scope
+
+    /**
+     * Sends [message] to this connection's client, as the engine's own frames go. For a subclass
+     * that answers a login ([authorize]) or a refusal with more than the `OK`: a `NOTICE`, a
+     * fresh challenge. A no-op before [onConnect]. Must not block.
+     */
+    protected fun sendToClient(message: Message) {
+        send?.invoke(message)
+    }
 
     /**
      * The pubkeys authenticated on this connection, read from the engine-owned
@@ -87,6 +125,7 @@ open class FullAuthPolicy(
         send: (Message) -> Unit,
     ) {
         this.scope = scope
+        this.send = send
         send(AuthMessage(challenge))
     }
 
@@ -105,12 +144,20 @@ open class FullAuthPolicy(
             return PolicyResult.Rejected("invalid: challenge does not match")
         }
 
-        if (event.relay() != relay) {
+        if (!namesThisRelay(event)) {
             return PolicyResult.Rejected("invalid: relay url does not match")
         }
 
         return PolicyResult.Accepted(cmd)
     }
+
+    /**
+     * Whether any `relay` tag of [event] is one of [relays]. Every tag counts, not just the first:
+     * [RelayAuthEvent.create] with a list writes one per relay, and the challenge, which is this
+     * connection's alone, is what binds the event to this socket. Both sides are normalized, so a
+     * scheme's default port spelled out (`ws://….onion:80`) is the same address.
+     */
+    private fun namesThisRelay(event: RelayAuthEvent): Boolean = event.tags.fastAny { tag -> RelayTag.parse(tag)?.let { it in relays } == true }
 
     /**
      * Votes to record the authentication. The engine calls this only after

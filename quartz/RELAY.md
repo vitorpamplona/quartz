@@ -263,7 +263,13 @@ Always stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's ch
 and timestamp but not its signature, and a `policyBuilder` replaces the default `VerifyPolicy`.
 On its own, anyone can AUTH as any pubkey, and EVENTs with bad signatures are stored.
 
-`FullAuthPolicy` already implements the full NIP-42 challenge/verify handshake — you should not re-implement it. To bridge auth to an external system (e.g. exchange the verified event for a backend JWT), override the `suspend` `authorize` hook. It runs after the NIP-42 checks pass (and after the rest of the policy chain approves), and the pubkey is recorded only once it returns — so it can do network/disk I/O, and throwing from it rejects the login (`OK false`) with the connection left unauthenticated (nothing was committed).
+A relay that answers at more than one address (clearnet and a `.onion`) passes them all:
+`FullAuthPolicy(relays = setOf(clearnet, onion))` (or `OptionalAuthPolicy(setOf(…))`) accepts an
+AUTH whose `relay` tag names any of them, since a client signs the address it dialled. Every
+`relay` tag of the event is considered, and a default port spelled out (`:443`, `:80`) is the
+same address.
+
+`FullAuthPolicy` already implements the full NIP-42 challenge/verify handshake — you should not re-implement it. To bridge auth to an external system (e.g. exchange the verified event for a backend JWT), override the `suspend` `authorize` hook. It runs after the NIP-42 checks pass (and after the rest of the policy chain approves), and the pubkey is recorded only once it returns — so it can do network/disk I/O, and throwing from it rejects the login (`OK false`) with the connection left unauthenticated (nothing was committed). From a subclass, `sendToClient(message)` answers on the connection (a `NOTICE` after a login) and `connectionScope` is its `RequestContext`.
 
 ### Composing Policies
 
