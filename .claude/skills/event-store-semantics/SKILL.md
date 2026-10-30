@@ -132,6 +132,11 @@ profile fields space-joined; kind 30063 indexes release notes only for NIP-82 re
   `stripExtensions()` / `Filter.strippingSearchExtensions()` is what the built-in stores apply:
   unsupported extensions are ignored, so an extensions-only search is unconstrained. A store
   that implements extensions gets the raw string and should parse it with `SearchQuery.parse`.
+  Term syntax: `"phrase"` → `phrases`, `-word` → `notTerms`, `-"phrase"` → `notPhrases`.
+- `nip50Search/EventSearchMatcher.kt` — the in-memory matcher (local/cache search, live
+  subscriptions): loose terms ANDed as case-insensitive substrings; phrases required as whole-word
+  runs (letter/digit words, any separator); `-word` / `-"phrase"` drop an event holding them as a
+  word run. Extensions ignored. No score.
 - `SearchRelayListEvent` (`nip50Search/SearchRelayListEvent.kt`) — **kind 10007**, the user's
   search relays (public + NIP-44 private tags; not itself searchable). Used by
   Amethyst's `commons/.../commons/actions/SearchActions.kt`; defaults in
