@@ -35,6 +35,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.coroutines.executeAsync
+import java.io.IOException
 
 /**
  * Class representing remote calendar server interface.
@@ -61,18 +62,23 @@ class OkHttpCalendar(
                 .build()
 
         val client = okHttpClient(url)
-        return client.newCall(request).executeAsync().use {
-            if (it.isSuccessful) {
-                val ctx =
-                    StreamDeserializationContext(
-                        it.body.bytes(),
+        return try {
+            client.newCall(request).executeAsync().use {
+                if (it.isSuccessful) {
+                    val ctx =
+                        StreamDeserializationContext(
+                            it.body.bytes(),
+                        )
+                    Timestamp.deserialize(ctx, digest)
+                } else {
+                    throw UrlException(
+                        "Failed to open $url",
                     )
-                Timestamp.deserialize(ctx, digest)
-            } else {
-                throw UrlException(
-                    "Failed to open $url",
-                )
+                }
             }
+        } catch (e: IOException) {
+            // An unreachable calendar (or Tor proxy) is the UrlException the RemoteCalendar contract promises.
+            throw UrlException("Failed to open $url: ${e.message}")
         }
     }
 

@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip03Timestamp.ots.VerifyResult.Chains
 import com.vitorpamplona.quartz.nip03Timestamp.ots.attestation.BitcoinBlockHeaderAttestation
 import com.vitorpamplona.quartz.nip03Timestamp.ots.attestation.PendingAttestation
 import com.vitorpamplona.quartz.nip03Timestamp.ots.attestation.TimeAttestation
+import com.vitorpamplona.quartz.nip03Timestamp.ots.exceptions.UrlException
 import com.vitorpamplona.quartz.nip03Timestamp.ots.exceptions.VerificationException
 import com.vitorpamplona.quartz.nip03Timestamp.ots.op.OpAppend
 import com.vitorpamplona.quartz.nip03Timestamp.ots.op.OpCrypto
@@ -109,7 +110,8 @@ class OpenTimestamps(
      * @param fileTimestamps      The list of timestamp to stamp.
      * @param calendarsUrl        The list of calendar urls.
      * @return The plain array buffer of stamped.
-     * @throws IllegalArgumentException if fileTimestamp is not valid, or the stamp procedure fails.
+     * @throws IllegalArgumentException if fileTimestamp is not valid.
+     * @throws UrlException if no calendar accepted the timestamp.
      */
     suspend fun stamp(
         fileTimestamps: MutableList<DetachedTimestampFile>,
@@ -145,20 +147,35 @@ class OpenTimestamps(
     /**
      * Create a timestamp
      *
+     * Each calendar is asked independently: one that is down or unreachable is skipped, so the
+     * proof carries the attestations of the calendars that answered.
+     *
      * @param timestamp    The timestamp.
      * @param calendarUrls List of calendar's to use.
-     * @param m            Number of calendars to use.
      * @return The created timestamp.
+     * @throws UrlException if no calendar answered.
      */
     private suspend fun create(
         timestamp: Timestamp,
         calendarUrls: MutableList<String>,
     ): Timestamp {
+        var lastError: Exception? = null
         val responses =
             mapNotNullAsync(calendarUrls) { calendarUrl ->
                 Log.i("OpenTimestamps") { "Submitting to remote calendar $calendarUrl" }
-                calendar.submit(calendarUrl, timestamp.digest)
+                try {
+                    calendar.submit(calendarUrl, timestamp.digest)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w("OpenTimestamps", "Calendar $calendarUrl did not accept the digest", e)
+                    lastError = e
+                    null
+                }
             }
+
+        if (responses.isEmpty()) {
+            throw UrlException("No calendar accepted the timestamp: " + (lastError?.message ?: "no calendar answered in time"))
+        }
 
         responses.forEach {
             timestamp.merge(it)
