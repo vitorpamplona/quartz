@@ -61,6 +61,28 @@ same `String` instance for every subscription it reaches, so the transport can e
 once and reuse them. Stored replays, and every frame under a policy that filters outgoing events,
 still use `raw`/`message`.
 
+A multi-threaded transport can also say which thread delivers a sink's live frames by overriding
+`liveExecutor` with a `FanoutExecutor`: on Netty, the channel's event loop, as one instance per loop
+shared by every sink on it. `NostrServer` then keeps one partition of its live index per executor
+and hands each accepted event, once, to each executor with a subscription it may match. That task
+matches the executor's own subscriptions and calls their sinks on its thread, so the ingest thread
+never walks the subscriptions and the sink can write without a cross-thread queue. `execute` must
+queue its task (never run it inline) and run tasks one at a time, in order. Sinks that declare no
+executor get their live frames on the thread that accepted the event, as before.
+
+```kotlin
+class LoopSessions(private val loop: EventLoop) : FanoutExecutor {
+    override fun execute(task: () -> Unit) = loop.execute(task)
+}
+
+class SocketSink(private val channel: Channel, override val liveExecutor: LoopSessions) : LiveFrameSink {
+    override fun liveEvent(framePrefix: String, body: String) {
+        // Called on channel.eventLoop(): write directly.
+    }
+    // message/raw still arrive from the engine's coroutines.
+}
+```
+
 ## Event Store
 
 ### SQLite (Persistent)
@@ -159,6 +181,36 @@ both build on `RelaySession` and the shared `SessionBackend` seam (`LiveEventSto
 is the storage-backed `SessionBackend`; `EventSourceBackend` adapts a
 `EventSource`). Implement `SessionBackend` directly only if you need custom
 control over the EVENT/negentropy paths as well as REQ/COUNT.
+
+`LiveEventStore` is also a `LiveSubscriptionBackend`: a REQ on it parks no coroutine for its
+live tail. `openSubscription(ctx, filters, listener)` registers the filters and returns a
+`LiveSubscription`; the engine runs its `replayRaw` (or `replay`) to EOSE in a short-lived
+coroutine and keeps only the handle, which CLOSE, a replaced sub id or a disconnect `cancel`s.
+A backend that wraps `LiveEventStore` (a search gate, a live-event gate, a latency timer) keeps
+working through `queryRaw` as before; to move it onto the cheaper path, implement
+`LiveSubscriptionBackend` too, wrap the `LiveListener` for live events and the returned
+`LiveSubscription`'s replay for the stored ones:
+
+```kotlin
+override fun openSubscription(ctx: RequestContext, filters: List<Filter>, onLive: LiveListener): LiveSubscription {
+    val inner = store.openSubscription(ctx, filters) { event, body -> if (admits(event)) onLive.onLive(event, body) }
+    return object : LiveSubscription by inner {
+        override suspend fun replayRaw(onEachStored: (RawEvent) -> Unit, onEose: () -> Unit) =
+            timed { inner.replayRaw(onEachStored, onEose) }
+
+        // The path for sessions whose policy screens events: gate it too.
+        override suspend fun replay(onEach: (Event) -> Unit, onEose: () -> Unit) =
+            timed { inner.replay(onEach, onEose) }
+    }
+}
+```
+
+A REQ on this path lives in the index, not in a coroutine, once its replay ends: end a session
+with `RelaySession.close()` (the server classes do), since cancelling its scope no longer
+unregisters it. A `FanoutExecutor` owns the queue between the ingest and its thread (one task per
+accepted event it may deliver); bound it if a slow loop must not grow it without limit.
+
+`LiveEventStore.liveSubscriptionCount` reports how many REQs are registered.
 
 ### Caller-aware sources (who is asking)
 
@@ -477,11 +529,13 @@ quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/
 │   ├── RelaySession.kt         # Per-connection handler (stable .id)
 │   ├── SessionSink.kt          # Where a session's frames go (typed or raw)
 │   ├── LiveFrameSink.kt        # Optional: live EVENT frames as prefix + shared body
+│   ├── FanoutExecutor.kt       # Optional: the thread that delivers a sink's live frames
 │   ├── ConnectionRegistry.kt   # Live-connection bookkeeping + gauge
 │   ├── RelayServerListener.kt  # Connection open/close observability hook
 │   ├── NegSessionRegistry.kt   # NIP-77 negentropy per-connection state
 │   ├── backend/                # data plane (how REQ/COUNT/EVENT are answered)
 │   │   ├── SessionBackend.kt   # Data-plane seam (LiveEventStore / EventSourceBackend)
+│   │   ├── LiveSubscriptionBackend.kt # Optional: REQs as registrations, no parked coroutine
 │   │   ├── EventSource.kt      # Flow<Event> SPI for non-storage relays
 │   │   ├── EventSourceBackend.kt # Adapts an EventSource to SessionBackend
 │   │   ├── LiveEventStore.kt   # Reactive event streaming (storage SessionBackend)

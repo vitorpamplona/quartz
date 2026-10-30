@@ -123,7 +123,10 @@ class FilterIndex<S : Any> {
      * `event.kind`) and allocate no key-wrapper objects. [assignments] is
      * the reverse map ([S] → the [BucketKey]s it occupies) used by
      * [unregister]; the wrappers live only here, built on the rare
-     * register path.
+     * register path. A subscriber in one bucket (a live feed's usual
+     * shape) maps to that [BucketKey] itself, one in several to a
+     * [PersistentSet] of them: a set per subscriber was most of what the
+     * index kept per entry.
      *
      * Persistent (HAMT) maps/sets: a register/unregister produces the
      * next snapshot in O(keys × log S) with structural sharing, instead
@@ -135,8 +138,71 @@ class FilterIndex<S : Any> {
         val tags: PersistentMap<String, PersistentMap<String, PersistentSet<S>>> = persistentHashMapOf(),
         val kinds: PersistentMap<Int, PersistentSet<S>> = persistentHashMapOf(),
         val unindexed: PersistentSet<S> = persistentHashSetOf(),
-        val assignments: PersistentMap<S, PersistentSet<BucketKey>> = persistentHashMapOf(),
-    )
+        val assignments: PersistentMap<S, Any> = persistentHashMapOf(),
+    ) : Snapshot<S> {
+        override fun isEmpty(): Boolean = assignments.isEmpty()
+
+        override fun candidatesFor(event: Event): Set<S> {
+            if (assignments.isEmpty()) return emptySet()
+            var result: Set<S>? = unindexed.ifEmpty { null }
+            result = result.plusBucket(ids[event.id])
+            result = result.plusBucket(authors[event.pubKey])
+            result = result.plusBucket(kinds[event.kind])
+            if (tags.isNotEmpty()) {
+                for (tag in event.tags) {
+                    if (tag.size >= 2 && isIndexableTagName(tag[0])) {
+                        result = result.plusBucket(tags[tag[0]]?.get(tag[1]))
+                    }
+                }
+            }
+            return result ?: emptySet()
+        }
+
+        override fun hasCandidates(event: Event): Boolean {
+            if (assignments.isEmpty()) return false
+            if (unindexed.isNotEmpty()) return true
+            if (!ids[event.id].isNullOrEmpty()) return true
+            if (!authors[event.pubKey].isNullOrEmpty()) return true
+            if (!kinds[event.kind].isNullOrEmpty()) return true
+            if (tags.isNotEmpty()) {
+                for (tag in event.tags) {
+                    if (tag.size >= 2 && isIndexableTagName(tag[0]) && !tags[tag[0]]?.get(tag[1]).isNullOrEmpty()) return true
+                }
+            }
+            return false
+        }
+
+        /**
+         * [candidatesFor]'s accumulator: null until a non-empty bucket is
+         * reached, then that bucket itself, then — once a second, different
+         * bucket shows up — a [LinkedHashSet] union owned by this call. A
+         * [PersistentSet] here is always a borrowed bucket, never mutated.
+         */
+        private fun Set<S>?.plusBucket(bucket: PersistentSet<S>?): Set<S>? {
+            if (bucket.isNullOrEmpty() || bucket === this) return this
+            if (this == null) return bucket
+            val union = if (this is PersistentSet<S>) LinkedHashSet(this) else this as LinkedHashSet<S>
+            union.addAll(bucket)
+            return union
+        }
+    }
+
+    /**
+     * The index as it stood at one moment ([snapshot]). Immutable, so it can be
+     * read on another thread later and still answer for that moment: a
+     * subscriber registered afterwards is not in it, and one unregistered
+     * afterwards still is. Sealed: only [FilterIndex] makes them, so members
+     * can be added later.
+     */
+    sealed interface Snapshot<S> {
+        fun isEmpty(): Boolean
+
+        /** Same as [FilterIndex.candidatesFor], against this snapshot. */
+        fun candidatesFor(event: Event): Set<S>
+
+        /** True when [candidatesFor] would return anything, without building the set. */
+        fun hasCandidates(event: Event): Boolean
+    }
 
     private val state: AtomicReference<State<S>> = AtomicReference(State())
 
@@ -197,15 +263,23 @@ class FilterIndex<S : Any> {
      * No-op if the subscriber isn't currently registered.
      */
     fun unregister(subscriber: S) {
+        remove(subscriber)
+    }
+
+    /**
+     * [unregister] that reports whether [subscriber] was registered: of two
+     * concurrent calls for the same subscriber, exactly one returns true.
+     */
+    fun remove(subscriber: S): Boolean {
         while (true) {
             val current = state.load()
-            val keys = current.assignments[subscriber] ?: return
+            val keys = current.assignments[subscriber] ?: return false
             var ids = current.ids
             var authors = current.authors
             var tags = current.tags
             var kinds = current.kinds
             var unindexed = current.unindexed
-            for (key in keys) {
+            for (key in keysOf(keys)) {
                 when (key) {
                     is IdKey -> ids = ids.removeSub(key.id, subscriber)
                     is AuthorKey -> authors = authors.removeSub(key.author, subscriber)
@@ -216,7 +290,7 @@ class FilterIndex<S : Any> {
             }
             val next =
                 State(ids, authors, tags, kinds, unindexed, current.assignments.removing(subscriber))
-            if (state.compareAndSet(current, next)) return
+            if (state.compareAndSet(current, next)) return true
         }
     }
 
@@ -232,36 +306,14 @@ class FilterIndex<S : Any> {
      * union. Dimensions are probed with the event's own fields, no key
      * wrappers.
      */
-    fun candidatesFor(event: Event): Set<S> {
-        val s = state.load()
-        if (s.assignments.isEmpty()) return emptySet()
-        var result: Set<S>? = s.unindexed.ifEmpty { null }
-        result = result.plusBucket(s.ids[event.id])
-        result = result.plusBucket(s.authors[event.pubKey])
-        result = result.plusBucket(s.kinds[event.kind])
-        if (s.tags.isNotEmpty()) {
-            for (tag in event.tags) {
-                if (tag.size >= 2 && isIndexableTagName(tag[0])) {
-                    result = result.plusBucket(s.tags[tag[0]]?.get(tag[1]))
-                }
-            }
-        }
-        return result ?: emptySet()
-    }
+    fun candidatesFor(event: Event): Set<S> = state.load().candidatesFor(event)
 
     /**
-     * [candidatesFor]'s accumulator: null until a non-empty bucket is
-     * reached, then that bucket itself, then — once a second, different
-     * bucket shows up — a [LinkedHashSet] union owned by this call. A
-     * [PersistentSet] here is always a borrowed bucket, never mutated.
+     * The current state, frozen: one atomic load, no copy. A fan-out can take it
+     * on the thread that accepted an event and match against it on another, and
+     * still answer for the moment of acceptance.
      */
-    private fun Set<S>?.plusBucket(bucket: PersistentSet<S>?): Set<S>? {
-        if (bucket.isNullOrEmpty() || bucket === this) return this
-        if (this == null) return bucket
-        val union = if (this is PersistentSet<S>) LinkedHashSet(this) else this as LinkedHashSet<S>
-        union.addAll(bucket)
-        return union
-    }
+    fun snapshot(): Snapshot<S> = state.load()
 
     /**
      * Visit every registered subscriber. Used by callers that need
@@ -278,7 +330,7 @@ class FilterIndex<S : Any> {
         keys: List<BucketKey>,
     ) {
         if (keys.isEmpty()) return
-        val keySet = keys.toPersistentHashSet()
+        val keySet = keys.distinct()
         while (true) {
             val current = state.load()
             var ids = current.ids
@@ -296,11 +348,20 @@ class FilterIndex<S : Any> {
                 }
             }
             val existing = current.assignments[subscriber]
-            val merged = existing?.addingAll(keySet) ?: keySet
+            val merged: Any =
+                when {
+                    existing == null && keySet.size == 1 -> keySet[0]
+                    existing == null -> keySet.toPersistentHashSet()
+                    else -> keysOf(existing).toPersistentHashSet().addingAll(keySet)
+                }
             val next = State(ids, authors, tags, kinds, unindexed, current.assignments.putting(subscriber, merged))
             if (state.compareAndSet(current, next)) return
         }
     }
+
+    /** An [State.assignments] value as its keys: one [BucketKey], or a set of them. */
+    @Suppress("UNCHECKED_CAST")
+    private fun keysOf(assignment: Any): Collection<BucketKey> = if (assignment is BucketKey) listOf(assignment) else assignment as Set<BucketKey>
 
     // Per-dimension add/remove of one subscriber, returning the same map
     // instance when nothing changed so the CAS builds minimal new nodes.

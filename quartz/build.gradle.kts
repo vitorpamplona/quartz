@@ -90,6 +90,9 @@ kotlin {
         System.getProperty("tagBenchScale")?.let { systemProperty("tagBenchScale", it) }
         System.getProperty("fsBenchScale")?.let { systemProperty("fsBenchScale", it) }
         System.getProperty("powBenchRounds")?.let { systemProperty("powBenchRounds", it) }
+        System.getProperty("fanoutBenchSubs")?.let { systemProperty("fanoutBenchSubs", it) }
+        System.getProperty("fanoutBenchEvents")?.let { systemProperty("fanoutBenchEvents", it) }
+        System.getProperty("fanoutBenchSubsPerConn")?.let { systemProperty("fanoutBenchSubsPerConn", it) }
         // Opt-in JFR profiling of a benchmark run (-PnegProfile=/tmp/neg.jfr).
         (project.findProperty("negProfile") as? String)?.let {
             jvmArgs("-XX:+FlightRecorder", "-XX:StartFlightRecording=filename=$it,settings=profile,dumponexit=true")
