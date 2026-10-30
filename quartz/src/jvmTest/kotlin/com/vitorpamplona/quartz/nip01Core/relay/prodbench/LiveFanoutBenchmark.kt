@@ -61,8 +61,10 @@ import kotlin.test.assertEquals
  *
  * Reports, per delivery: wall-clock ns, CPU ns summed over every thread, and bytes allocated
  * summed over every thread (`ThreadMXBean`, so transient garbage counts). Also the publisher's
- * OK latency (publishing one event at a time and waiting for its OK, the way a client sees it),
- * and the heap each idle connection and each idle subscription keeps after a full GC.
+ * OK latency, publishing one event at a time and waiting for its OK: back-to-back (the next
+ * publish right after the OK, so a slow fan-out backs up the writer) and paced (the next publish
+ * once the previous event reached every feed). And the heap each idle connection and each idle
+ * subscription keeps after a full GC.
  *
  * Small by default so `jvmTest` stays quick; scale it with
  * `-DfanoutBenchSubs=12000 -DfanoutBenchEvents=200 -DfanoutBenchSubsPerConn=1`.
@@ -75,6 +77,7 @@ class LiveFanoutBenchmark {
         val SUBS_PER_CONN = System.getProperty("fanoutBenchSubsPerConn")?.toInt() ?: 2
         const val LOOPS = 4
         const val WARMUP_EVENTS = 20
+        const val PACED_EVENTS = 30
 
         private val threads = ManagementFactory.getThreadMXBean() as ThreadMXBean
         private const val PUBKEY = "46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184b16bd8ce4d"
@@ -246,9 +249,22 @@ class LiveFanoutBenchmark {
             val deliveries = EVENTS.toLong() * subs
             assertEquals((WARMUP_EVENTS + EVENTS).toLong() * subs, framesSoFar())
             okLatency.sort()
+
+            // Paced: each event is published once the previous one reached every feed, the way
+            // a relay at a few events a second sees it. The OK then shows whether a publish
+            // waits for its own fan-out, with no backlog from the event before it.
+            val pacedOk = LongArray(PACED_EVENTS)
+            var pacedTarget = framesSoFar()
+            repeat(PACED_EVENTS) {
+                pacedOk[it] = publish(seq++)
+                pacedTarget += subs
+                awaitFrames(pacedTarget)
+            }
+            pacedOk.sort()
             println("LiveFanoutBenchmark [${mode.name}: ${mode.label}] $subs subs on $conns connections, $LOOPS loops, $EVENTS events")
             println("  per delivery:  ${"%8.1f".format(wall.toDouble() / deliveries)} ns wall  ${"%8.1f".format(cpu.toDouble() / deliveries)} ns cpu  ${"%7.1f".format(alloc.toDouble() / deliveries)} B allocated")
-            println("  publisher OK:  p50 ${"%7.3f".format(pct(okLatency, 0.5))} ms  p90 ${"%7.3f".format(pct(okLatency, 0.9))} ms  max ${"%7.3f".format(pct(okLatency, 1.0))} ms")
+            println("  OK, paced:        p50 ${"%7.3f".format(pct(pacedOk, 0.5))} ms  p90 ${"%7.3f".format(pct(pacedOk, 0.9))} ms  max ${"%7.3f".format(pct(pacedOk, 1.0))} ms")
+            println("  OK, back-to-back: p50 ${"%7.3f".format(pct(okLatency, 0.5))} ms  p90 ${"%7.3f".format(pct(okLatency, 0.9))} ms  max ${"%7.3f".format(pct(okLatency, 1.0))} ms")
             println("  retained heap: ${(heapConns - heapBefore) / conns} B/connection  ${(heapSubs - heapConns) / subs} B/subscription")
 
             sessions.forEach { it.close() }

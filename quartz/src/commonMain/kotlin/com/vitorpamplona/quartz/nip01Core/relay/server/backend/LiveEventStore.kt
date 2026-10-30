@@ -272,9 +272,11 @@ class LiveEventStore(
     /**
      * Fire-and-forget enqueue: hand [event] to the [ingest] and
      * fire [onComplete] once the writer's batch has a per-row
-     * decision. On `Accepted` the live stream is also fanned out via
-     * [FilterIndex] so subscribers see the event. Suspends only when
-     * the ingest queue is full (backpressure).
+     * decision, which the ingest reports only after the write is
+     * durable. On `Accepted` the live stream is then fanned out via
+     * [FilterIndex] so subscribers see the event: after [onComplete]
+     * returns, so the publisher's OK never waits for live delivery.
+     * Suspends only when the ingest queue is full (backpressure).
      */
     override suspend fun submit(
         event: Event,
@@ -299,11 +301,15 @@ class LiveEventStore(
         try {
             ingest.submit(event, skipVerify) { outcome ->
                 try {
-                    if (outcome is IEventStore.InsertOutcome.Accepted) {
-                        writeGeneration.addAndFetch(1L)
-                        fanout(event)
+                    val accepted = outcome is IEventStore.InsertOutcome.Accepted
+                    if (accepted) writeGeneration.addAndFetch(1L)
+                    // The verdict first: the ingest only calls back once the write is
+                    // durable, and the publisher's OK need not wait for live delivery.
+                    try {
+                        onComplete(outcome)
+                    } finally {
+                        if (accepted) fanout(event)
                     }
-                    onComplete(outcome)
                 } finally {
                     inFlight.remove(event.id)
                 }
@@ -343,7 +349,8 @@ class LiveEventStore(
     }
 
     /**
-     * Live fanout for an accepted event, on the [ingest] callback.
+     * Live fanout for an accepted event, on the [ingest] callback, after
+     * the publisher's `onComplete`.
      *
      * Subscriptions without an executor are matched and delivered right
      * here, as always: each `deliver` must be cheap (typically a `trySend`
