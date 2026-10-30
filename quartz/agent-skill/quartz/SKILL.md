@@ -1,6 +1,6 @@
 ---
 name: quartz
-description: Building on Quartz, the Kotlin Multiplatform Nostr library (com.vitorpamplona.quartz): NostrClient + a WebsocketBuilder, fetchAll/fetchFirst/fetchAllPages/publishAndConfirm, typed event builders, NostrSigner, NIP-19/NIP-05/NIP-44. Use in projects that depend on Quartz.
+description: Building on Quartz, the Kotlin Multiplatform Nostr library (com.vitorpamplona.quartz): NostrClient, fetchAll/fetchAllPages/publishAndConfirm, typed event builders, NostrSigner, NIP-19/NIP-44, NIP-85 assertions, IEventStore conformance, NIP-50 SearchQuery. Use in projects that depend on Quartz.
 ---
 
 # Quartz (Nostr for Kotlin Multiplatform)
@@ -17,6 +17,14 @@ The full guides live in the repo:
   how to structure a feed-style app on top of it.
 - [One-shot relay operations](https://github.com/vitorpamplona/quartz/blob/main/quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/README.md) —
   the catalog of `fetch*`, `count`, publish and negentropy helpers.
+
+Two references beside this file go deeper, read them when the task touches them:
+
+- `references/nip85-trusted-assertions.md` — kind 10040 provider lists and 30382–30385
+  assertions: subjects, `providerFor`, rank readings, building and downloading cards.
+- `references/search-and-stores.md` — running your own `IEventStore` or search engine: the
+  conformance battery, `StoreQueryContext`, the `SearchQuery` grammar, `EventSearchMatcher`,
+  which text each kind indexes, `SubjectReferences`.
 
 ## Setup
 
@@ -152,6 +160,8 @@ suspend fun post(client: NostrClient) {
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
   (NIP-55) signers implement the same class.
 - `Event.verify()` checks the id and signature of events you receive from relays.
+- `event.toJson()` and `Event.fromJson(json)` / `Event.fromJsonOrNull(json)` (de)serialize one
+  event; parsing returns the kind's typed subclass (`as? TextNoteEvent`).
 - Nostr JSON goes through `OptimizedJsonMapper`: Kite (`nip01Core.kite`, Quartz's own reader
   and writer) for events, relay frames, filters, tags, rumors, templates and NIP-46/NIP-55
   signer messages, and kotlinx.serialization for everything else, on every target.

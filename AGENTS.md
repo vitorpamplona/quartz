@@ -36,8 +36,9 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
     sample first, run `spotlessApply`, then copy it into the README. Mark a Gradle script block
     ```` ```kotlin build.gradle.kts ```` so the test skips it.
   - `quartz/agent-skill/quartz/`: a skill for *other* projects that depend on Quartz (they copy
-    it into their own skills folder; it isn't loaded here). Update it, and `quartz/CLIENT.md`,
-    when the public API changes, and compile any code you add to either.
+    it into their own skills folder; it isn't loaded here). Its `references/` hold the NIP-85 and
+    search/store guides dependents need. Update it, and `quartz/CLIENT.md`, when the public API
+    changes, and compile any code you add to either.
   - `quartz/plans/`: design docs, `YYYY-MM-DD-<slug>.md`; finished ones go to `plans/archive/`.
   - `quartz/benchmarks/`: native benchmark scripts.
 - `quartz/src/jvmAndroidTest/kotlin/com/vitorpamplona/quartz/testing/`: the in-process test
@@ -66,6 +67,14 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
   `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/relay/client/accessories/`
   (its `README.md` catalogs them). Because they're extensions they don't show up as members:
   grep that package before writing a new subscribe/collect loop.
+- **Mechanism here, policy in the app.** If a second client, relay or store would write it the
+  same way (tag codecs, a record's read-modify-write, url canonicalisation, auth verification,
+  filter and search matching, store conformance), it lives in Quartz. Thresholds, what to
+  publish, whose keys to trust and env vars stay in the app, and Quartz exposes a hook (a
+  predicate, a callback, an open member) instead of a closed class. A private Quartz function a
+  dependent had to copy is a bug report: make it public. Precedent:
+  `quartz/plans/2026-10-29-local-relays-are-the-apps-call.md` (the parser can't know whose data
+  it holds, so the dial decision went to the app as a predicate).
 - `commonMain` and `commonTest` stay free of JVM-only APIs: the Linux and Apple targets compile
   them as common code. `verifyKmpPurity` and the metadata compiles catch most of it on Linux; CI's
   `test-apple` job is the authoritative check. For `@Volatile` import `kotlin.concurrent.Volatile`;

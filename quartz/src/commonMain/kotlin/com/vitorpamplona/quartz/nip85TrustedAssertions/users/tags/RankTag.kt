@@ -43,10 +43,11 @@ class RankTag {
          * the tag is not a rank tag or its value is not an integer.
          *
          * Rank 0 is a VALUE here ("the provider scores this subject at the bottom"), which is
-         * what a store that ranks or floors on the score needs. `TrustNetworkBuilder` reads it
-         * differently on purpose: there a card with rank 0 or no rank is a removal, because
-         * Brainstorm zeroes a card before the kind 5 that deletes it. Pick the reading your
-         * consumer means; do not mix them over one index.
+         * what a store that ranks or floors on the score needs. Quartz's trust index
+         * (`memberRank`, used by `TrustNetworkBuilder`) reads it differently on purpose: there a
+         * card with rank 0 or no rank is a removal, because Brainstorm zeroes a card before the
+         * kind 5 that deletes it. Pick the reading your consumer means; do not mix them over one
+         * index.
          *
          * @see com.vitorpamplona.quartz.nip85TrustedAssertions.users.index.TrustNetworkBuilder
          */
