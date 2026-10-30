@@ -432,6 +432,16 @@ fun decodePrivateKeyAsHexOrNull(key: String): HexKey? =
         null
     }
 
+/**
+ * LENIENT: the pubkey [key] names, in any form, for code that holds a user's own input and wants
+ * "whatever key this is": an npub, an nprofile, a `nostr:` URI of either, any even-length hex
+ * (not checked to be 32 bytes), and also an **nsec**, which is decoded to the pubkey it controls.
+ * Null for other entities and malformed input.
+ *
+ * That last case is a footgun wherever the input is meant to be PUBLIC (a config value, an
+ * allow-list, a form field others see): a pasted nsec is accepted and the private key now sits
+ * in a public place. Use [decodePublicKeyOnlyAsHexOrNull] there.
+ */
 fun decodePublicKeyAsHexOrNull(key: String): HexKey? =
     try {
         when (val parsed = Nip19Parser.uriToRoute(key)?.entity) {
@@ -444,6 +454,26 @@ fun decodePublicKeyAsHexOrNull(key: String): HexKey? =
             is NRelay -> null
             is NAddress -> null
             else -> Hex.decode(key).toHexKey()
+        }
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        null
+    }
+
+/**
+ * STRICT: the pubkey [key] names when it is a PUBLIC key: an npub, an nprofile, a `nostr:` URI of
+ * either, or exactly 64 hex characters (folded to lowercase). Never an nsec: unlike
+ * [decodePublicKeyAsHexOrNull] it does not derive a pubkey from a private key, so a secret pasted
+ * into a public setting is refused rather than silently accepted. Null for an nsec, any other
+ * entity, hex that is not 32 bytes, a bad checksum and anything malformed.
+ */
+fun decodePublicKeyOnlyAsHexOrNull(key: String): HexKey? =
+    try {
+        when (val parsed = Nip19Parser.uriToRoute(key)?.entity) {
+            is NPub -> parsed.hex.takeIf { it.length == 64 }
+            is NProfile -> parsed.hex.takeIf { it.length == 64 }
+            null -> key.takeIf { it.length == 64 && Hex.isHex64(it) }?.lowercase()
+            else -> null
         }
     } catch (e: Exception) {
         if (e is CancellationException) throw e

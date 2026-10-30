@@ -152,6 +152,9 @@ suspend fun post(client: NostrClient) {
 
 - **Parse anything a user pastes** (npub, nprofile, note, nevent, naddr, `nostr:` URIs):
   `Nip19Parser.uriToRoute(text)` in `nip19Bech32`.
+- **Read a PUBLIC key from config or a form**: `decodePublicKeyOnlyAsHexOrNull(input)` in
+  `nip19Bech32` (npub, nprofile, `nostr:` URI, or 64 hex). Not `decodePublicKeyAsHexOrNull`:
+  it also accepts an nsec and returns its pubkey, so a pasted secret is silently accepted.
 - **Resolve a user to a pubkey** from hex, npub, nprofile or a NIP-05 `name@domain`:
   `resolveUserHexOrNull(input, nip05Client)` in `nip05DnsIdentifiers`. Pass a
   `Nip05Client` to enable the NIP-05 lookup; without one only key formats resolve.
