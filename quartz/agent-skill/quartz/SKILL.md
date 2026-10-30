@@ -139,6 +139,10 @@ suspend fun post(client: NostrClient) {
   second past the version it replaces. A replacement stamped at or before the stored one is
   rejected. A NIP-66 monitor edits its own 30166 with `RelayDiscoveryEvent.edit(relay, current,
   owns) { … }`, which keeps every tag `owns` does not claim (another writer's, or unknown ones).
+- **The address an event occupies** (the key supersession compares under, what a NIP-09 `a` tag
+  names): `event.addressTagOrNull()` (`kind:pubkey:d`) or `event.addressOrNull()` (`Address`) in
+  `nip01Core.core`. Dispatched on the kind, so it works on a plain `Event` too; null for regular
+  and ephemeral kinds. `event.supersedes(other)` is the NIP-01 winner rule (newest, then lowest id).
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
