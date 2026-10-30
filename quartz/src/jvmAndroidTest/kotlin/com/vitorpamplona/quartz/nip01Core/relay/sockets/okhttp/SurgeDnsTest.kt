@@ -93,6 +93,47 @@ class SurgeDnsTest {
         assertEquals(1, upstream.calls("missing.example"))
     }
 
+    /** Throws what the JVM throws for EAI_AGAIN, for every host, until [answering] is set. */
+    private class TimingOutDns(
+        private val responses: Map<String, List<InetAddress>>,
+    ) : Dns {
+        @Volatile var answering = false
+        val calls = AtomicInteger()
+
+        override fun lookup(hostname: String): List<InetAddress> {
+            calls.incrementAndGet()
+            if (!answering) throw UnknownHostException("$hostname: Temporary failure in name resolution")
+            return responses[hostname] ?: throw UnknownHostException("$hostname: Name or service not known")
+        }
+    }
+
+    @Test
+    fun `a resolver timeout is not cached so the next lookup asks again`() {
+        val upstream = TimingOutDns(mapOf("a.example" to listOf(ip("1.2.3.4"))))
+        val dns = SurgeDns(delegate = upstream)
+
+        assertThrows(UnknownHostException::class.java) { dns.lookup("a.example") }
+        upstream.answering = true
+
+        assertEquals(listOf(ip("1.2.3.4")), dns.lookup("a.example"))
+        assertEquals(2, upstream.calls.get())
+    }
+
+    @Test
+    fun `a refresh that times out keeps serving the stale positive`() {
+        val upstream = TimingOutDns(mapOf("a.example" to listOf(ip("1.2.3.4"))))
+        upstream.answering = true
+        val dns = SurgeDns(delegate = upstream, refreshExecutor = Executor { it.run() })
+        dns.lookup("a.example")
+
+        upstream.answering = false
+        dns.staleAll()
+        assertEquals(listOf(ip("1.2.3.4")), dns.lookup("a.example"))
+
+        // The timed-out refresh did not demote the entry: still answered, from the stale positive.
+        assertEquals(listOf(ip("1.2.3.4")), dns.lookup("a.example"))
+    }
+
     @Test
     fun `staleAll serves stale positives and revalidates on next use`() {
         val upstream = CountingDns(mapOf("a.example" to listOf(ip("1.2.3.4"))))

@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp
 
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
 import okhttp3.Dns
 import java.net.InetAddress
 import java.net.UnknownHostException
@@ -65,12 +66,19 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     used for expiries (not [System.nanoTime], which resets per process) so a restored entry
  *     keeps its remaining lifetime.
  *
+ *  7. **Bounded cold start.** The default [delegate] is a [BoundedDns]: a pool dialled from an
+ *     empty cache asks one name per host at once, and a resolver drops a share of a burst that
+ *     large.
+ *  8. **A resolver timeout is not cached.** `UnknownHostException` also reports a resolver
+ *     that did not answer ([isResolverTimeout]); that failure is not stored as a negative and
+ *     does not demote a positive, so the next lookup asks again.
+ *
  * Remaining blocking points: the very first lookup of a host blocks on `getaddrinfo`
  * (unavoidable — there's nothing to serve stale yet), and followers waiting on that first
  * lookup block on `future.get()`. Background refreshes never block any caller.
  */
 class SurgeDns(
-    private val delegate: Dns = Dns.SYSTEM,
+    private val delegate: Dns = BoundedDns(),
     private val maxEntries: Int = 2000,
     private val positiveTtlMs: Long = TimeUnit.HOURS.toMillis(24),
     private val positiveTtlJitterMs: Long = TimeUnit.HOURS.toMillis(24),
@@ -160,7 +168,8 @@ class SurgeDns(
             putPositive(host, addresses)
             addresses
         } catch (e: UnknownHostException) {
-            putNegative(host)
+            // A refresh that timed out keeps the stale positive; a sync lookup simply retries next time.
+            if (!isResolverTimeout(e.message)) putNegative(host)
             throw e
         }
 
