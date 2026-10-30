@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnection
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Listens to INostrClient's onNotify messages from the relay
@@ -36,7 +38,17 @@ class RelayOfflineTracker(
         const val TAG = "RelayOfflineTracker"
     }
 
-    var cannotConnectRelays = setOf<NormalizedRelayUrl>()
+    // Swapped whole by compare-and-set: every relay reports on its own thread, so a burst of
+    // failures (a network change) writes this from many threads at once. As a plain
+    // `x = x + y` it lost writes, and a set published without a barrier crashed the next
+    // writer's `Set.plus` with ConcurrentModificationException on ARM.
+    private val offline = MutableStateFlow(setOf<NormalizedRelayUrl>())
+
+    var cannotConnectRelays: Set<NormalizedRelayUrl>
+        get() = offline.value
+        set(value) {
+            offline.value = value
+        }
 
     private val clientListener =
         object : RelayConnectionListener {
@@ -45,14 +57,15 @@ class RelayOfflineTracker(
                 pingMillis: Int,
                 compressed: Boolean,
             ) {
-                cannotConnectRelays -= relay.url
+                // Every connect lands here: skip the copy when the relay was never offline.
+                offline.update { if (relay.url in it) it - relay.url else it }
             }
 
             override fun onCannotConnect(
                 relay: IRelayClient,
                 errorMessage: String,
             ) {
-                cannotConnectRelays += relay.url
+                offline.update { if (relay.url in it) it else it + relay.url }
             }
         }
 
