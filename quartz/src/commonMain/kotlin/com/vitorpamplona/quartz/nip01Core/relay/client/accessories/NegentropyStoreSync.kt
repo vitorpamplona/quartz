@@ -26,7 +26,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
-import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.verifyAndInsert
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -183,7 +182,7 @@ class NegentropyStoreSync(
         // biggest thing this class allocates, and it is allocated before the
         // first frame goes out.
         val windowed = config.targetWindow > 0
-        val localIndex = if (windowed) StoreWindowIndex(store) else null
+        val localIndex = if (windowed) NegentropyLocalIndex.of(store) else null
         val localEntries = if (windowed) emptyList() else store.snapshotIdsForNegentropy(listOf(filter))
 
         val downloaded = AtomicInt(0)
@@ -330,29 +329,4 @@ class NegentropyStoreSync(
         }
         return stored.load()
     }
-}
-
-/**
- * [NegentropyLocalIndex] over an [IEventStore]: the window engine's per-window
- * reads answered straight from the store's `created_at` index.
- *
- * The windows handed here are the caller's own filter with `since`/`until`
- * narrowed, so they can go to the store as-is. A count the store cannot answer
- * comes back null rather than throwing — the engine then simply stops
- * pre-splitting that window and lets the relay's refusal decide, which is the
- * behaviour without an index at all.
- */
-private class StoreWindowIndex(
-    private val store: IEventStore,
-) : NegentropyLocalIndex {
-    override suspend fun count(window: Filter): Int? =
-        try {
-            store.count(window)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
-
-    override suspend fun entriesFor(window: Filter): List<IdAndTime> = store.snapshotIdsForNegentropy(listOf(window))
 }

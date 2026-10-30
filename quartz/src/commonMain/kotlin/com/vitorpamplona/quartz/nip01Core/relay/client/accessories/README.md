@@ -165,6 +165,11 @@ pins this). The accessories already wait for the first challenge to resolve, so
 | `negentropyReconcileIds(relay, filter, localEntries)` | `NostrClientNegentropySyncExt` | Same diff, materialized into `needIds` / `haveIds` lists (small sets only). |
 | `negentropySettleDeletions(relay, filter, store, sendUp, applyDown)` | `NostrClientNegentropyDeletionSettleExt` | Second pass of a two-pass sync: after a content sync settles, re-reconcile and resolve only the residual — send our covering deletions up (`sendUp`) and/or apply the relay's kind-5 down (`applyDown`), looping until stable. Cost is O(residual), not O(db). Pairs with `IEventStore.deletionsCovering`. |
 
+The `localEntries` list overloads hold every matching id for the whole sync. A caller backed
+by a store passes a `NegentropyLocalIndex` instead: `NegentropyLocalIndex.of(store)` answers
+each window from the `IEventStore` (`count` + `snapshotIdsForNegentropy`), so memory is one
+window's ids; `NegentropyLocalIndex.of(entries)` is the in-memory form. Wrap either for metering.
+
 `reconcileStreaming`, `syncPipeline` in `NostrClientNegentropySyncExt` are
 implementation details — not part of the public surface.
 
