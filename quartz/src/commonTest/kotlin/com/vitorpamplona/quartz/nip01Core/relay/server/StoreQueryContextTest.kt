@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.EmptyPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
@@ -146,6 +147,34 @@ class StoreQueryContextTest {
             val seen = store.contexts[0]
             assertEquals(setOf(pubkey), seen?.authenticatedUsers)
             assertEquals(pubkey, seen?.observer)
+
+            server.close()
+        }
+
+    /**
+     * With several identities on one connection the observer is the FIRST one that
+     * authenticated, and [StoreQueryContext.authenticatedUsers] iterates in authentication
+     * order — so an observer-relative store answers the same connection the same way every
+     * time. Twenty keys, because a hash-ordered set would scramble that many.
+     */
+    @Test
+    fun observerIsTheFirstAuthenticatedIdentity() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val store = ContextRecordingStore(EventStore(null))
+            val server = createServer(dispatcher, store) { PassThroughPolicy() }
+            val session = server.connect { }
+
+            val keys = (1..20).map { n -> (n * 7919).toString(16).padStart(64, 'a') }
+            keys.forEach { assertNull(session.authenticateByTransport(it)) }
+            // Re-authenticating an earlier key must not move it.
+            assertNull(session.authenticateByTransport(keys[5]))
+
+            session.receive("""["REQ","sub1",{"kinds":[1]}]""")
+
+            val seen = store.contexts.single()
+            assertEquals(keys, seen?.authenticatedUsers?.toList())
+            assertEquals(keys.first(), seen?.observer)
 
             server.close()
         }

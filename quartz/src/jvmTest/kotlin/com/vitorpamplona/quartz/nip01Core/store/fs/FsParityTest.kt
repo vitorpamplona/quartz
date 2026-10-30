@@ -24,6 +24,8 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.store.conformance.ConformanceCorpus
+import com.vitorpamplona.quartz.nip01Core.store.conformance.StoreConformance
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
@@ -36,6 +38,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Parity matrix: drive both [EventStore] (SQLite) and [FsEventStore]
@@ -108,6 +111,15 @@ class FsParityTest {
     ) {
         val sqliteIds = sqlite.query<Event>(filter).map { it.id }
         val fsIds = fs.query<Event>(filter).map { it.id }
+        assertEquals(sqliteIds, fsIds, "ordered parity mismatch: $message")
+    }
+
+    private suspend fun assertParityOrdered(
+        filters: List<Filter>,
+        message: String = "",
+    ) {
+        val sqliteIds = sqlite.query<Event>(filters).map { it.id }
+        val fsIds = fs.query<Event>(filters).map { it.id }
         assertEquals(sqliteIds, fsIds, "ordered parity mismatch: $message")
     }
 
@@ -441,6 +453,39 @@ class FsParityTest {
             assertParity(Filter(authors = listOf(signer.pubKey), kinds = listOf(DeletionRequestEvent.KIND)), "deletion present")
         }
 
+    @Test
+    fun `the store conformance battery finds no divergence`() =
+        runBlocking {
+            // The battery any external store runs against the SQLite reference: sets, order and
+            // counts over a seeded corpus that exercises supersession, deletions and re-offers.
+            val corpus = ConformanceCorpus.generate(ConformanceCorpus.Config(size = 3_000))
+            StoreConformance.load(sqlite, corpus)
+            StoreConformance.load(fs, corpus)
+
+            val report = StoreConformance.compare(sqlite, fs, StoreConformance.battery(corpus))
+            assertTrue(report.ok, report.summary())
+        }
+
+    @Test
+    fun `deletion of a deletion has no effect in either store (STORE-D05)`() =
+        runBlocking {
+            val n1 = note("deleted", 10)
+            val n2 = note("also deleted", 11)
+            val first = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n1), createdAt = 30))
+            val second = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(first), createdAt = 40))
+            // The other arrival order: the deletion of the deletion lands first.
+            val third = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n2), createdAt = 50))
+            val fourth = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(third), createdAt = 60))
+
+            listOf(n1, first, second, fourth, n2, third, n1).forEach { insertBoth(it) }
+
+            val kind5s = Filter(authors = listOf(signer.pubKey), kinds = listOf(DeletionRequestEvent.KIND))
+            assertParity(kind5s, "every deletion stays")
+            assertEquals(4, fs.query<Event>(kind5s).size)
+            assertParity(Filter(ids = listOf(n1.id, n2.id)), "targets stay deleted")
+            assertEquals(0, fs.query<Event>(Filter(ids = listOf(n1.id, n2.id))).size)
+        }
+
     // ------------------------------------------------------------------
     // Multi-filter union
     // ------------------------------------------------------------------
@@ -463,6 +508,20 @@ class FsParityTest {
                 sqlite.query<Event>(filters).map { it.id }.toSet(),
                 fs.query<Event>(filters).map { it.id }.toSet(),
             )
+        }
+
+    @Test
+    fun `multi-filter union is one newest-first order (STORE-F07)`() =
+        runBlocking {
+            // The second filter's events are the newer ones: concatenating per filter put them last.
+            listOf(note("a1", 1), note("a2", 3), note("b1", 2, s = otherSigner), note("b2", 4, s = otherSigner)).forEach { insertBoth(it) }
+            val filters = listOf(Filter(authors = listOf(signer.pubKey)), Filter(authors = listOf(otherSigner.pubKey)))
+
+            assertParityOrdered(filters)
+            assertEquals(listOf(4L, 3L, 2L, 1L), fs.query<Event>(filters).map { it.createdAt })
+            val streamed = mutableListOf<Long>()
+            fs.query<Event>(filters) { streamed += it.createdAt }
+            assertEquals(listOf(4L, 3L, 2L, 1L), streamed)
         }
 
     // ------------------------------------------------------------------

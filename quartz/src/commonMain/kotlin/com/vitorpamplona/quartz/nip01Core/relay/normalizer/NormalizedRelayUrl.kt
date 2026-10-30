@@ -35,6 +35,12 @@ fun NormalizedRelayUrl.displayUrl() =
         .removePrefix("ws://")
         .removeSuffix("/")
 
+/**
+ * The relay's HTTP address, where its NIP-11 document and NIP-86 / NIP-FE endpoints answer:
+ * `wss://` becomes `https://` and `ws://` becomes `http://`, with the host, port, path and query
+ * kept as they are. A normalized url always carries a ws scheme and never a default port, so
+ * the result never carries `:443` / `:80` either.
+ */
 fun NormalizedRelayUrl.toHttp() =
     if (url.startsWith("wss://")) {
         "https${url.drop(3)}"

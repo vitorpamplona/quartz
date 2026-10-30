@@ -22,6 +22,9 @@ package com.vitorpamplona.quartz.nip86RelayManagement.server
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip43RelayMembers.roles.RelayRole
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -44,7 +47,9 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *
  * Persistence is intentionally NOT inside this class; supply
  * [onMutation] to flush to disk (or wherever) and use [seedFromSnapshot]
- * at boot to load. `null` keeps the store in-memory only.
+ * at boot to load. `null` keeps the store in-memory only. [toJson] and
+ * [seedFromJson] are the whole-state codec for that file: every list,
+ * role, assignment and invite code, read from one consistent snapshot.
  *
  * Concurrency: state is held in a single [AtomicReference] and mutated
  * via copy-on-write CAS loops. Reads are wait-free single-load atomic.
@@ -303,6 +308,130 @@ class BanStore(
     fun isValidClaim(claim: String): Boolean = claim in state.load().claims
 
     fun listClaims(): List<String> = state.load().claims.toList()
+
+    /**
+     * The whole state as one JSON document, from a single consistent snapshot (a concurrent
+     * mutation is either wholly in it or wholly out): the pubkey and event ban / allow lists with
+     * their reasons, the kind allow / deny sets, the NIP-43 roles, their assignments and the
+     * invite codes. What a relay writes from [onMutation] and reads back with [seedFromJson].
+     *
+     * The shape is a JSON object of lists, `{"value": …, "reason": …}` per list entry (a null
+     * reason is left out), so a hand-edited file stays readable:
+     * `bannedPubkeys`, `allowedPubkeys`, `bannedEvents`, `allowedEvents`, `allowedKinds`,
+     * `disallowedKinds`, `roles`, `roleAssignments` (`{"pubkey": …, "roles": […]}`), `claims`.
+     */
+    fun toJson(): String {
+        val s = state.load()
+        return SNAPSHOT_JSON.encodeToString(
+            Snapshot.serializer(),
+            Snapshot(
+                bannedPubkeys = s.bannedPubkeys.toEntries(),
+                allowedPubkeys = s.allowedPubkeys.toEntries(),
+                bannedEvents = s.bannedEventIds.toEntries(),
+                allowedEvents = s.allowedEventIds.toEntries(),
+                allowedKinds = s.allowedKinds.sorted(),
+                disallowedKinds = s.disallowedKinds.sorted(),
+                roles = s.roles.values.map { RoleEntry(it.id, it.label, it.description, it.color, it.order) },
+                roleAssignments = s.memberRoles.entries.map { AssignmentEntry(it.key, it.value) },
+                claims = s.claims.toList(),
+            ),
+        )
+    }
+
+    /**
+     * Replaces the whole state with the document [toJson] wrote, as [seedFromSnapshot] does:
+     * without firing [onMutation], and with a ban winning over an allow for the same id.
+     *
+     * A key the document leaves out is an empty list, so a file written with only the moderation
+     * lists still loads, and unknown keys (a newer version's) are ignored. Anything malformed (not
+     * a JSON object, a list that is not a list, an entry without a non-empty `value`, a kind that
+     * is not a number, a role without an `id`) throws [IllegalArgumentException] and loads
+     * NOTHING: a relay that booted with half its bans, then wrote that half back on the next
+     * mutation, would lose the rest for good.
+     */
+    fun seedFromJson(json: String) {
+        val snapshot =
+            try {
+                SNAPSHOT_JSON.decodeFromString(Snapshot.serializer(), json)
+            } catch (e: SerializationException) {
+                throw IllegalArgumentException("not a BanStore snapshot: ${e.message}", e)
+            }
+        snapshot.validate()
+        seedFromSnapshot(
+            bannedPubkeys = snapshot.bannedPubkeys.toPairs(),
+            allowedPubkeys = snapshot.allowedPubkeys.toPairs(),
+            bannedEvents = snapshot.bannedEvents.toPairs(),
+            allowedKinds = snapshot.allowedKinds,
+            disallowedKinds = snapshot.disallowedKinds,
+            allowedEvents = snapshot.allowedEvents.toPairs(),
+            roles = snapshot.roles.map { RelayRole(it.id, it.label, it.description, it.color, it.order) },
+            roleAssignments = snapshot.roleAssignments.map { it.pubkey to it.roles },
+            claims = snapshot.claims,
+        )
+    }
+
+    /** The wire form of [toJson]; private so the document's shape is the only contract. */
+    @Serializable
+    private class Snapshot(
+        val bannedPubkeys: List<ListEntry> = emptyList(),
+        val allowedPubkeys: List<ListEntry> = emptyList(),
+        val bannedEvents: List<ListEntry> = emptyList(),
+        val allowedEvents: List<ListEntry> = emptyList(),
+        val allowedKinds: List<Int> = emptyList(),
+        val disallowedKinds: List<Int> = emptyList(),
+        val roles: List<RoleEntry> = emptyList(),
+        val roleAssignments: List<AssignmentEntry> = emptyList(),
+        val claims: List<String> = emptyList(),
+    ) {
+        fun validate() {
+            listOf(
+                "bannedPubkeys" to bannedPubkeys,
+                "allowedPubkeys" to allowedPubkeys,
+                "bannedEvents" to bannedEvents,
+                "allowedEvents" to allowedEvents,
+            ).forEach { (key, entries) ->
+                entries.forEachIndexed { i, entry -> require(entry.value.isNotEmpty()) { "$key[$i] has an empty value" } }
+            }
+            roles.forEachIndexed { i, role -> require(role.id.isNotEmpty()) { "roles[$i] has an empty id" } }
+            roleAssignments.forEachIndexed { i, a -> require(a.pubkey.isNotEmpty()) { "roleAssignments[$i] has an empty pubkey" } }
+        }
+    }
+
+    @Serializable
+    private class ListEntry(
+        val value: String,
+        val reason: String? = null,
+    )
+
+    @Serializable
+    private class RoleEntry(
+        val id: String,
+        val label: String? = null,
+        val description: String? = null,
+        val color: Int? = null,
+        val order: Int? = null,
+    )
+
+    @Serializable
+    private class AssignmentEntry(
+        val pubkey: String,
+        val roles: List<String> = emptyList(),
+    )
+
+    private fun Map<HexKey, String?>.toEntries() = entries.map { ListEntry(it.key, it.value) }
+
+    private fun List<ListEntry>.toPairs() = map { it.value to it.reason }
+
+    private companion object {
+        /** Strict JSON (not [com.vitorpamplona.quartz.nip01Core.core.JsonMapper]'s lenient one): a state file is refused, never guessed at. */
+        val SNAPSHOT_JSON =
+            Json {
+                ignoreUnknownKeys = true
+                explicitNulls = false
+                encodeDefaults = true
+                prettyPrint = true
+            }
+    }
 
     /**
      * Bulk-load state without firing [onMutation]. Used at startup to

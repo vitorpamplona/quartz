@@ -21,7 +21,9 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
+import kotlinx.coroutines.CancellationException
 
 /**
  * The caller's own matching set, read one `created_at` window at a time.
@@ -67,6 +69,20 @@ interface NegentropyLocalIndex {
 
                 override suspend fun entriesFor(window: Filter) = emptyList<IdAndTime>()
             }
+
+        /**
+         * An index over [store], each window read from its `created_at` index: [count] is
+         * [IEventStore.count] and [entriesFor] is [IEventStore.snapshotIdsForNegentropy], so
+         * memory is one window's ids at a time. What `NegentropyStoreSync` uses for a windowed
+         * sync, and what a caller handing an index to `negentropySync` should pass for a store.
+         *
+         * The windows are the caller's own filter with `since`/`until` narrowed, so they go to
+         * the store as they are. A count the store fails to give is null rather than an
+         * exception (the engine then stops pre-splitting that window and lets the relay's
+         * refusal decide, as without an index); a [CancellationException] still propagates.
+         * Metering or logging goes in a decorator around the returned index.
+         */
+        fun of(store: IEventStore): NegentropyLocalIndex = StoreIndex(store)
 
         /**
          * An index over a list already in memory — what the list overloads use,
@@ -115,4 +131,20 @@ private class SortedListIndex(
 
         return if (start >= end) emptyList() else sorted.subList(start, end)
     }
+}
+
+/** [NegentropyLocalIndex.of] over an [IEventStore]. */
+private class StoreIndex(
+    private val store: IEventStore,
+) : NegentropyLocalIndex {
+    override suspend fun count(window: Filter): Int? =
+        try {
+            store.count(window)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+
+    override suspend fun entriesFor(window: Filter): List<IdAndTime> = store.snapshotIdsForNegentropy(listOf(window))
 }

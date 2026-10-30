@@ -34,6 +34,7 @@ consistency can be sacrificed, but a database that will never crash and never go
   - Deletes by address up to and including the deletion's `created_at` (newer versions are kept).
   - Blocks deleted events from being re-inserted.
   - Only the original author's deletions take effect; cross-author kind-5s are stored but inert.
+  - A kind-5 against a kind-5 or a kind-62 has no effect (NIP-09, NIP-62): it neither deletes nor blocks it.
   - GiftWraps are deleted by p-tag
 
 - **NIP-62 Right to Vanish**

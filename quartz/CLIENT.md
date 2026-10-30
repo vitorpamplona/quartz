@@ -302,6 +302,14 @@ user's own key:
 - **Gift wraps** (NIP-59): use `GiftWrapEvent.create(...)`, which signs each wrap with a fresh
   key, or `NIP17Factory` to build whole NIP-17 messages.
 
+When you re-publish a replaceable or addressable event (kind 0, 3, 10002, a 30000-range
+record), stamp the new version `TimeUtils.nextCreatedAt(previous?.createdAt)`: now, or one
+second past the version it replaces when that is not older. Relays keep the newer of two
+versions and break a tie on the lowest id, so a replacement stamped at or before the stored one
+is dropped without an error you would notice. A NIP-66 monitor editing its own kind-30166 record
+uses `RelayDiscoveryEvent.edit(relay, current, owns) { … }`, which applies the same stamp and
+keeps every tag `owns` does not claim.
+
 For detailed per-relay results, use `publishAndConfirmDetailed`:
 
 ```kotlin
@@ -409,6 +417,9 @@ Things worth knowing:
 - Only `PagedFetchResult.End.DRAINED` proves the relay has nothing more; the other
   endings (`IDLE`, `CLOSED`, `AUTH_REQUIRED`, …) say why the walk stopped, and
   `message` carries the relay's own words.
+- `fetchAllPages(…, onPage = { page -> … })` reports every REQ of the walk once it ends
+  (`PageReport`: what was asked, received, delivered, dropped as duplicate or not matching,
+  elapsed time, ending and the relay's message), refusals the walk recovered from included.
 - A relay that requires NIP-42 AUTH is waited on while a `RelayAuthenticator` attached
   to the client answers the challenge, instead of being reported as empty.
 - There are more: `fetchAllWithHooks` (verify/store each event as it arrives, with

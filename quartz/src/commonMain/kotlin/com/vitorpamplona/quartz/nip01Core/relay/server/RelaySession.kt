@@ -134,6 +134,10 @@ class RelaySession(
      * snapshot instead of racing a mutating `LinkedHashSet`; `@Volatile`
      * makes the swapped reference visible across threads. AUTH is rare, so
      * the copy costs nothing on the hot path.
+     *
+     * Ordered: `Set.plus` keeps the original set's iteration order and appends,
+     * so the set iterates in authentication order and `StoreQueryContext.observer`
+     * (its first element) is the first key that authenticated.
      */
     @Volatile
     private var authenticatedUsers = setOf<HexKey>()

@@ -20,21 +20,13 @@
  */
 package com.vitorpamplona.quartz.nip01Core.store
 
-import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.isAddressable
-import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
+import com.vitorpamplona.quartz.nip01Core.core.addressTagOrNull
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
-
-/** The addressable/replaceable coordinate of [event] as a NIP-01 `a`-tag value. */
-private fun addressValue(event: Event): String {
-    val dTag = if (event.kind.isAddressable()) event.tags.firstOrNull { it.size > 1 && it[0] == "d" }?.get(1) ?: "" else ""
-    return Address.assemble(event.kind, event.pubKey, dTag)
-}
 
 /**
  * The local deletion events that would make [relay] remove one of [serverEvents] — the
@@ -81,7 +73,8 @@ suspend fun deletionsCovering(
         }
 
     // 2. address-based NIP-09: a kind-5 `a`-tagging an event's coordinate, cutoff-checked.
-    val byAddress = events.filter { it.kind.isAddressable() || it.kind.isReplaceable() }.groupBy(::addressValue)
+    val byAddress = HashMap<String, MutableList<Event>>()
+    events.forEach { event -> event.addressTagOrNull()?.let { byAddress.getOrPut(it) { ArrayList(1) }.add(event) } }
     if (byAddress.isNotEmpty()) {
         query(Filter(kinds = listOf(DeletionRequestEvent.KIND), authors = authors, tags = mapOf("a" to byAddress.keys.toList())))
             .forEach { del ->

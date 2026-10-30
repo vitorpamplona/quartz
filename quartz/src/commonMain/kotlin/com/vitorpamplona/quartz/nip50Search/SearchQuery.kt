@@ -20,7 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip50Search
 
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.utils.Hex
 
 /**
  * Parsed representation of a NIP-50 `search` filter string.
@@ -83,7 +85,7 @@ class SearchQuery(
     val terms: String,
     /**
      * All recognized `key:value` extension tokens, in the order they appeared.
-     * Known keys: [INCLUDE], [DOMAIN], [LANGUAGE], [SENTIMENT], [NSFW].
+     * Known keys: [INCLUDE], [DOMAIN], [LANGUAGE], [SENTIMENT], [NSFW], and the non-NIP-50 [OBSERVER].
      */
     val extensions: Map<String, String>,
     /** Exact-phrase requirements (`"nostr apps"`), quotes removed, in order. */
@@ -101,9 +103,33 @@ class SearchQuery(
     val domain: String?
         get() = extensions[DOMAIN]
 
-    /** The `language:<ISO-639-1>` value, or null when not present. */
+    /** The `language:<ISO-639-1>` value as typed, or null when not present. See [languageCode]. */
     val language: String?
         get() = extensions[LANGUAGE]
+
+    /**
+     * The language [language] names, as its primary subtag lowercased: `pt-BR` and `pt_br` are
+     * `pt`, `EN` is `en`. Null when absent, or when that subtag is not 2 or 3 ASCII letters (an
+     * ISO 639 code), so `language:portuguese` names nothing rather than an unknown language.
+     */
+    val languageCode: String?
+        get() {
+            val raw = extensions[LANGUAGE] ?: return null
+            var end = 0
+            while (end < raw.length && raw[end] != '-' && raw[end] != '_') end++
+            if (end !in 2..3) return null
+            for (i in 0 until end) if (raw[i].lowercaseChar() !in 'a'..'z') return null
+            return raw.substring(0, end).lowercase()
+        }
+
+    /**
+     * The `observer:<pubkey>` lens ([OBSERVER]) as 64 lowercase hex, or null when absent or not
+     * exactly a hex pubkey (an `npub` is not decoded: it is ignored, as a relay that ranks by it
+     * would). An observer-relative store reads whose web of trust ranks the hits from here, or from
+     * the connection's NIP-42 identity ([com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext]).
+     */
+    val observer: HexKey?
+        get() = extensions[OBSERVER]?.takeIf(Hex::isHexKey)?.lowercase()
 
     /** The parsed `sentiment:<negative|neutral|positive>` value, or null when absent/unrecognized. */
     val sentiment: Sentiment?
@@ -179,6 +205,13 @@ class SearchQuery(
 
         /** NIP-50 extension key `nsfw`. */
         const val NSFW = "nsfw"
+
+        /**
+         * Extension key `observer`, not a NIP-50 key: `observer:<64-hex pubkey>` asks a web-of-trust
+         * search relay (search.brainstorm.world, vespa-eventstore) to rank the hits by that
+         * observer's trust providers. See [observer].
+         */
+        const val OBSERVER = "observer"
 
         private val WHITESPACE = Regex("\\s+")
 

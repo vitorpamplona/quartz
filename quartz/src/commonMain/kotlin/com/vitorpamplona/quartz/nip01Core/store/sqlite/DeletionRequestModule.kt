@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
+import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 
 class DeletionRequestModule(
     val hasher: (db: SQLiteConnection) -> TagNameValueHasher,
@@ -56,7 +57,12 @@ class DeletionRequestModule(
     /**
      * Creates a trigger to reject events that have been
      * deleted by ID or ATag including GiftWraps that
-     * must be checked against the p-tag (pubkey_owner_hash)
+     * must be checked against the p-tag (pubkey_owner_hash).
+     *
+     * Deletion requests (kind 5) and vanish requests (kind 62) are exempt:
+     * NIP-09 and NIP-62 both say a kind 5 against them "has no effect", so a
+     * kind 5 naming one neither deletes it ([deleteSQL]) nor blocks it from
+     * arriving later (STORE-D05).
      */
     override fun create(db: SQLiteConnection) {
         val sql = rejectDeletedEventsSQLTemplate().replace("\n", "\n                    ")
@@ -65,6 +71,7 @@ class DeletionRequestModule(
             CREATE TRIGGER reject_deleted_events
             BEFORE INSERT ON event_headers
             FOR EACH ROW
+            WHEN NEW.kind NOT IN ($IMMUNE_KINDS)
             BEGIN
                 SELECT RAISE(ABORT, 'blocked: a deletion event exists')
                 WHERE EXISTS (
@@ -76,6 +83,16 @@ class DeletionRequestModule(
     }
 
     override fun drop(db: SQLiteConnection) {}
+
+    /**
+     * v5 → v6 migration: replaces a pre-v6 `reject_deleted_events` trigger,
+     * which also blocked kind 5 and kind 62 events named by a stored kind 5,
+     * with the one [create] builds. Runs inside the migration transaction.
+     */
+    fun migrateV5ExemptDeletionAndVanishRequests(db: SQLiteConnection) {
+        db.execSQL("DROP TRIGGER IF EXISTS reject_deleted_events")
+        create(db)
+    }
 
     override fun deleteAll(db: SQLiteConnection) {}
 
@@ -147,7 +164,8 @@ class DeletionRequestModule(
                     DELETE FROM event_headers
                     WHERE
                         id IN ($idParams) AND
-                        pubkey_owner_hash = ?
+                        pubkey_owner_hash = ? AND
+                        kind NOT IN ($IMMUNE_KINDS)
                     """.trimIndent(),
                     idValues.plus(owner).toTypedArray(),
                 )
@@ -190,6 +208,15 @@ class DeletionRequestModule(
             }
 
         return listOfNotNull(deleteById, deleteByAddress, deleteByReplaceable)
+    }
+
+    companion object {
+        /**
+         * The kinds a kind 5 cannot delete or block: deletion requests (NIP-09, "Deletion
+         * Request of a Deletion Request") and vanish requests (NIP-62). Only the id path
+         * needs it; neither kind is replaceable or addressable, so no `a` tag reaches them.
+         */
+        private const val IMMUNE_KINDS = "${DeletionRequestEvent.KIND}, ${RequestToVanishEvent.KIND}"
     }
 
     class SqlArgs(

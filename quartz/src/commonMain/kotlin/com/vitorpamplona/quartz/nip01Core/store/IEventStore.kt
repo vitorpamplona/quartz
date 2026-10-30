@@ -55,8 +55,12 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * Ranked/observer-relative stores can read the caller's NIP-42-authenticated
  * identity from the coroutine context via [StoreQueryContext]; the relay
- * layer installs it around every REQ/COUNT-driven store call. It is ranking
- * context only and absent for unauthenticated callers.
+ * layer installs it around every REQ/COUNT-driven store call. It is a lens:
+ * a store may rank by it and may gate by it (answer a subset of the filter's
+ * match set, e.g. a trust floor), never widen past the filter, and must give
+ * `query`, `count` and negentropy snapshots the same answer for the same
+ * observer. It is absent for unauthenticated callers; [StoreQueryContext]
+ * has the full contract.
  */
 interface IEventStore : AutoCloseable {
     companion object {

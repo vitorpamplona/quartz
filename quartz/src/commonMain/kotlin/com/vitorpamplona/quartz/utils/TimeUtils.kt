@@ -72,6 +72,24 @@ object TimeUtils {
     /** Current time in Unix **seconds** — the value for an event's `created_at`. */
     fun now() = currentTimeSeconds()
 
+    /**
+     * The `created_at` for an event that REPLACES one stamped [previousCreatedAt] (a replaceable
+     * or addressable re-publish, an edit of your own record): [now], or one second past the
+     * previous stamp when that is not older than [now]. Null means there is nothing to replace.
+     *
+     * Strictly newer because NIP-01 keeps the newer of two versions and breaks a tie on the
+     * lowest id, so a store or relay enforcing it REJECTS an update stamped at or before the one
+     * it holds. Two writes inside one second, or a previous version from a clock running ahead,
+     * are ordinary, and an update lost that way looks exactly like one that had nothing to say.
+     *
+     * Deliberately not capped near [now]: a previous version stamped far ahead could then never be
+     * replaced at all, freezing it until the wall clock catches up.
+     */
+    fun nextCreatedAt(
+        previousCreatedAt: Long?,
+        now: Long = currentTimeSeconds(),
+    ): Long = if (previousCreatedAt == null || previousCreatedAt < now) now else previousCreatedAt + 1
+
     /** Current time in Unix **milliseconds**. For non-protocol use only; `created_at` wants [now]. */
     fun nowMillis() = currentTimeMillis()
 

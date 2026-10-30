@@ -53,14 +53,17 @@ beats a rule; fix the rule.
   `p` recipient · **W07** rows immutable · **W08** batch: savepoint per row · **W09** failures
   classified by querying the DB, not driver text.
 - **D01** kind-5 by id, same owner, no time check · **D02** by address, `created_at <=` ·
-  **D03** cross-author kind-5 inert · **D04** re-insert blocking · **D05** kind-5 can delete a
-  kind-5 (known quirk) · **D06/D07** NIP-62 vanish relay-scoped, strict delete / inclusive block
+  **D03** cross-author kind-5 inert · **D04** re-insert blocking · **D05** a kind-5 against a
+  kind-5 or kind-62 has no effect (no delete, no block) · **D06/D07** NIP-62 vanish relay-scoped, strict delete / inclusive block
   · **D08** manual deletes create no blocking.
 - **C01** count = deduped match set honoring per-filter limits.
 - **S01** search extensions stripped before FTS · **S02** bm25 relevance order · **S03** search
   ANDs with structure · **S04** FTS5 `MATCH` grammar · **S05** FTS off → search matches nothing
   · **S06** deferred FTS catches up before a search.
 - **N01** negentropy snapshots use query semantics.
+- **O01** `StoreQueryContext` observer may rank and gate (subset of the filter's match set,
+  same answer for query/count/snapshot), never widen; not access control · **O02** `observer` =
+  first key that authenticated.
 
 Kind classes everywhere: replaceable = 0, 3, 10000–19999; ephemeral = 20000–29999;
 addressable = 30000–39999.
@@ -125,10 +128,17 @@ profile fields space-joined; kind 30063 indexes release notes only for NIP-82 re
 - `nip50Search/SearchQuery.kt` — `SearchQuery.parse(search)` splits `terms` from
   `extensions`. A token is an extension iff it looks like `lowercasekey:value` with the value not
   starting with `//` (URLs stay text); duplicate keys keep the last; unknown keys are kept
-  (`extension(key)`). Typed: `includeSpam`, `domain`, `language`, `sentiment`, `nsfw`.
+  (`extension(key)`). Typed: `includeSpam`, `domain`, `language` (raw) / `languageCode` (primary
+  subtag, `pt-BR` → `pt`), `sentiment`, `nsfw`, and the non-NIP-50 `observer` (`SearchQuery.OBSERVER`,
+  64-hex lowercased or null; search.brainstorm.world's web-of-trust lens).
   `stripExtensions()` / `Filter.strippingSearchExtensions()` is what the built-in stores apply:
   unsupported extensions are ignored, so an extensions-only search is unconstrained. A store
   that implements extensions gets the raw string and should parse it with `SearchQuery.parse`.
+  Term syntax: `"phrase"` → `phrases`, `-word` → `notTerms`, `-"phrase"` → `notPhrases`.
+- `nip50Search/EventSearchMatcher.kt` — the in-memory matcher (local/cache search, live
+  subscriptions): loose terms ANDed as case-insensitive substrings; phrases required as whole-word
+  runs (letter/digit words, any separator); `-word` / `-"phrase"` drop an event holding them as a
+  word run. Extensions ignored. No score.
 - `SearchRelayListEvent` (`nip50Search/SearchRelayListEvent.kt`) — **kind 10007**, the user's
   search relays (public + NIP-44 private tags; not itself searchable). Used by
   Amethyst's `commons/.../commons/actions/SearchActions.kt`; defaults in
@@ -142,6 +152,13 @@ Search tests: `commonTest/.../nip50Search/SearchQueryTest.kt`, `SearchableKindsT
 
 ## For parity implementers
 
-Cite rule ids in divergence notes ("diverges from STORE-D05: we no-op deletion-of-a-deletion").
+Run the conformance battery first: `nip01Core/store/conformance/` (`ConformanceCorpus.generate`,
+`StoreConformance.load` / `battery` / `compare`) diffs a candidate `IEventStore` against the SQLite
+reference (sets, order, counts) and keys each mismatch to the rules below (`report.suspectRules`).
+It lives in `commonMain` so external stores get it from the published artifact;
+`jvmTest/.../store/fs/FsParityTest.kt` and `commonTest/.../store/conformance/StoreConformanceTest.kt`
+run it. Add a check there when you add a rule.
+
+Cite rule ids in divergence notes ("diverges from STORE-F08: we break same-second ties by id").
 F06 (hash-based tags) and F08 (unordered same-second ties) are where the reference itself has
 slack, so a byte-for-byte diff there may not be your bug.

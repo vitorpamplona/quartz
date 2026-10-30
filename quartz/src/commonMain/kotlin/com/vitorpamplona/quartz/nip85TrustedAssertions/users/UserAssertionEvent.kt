@@ -40,6 +40,7 @@ import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nip51Lists.remove
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.PetNameTag
 import com.vitorpamplona.quartz.nip85TrustedAssertions.users.tags.SummaryTag
+import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -67,7 +68,18 @@ class UserAssertionEvent(
 
     fun aboutUser() = tags.dTag()
 
+    /**
+     * The pubkey this card is about, or null when the `d` tag is not exactly one (64 lowercase
+     * hex characters). Unlike [aboutUser], which returns the raw `d` value, this is safe to key
+     * a pubkey index with: `"<pubkey>:v2"` or an uppercase key is another address, not this
+     * subject's card, and must not collide with it.
+     */
+    fun subjectPubKey() = tags.subjectPubKey()
+
     fun rank() = tags.rank()
+
+    /** [rank] clamped to NIP-85's 0..100 scale, with 0 kept as a value: see [RankTag.parseBounded]. */
+    fun boundedRank() = tags.boundedRank()
 
     fun followerCount() = tags.followerCount()
 
@@ -109,6 +121,17 @@ class UserAssertionEvent(
 
     companion object {
         const val KIND = 30382
+
+        /**
+         * True when [value] can be a card's subject: exactly 64 lowercase hex characters, a pubkey
+         * as NIP-01 writes it. Also the check for the subject half of a `30382:<provider>:<subject>`
+         * address in a kind 5. ([Hex.isHex64] alone reads only the first 64 characters.)
+         */
+        fun isSubjectPubKey(value: String?): Boolean {
+            if (value == null || !Hex.isHexKey(value)) return false
+            for (c in value) if (c in 'A'..'F') return false
+            return true
+        }
 
         fun createAddress(
             owner: HexKey,

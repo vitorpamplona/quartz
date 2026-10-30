@@ -33,6 +33,9 @@ import com.vitorpamplona.quartz.nip98HttpAuth.Nip98AuthVerifier
  * implementation can plug its HTTP framework in without re-deriving
  * the auth / parse / dispatch / serialize sequence:
  *
+ *  0. **Pre-body check (optional, recommended).** [preauthorize] runs
+ *     every check that needs no body, so an adapter can refuse a
+ *     stranger or a bad token before it reads a byte.
  *  1. **Size cap.** If `body.size > maxBodyBytes`, reject with
  *     [Response.PayloadTooLarge]. Adapters MUST also bound the read
  *     itself — NIP-98 forces us to compute sha256 over the full
@@ -83,14 +86,40 @@ class Nip86HttpHandler(
         require(publicUrl.isNotBlank()) { "publicUrl must not be blank" }
     }
 
+    /**
+     * The refusal [handle] would answer for [authHeader] alone, decided before the adapter reads
+     * the request body; null means the token is an admin's and the body may be read. Runs
+     * [Nip98AuthVerifier.preverify] (scheme, kind, freshness, `method`, `u` = [publicUrl],
+     * signature) and the allow-list check, and records nothing: [handle] still verifies the token
+     * against the body's hash and spends it.
+     *
+     * NIP-98 binds the token to the body's sha256, so without this an adapter has to buffer up to
+     * [maxBodyBytes] from anyone before it can refuse them. Call it first and answer a non-null
+     * result as [handle]'s ([Response.MissingAuth], [Response.BadAuth] or [Response.NotAdmin]):
+     *
+     * ```kotlin
+     * handler.preauthorize(header)?.let { return respond(it) }
+     * val body = readBounded(handler.maxBodyBytes)
+     * respond(handler.handle(header, body))
+     * ```
+     */
+    fun preauthorize(authHeader: String?): Response? =
+        when (val v = verifier.preverify(authHeader, method = "POST", url = publicUrl)) {
+            is Nip98AuthVerifier.Result.Verified -> if (server.isAuthorized(v.pubkey)) null else Response.NotAdmin
+            Nip98AuthVerifier.Result.Missing -> Response.MissingAuth
+            is Nip98AuthVerifier.Result.Malformed -> Response.BadAuth(v.reason)
+        }
+
     suspend fun handle(
         authHeader: String?,
         body: ByteArray,
     ): Response {
         if (body.size > maxBodyBytes) return Response.PayloadTooLarge(maxBodyBytes)
 
+        // Admins' token ids are remembered apart from everyone else's, so no stranger can flood
+        // the replay set until a used admin token is forgotten and replayable.
         val pubkey =
-            when (val v = verifier.verify(authHeader, method = "POST", url = publicUrl, body = body)) {
+            when (val v = verifier.verify(authHeader, method = "POST", url = publicUrl, body = body, acceptsAuthor = server::isAuthorized)) {
                 is Nip98AuthVerifier.Result.Verified -> v.pubkey
                 Nip98AuthVerifier.Result.Missing -> return Response.MissingAuth
                 is Nip98AuthVerifier.Result.Malformed -> return Response.BadAuth(v.reason)

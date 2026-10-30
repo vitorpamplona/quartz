@@ -24,8 +24,10 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohashes
@@ -91,6 +93,49 @@ class RelayDiscoveryEvent(
             dTag(relayUrl.url)
             initializer()
         }
+
+        /**
+         * This writer's next record for [relay] as an EDIT of [current], its own record for that
+         * relay (null when it has none yet), rather than a fresh document.
+         *
+         * A 30166 is addressable, so a relay has exactly one record per monitor key, and that key
+         * may have more than one writer: a liveness prober, a fitness pass, an operator marking a
+         * relay as a mirror of another. A build from scratch silently deletes what the others
+         * wrote; the result still signs and parses, it just says less than it did.
+         *
+         * [owns] decides what this writer measured and may therefore replace. It is a predicate
+         * rather than a set of tag names because ownership is sometimes per VALUE (clearing
+         * `R auth` without touching the `R pow` another writer measured). Every tag it does not
+         * claim is carried across untouched, including tags this version of Quartz has never
+         * heard of; the `d` tag is always rewritten to [relay]. Then [measured] adds this writer's
+         * tags. A 30166 carries one `created_at` for the whole document, so own both polarities of
+         * anything you write (`R auth` and `R !auth`), and every tag you measure, or a stale value
+         * is republished as current.
+         *
+         * [current]'s content is kept, and the record is stamped [TimeUtils.nextCreatedAt] of
+         * [current]: strictly newer, or a store enforcing replaceable semantics rejects it.
+         *
+         * Only pass your OWN record as [current]: merging another monitor's tags into a document
+         * signed with your key republishes their claims as yours. Callers serialize edits per relay,
+         * or two writers each keep the other's old tags.
+         */
+        fun edit(
+            relay: NormalizedRelayUrl,
+            current: RelayDiscoveryEvent?,
+            owns: (Array<String>) -> Boolean,
+            createdAt: Long = TimeUtils.now(),
+            measured: TagArrayBuilder<RelayDiscoveryEvent>.() -> Unit,
+        ): EventTemplate<RelayDiscoveryEvent> =
+            build(
+                relay,
+                current?.content ?: "",
+                createdAt = TimeUtils.nextCreatedAt(current?.createdAt, createdAt),
+            ) {
+                current?.tags?.fastForEach { tag ->
+                    if (tag.firstOrNull() != "d" && !owns(tag)) add(tag)
+                }
+                measured()
+            }
 
         fun build(
             relayUrl: String,

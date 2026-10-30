@@ -40,26 +40,54 @@ import kotlin.coroutines.CoroutineContext
  * val observer = coroutineContext[StoreQueryContext]?.observer
  * ```
  *
- * Contract: this is **ranking context only**. It may reorder or score
- * results; it must never change *which* events match a filter — access
- * control belongs to the relay policy layer, not the store. The element
- * is absent for unauthenticated callers (and for direct store use outside
- * a relay), so every read needs a null-tolerant fallback such as an
- * operator-configured default observer.
+ * ## What a store may do with it
+ *
+ * The observer is a **lens over the filter's match set**:
+ *
+ * - **Rank**: reorder or score results from the observer's point of view.
+ * - **Gate**: drop events the filter matches but the observer's lens
+ *   excludes (a trust floor, "only authors my providers rank"). The answer
+ *   is then a *subset* of what the filter alone would match.
+ *
+ * And what it may not:
+ *
+ * - **Widen**: never return an event the filter does not match; the
+ *   observer narrows or reorders, it never adds.
+ * - **Disagree with itself**: `query`, `count` and
+ *   `snapshotIdsForNegentropy` under the same observer answer the same set
+ *   (a COUNT equals the REQ it counts), and the same observer, filter and
+ *   corpus give the same answer every time.
+ * - **Replace access control**: whether a caller may read at all is the
+ *   relay policy's decision, made before the store runs, where a refusal
+ *   can carry a `CLOSED` reason. A gated store answers fewer events, not a
+ *   refusal, so it must not be the only thing keeping private data private.
+ *
+ * The element is absent for unauthenticated callers (and for direct store
+ * use outside a relay), so every read needs a null-tolerant fallback such
+ * as an operator-configured default observer, or no gate at all. A store
+ * whose lens can also come from the search string (an `observer:`
+ * extension, [com.vitorpamplona.quartz.nip50Search.SearchQuery.observer])
+ * decides which wins and documents it.
  */
 class StoreQueryContext(
     /**
      * The pubkeys authenticated on the calling connection via NIP-42, in
-     * no particular order. Never empty — the relay layer skips installing
-     * the element instead of installing an empty one.
+     * the order they authenticated (re-authenticating a key does not move
+     * it). Never empty — the relay layer skips installing the element
+     * instead of installing an empty one. A caller building this element
+     * itself passes an insertion-ordered set (`setOf`, `linkedSetOf`) so
+     * [observer] stays deterministic; a hash-ordered set makes it arbitrary.
      */
     val authenticatedUsers: Set<HexKey>,
 ) : AbstractCoroutineContextElement(StoreQueryContext) {
     companion object Key : CoroutineContext.Key<StoreQueryContext>
 
     /**
-     * Convenience for the common single-identity case: one of
-     * [authenticatedUsers], or `null` when the set is empty.
+     * The identity an observer-relative store answers for: the **first**
+     * of [authenticatedUsers] — the first key that authenticated on the
+     * connection — or `null` when the set is empty. Deterministic, so a
+     * connection that adds a second identity keeps the lens it started
+     * with. A store that wants every identity reads [authenticatedUsers].
      */
     val observer: HexKey? get() = authenticatedUsers.firstOrNull()
 }

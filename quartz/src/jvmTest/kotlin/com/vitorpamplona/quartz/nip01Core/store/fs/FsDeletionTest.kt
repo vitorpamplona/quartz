@@ -21,10 +21,12 @@
 package com.vitorpamplona.quartz.nip01Core.store.fs
 
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.nip23LongContent.LongFormContentEvent
+import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.Path
@@ -98,6 +100,57 @@ class FsDeletionTest {
             assertEquals(emptyList(), store.query<TextNoteEvent>(Filter(ids = listOf(n1.id))).map { it.id })
             assertEquals(listOf(n2.id), store.query<TextNoteEvent>(Filter(ids = listOf(n2.id))).map { it.id })
             assertEquals(listOf(del.id), store.query<DeletionRequestEvent>(Filter(ids = listOf(del.id))).map { it.id })
+        }
+
+    @Test
+    fun `kind-5 against a kind-5 has no effect`() =
+        runBlocking {
+            // NIP-09: a deletion request against a deletion request has no effect (STORE-D05).
+            val n1 = note("one", 10)
+            val first = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n1), createdAt = 30))
+            store.insert(n1)
+            store.insert(first)
+
+            val second = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(first), createdAt = 40))
+            store.insert(second)
+
+            assertEquals(listOf(first.id), store.query<DeletionRequestEvent>(Filter(ids = listOf(first.id))).map { it.id })
+            store.insert(n1) // the first deletion's tombstone still blocks it
+            assertEquals(emptyList(), store.query<TextNoteEvent>(Filter(ids = listOf(n1.id))).map { it.id })
+        }
+
+    @Test
+    fun `kind-5 naming a kind-5 does not block its later arrival`() =
+        runBlocking {
+            val n1 = note("one", 10)
+            val first = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(n1), createdAt = 30))
+            val second = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(first), createdAt = 40))
+
+            store.insert(second)
+            store.insert(n1)
+            store.insert(first)
+
+            assertEquals(listOf(first.id), store.query<DeletionRequestEvent>(Filter(ids = listOf(first.id))).map { it.id })
+            assertEquals(emptyList(), store.query<TextNoteEvent>(Filter(ids = listOf(n1.id))).map { it.id })
+        }
+
+    @Test
+    fun `kind-5 against a vanish request has no effect`() =
+        runBlocking {
+            // NIP-62: a kind 5 against a request to vanish has no effect. Out of this store's
+            // scope (relay = null, a named relay), so the vanish is stored as a plain event.
+            val vanish =
+                signer.sign<RequestToVanishEvent>(
+                    RequestToVanishEvent.build(RelayUrlNormalizer.normalize("wss://elsewhere.example.com"), createdAt = 10),
+                )
+            val del = signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(vanish), createdAt = 30))
+
+            store.insert(del)
+            store.insert(vanish)
+            assertEquals(listOf(vanish.id), store.query<RequestToVanishEvent>(Filter(ids = listOf(vanish.id))).map { it.id })
+
+            store.insert(signer.sign<DeletionRequestEvent>(DeletionRequestEvent.build(listOf(vanish), createdAt = 40)))
+            assertEquals(listOf(vanish.id), store.query<RequestToVanishEvent>(Filter(ids = listOf(vanish.id))).map { it.id })
         }
 
     @Test
