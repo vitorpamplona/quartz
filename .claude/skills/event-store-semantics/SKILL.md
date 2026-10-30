@@ -61,6 +61,9 @@ beats a rule; fix the rule.
   ANDs with structure · **S04** FTS5 `MATCH` grammar · **S05** FTS off → search matches nothing
   · **S06** deferred FTS catches up before a search.
 - **N01** negentropy snapshots use query semantics.
+- **O01** `StoreQueryContext` observer may rank and gate (subset of the filter's match set,
+  same answer for query/count/snapshot), never widen; not access control · **O02** `observer` =
+  first key that authenticated.
 
 Kind classes everywhere: replaceable = 0, 3, 10000–19999; ephemeral = 20000–29999;
 addressable = 30000–39999.

@@ -351,8 +351,12 @@ constraint. Relays like geode therefore comply out of the box, and
 Observer-relative stores (web-of-trust ranking, "for-you" relevance) read the
 caller's NIP-42-authenticated pubkeys from the coroutine context via
 `StoreQueryContext` — `LiveEventStore` installs it around every REQ/COUNT store
-call for authenticated connections. It is ranking context only: it may reorder
-results, never change which events match.
+call for authenticated connections. It is a lens over the filter's match set:
+the store may reorder by it and may gate by it (answer a subset, e.g. a trust
+floor), but never return an event the filter doesn't match, and `query`, `count`
+and negentropy snapshots must agree for the same observer. Access control stays
+in the relay policy. `observer` is the first key that authenticated on the
+connection, so the lens is deterministic when a connection carries several.
 
 A search/redirector relay is just a custom policy (or, for computed results, a
 custom `IEventStore` whose `query` answers the REQ) that reads the parsed query:

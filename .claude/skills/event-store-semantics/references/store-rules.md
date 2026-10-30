@@ -1,4 +1,4 @@
-# Store rules (STORE-F/W/D/C/S/N)
+# Store rules (STORE-F/W/D/C/S/N/O)
 
 The full behavioral contract of the SQLite `EventStore`, as numbered rules. Paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/store/`. When you change
@@ -290,6 +290,27 @@ non-itemizable cases).
 
 ---
 
+## Caller identity / observer lens (STORE-O)
+
+The built-in stores ignore the observer; these rules bound what an observer-relative store
+(Vespa's web-of-trust store, a "for-you" backend) may do with it. Normative text:
+`StoreQueryContext.kt` KDoc.
+
+**STORE-O01 — the observer is a lens, and a lens may gate.** `coroutineContext[StoreQueryContext]`
+carries the connection's NIP-42 identities. A store may **rank** by them and may **gate** by
+them — answer a subset of the filter's match set (a trust floor). It may never **widen** (return
+an event the filter does not match), and `query`, `count` and `snapshotIdsForNegentropy` under
+the same observer answer the same set. Whether a caller may read at all stays in the relay
+policy; a gate is not access control.
+
+**STORE-O02 — the observer is the first key that authenticated.** `authenticatedUsers`
+iterates in authentication order (`RelaySession` appends with `Set.plus`, which keeps order;
+re-authenticating a key does not move it) and `observer` is its first element, so a connection
+that adds a second identity keeps its lens. Absent element = unauthenticated (or direct store
+use): fall back to an operator default, or no gate.
+
+---
+
 ## Configuration presets
 
 - **Client default** (`DefaultIndexingStrategy()`): FTS on (synchronous), optional indexes off,
@@ -303,6 +324,11 @@ non-itemizable cases).
 ## Semantics changelog
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
+
+- 2026-10-30 (pending) O01, O02 — written. The `StoreQueryContext` contract used to say the
+  observer "must never change which events match" while listing trust floors as an example; it
+  now allows gating (subset only, consistent across query/count/snapshot), and `observer` is
+  defined as the first authenticated key instead of "one of" an unordered set.
 
 - 2026-10-16 (pending) F05 — a `tagsAll` `#d` is no longer ignored on the tag-join/union/count/
   delete paths; `delete(Filter(tagsAll = {"d": [x]}))` used to delete every row.
