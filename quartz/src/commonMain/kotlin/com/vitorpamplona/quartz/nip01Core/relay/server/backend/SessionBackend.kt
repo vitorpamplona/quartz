@@ -41,6 +41,10 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegentropyServerSession
  * - [EventSourceBackend] — adapts a [EventSource] for non-storage relays
  *   (search, redirector, computed/projected data). Used by [EventSourceServer].
  *
+ * [LiveEventStore] also implements [LiveSubscriptionBackend], which the engine
+ * prefers: a REQ's live tail is then a registration rather than a coroutine
+ * parked inside [queryRaw].
+ *
  * Most non-storage relays should implement the higher-level [EventSource]
  * (a `Flow<Event>` SPI) rather than this interface directly. Implement
  * [SessionBackend] only when you need control over the write path or negentropy

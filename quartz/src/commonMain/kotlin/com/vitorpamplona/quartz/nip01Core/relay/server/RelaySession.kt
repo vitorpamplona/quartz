@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.server
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
@@ -36,6 +37,10 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CountCmd
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.EventCmd
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.LiveListener
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.LiveSubscription
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.LiveSubscriptionBackend
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.SessionBackend
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
@@ -106,7 +111,11 @@ class RelaySession(
         id: Long = nextConnectionId(),
     ) : this(store, policy, scope, SessionSink.of(onSend), onClose, negentropySettings, id)
 
-    private val subscriptions = LargeCache<String, Job>()
+    /**
+     * Open REQs by sub id: a [LiveReq] when the backend is a [LiveSubscriptionBackend] (no
+     * coroutine once its replay is done), else the [Job] parked at the live tail.
+     */
+    private val subscriptions = LargeCache<String, Any>()
 
     /**
      * The authenticated-identity store for this connection. The engine is the
@@ -144,19 +153,21 @@ class RelaySession(
     /** NIP-77 negentropy state for this connection. */
     private val negentropy = NegSessionRegistry(store, ::send, negentropySettings)
 
-    private fun addSubscription(
-        subId: String,
-        job: Job,
-    ) = subscriptions.put(subId, job)
-
     private fun cancelSubscription(subId: String): Boolean =
         subscriptions.remove(subId)?.let {
-            it.cancel()
+            cancelEntry(it)
             true
         } ?: false
 
+    private fun cancelEntry(entry: Any) {
+        when (entry) {
+            is LiveReq -> entry.cancel()
+            is Job -> entry.cancel()
+        }
+    }
+
     fun cancelAllSubscriptions() {
-        subscriptions.forEach { _, job -> job.cancel() }
+        subscriptions.forEach { _, entry -> cancelEntry(entry) }
         subscriptions.clear()
         negentropy.clear()
     }
@@ -435,95 +446,198 @@ class RelaySession(
         val filters = probe?.queryFilters ?: acceptedFilters
         val eose = { send(EoseMessage(cmd.subId, probe?.hints())) }
 
+        val screened = policy.filtersOutgoingEvents
+        // The `["EVENT","<subId>",` prefix is built once per subscription, not per row.
+        val framePrefix =
+            if (screened) {
+                null
+            } else {
+                buildString {
+                    append("[\"EVENT\",")
+                    RawEvent.appendJsonQuoted(this, cmd.subId)
+                    append(',')
+                }
+            }
+
+        val live = store as? LiveSubscriptionBackend
+        if (live == null) {
+            subscriptions.put(cmd.subId, launchParkedReq(cmd.subId, filters, framePrefix, probe, eose))
+            return
+        }
+
+        // Registered before this returns, so the slot is in [subscriptions] before any
+        // CLOSE can look for it; live events may already be arriving on the listener.
+        val req = LiveReq(cmd.subId, framePrefix)
+        val subscription = live.openSubscription(requestContext, filters, req)
+        req.subscription = subscription
+        subscriptions.put(cmd.subId, req)
+
         // UNDISPATCHED: the stored replay runs inline on this coroutine —
         // the reader-pool acquire doesn't suspend when a connection is
         // free, so EVENT frames and EOSE go out without a scheduler hop
         // (SmallReqFloorBenchmark: the hop was most of the dispatch
-        // slice on small REQs). The coroutine first parks at the live
-        // tail (awaitCancellation), which is when launch returns and the
-        // job lands in [subscriptions]; commands on this connection are
-        // processed sequentially, so nothing can target the sub earlier.
-        val job =
+        // slice on small REQs). The coroutine ends at EOSE: from then on
+        // the subscription is the [LiveReq] and its registration.
+        val replay =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
-                    if (policy.filtersOutgoingEvents) {
+                    if (framePrefix == null) {
                         // Screened path: every event is materialized so the
                         // policy can veto it per session.
-                        store.query(
-                            ctx = requestContext,
-                            filters = filters,
+                        subscription.replay(
                             onEach = { event ->
-                                if (policy.canSendToSession(event)) {
-                                    send(EventMessage(cmd.subId, event))
-                                }
+                                if (policy.canSendToSession(event)) send(EventMessage(cmd.subId, event))
                             },
-                            onEose = { eose() },
+                            onEose = eose,
                         )
                     } else {
-                        // Zero-decode path: the stored replay splices raw
-                        // storage strings straight into wire frames — no tags
-                        // parse, no Event materialization, no re-serialize.
-                        // The `["EVENT","<subId>",` prefix is built once per
-                        // subscription, not per row.
-                        val framePrefix =
-                            buildString {
-                                append("[\"EVENT\",")
-                                RawEvent.appendJsonQuoted(this, cmd.subId)
-                                append(',')
-                            }
-                        store.queryRaw(
-                            ctx = requestContext,
-                            filters = filters,
-                            onEachStored = { raw ->
-                                // NIP-67 probe: the one extra row it asked for is counted, not sent.
-                                if (probe == null || probe.onStored()) {
-                                    sendRaw(
-                                        buildString(framePrefix.length + raw.jsonObjectLengthEstimate() + 1) {
-                                            append(framePrefix)
-                                            raw.appendJsonObjectTo(this)
-                                            append(']')
-                                        },
-                                    )
-                                }
-                            },
-                            // Live events arrive with their wire body already
-                            // serialized (once per event, shared across every
-                            // matching subscription): splice it into the same
-                            // per-sub frame prefix as the stored replay, no
-                            // per-event EventMessage or re-serialize.
-                            // A LiveFrameSink takes the prefix and the shared
-                            // body apart, so it can encode the body once per
-                            // event across all its sockets.
-                            onEachLive =
-                                if (sink is LiveFrameSink) {
-                                    { _, body -> sendLive(framePrefix, body) }
-                                } else {
-                                    { _, body ->
-                                        sendRaw(
-                                            buildString(framePrefix.length + body.length + 1) {
-                                                append(framePrefix)
-                                                append(body)
-                                                append(']')
-                                            },
-                                        )
-                                    }
-                                },
-                            onEose = { eose() },
+                        subscription.replayRaw(
+                            onEachStored = { raw -> sendStored(framePrefix, raw, probe) },
+                            onEose = eose,
                         )
                     }
                 } catch (e: CancellationException) {
-                    // Subscription was closed – this is expected.
+                    // Subscription was closed – this is expected. Unregistering is
+                    // idempotent, and covers a wrapper that never reached the store.
+                    subscription.cancel()
                     throw e
                 } catch (e: Exception) {
                     // A backend failure (e.g. an event source's network I/O)
                     // ends the subscription with a machine-readable CLOSED
                     // rather than silently dropping the coroutine.
+                    subscription.cancel()
                     send(ClosedMessage.of(cmd.subId, MachineReadablePrefix.ERROR, e.message ?: "query failed"))
                 }
             }
-
-        addSubscription(cmd.subId, job)
+        // Held only while the replay runs, so a CLOSE mid-replay can stop it.
+        if (!replay.isCompleted) {
+            req.replay = replay
+            replay.invokeOnCompletion { req.replay = null }
+        }
     }
+
+    /**
+     * One open REQ on a [LiveSubscriptionBackend], and the listener its live events arrive
+     * on. After EOSE this and the backend's registration are all the REQ keeps.
+     *
+     * @param framePrefix `["EVENT","<subId>",` on the zero-decode path; null when the policy
+     *   screens every event, so live events go out as [EventMessage]s after
+     *   [IRelayPolicy.canSendToSession].
+     */
+    private inner class LiveReq(
+        val subId: String,
+        val framePrefix: String?,
+    ) : LiveListener {
+        lateinit var subscription: LiveSubscription
+
+        /** The replay coroutine, until it ends. */
+        @Volatile
+        var replay: Job? = null
+
+        override fun onLive(
+            event: Event,
+            body: String,
+        ) {
+            when {
+                framePrefix == null -> if (policy.canSendToSession(event)) send(EventMessage(subId, event))
+                sink is LiveFrameSink -> sendLive(framePrefix, body)
+                else -> sendLiveRaw(framePrefix, body)
+            }
+        }
+
+        fun cancel() {
+            replay?.cancel()
+            subscription.cancel()
+        }
+    }
+
+    /** A stored row as one `EVENT` frame; the NIP-67 probe's one extra row is counted, not sent. */
+    private fun sendStored(
+        framePrefix: String,
+        raw: RawEvent,
+        probe: EoseCompletenessProbe?,
+    ) {
+        if (probe == null || probe.onStored()) {
+            sendRaw(
+                buildString(framePrefix.length + raw.jsonObjectLengthEstimate() + 1) {
+                    append(framePrefix)
+                    raw.appendJsonObjectTo(this)
+                    append(']')
+                },
+            )
+        }
+    }
+
+    /**
+     * A live event spliced into the subscription's frame prefix: its wire body is already
+     * serialized (once per event, shared across every matching subscription), so no
+     * per-event EventMessage or re-serialize.
+     */
+    private fun sendLiveRaw(
+        framePrefix: String,
+        body: String,
+    ) {
+        sendRaw(
+            buildString(framePrefix.length + body.length + 1) {
+                append(framePrefix)
+                append(body)
+                append(']')
+            },
+        )
+    }
+
+    /**
+     * The REQ path for a backend that is not a [LiveSubscriptionBackend]: one coroutine per
+     * subscription, parked inside [SessionBackend.queryRaw] / [SessionBackend.query] for the
+     * live tail until cancelled. A finite backend returns after EOSE and the job completes.
+     */
+    private fun launchParkedReq(
+        subId: String,
+        filters: List<Filter>,
+        framePrefix: String?,
+        probe: EoseCompletenessProbe?,
+        eose: () -> Unit,
+    ): Job =
+        // UNDISPATCHED: as above. The coroutine first parks at the live
+        // tail, which is when launch returns and the job lands in
+        // [subscriptions]; commands on this connection are processed
+        // sequentially, so nothing can target the sub earlier.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                if (framePrefix == null) {
+                    store.query(
+                        ctx = requestContext,
+                        filters = filters,
+                        onEach = { event ->
+                            if (policy.canSendToSession(event)) {
+                                send(EventMessage(subId, event))
+                            }
+                        },
+                        onEose = { eose() },
+                    )
+                } else {
+                    store.queryRaw(
+                        ctx = requestContext,
+                        filters = filters,
+                        onEachStored = { raw -> sendStored(framePrefix, raw, probe) },
+                        // A LiveFrameSink takes the prefix and the shared
+                        // body apart, so it can encode the body once per
+                        // event across all its sockets.
+                        onEachLive =
+                            if (sink is LiveFrameSink) {
+                                { _, body -> sendLive(framePrefix, body) }
+                            } else {
+                                { _, body -> sendLiveRaw(framePrefix, body) }
+                            },
+                        onEose = { eose() },
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                send(ClosedMessage.of(subId, MachineReadablePrefix.ERROR, e.message ?: "query failed"))
+            }
+        }
 
     // -- NIP-01: CLOSE --------------------------------------------------------
     private fun handleClose(cmd: CloseCmd) {

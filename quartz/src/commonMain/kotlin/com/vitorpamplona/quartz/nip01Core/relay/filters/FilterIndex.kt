@@ -123,7 +123,10 @@ class FilterIndex<S : Any> {
      * `event.kind`) and allocate no key-wrapper objects. [assignments] is
      * the reverse map ([S] → the [BucketKey]s it occupies) used by
      * [unregister]; the wrappers live only here, built on the rare
-     * register path.
+     * register path. A subscriber in one bucket (a live feed's usual
+     * shape) maps to that [BucketKey] itself, one in several to a
+     * [PersistentSet] of them: a set per subscriber was most of what the
+     * index kept per entry.
      *
      * Persistent (HAMT) maps/sets: a register/unregister produces the
      * next snapshot in O(keys × log S) with structural sharing, instead
@@ -135,7 +138,7 @@ class FilterIndex<S : Any> {
         val tags: PersistentMap<String, PersistentMap<String, PersistentSet<S>>> = persistentHashMapOf(),
         val kinds: PersistentMap<Int, PersistentSet<S>> = persistentHashMapOf(),
         val unindexed: PersistentSet<S> = persistentHashSetOf(),
-        val assignments: PersistentMap<S, PersistentSet<BucketKey>> = persistentHashMapOf(),
+        val assignments: PersistentMap<S, Any> = persistentHashMapOf(),
     ) : Snapshot<S> {
         override fun isEmpty(): Boolean = assignments.isEmpty()
 
@@ -275,7 +278,7 @@ class FilterIndex<S : Any> {
             var tags = current.tags
             var kinds = current.kinds
             var unindexed = current.unindexed
-            for (key in keys) {
+            for (key in keysOf(keys)) {
                 when (key) {
                     is IdKey -> ids = ids.removeSub(key.id, subscriber)
                     is AuthorKey -> authors = authors.removeSub(key.author, subscriber)
@@ -326,7 +329,7 @@ class FilterIndex<S : Any> {
         keys: List<BucketKey>,
     ) {
         if (keys.isEmpty()) return
-        val keySet = keys.toPersistentHashSet()
+        val keySet = keys.distinct()
         while (true) {
             val current = state.load()
             var ids = current.ids
@@ -344,11 +347,20 @@ class FilterIndex<S : Any> {
                 }
             }
             val existing = current.assignments[subscriber]
-            val merged = existing?.addingAll(keySet) ?: keySet
+            val merged: Any =
+                when {
+                    existing == null && keySet.size == 1 -> keySet[0]
+                    existing == null -> keySet.toPersistentHashSet()
+                    else -> keysOf(existing).toPersistentHashSet().addingAll(keySet)
+                }
             val next = State(ids, authors, tags, kinds, unindexed, current.assignments.putting(subscriber, merged))
             if (state.compareAndSet(current, next)) return
         }
     }
+
+    /** An [State.assignments] value as its keys: one [BucketKey], or a set of them. */
+    @Suppress("UNCHECKED_CAST")
+    private fun keysOf(assignment: Any): Collection<BucketKey> = if (assignment is BucketKey) listOf(assignment) else assignment as Set<BucketKey>
 
     // Per-dimension add/remove of one subscriber, returning the same map
     // instance when nothing changed so the CAS builds minimal new nodes.

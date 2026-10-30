@@ -53,7 +53,14 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * [FilterIndex]: each [query] registers its filters; on accepted ingest the index returns
  * the (much smaller) candidate set and we deliver only to those whose filters actually
  * match. This avoids the quadratic O(N_subscribers × N_filters_per_sub) per-event walk
- * that a SharedFlow-based broadcast would do.
+ * that a SharedFlow-based broadcast would do. The index is partitioned by the
+ * connection's [FanoutExecutor], so each delivery thread matches its own subscriptions
+ * (see [fanout]).
+ *
+ * As a [LiveSubscriptionBackend], a REQ is a registration plus its replay
+ * ([openSubscription]); nothing stays suspended once the replay reaches EOSE.
+ * [query] and [queryRaw] wrap the same registration for callers of the plain
+ * [SessionBackend] contract.
  *
  * NIP-50 `search` strings are handed to the store **verbatim**, extension
  * tokens included: whether `include:spam` is a directive, ignorable noise,
@@ -72,7 +79,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 class LiveEventStore(
     private val store: IEventStore,
     private val ingest: EventIngest,
-) : SessionBackend {
+) : LiveSubscriptionBackend {
     /**
      * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
      * the thread that accepted the event, as before executors existed.
@@ -89,6 +96,14 @@ class LiveEventStore(
     /** Ids handed to [ingest] whose fan-out has not been handed out yet; see [settle]. */
     private val inFlight = InFlightIds()
 
+    /** Live subscriptions registered right now: open REQs, including ones still replaying. */
+    val liveSubscriptionCount: Int
+        get() {
+            var n = inline.index.size()
+            for (partition in partitions.load()) n += partition.index.size()
+            return n
+        }
+
     /**
      * The subscriptions one executor delivers, in their own [FilterIndex], so a fan-out
      * probes each partition's index and never builds a relay-wide candidate set.
@@ -96,7 +111,7 @@ class LiveEventStore(
     private class Partition(
         val executor: FanoutExecutor?,
     ) {
-        val index = FilterIndex<LiveSubscription>()
+        val index = FilterIndex<LiveSub>()
 
         /**
          * Subscriptions this executor partition holds, counted so the last one out can
@@ -106,18 +121,20 @@ class LiveEventStore(
     }
 
     /**
-     * One live REQ subscription. Carries the filters (for the
-     * post-index `match` re-check needed for negative constraints
-     * like `since` / `until` / `tagsAll`) and the delivery callback
-     * the index dispatches into. [deliver] receives the event and its
-     * pre-serialized wire body (memoized once per fanout across all
-     * matching subscribers). Identity-keyed inside [FilterIndex].
+     * One live REQ subscription, and the handle [openSubscription] returns. Carries the
+     * filters (for the post-index `match` re-check needed for negative constraints like
+     * `since` / `until` / `tagsAll`) and the [listener] the fan-out delivers into, with the
+     * event's pre-serialized wire body (memoized once per fanout across all matching
+     * subscribers). Identity-keyed inside [FilterIndex]. After EOSE this, the listener and
+     * the index entries are all a subscription keeps: no coroutine, no dedupe set.
      */
-    private class LiveSubscription(
+    private inner class LiveSub(
         val filters: List<Filter>,
         val partition: Partition,
-        val deliver: (Event, String) -> Unit,
-    ) {
+        val listener: LiveListener,
+        /** Who asked, for the replay; dropped once it ran. */
+        private var ctx: RequestContext?,
+    ) : LiveSubscription {
         /** The replay's dedupe set until [settle] proves nothing can arrive twice; then null. */
         @Volatile
         var seen: SeenIds? = SeenIds()
@@ -135,12 +152,57 @@ class LiveEventStore(
         ) {
             val dedupe = seen
             if (dedupe != null && !dedupe.firstSighting(event.id)) return
-            deliver(event, body.get())
+            listener.onLive(event, body.get())
         }
 
         fun settle(keep: HashSet<String>?) {
             if (seen?.settle(keep) == true) seen = null
         }
+
+        override suspend fun replayRaw(
+            onEachStored: (RawEvent) -> Unit,
+            onEose: () -> Unit,
+        ) = replayWith(onEose) { seen ->
+            store.rawQuery(filters) { raw ->
+                if (seen.firstSighting(raw.id)) onEachStored(raw)
+            }
+        }
+
+        override suspend fun replay(
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) = replayWith(onEose) { seen ->
+            store.query<Event>(filters) { event ->
+                if (seen.firstSighting(event.id)) onEach(event)
+            }
+        }
+
+        /**
+         * The index registered *before* the replay starts (otherwise an event accepted
+         * mid-replay would slip past the live path entirely — same race the previous
+         * SharedFlow-based implementation closed with `onSubscription`), and [SeenIds]
+         * bridges the two paths: each claims ids there and only the first claim delivers,
+         * and after EOSE [settle] drops the set so every live event forwards.
+         */
+        private suspend inline fun replayWith(
+            onEose: () -> Unit,
+            crossinline rows: suspend (SeenIds) -> Unit,
+        ) {
+            val ctx = ctx ?: throw IllegalStateException("a subscription replays once")
+            this.ctx = null
+            try {
+                drainFtsIfSearching(filters)
+                val seen = seen ?: throw IllegalStateException("a subscription replays once")
+                withCallerIdentity(ctx) { rows(seen) }
+                onEose()
+                settle(this)
+            } catch (e: Throwable) {
+                cancel()
+                throw e
+            }
+        }
+
+        override fun cancel() = unregister(this)
     }
 
     /**
@@ -389,7 +451,7 @@ class LiveEventStore(
     }
 
     private fun deliver(
-        candidates: Set<LiveSubscription>,
+        candidates: Set<LiveSub>,
         event: Event,
         body: SharedBody,
     ) {
@@ -401,22 +463,23 @@ class LiveEventStore(
     }
 
     /**
-     * Registers [filters] in the partition of [executor] (the inline one when null) and
-     * returns the subscription. Complete once this returns: an event accepted from then on
-     * reaches it.
+     * Registers [filters] in the partition of the connection's executor (the inline one when
+     * it has none) and returns the subscription. Complete once this returns: an event accepted
+     * from then on reaches it.
      */
     private fun register(
+        ctx: RequestContext,
         filters: List<Filter>,
-        executor: FanoutExecutor?,
-        deliver: (Event, String) -> Unit,
-    ): LiveSubscription {
-        val sub = LiveSubscription(filters, if (executor == null) inline else joinPartition(executor), deliver)
+        listener: LiveListener,
+    ): LiveSub {
+        val executor = ctx.liveExecutor
+        val sub = LiveSub(filters, if (executor == null) inline else joinPartition(executor), listener, ctx)
         sub.partition.index.register(filters, sub)
         return sub
     }
 
     /** Idempotent. The last subscription out of an executor partition retires it. */
-    private fun unregister(sub: LiveSubscription) {
+    private fun unregister(sub: LiveSub) {
         sub.active = false
         val partition = sub.partition
         if (!partition.index.remove(sub) || partition.executor == null) return
@@ -465,7 +528,7 @@ class LiveEventStore(
      * handed out before this check; on an executor, the switch is queued behind those tasks,
      * so they still dedupe against the full set.
      */
-    private fun settle(sub: LiveSubscription) {
+    private fun settle(sub: LiveSub) {
         val seen = sub.seen ?: return
         val keep = seen.inFlightPart(inFlight)
         val executor = sub.partition.executor
@@ -515,8 +578,20 @@ class LiveEventStore(
     }
 
     /**
-     * Live callbacks run on [RequestContext.liveExecutor] when the connection declares one,
-     * else on the thread that accepted the event.
+     * Registers a REQ without parking a coroutine for its live tail: see
+     * [LiveSubscriptionBackend]. Live events reach [onLive] on [RequestContext.liveExecutor]
+     * when the connection declares one, else on the thread that accepted the event.
+     */
+    override fun openSubscription(
+        ctx: RequestContext,
+        filters: List<Filter>,
+        onLive: LiveListener,
+    ): LiveSubscription = register(ctx, filters, onLive)
+
+    /**
+     * [openSubscription] as one suspending call, for callers of the [SessionBackend]
+     * contract: replays, signals EOSE, then suspends until cancelled while live events
+     * stream to [onEach].
      */
     override suspend fun query(
         ctx: RequestContext,
@@ -524,29 +599,15 @@ class LiveEventStore(
         onEach: (Event) -> Unit,
         onEose: () -> Unit,
     ) {
-        drainFtsIfSearching(filters)
-        // The index registers *before* the replay starts (otherwise an
-        // event accepted mid-replay would slip past the live path entirely
-        // — same race the previous SharedFlow-based implementation closed
-        // with `onSubscription`), and [SeenIds] bridges the two paths:
-        // each claims ids there and only the first claim delivers, and
-        // after EOSE [settle] drops the set so every live event forwards.
-        val sub = register(filters, ctx.liveExecutor) { event, _ -> onEach(event) }
+        val sub = register(ctx, filters) { event, _ -> onEach(event) }
         try {
-            val seen = sub.seen!!
-            withCallerIdentity(ctx) {
-                store.query<Event>(filters) { event ->
-                    if (seen.firstSighting(event.id)) onEach(event)
-                }
-            }
-            onEose()
-            settle(sub)
+            sub.replay(onEach, onEose)
             // Suspend until the caller's coroutine is cancelled
             // (e.g. NIP-01 CLOSE or connection drop). The `finally`
             // unregisters from the index.
             awaitCancellation()
         } finally {
-            unregister(sub)
+            sub.cancel()
         }
     }
 
@@ -566,20 +627,12 @@ class LiveEventStore(
         onEachLive: (Event, String) -> Unit,
         onEose: () -> Unit,
     ) {
-        drainFtsIfSearching(filters)
-        val sub = register(filters, ctx.liveExecutor, onEachLive)
+        val sub = register(ctx, filters) { event, body -> onEachLive(event, body) }
         try {
-            val seen = sub.seen!!
-            withCallerIdentity(ctx) {
-                store.rawQuery(filters) { raw ->
-                    if (seen.firstSighting(raw.id)) onEachStored(raw)
-                }
-            }
-            onEose()
-            settle(sub)
+            sub.replayRaw(onEachStored, onEose)
             awaitCancellation()
         } finally {
-            unregister(sub)
+            sub.cancel()
         }
     }
 

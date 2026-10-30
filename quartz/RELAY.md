@@ -182,6 +182,27 @@ is the storage-backed `SessionBackend`; `EventSourceBackend` adapts a
 `EventSource`). Implement `SessionBackend` directly only if you need custom
 control over the EVENT/negentropy paths as well as REQ/COUNT.
 
+`LiveEventStore` is also a `LiveSubscriptionBackend`: a REQ on it parks no coroutine for its
+live tail. `openSubscription(ctx, filters, listener)` registers the filters and returns a
+`LiveSubscription`; the engine runs its `replayRaw` (or `replay`) to EOSE in a short-lived
+coroutine and keeps only the handle, which CLOSE, a replaced sub id or a disconnect `cancel`s.
+A backend that wraps `LiveEventStore` (a search gate, a live-event gate, a latency timer) keeps
+working through `queryRaw` as before; to move it onto the cheaper path, implement
+`LiveSubscriptionBackend` too, wrap the `LiveListener` for live events and the returned
+`LiveSubscription`'s replay for the stored ones:
+
+```kotlin
+override fun openSubscription(ctx: RequestContext, filters: List<Filter>, onLive: LiveListener): LiveSubscription {
+    val inner = store.openSubscription(ctx, filters) { event, body -> if (admits(event)) onLive.onLive(event, body) }
+    return object : LiveSubscription by inner {
+        override suspend fun replayRaw(onEachStored: (RawEvent) -> Unit, onEose: () -> Unit) =
+            timed { inner.replayRaw(onEachStored, onEose) }
+    }
+}
+```
+
+`LiveEventStore.liveSubscriptionCount` reports how many REQs are registered.
+
 ### Caller-aware sources (who is asking)
 
 Every `events`/`count`/`countResult` call receives a `RequestContext` carrying
@@ -505,6 +526,7 @@ quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/
 │   ├── NegSessionRegistry.kt   # NIP-77 negentropy per-connection state
 │   ├── backend/                # data plane (how REQ/COUNT/EVENT are answered)
 │   │   ├── SessionBackend.kt   # Data-plane seam (LiveEventStore / EventSourceBackend)
+│   │   ├── LiveSubscriptionBackend.kt # Optional: REQs as registrations, no parked coroutine
 │   │   ├── EventSource.kt      # Flow<Event> SPI for non-storage relays
 │   │   ├── EventSourceBackend.kt # Adapts an EventSource to SessionBackend
 │   │   ├── LiveEventStore.kt   # Reactive event streaming (storage SessionBackend)
