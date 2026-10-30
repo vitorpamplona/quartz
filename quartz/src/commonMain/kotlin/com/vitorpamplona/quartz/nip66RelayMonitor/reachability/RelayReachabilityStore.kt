@@ -305,16 +305,7 @@ class RelayReachabilityStore(
         current: RelayDiscoveryEvent?,
         owns: (Array<String>) -> Boolean,
         measured: TagArrayBuilder<RelayDiscoveryEvent>.() -> Unit,
-    ) = RelayDiscoveryEvent.build(
-        relay,
-        current?.content ?: "",
-        createdAt = maxOf(now, (current?.createdAt ?: 0L) + 1),
-    ) {
-        current?.tags?.forEach { tag ->
-            if (tag.firstOrNull() != "d" && !owns(tag)) add(tag)
-        }
-        measured()
-    }
+    ) = RelayDiscoveryEvent.edit(relay, current, owns, now, measured)
 
     /**
      * The tags this class measures, and may therefore replace.
@@ -381,7 +372,7 @@ class RelayReachabilityStore(
         private val ALL_RTT = setOf(RttType.OPEN.tagName, RttType.READ.tagName, RttType.WRITE.tagName)
 
         /** The one NIP-66 requirement an observation can prove: the relay challenged us. */
-        const val AUTH_REQUIREMENT = "auth"
+        const val AUTH_REQUIREMENT = RequirementTag.AUTH
 
         /** Both polarities, so an update cannot leave the record asserting `auth` and `!auth` at once. */
         private val AUTH_REQUIREMENT_FORMS = setOf(AUTH_REQUIREMENT, "!$AUTH_REQUIREMENT")

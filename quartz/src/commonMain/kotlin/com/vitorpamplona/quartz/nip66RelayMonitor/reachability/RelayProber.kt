@@ -434,16 +434,9 @@ fun RelayProber.Verdict.toDiscoveryEventTemplate(
     readWrite: RelayProber.ReadWriteVerdict? = null,
     current: RelayDiscoveryEvent? = null,
 ): EventTemplate<RelayDiscoveryEvent> =
-    RelayDiscoveryEvent.build(
-        relay,
-        current?.content ?: "",
-        // Strictly newer than what it replaces, or a store enforcing
-        // replaceable semantics rejects it and the probe is lost silently.
-        createdAt = maxOf(createdAt, (current?.createdAt ?: 0L) + 1),
-    ) {
-        current?.tags?.forEach { tag ->
-            if (tag.firstOrNull() != "d" && !probeOwns(tag, readWrite != null)) add(tag)
-        }
+    // An edit: strictly newer than what it replaces (or a store enforcing replaceable semantics
+    // rejects it and the probe is lost silently), keeping every tag the probe did not measure.
+    RelayDiscoveryEvent.edit(relay, current, { tag -> probeOwns(tag, readWrite != null) }, createdAt) {
         networkType(RelayReachabilityStore.networkTypeOf(relay))
         if (reachable) rtt(RttType.OPEN, rttOpenMs.coerceAtLeast(0))
         if (readWrite != null) {
@@ -458,7 +451,7 @@ fun RelayProber.Verdict.toDiscoveryEventTemplate(
     }
 
 /** The NIP-66 requirement a write probe can prove, alongside `auth`. */
-private const val POW_REQUIREMENT = "pow"
+private const val POW_REQUIREMENT = RequirementTag.POW
 
 /**
  * What a probe verdict measured, and may therefore replace in [current].

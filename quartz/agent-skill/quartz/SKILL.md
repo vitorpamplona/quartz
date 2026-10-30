@@ -134,6 +134,11 @@ suspend fun post(client: NostrClient) {
   - **Gift wraps** (NIP-59) and NIP-17 DMs: use `GiftWrapEvent.create(...)`, which signs each
     wrap with a fresh key, or `NIP17Factory` for whole messages. A wrap signed by the user's
     key puts the sender's identity on the outside.
+- **Re-publishing a replaceable or addressable event** (a profile, a relay list, your own
+  NIP-66 record): stamp it `TimeUtils.nextCreatedAt(previous?.createdAt)`, i.e. now, or one
+  second past the version it replaces. A replacement stamped at or before the stored one is
+  rejected. A NIP-66 monitor edits its own 30166 with `RelayDiscoveryEvent.edit(relay, current,
+  owns) { … }`, which keeps every tag `owns` does not claim (another writer's, or unknown ones).
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
