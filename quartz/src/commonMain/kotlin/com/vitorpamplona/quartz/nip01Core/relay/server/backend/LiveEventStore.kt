@@ -24,15 +24,19 @@ import com.vitorpamplona.negentropy.storage.IStorage
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.FilterIndex
+import com.vitorpamplona.quartz.nip01Core.relay.server.FanoutExecutor
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
+import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -69,7 +73,37 @@ class LiveEventStore(
     private val store: IEventStore,
     private val ingest: EventIngest,
 ) : SessionBackend {
-    private val index = FilterIndex<LiveSubscription>()
+    /**
+     * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
+     * the thread that accepted the event, as before executors existed.
+     */
+    private val inline = Partition(null)
+
+    /**
+     * One partition per [FanoutExecutor] that holds subscriptions, copy-on-write. There are
+     * as many as the relay has delivery threads (one per event loop), so a linear scan finds
+     * an executor's partition and a fan-out visits each once.
+     */
+    private val partitions = AtomicReference<Array<Partition>>(emptyArray())
+
+    /** Ids handed to [ingest] whose fan-out has not been handed out yet; see [settle]. */
+    private val inFlight = InFlightIds()
+
+    /**
+     * The subscriptions one executor delivers, in their own [FilterIndex], so a fan-out
+     * probes each partition's index and never builds a relay-wide candidate set.
+     */
+    private class Partition(
+        val executor: FanoutExecutor?,
+    ) {
+        val index = FilterIndex<LiveSubscription>()
+
+        /**
+         * Subscriptions this executor partition holds, counted so the last one out can
+         * retire it; -1 once retired, after which [joinPartition] makes a fresh one.
+         */
+        val members = AtomicInt(0)
+    }
 
     /**
      * One live REQ subscription. Carries the filters (for the
@@ -81,32 +115,53 @@ class LiveEventStore(
      */
     private class LiveSubscription(
         val filters: List<Filter>,
+        val partition: Partition,
         val deliver: (Event, String) -> Unit,
-    )
+    ) {
+        /** The replay's dedupe set until [settle] proves nothing can arrive twice; then null. */
+        @Volatile
+        var seen: SeenIds? = SeenIds()
+
+        /**
+         * Cleared on unregister. A fan-out matches against an index snapshot taken when the
+         * event was accepted, which can still hold a subscription closed since.
+         */
+        @Volatile
+        var active = true
+
+        fun offer(
+            event: Event,
+            body: SharedBody,
+        ) {
+            val dedupe = seen
+            if (dedupe != null && !dedupe.firstSighting(event.id)) return
+            deliver(event, body.get())
+        }
+
+        fun settle(keep: HashSet<String>?) {
+            if (seen?.settle(keep) == true) seen = null
+        }
+    }
 
     /**
-     * Replay-dedupe set for one REQ. Until EOSE both the historical replay
-     * and the concurrent live path claim each id here with [firstSighting]
-     * and only the first claim delivers, whichever path gets there first:
-     * an event accepted mid-replay may reach the live path before the
-     * replay's snapshot reads it, or after. After EOSE the set is
-     * [release]d and the live path forwards everything.
-     *
-     * Claimed from both the replay coroutine and the [ingest]
-     * drain coroutine (via `fanout`), so every access takes a tiny spin
-     * lock — [locked] is `inline`, so the per-row `firstSighting`
-     * calls allocate no closure. The backing `HashSet` is created empty
-     * up front (so the register-before-replay race guarantee holds) but
-     * the JVM defers its table allocation to the first `add`, so a
-     * zero-row replay costs only the empty set object, not a sized table.
-     * It MUST stay a mutable set under a lock, never a copy-on-add
-     * immutable set — `set + id` per row made large replays O(n²).
+     * An event's wire JSON, serialized at most once per fan-out by whichever delivery
+     * thread first needs it. Every subscription, on every executor, gets the same [String]
+     * instance ([com.vitorpamplona.quartz.nip01Core.relay.server.LiveFrameSink] promises it):
+     * a thread that loses the race drops its copy and takes the winner's.
      */
-    private class SeenIds {
-        private val lock = AtomicBoolean(false)
-        private var ids: HashSet<String>? = HashSet()
+    private class SharedBody(
+        private val event: Event,
+    ) {
+        private val json = AtomicReference<String?>(null)
 
-        private inline fun <R> locked(block: () -> R): R {
+        fun get(): String = json.load() ?: event.toJson().let { if (json.compareAndSet(null, it)) it else json.load()!! }
+    }
+
+    /** A spin lock for critical sections a few hash operations long; `inline`, so no closure. */
+    private class SpinLock {
+        private val lock = AtomicBoolean(false)
+
+        inline fun <R> locked(block: () -> R): R {
             while (lock.exchange(true)) {
                 while (lock.load()) { }
             }
@@ -116,13 +171,102 @@ class LiveEventStore(
                 lock.store(false)
             }
         }
+    }
 
-        /** True the first time [id] is seen, and always once released. */
-        fun firstSighting(id: String): Boolean = locked { ids?.add(id) ?: true }
+    /**
+     * Replay-dedupe set for one REQ. Until EOSE both the historical replay
+     * and the concurrent live path claim each id here with [firstSighting]
+     * and only the first claim delivers, whichever path gets there first:
+     * an event accepted mid-replay may reach the live path before the
+     * replay's snapshot reads it, or after.
+     *
+     * At EOSE the set can't simply be dropped: an event the replay read
+     * may have been committed while its fan-out had not been handed out
+     * yet, or (with a [FanoutExecutor]) was handed out but not run. So
+     * [settle] keeps only the replayed ids still in flight, after every
+     * fan-out already queued for this subscription has run, and each of
+     * those is consumed by its one live delivery. Usually nothing is in
+     * flight and the set is dropped whole.
+     *
+     * Claimed from both the replay coroutine and the fan-out thread, so
+     * every access takes a tiny spin lock — [SpinLock.locked] is `inline`,
+     * so the per-row `firstSighting` calls allocate no closure. The
+     * backing `HashSet` is created empty up front (so the
+     * register-before-replay race guarantee holds) but the JVM defers its
+     * table allocation to the first `add`, so a zero-row replay costs only
+     * the empty set object, not a sized table. It MUST stay a mutable set
+     * under a lock, never a copy-on-add immutable set — `set + id` per row
+     * made large replays O(n²).
+     */
+    private class SeenIds {
+        private val lock = SpinLock()
+        private var ids: HashSet<String>? = HashSet()
+        private var settled = false
 
-        fun release() {
-            locked { ids = null }
+        /** True the first time [id] is seen, and for every id [settle] did not keep. */
+        fun firstSighting(id: String): Boolean =
+            lock.locked {
+                val set = ids
+                when {
+                    set == null -> {
+                        true
+                    }
+
+                    !settled -> {
+                        set.add(id)
+                    }
+
+                    else -> {
+                        val replayed = set.remove(id)
+                        if (set.isEmpty()) ids = null
+                        !replayed
+                    }
+                }
+            }
+
+        /** The replayed ids [inFlight] still holds: the only ones a live delivery can repeat. */
+        fun inFlightPart(inFlight: InFlightIds): HashSet<String>? = lock.locked { ids?.let { inFlight.intersect(it) } }
+
+        /** Keeps only [keep] from now on; true when that leaves nothing to dedupe. */
+        fun settle(keep: HashSet<String>?): Boolean =
+            lock.locked {
+                settled = true
+                ids = if (keep.isNullOrEmpty()) null else keep
+                ids == null
+            }
+    }
+
+    /**
+     * Ids submitted to [ingest] whose fan-out has not been handed out yet — written before the
+     * submit, cleared after the fan-out. An event the store has committed but not yet fanned
+     * out is always in here, which is what lets [settle] drop a replay's dedupe set safely.
+     * Counted, since two connections can submit the same id at once.
+     */
+    private class InFlightIds {
+        private val lock = SpinLock()
+        private val counts = HashMap<String, Int>()
+
+        fun add(id: String) {
+            lock.locked { counts[id] = (counts[id] ?: 0) + 1 }
         }
+
+        fun remove(id: String) {
+            lock.locked {
+                val n = counts[id] ?: 0
+                if (n <= 1) counts.remove(id) else counts[id] = n - 1
+            }
+        }
+
+        fun intersect(ids: Set<String>): HashSet<String> =
+            lock.locked {
+                val out = HashSet<String>()
+                if (counts.size <= ids.size) {
+                    for (id in counts.keys) if (id in ids) out.add(id)
+                } else {
+                    for (id in ids) if (counts.containsKey(id)) out.add(id)
+                }
+                out
+            }
     }
 
     /**
@@ -151,12 +295,22 @@ class LiveEventStore(
         skipVerify: Boolean,
         onComplete: (IEventStore.InsertOutcome) -> Unit,
     ) {
-        ingest.submit(event, skipVerify) { outcome ->
-            if (outcome is IEventStore.InsertOutcome.Accepted) {
-                writeGeneration.addAndFetch(1L)
-                fanout(event)
+        inFlight.add(event.id)
+        try {
+            ingest.submit(event, skipVerify) { outcome ->
+                try {
+                    if (outcome is IEventStore.InsertOutcome.Accepted) {
+                        writeGeneration.addAndFetch(1L)
+                        fanout(event)
+                    }
+                    onComplete(outcome)
+                } finally {
+                    inFlight.remove(event.id)
+                }
             }
-            onComplete(outcome)
+        } catch (e: Throwable) {
+            inFlight.remove(event.id)
+            throw e
         }
     }
 
@@ -189,25 +343,132 @@ class LiveEventStore(
     }
 
     /**
-     * Live fanout for an accepted event. The index returns a
-     * super-set; `Filter.match` enforces negative constraints. Each
-     * candidate's `deliver` is expected to be cheap (typically a
-     * `trySend` to a per-connection outbound queue) — this runs on
-     * the [ingest] drain coroutine, so a slow sub blocks the
-     * batch writer.
+     * Live fanout for an accepted event, on the [ingest] callback.
+     *
+     * Subscriptions without an executor are matched and delivered right
+     * here, as always: each `deliver` must be cheap (typically a `trySend`
+     * to a per-connection outbound queue), since a slow one blocks the
+     * batch writer. Each executor partition only gets its index probed:
+     * when it holds a possible match, the executor gets one task with the
+     * event and that index's snapshot as of now, and matches and delivers
+     * on its own thread. A subscription opened after this point is not in
+     * the snapshot (its replay reads the event, which is already stored).
+     *
+     * The index returns a super-set; `Filter.match` enforces negative
+     * constraints. The wire body is serialized at most once for this event
+     * across every partition — the old path re-serialized the whole event
+     * per matching subscriber, so a note landing in N live feeds paid N
+     * identical Jackson passes — and lazily, so a fanout that matches
+     * nothing (the index over-approximates) serializes nothing.
      */
     private fun fanout(event: Event) {
-        val candidates = index.candidatesFor(event)
-        if (candidates.isEmpty()) return
-        // Serialize the wire body at most once for this event, no matter
-        // how many subscriptions match it — the old path re-serialized the
-        // whole event per matching subscriber, so a note landing in N live
-        // feeds paid N identical Jackson passes. Lazy so a fanout that
-        // matches nothing (index over-approximates) serializes nothing.
-        var body: String? = null
+        var body: SharedBody? = null
+        val local = inline.index.candidatesFor(event)
+        if (local.isNotEmpty()) {
+            body = SharedBody(event)
+            deliver(local, event, body)
+        }
+        for (partition in partitions.load()) {
+            val snapshot = partition.index.snapshot()
+            if (!snapshot.hasCandidates(event)) continue
+            val shared = body ?: SharedBody(event).also { body = it }
+            try {
+                partition.executor!!.execute { deliver(snapshot.candidatesFor(event), event, shared) }
+            } catch (e: Exception) {
+                // An executor shutting down must not cost the other partitions their delivery.
+                Log.w("LiveEventStore", "fan-out executor refused a task", e)
+            }
+        }
+    }
+
+    private fun deliver(
+        candidates: Set<LiveSubscription>,
+        event: Event,
+        body: SharedBody,
+    ) {
         for (sub in candidates) {
-            if (sub.filters.any { it.match(event) }) {
-                sub.deliver(event, body ?: event.toJson().also { body = it })
+            if (sub.active && sub.filters.any { it.match(event) }) {
+                sub.offer(event, body)
+            }
+        }
+    }
+
+    /**
+     * Registers [filters] in the partition of [executor] (the inline one when null) and
+     * returns the subscription. Complete once this returns: an event accepted from then on
+     * reaches it.
+     */
+    private fun register(
+        filters: List<Filter>,
+        executor: FanoutExecutor?,
+        deliver: (Event, String) -> Unit,
+    ): LiveSubscription {
+        val sub = LiveSubscription(filters, if (executor == null) inline else joinPartition(executor), deliver)
+        sub.partition.index.register(filters, sub)
+        return sub
+    }
+
+    /** Idempotent. The last subscription out of an executor partition retires it. */
+    private fun unregister(sub: LiveSubscription) {
+        sub.active = false
+        val partition = sub.partition
+        if (!partition.index.remove(sub) || partition.executor == null) return
+        if (partition.members.addAndFetch(-1) == 0 && partition.members.compareAndSet(0, -1)) retire(partition)
+    }
+
+    /** The live partition for [executor], counting one more member in it; creates it if needed. */
+    private fun joinPartition(executor: FanoutExecutor): Partition {
+        while (true) {
+            val current = partitions.load()
+            var found: Partition? = null
+            for (p in current) {
+                if (p.executor === executor) {
+                    found = p
+                    break
+                }
+            }
+            if (found == null) {
+                val created = Partition(executor)
+                created.members.store(1)
+                if (partitions.compareAndSet(current, current + created)) return created
+                continue
+            }
+            val members = found.members.load()
+            if (members < 0) {
+                // Retired, but still listed: finish dropping it, then make a fresh one.
+                retire(found)
+                continue
+            }
+            if (found.members.compareAndSet(members, members + 1)) return found
+        }
+    }
+
+    private fun retire(partition: Partition) {
+        while (true) {
+            val current = partitions.load()
+            if (current.none { it === partition }) return
+            if (partitions.compareAndSet(current, current.filter { it !== partition }.toTypedArray())) return
+        }
+    }
+
+    /**
+     * The replay of [sub] reached EOSE: stop deduping, except for the replayed ids a live
+     * delivery can still repeat. Those are the ones in [inFlight] now — committed (so the
+     * replay could read them) but not yet fanned out. Every id that has left [inFlight] was
+     * handed out before this check; on an executor, the switch is queued behind those tasks,
+     * so they still dedupe against the full set.
+     */
+    private fun settle(sub: LiveSubscription) {
+        val seen = sub.seen ?: return
+        val keep = seen.inFlightPart(inFlight)
+        val executor = sub.partition.executor
+        if (executor == null) {
+            sub.settle(keep)
+        } else {
+            try {
+                executor.execute { sub.settle(keep) }
+            } catch (e: Exception) {
+                Log.w("LiveEventStore", "fan-out executor refused a task", e)
             }
         }
     }
@@ -246,6 +507,10 @@ class LiveEventStore(
         }
     }
 
+    /**
+     * Live callbacks run on [RequestContext.liveExecutor] when the connection declares one,
+     * else on the thread that accepted the event.
+     */
     override suspend fun query(
         ctx: RequestContext,
         filters: List<Filter>,
@@ -256,37 +521,25 @@ class LiveEventStore(
         // The index registers *before* the replay starts (otherwise an
         // event accepted mid-replay would slip past the live path entirely
         // — same race the previous SharedFlow-based implementation closed
-        // with `onSubscription`), and [SeenIds] bridges the two coroutines:
-        // each path claims ids here and only the first claim delivers,
-        // and after EOSE the set is released so every live event forwards.
-        val seen = SeenIds()
-
-        val sub =
-            LiveSubscription(
-                filters = filters,
-                deliver = { event, _ ->
-                    if (seen.firstSighting(event.id)) onEach(event)
-                },
-            )
-
-        index.register(filters, sub)
+        // with `onSubscription`), and [SeenIds] bridges the two paths:
+        // each claims ids there and only the first claim delivers, and
+        // after EOSE [settle] drops the set so every live event forwards.
+        val sub = register(filters, ctx.liveExecutor) { event, _ -> onEach(event) }
         try {
+            val seen = sub.seen!!
             withCallerIdentity(ctx) {
                 store.query<Event>(filters) { event ->
                     if (seen.firstSighting(event.id)) onEach(event)
                 }
             }
             onEose()
-            // Drop the dedupe set so the live path stops paying for
-            // it. From this point the index drives delivery and
-            // duplicates are no longer possible.
-            seen.release()
+            settle(sub)
             // Suspend until the caller's coroutine is cancelled
             // (e.g. NIP-01 CLOSE or connection drop). The `finally`
             // unregisters from the index.
             awaitCancellation()
         } finally {
-            index.unregister(sub)
+            unregister(sub)
         }
     }
 
@@ -297,7 +550,7 @@ class LiveEventStore(
      * EOSE is identical to [query]'s. Same registration-before-replay
      * ordering, and the same spin-locked mutable dedupe set — NOT a
      * copy-on-add immutable set, which made giant replays O(n²) (see
-     * the dedup comment in [query]).
+     * [SeenIds]).
      */
     override suspend fun queryRaw(
         ctx: RequestContext,
@@ -307,28 +560,19 @@ class LiveEventStore(
         onEose: () -> Unit,
     ) {
         drainFtsIfSearching(filters)
-        val seen = SeenIds()
-
-        val sub =
-            LiveSubscription(
-                filters = filters,
-                deliver = { event, body ->
-                    if (seen.firstSighting(event.id)) onEachLive(event, body)
-                },
-            )
-
-        index.register(filters, sub)
+        val sub = register(filters, ctx.liveExecutor, onEachLive)
         try {
+            val seen = sub.seen!!
             withCallerIdentity(ctx) {
                 store.rawQuery(filters) { raw ->
                     if (seen.firstSighting(raw.id)) onEachStored(raw)
                 }
             }
             onEose()
-            seen.release()
+            settle(sub)
             awaitCancellation()
         } finally {
-            index.unregister(sub)
+            unregister(sub)
         }
     }
 

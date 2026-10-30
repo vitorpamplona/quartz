@@ -138,6 +138,7 @@ class RelaySession(
             override val policy = this@RelaySession.policy
             override val authenticatedUsers: Set<HexKey> get() = this@RelaySession.authenticatedUsers
             override val clientAddress: String? get() = this@RelaySession.clientAddress
+            override val liveExecutor: FanoutExecutor? = sink.liveExecutor
         }
 
     /** NIP-77 negentropy state for this connection. */

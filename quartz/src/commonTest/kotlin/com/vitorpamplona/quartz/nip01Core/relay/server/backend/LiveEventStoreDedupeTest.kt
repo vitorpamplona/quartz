@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.server.backend
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.server.FanoutExecutorTest
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.EmptyPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
@@ -46,6 +47,15 @@ class LiveEventStoreDedupeTest {
 
     private object Ctx : RequestContext {
         override val connectionId: Long = 1
+        override val policy: IRelayPolicy = EmptyPolicy
+        override val authenticatedUsers: Set<HexKey> = emptySet()
+    }
+
+    /** A connection whose live events are delivered on [liveExecutor]. */
+    private class ExecutorCtx(
+        override val liveExecutor: FanoutExecutorTest.QueueExecutor,
+    ) : RequestContext {
+        override val connectionId: Long = 2
         override val policy: IRelayPolicy = EmptyPolicy
         override val authenticatedUsers: Set<HexKey> = emptySet()
     }
@@ -85,6 +95,32 @@ class LiveEventStoreDedupeTest {
         ) = onComplete(IEventStore.InsertOutcome.Accepted)
 
         override fun hasBacklog() = false
+
+        override fun close() {}
+    }
+
+    /**
+     * Accepts, but holds each outcome until [release]: the event is already in the store, so
+     * a replay can read it before its fan-out runs — the window between a commit and its
+     * callback.
+     */
+    private class HeldIngest : EventIngest {
+        val held = mutableListOf<() -> Unit>()
+
+        override suspend fun submit(
+            event: Event,
+            skipVerify: Boolean,
+            onComplete: (IEventStore.InsertOutcome) -> Unit,
+        ) {
+            held.add { onComplete(IEventStore.InsertOutcome.Accepted) }
+        }
+
+        fun release() {
+            held.forEach { it() }
+            held.clear()
+        }
+
+        override fun hasBacklog() = held.isNotEmpty()
 
         override fun close() {}
     }
@@ -141,6 +177,93 @@ class LiveEventStoreDedupeTest {
 
             store.gate.complete(Unit)
             eose.await()
+            req.cancel()
+
+            assertEquals(listOf(note.id), received)
+            store.close()
+        }
+
+    @Test
+    fun eventReplayedBeforeItsFanoutRanIsDeliveredOnce() = replayedBeforeFanout(Ctx, null)
+
+    @Test
+    fun eventReplayedBeforeItsFanoutRanIsDeliveredOnceOnAnExecutor() = FanoutExecutorTest.QueueExecutor().let { replayedBeforeFanout(ExecutorCtx(it), it) }
+
+    /**
+     * The event is committed while the replay is held, the replay reads it and reaches EOSE,
+     * and only then does its accept callback fan it out. The live copy must not repeat it.
+     */
+    private fun replayedBeforeFanout(
+        ctx: RequestContext,
+        executor: FanoutExecutorTest.QueueExecutor?,
+    ) = runTest {
+        val store = GatedStore(EventStore(null))
+        val ingest = HeldIngest()
+        val live = LiveEventStore(store, ingest)
+        val received = mutableListOf<String>()
+        val eose = CompletableDeferred<Unit>()
+
+        val req =
+            launch {
+                live.queryRaw(
+                    ctx,
+                    listOf(Filter(kinds = listOf(TextNoteEvent.KIND))),
+                    onEachStored = { received.add(it.id) },
+                    onEachLive = { event, _ -> received.add(event.id) },
+                    onEose = { eose.complete(Unit) },
+                )
+            }
+        store.replayStarted.await()
+
+        val note = signer.sign<TextNoteEvent>(TextNoteEvent.build("hi"))
+        store.inner.insert(note)
+        live.submit(note) {}
+
+        store.gate.complete(Unit)
+        eose.await()
+        executor?.drain()
+        ingest.release()
+        executor?.drain()
+
+        // Still live afterwards: a new event reaches the subscription.
+        val next = signer.sign<TextNoteEvent>(TextNoteEvent.build("again"))
+        live.submit(next) {}
+        ingest.release()
+        executor?.drain()
+        req.cancel()
+
+        assertEquals(listOf(note.id, next.id), received)
+        store.close()
+    }
+
+    @Test
+    fun eventAcceptedMidReplayIsDeliveredOnceOnAnExecutor() =
+        runTest {
+            val executor = FanoutExecutorTest.QueueExecutor()
+            val store = GatedStore(EventStore(null))
+            val live = LiveEventStore(store, AcceptingIngest)
+            val received = mutableListOf<String>()
+            val eose = CompletableDeferred<Unit>()
+
+            val req =
+                launch {
+                    live.queryRaw(
+                        ExecutorCtx(executor),
+                        listOf(Filter(kinds = listOf(TextNoteEvent.KIND))),
+                        onEachStored = { received.add(it.id) },
+                        onEachLive = { event, _ -> received.add(event.id) },
+                        onEose = { eose.complete(Unit) },
+                    )
+                }
+            store.replayStarted.await()
+
+            val note = signer.sign<TextNoteEvent>(TextNoteEvent.build("hi"))
+            store.inner.insert(note)
+            live.submit(note) {}
+
+            store.gate.complete(Unit)
+            eose.await()
+            executor.drain()
             req.cancel()
 
             assertEquals(listOf(note.id), received)

@@ -61,6 +61,28 @@ same `String` instance for every subscription it reaches, so the transport can e
 once and reuse them. Stored replays, and every frame under a policy that filters outgoing events,
 still use `raw`/`message`.
 
+A multi-threaded transport can also say which thread delivers a sink's live frames by overriding
+`liveExecutor` with a `FanoutExecutor`: on Netty, the channel's event loop, as one instance per loop
+shared by every sink on it. `NostrServer` then keeps one partition of its live index per executor
+and hands each accepted event, once, to each executor with a subscription it may match. That task
+matches the executor's own subscriptions and calls their sinks on its thread, so the ingest thread
+never walks the subscriptions and the sink can write without a cross-thread queue. `execute` must
+queue its task (never run it inline) and run tasks one at a time, in order. Sinks that declare no
+executor get their live frames on the thread that accepted the event, as before.
+
+```kotlin
+class LoopSessions(private val loop: EventLoop) : FanoutExecutor {
+    override fun execute(task: () -> Unit) = loop.execute(task)
+}
+
+class SocketSink(private val channel: Channel, override val liveExecutor: LoopSessions) : LiveFrameSink {
+    override fun liveEvent(framePrefix: String, body: String) {
+        // Called on channel.eventLoop(): write directly.
+    }
+    // message/raw still arrive from the engine's coroutines.
+}
+```
+
 ## Event Store
 
 ### SQLite (Persistent)
@@ -477,6 +499,7 @@ quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/nip01Core/
 │   ├── RelaySession.kt         # Per-connection handler (stable .id)
 │   ├── SessionSink.kt          # Where a session's frames go (typed or raw)
 │   ├── LiveFrameSink.kt        # Optional: live EVENT frames as prefix + shared body
+│   ├── FanoutExecutor.kt       # Optional: the thread that delivers a sink's live frames
 │   ├── ConnectionRegistry.kt   # Live-connection bookkeeping + gauge
 │   ├── RelayServerListener.kt  # Connection open/close observability hook
 │   ├── NegSessionRegistry.kt   # NIP-77 negentropy per-connection state

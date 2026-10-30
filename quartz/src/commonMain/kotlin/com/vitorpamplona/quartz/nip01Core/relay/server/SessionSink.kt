@@ -40,6 +40,15 @@ interface SessionSink {
     /** A frame already in wire JSON: an `EVENT` spliced from stored or live text. */
     fun raw(json: String)
 
+    /**
+     * The thread that should deliver this sink's live `EVENT` frames, or null (the default) to
+     * have them delivered from whatever thread accepted the event. With one, a storage-backed
+     * relay hands each accepted event once to the executor and calls [raw] or
+     * [LiveFrameSink.liveEvent] for live frames on its thread; stored replays and every other
+     * frame still arrive from the engine's coroutines. Read once, when the connection opens.
+     */
+    val liveExecutor: FanoutExecutor? get() = null
+
     companion object {
         /** Every frame to [send] as wire JSON, which is all a socket wants. */
         fun of(send: (String) -> Unit): SessionSink =

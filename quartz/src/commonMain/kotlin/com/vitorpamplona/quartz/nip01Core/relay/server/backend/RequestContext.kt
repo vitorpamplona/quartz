@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.server.backend
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.relay.server.FanoutExecutor
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
 
 /**
@@ -77,4 +78,12 @@ interface RequestContext {
      * to [connectionId].
      */
     val clientAddress: String? get() = null
+
+    /**
+     * The executor that delivers this connection's live events, from its sink's
+     * [com.vitorpamplona.quartz.nip01Core.relay.server.SessionSink.liveExecutor]. A backend
+     * with a live tail calls its live callbacks on it; null (the default) calls them on
+     * whatever thread accepted the event.
+     */
+    val liveExecutor: FanoutExecutor? get() = null
 }

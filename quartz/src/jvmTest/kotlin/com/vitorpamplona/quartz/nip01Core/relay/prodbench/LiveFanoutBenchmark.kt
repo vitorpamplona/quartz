@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EoseMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.EventCmd
+import com.vitorpamplona.quartz.nip01Core.relay.server.FanoutExecutor
 import com.vitorpamplona.quartz.nip01Core.relay.server.LiveFrameSink
 import com.vitorpamplona.quartz.nip01Core.relay.server.NostrServer
 import com.vitorpamplona.quartz.nip01Core.relay.server.RelaySession
@@ -55,7 +56,8 @@ import kotlin.test.assertEquals
  *
  * Each connection's sink is a [LiveFrameSink] that writes a frame on its loop. A frame that
  * arrives on another thread is handed to the loop as one task per frame, which is what a
- * Netty `channel.write` from outside the loop does.
+ * Netty `channel.write` from outside the loop does. In [Mode.EXECUTOR] the sinks declare their
+ * loop as their [FanoutExecutor], so frames arrive on the loop and are written directly.
  *
  * Reports, per delivery: wall-clock ns, CPU ns summed over every thread, and bytes allocated
  * summed over every thread (`ThreadMXBean`, so transient garbage counts). Also the publisher's
@@ -94,6 +96,12 @@ class LiveFanoutBenchmark {
                 }
             }
 
+        /** The loop as a [FanoutExecutor]: one instance per loop, shared by its sinks. */
+        val fanout =
+            object : FanoutExecutor {
+                override fun execute(task: () -> Unit) = executor.execute(task)
+            }
+
         @Volatile
         var frames = 0L
         var bytes = 0L
@@ -113,6 +121,7 @@ class LiveFanoutBenchmark {
         val label: String,
     ) {
         CROSS_THREAD("frames handed to the loop per delivery"),
+        EXECUTOR("sinks declare their loop as FanoutExecutor"),
     }
 
     private open class LoopSink(
@@ -257,6 +266,14 @@ class LiveFanoutBenchmark {
         eoses: AtomicInteger,
     ): LiveFrameSink =
         when (mode) {
-            Mode.CROSS_THREAD -> LoopSink(loop, eoses)
+            Mode.CROSS_THREAD -> {
+                LoopSink(loop, eoses)
+            }
+
+            Mode.EXECUTOR -> {
+                object : LoopSink(loop, eoses) {
+                    override val liveExecutor = loop.fanout
+                }
+            }
         }
 }
