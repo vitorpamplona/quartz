@@ -72,6 +72,16 @@ class InProcessRelays(
 
     fun getOrCreate(url: String): TestRelay = getOrCreate(RelayUrlNormalizer.normalize(url))
 
+    /**
+     * Serves [relay] (one built with its own store or policy) at its url. Fails when that url
+     * already has a relay, rather than leaking the one it would replace.
+     */
+    fun register(relay: TestRelay): TestRelay {
+        check(!closed) { "InProcessRelays has been closed" }
+        check(relays.putIfAbsent(relay.url, relay) == null) { "${relay.url.url} already has a relay" }
+        return relay
+    }
+
     fun get(url: NormalizedRelayUrl): TestRelay? = relays[url]
 
     fun urls(): Set<NormalizedRelayUrl> = relays.keys.toSet()

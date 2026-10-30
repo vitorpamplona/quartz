@@ -170,6 +170,15 @@ by a store passes a `NegentropyLocalIndex` instead: `NegentropyLocalIndex.of(sto
 each window from the `IEventStore` (`count` + `snapshotIdsForNegentropy`), so memory is one
 window's ids; `NegentropyLocalIndex.of(entries)` is the in-memory form. Wrap either for metering.
 
+To keep a store in sync with relays (both directions, deletions, page fallback), use
+`NegentropyStoreSync(client, store, Config(...)).sync(filtersByRelay)` or `.syncGroup(relay,
+filter)` instead of composing the above. For pushing a store upstream: `shareSnapshots` takes
+one id snapshot per filter for every relay (or pass one to `syncGroup(relay, filter,
+localEntries)`), `uploadAfterReconcile` uploads only after the NIP-77 session closes, and
+`uploadWindow` + `uploadDeadlineMs` stream uploads through `publishStream` and bound a pass, so
+a relay that never answers `OK` costs one idle wait, not one per event
+(`GroupResult.uploadsLeft` counts what the next pass still owes).
+
 `reconcileStreaming`, `syncPipeline` in `NostrClientNegentropySyncExt` are
 implementation details — not part of the public surface.
 

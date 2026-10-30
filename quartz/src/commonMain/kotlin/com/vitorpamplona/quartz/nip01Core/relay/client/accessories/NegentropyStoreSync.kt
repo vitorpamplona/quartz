@@ -26,18 +26,27 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
+import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.verifyAndInsert
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * Two-pass NIP-77 sync of ANY filter set between a relay and a local [IEventStore],
@@ -101,6 +110,26 @@ class NegentropyStoreSync(
      *   indexed count + range read per window. Worth turning on exactly when the
      *   filter matches more than fits comfortably in memory; pointless below
      *   that, where one snapshot shared by the whole group is cheaper.
+     * @param shareSnapshots in [sync], take ONE id snapshot per distinct filter and hand it to
+     *   every relay that syncs that filter, instead of one per `(relay, filter)` group. A mirror
+     *   pushing one stream to several upstreams reads its store once per pass rather than once
+     *   per upstream; each snapshot is held until [sync] returns, so the memory is one snapshot
+     *   per distinct filter for the whole call. Ignored with a [targetWindow] (there is no
+     *   snapshot then). A caller sharing snapshots its own way passes one to [syncGroup].
+     * @param uploadAfterReconcile collect the haves (ids only) while the NIP-77 session runs and
+     *   upload them after it closes. By default uploads run beside the session through a
+     *   bounded queue, so a slow upload back-pressures the open session, and a relay that is
+     *   slow to take events can time out its own reconcile. Costs the have-set's ids in memory.
+     * @param uploadWindow `0` (the default) uploads one event at a time with [publishAndConfirm],
+     *   each waiting up to [publishTimeoutSecs] for its OK. Above zero, uploads stream through
+     *   [publishStream] with that many awaiting their OK at once: one listener for the batch,
+     *   and the [idleTimeoutMs] wait runs once over the relay's silence instead of once per
+     *   event. A relay that stops answering stalls the stream once, and the group stops
+     *   uploading to it (the rest count in [GroupResult.uploadsLeft]).
+     * @param uploadDeadlineMs `0` for none. Above zero, a wall-clock budget for one group's
+     *   uploads: past it the group stops publishing (the reconcile still runs to the end) and
+     *   counts the haves it did not get to in [GroupResult.uploadsLeft], so a pass against a
+     *   relay that never OKs ends instead of stretching to `haves × publishTimeoutSecs`.
      */
     class Config(
         val down: Boolean = true,
@@ -115,7 +144,41 @@ class NegentropyStoreSync(
         val idleTimeoutMs: Long = 30_000L,
         val publishTimeoutSecs: Long = 15,
         val targetWindow: Int = 0,
-    )
+        val shareSnapshots: Boolean = false,
+        val uploadAfterReconcile: Boolean = false,
+        val uploadWindow: Int = 0,
+        val uploadDeadlineMs: Long = 0,
+    ) {
+        @Deprecated("Kept for binary compatibility; use the constructor with the upload options.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            down: Boolean = true,
+            up: Boolean = false,
+            syncDeletions: Boolean = true,
+            pageFallback: Boolean = true,
+            idChunk: Int = 500,
+            downloadWorkers: Int = 4,
+            reconcileConcurrency: Int = 2,
+            maxDeletionRounds: Int = 4,
+            concurrency: Int = 4,
+            idleTimeoutMs: Long = 30_000L,
+            publishTimeoutSecs: Long = 15,
+            targetWindow: Int = 0,
+        ) : this(
+            down,
+            up,
+            syncDeletions,
+            pageFallback,
+            idChunk,
+            downloadWorkers,
+            reconcileConcurrency,
+            maxDeletionRounds,
+            concurrency,
+            idleTimeoutMs,
+            publishTimeoutSecs,
+            targetWindow,
+            shareSnapshots = false,
+        )
+    }
 
     /** Outcome of one `(relay, filter)` group. `error` is null on success. */
     class GroupResult(
@@ -130,7 +193,26 @@ class NegentropyStoreSync(
         /** True when negentropy couldn't reconcile and the filter was paged instead. */
         val pagedFallback: Boolean,
         val error: String?,
-    )
+        /**
+         * Haves this group did not publish because its [Config.uploadDeadlineMs] ran out or the
+         * relay stalled a [Config.uploadWindow] stream: what the next pass still has to send.
+         */
+        val uploadsLeft: Int = 0,
+    ) {
+        @Deprecated("Kept for binary compatibility; use the constructor with uploadsLeft.", level = DeprecationLevel.HIDDEN)
+        constructor(
+            relay: NormalizedRelayUrl,
+            filter: Filter,
+            need: Int,
+            have: Int,
+            downloaded: Int,
+            uploaded: Int,
+            deletionsSentUp: Int,
+            deletionsAppliedDown: Int,
+            pagedFallback: Boolean,
+            error: String?,
+        ) : this(relay, filter, need, have, downloaded, uploaded, deletionsSentUp, deletionsAppliedDown, pagedFallback, error, uploadsLeft = 0)
+    }
 
     /**
      * Sync every `(relay, filter)` in [filtersByRelay]: relays run up to
@@ -140,12 +222,45 @@ class NegentropyStoreSync(
     suspend fun sync(filtersByRelay: Map<NormalizedRelayUrl, List<Filter>>): List<GroupResult> {
         if (filtersByRelay.isEmpty()) return emptyList()
         val gate = Semaphore(config.concurrency.coerceAtLeast(1))
+        val snapshots = if (config.shareSnapshots && config.targetWindow <= 0) SharedSnapshots(store) else null
         return coroutineScope {
             filtersByRelay.entries
                 .map { (relay, filters) ->
-                    async { gate.withPermit { filters.map { syncGroupSafely(relay, it) } } }
+                    async { gate.withPermit { filters.map { syncGroupSafely(relay, it, snapshots) } } }
                 }.awaitAll()
                 .flatten()
+        }
+    }
+
+    /**
+     * One id snapshot per distinct filter, taken by the first group that needs it and handed to
+     * every other ([Config.shareSnapshots]). Keyed by the filter's JSON: [Filter] has no value
+     * equality, and two relays asked for the same filter must land on the same entry.
+     */
+    private class SharedSnapshots(
+        private val store: IEventStore,
+    ) {
+        private val lock = Mutex()
+        private val byFilter = HashMap<String, CompletableDeferred<List<IdAndTime>>>()
+
+        suspend fun of(filter: Filter): List<IdAndTime> {
+            val key = filter.toJson()
+            var mine = false
+            val slot =
+                lock.withLock {
+                    byFilter.getOrPut(key) { CompletableDeferred<List<IdAndTime>>().also { mine = true } }
+                }
+            if (mine) {
+                try {
+                    slot.complete(store.snapshotIdsForNegentropy(listOf(filter)))
+                } catch (e: Throwable) {
+                    // Let the next group try again rather than inherit this one's failure.
+                    lock.withLock { byFilter.remove(key) }
+                    slot.completeExceptionally(e)
+                    throw e
+                }
+            }
+            return slot.await()
         }
     }
 
@@ -157,9 +272,10 @@ class NegentropyStoreSync(
     private suspend fun syncGroupSafely(
         relay: NormalizedRelayUrl,
         filter: Filter,
+        snapshots: SharedSnapshots?,
     ): GroupResult =
         try {
-            syncGroup(relay, filter)
+            if (snapshots == null) syncGroup(relay, filter) else syncGroup(relay, filter, snapshots.of(filter))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -182,11 +298,31 @@ class NegentropyStoreSync(
         // biggest thing this class allocates, and it is allocated before the
         // first frame goes out.
         val windowed = config.targetWindow > 0
-        val localIndex = if (windowed) NegentropyLocalIndex.of(store) else null
-        val localEntries = if (windowed) emptyList() else store.snapshotIdsForNegentropy(listOf(filter))
+        return runGroup(relay, filter, if (windowed) null else store.snapshotIdsForNegentropy(listOf(filter)))
+    }
+
+    /**
+     * [syncGroup] against an id snapshot the caller already holds: [localEntries] must be
+     * [IEventStore.snapshotIdsForNegentropy] of [filter] on this store, taken once and shared by
+     * however many relays the caller syncs it with (a stream pushed to several upstreams). The
+     * snapshot is never modified, so one list can serve concurrent groups.
+     */
+    suspend fun syncGroup(
+        relay: NormalizedRelayUrl,
+        filter: Filter,
+        localEntries: List<IdAndTime>,
+    ): GroupResult = runGroup(relay, filter, localEntries)
+
+    private suspend fun runGroup(
+        relay: NormalizedRelayUrl,
+        filter: Filter,
+        snapshot: List<IdAndTime>?,
+    ): GroupResult {
+        val localIndex = if (snapshot == null) NegentropyLocalIndex.of(store) else null
+        val localEntries = snapshot ?: emptyList()
 
         val downloaded = AtomicInt(0)
-        val uploaded = AtomicInt(0)
+        val uploads = Uploads(relay)
 
         val reconcileResult =
             try {
@@ -210,14 +346,14 @@ class NegentropyStoreSync(
                                 }
                             }
                         }
+                    // With uploadAfterReconcile the haves only collect here (ids, never events)
+                    // and go up once the session has closed; otherwise this uploader drains them
+                    // beside the session.
+                    val deferredHaves = if (config.uploadAfterReconcile) ArrayList<HexKey>() else null
                     val uploader =
                         launch {
                             for (batch in haveBatches) {
-                                // Fetch just the residual haves from the store (not the
-                                // whole matched set) and publish them up.
-                                for (ev in store.query<Event>(Filter(ids = batch))) {
-                                    if (client.publishAndConfirm(ev, setOf(relay), config.publishTimeoutSecs)) uploaded.addAndFetch(1)
-                                }
+                                if (deferredHaves != null) deferredHaves.addAll(batch) else uploads.send(batch)
                             }
                         }
 
@@ -242,6 +378,7 @@ class NegentropyStoreSync(
 
                     downloaders.joinAll()
                     uploader.join()
+                    deferredHaves?.let { haves -> haves.chunked(config.idChunk.coerceAtLeast(1)).forEach { uploads.send(it) } }
                     result
                 }
             } catch (e: NegentropySyncException) {
@@ -260,7 +397,7 @@ class NegentropyStoreSync(
                         }
                 }
                 log("[store-sync] ${relay.url}: paged fallback, ${downloaded.load()} stored${pageError?.let { " (error: $it)" } ?: ""}")
-                return GroupResult(relay, filter, 0, 0, downloaded.load(), uploaded.load(), 0, 0, pagedFallback = true, error = pageError)
+                return GroupResult(relay, filter, 0, 0, downloaded.load(), uploads.uploaded, 0, 0, pagedFallback = true, error = pageError, uploadsLeft = uploads.left)
             }
 
         val deletions =
@@ -281,7 +418,8 @@ class NegentropyStoreSync(
             }
 
         log(
-            "[store-sync] ${relay.url}: down ${downloaded.load()}, up ${uploaded.load()}, " +
+            "[store-sync] ${relay.url}: down ${downloaded.load()}, up ${uploads.uploaded}" +
+                (if (uploads.left > 0) " (${uploads.left} left)" else "") + ", " +
                 "del↑ ${deletions?.sentUp ?: 0}, del↓ ${deletions?.appliedDown ?: 0}",
         )
         return GroupResult(
@@ -290,12 +428,66 @@ class NegentropyStoreSync(
             need = reconcileResult.needCount,
             have = reconcileResult.haveCount,
             downloaded = downloaded.load(),
-            uploaded = uploaded.load(),
+            uploaded = uploads.uploaded,
             deletionsSentUp = deletions?.sentUp ?: 0,
             deletionsAppliedDown = deletions?.appliedDown ?: 0,
             pagedFallback = false,
             error = null,
+            uploadsLeft = uploads.left,
         )
+    }
+
+    /**
+     * One group's uploads to [relay]: fetches each batch of have-ids from the store and publishes
+     * it, one confirmed event at a time ([Config.uploadWindow] `0`) or as a windowed stream, until
+     * [Config.uploadDeadlineMs] runs out or the relay stalls a stream. After that every batch is
+     * only counted ([left]), never sent, so the reconcile feeding it still drains. Used by one
+     * coroutine at a time (the uploader, then the deferred flush after it has joined).
+     */
+    private inner class Uploads(
+        private val relay: NormalizedRelayUrl,
+    ) {
+        private val deadline: TimeMark? = if (config.uploadDeadlineMs > 0) TimeSource.Monotonic.markNow() + config.uploadDeadlineMs.milliseconds else null
+        private var stopped = false
+        private val accepted = AtomicInt(0)
+        private val skipped = AtomicInt(0)
+
+        val uploaded: Int get() = accepted.load()
+        val left: Int get() = skipped.load()
+
+        private fun outOfTime() = stopped || deadline?.hasPassedNow() == true
+
+        suspend fun send(ids: List<HexKey>) {
+            if (outOfTime()) {
+                skipped.addAndFetch(ids.size)
+                return
+            }
+            // Fetch just the residual haves from the store (not the whole matched set).
+            val events = store.query<Event>(Filter(ids = ids))
+            if (config.uploadWindow <= 0) {
+                for ((i, event) in events.withIndex()) {
+                    if (outOfTime()) {
+                        skipped.addAndFetch(events.size - i)
+                        return
+                    }
+                    if (client.publishAndConfirm(event, setOf(relay), config.publishTimeoutSecs)) accepted.addAndFetch(1)
+                }
+            } else {
+                val answered = AtomicInt(0)
+                val stream =
+                    suspend {
+                        client.publishStream(relay, events.asFlow(), config.uploadWindow, config.idleTimeoutMs) { _, result ->
+                            if (!result.isTransportFailure) answered.addAndFetch(1)
+                            if (result.accepted) accepted.addAndFetch(1)
+                        }
+                    }
+                val outcome = if (deadline == null) stream() else withTimeoutOrNull(-deadline.elapsedNow()) { stream() }
+                if (outcome == null || outcome.stalled) {
+                    stopped = true
+                    skipped.addAndFetch(events.size - answered.load())
+                }
+            }
+        }
     }
 
     /**
