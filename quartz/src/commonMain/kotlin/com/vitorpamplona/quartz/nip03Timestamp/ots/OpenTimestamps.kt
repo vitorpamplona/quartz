@@ -174,7 +174,7 @@ class OpenTimestamps(
             }
 
         if (responses.isEmpty()) {
-            throw UrlException("No calendar accepted the timestamp: " + (lastError?.message ?: "no calendars"))
+            throw UrlException("No calendar accepted the timestamp: " + (lastError?.message ?: "no calendar answered in time"))
         }
 
         responses.forEach {

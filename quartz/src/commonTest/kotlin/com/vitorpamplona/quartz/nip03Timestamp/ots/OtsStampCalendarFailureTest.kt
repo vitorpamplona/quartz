@@ -24,10 +24,12 @@ import com.vitorpamplona.quartz.nip03Timestamp.OtsResolver
 import com.vitorpamplona.quartz.nip03Timestamp.ots.attestation.PendingAttestation
 import com.vitorpamplona.quartz.nip03Timestamp.ots.exceptions.UrlException
 import com.vitorpamplona.quartz.nip03Timestamp.ots.op.OpSHA256
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * Stamping asks several calendars at once. A calendar that is down (or a Tor proxy that is not
@@ -40,11 +42,13 @@ class OtsStampCalendarFailureTest {
 
     private class FakeCalendar(
         val reachable: Set<String>,
+        val hanging: Set<String> = emptySet(),
     ) : RemoteCalendar {
         override suspend fun submit(
             url: String,
             digest: ByteArray,
         ): Timestamp {
+            if (url in hanging) delay(10 * 60_000L)
             if (url !in reachable) throw UrlException("Failed to open $url")
             return Timestamp(digest).apply { attestations.add(PendingAttestation(url.encodeToByteArray())) }
         }
@@ -76,6 +80,20 @@ class OtsStampCalendarFailureTest {
     fun failsWithUrlExceptionWhenNoCalendarAnswers() =
         runTest {
             assertFailsWith<UrlException> { stamp(FakeCalendar(reachable = emptySet())) }
+        }
+
+    @Test
+    fun aHangingCalendarIsDroppedAtTheTimeout() =
+        runTest {
+            val file = stamp(FakeCalendar(reachable = setOf(up, down), hanging = setOf(down)))
+            assertEquals(listOf(up), file.timestamp.pending().map { it.uri.decodeToString() })
+        }
+
+    @Test
+    fun allCalendarsHangingFailsWithUrlException() =
+        runTest {
+            val e = assertFailsWith<UrlException> { stamp(FakeCalendar(reachable = setOf(up, down), hanging = setOf(up, down))) }
+            assertTrue(e.message!!.contains("in time"), e.message)
         }
 
     @Test

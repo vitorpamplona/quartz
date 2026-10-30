@@ -151,7 +151,9 @@ suspend fun <T, K> mapNotNullAsync(
         }
 
         jobs.mapNotNull {
-            if (it.isCompleted) {
+            // The cancel above runs concurrently: a job it already cancelled reads as completed,
+            // and getCompleted() would throw its CancellationException out of this scope.
+            if (it.isCompleted && !it.isCancelled) {
                 it.getCompleted()
             } else {
                 null
