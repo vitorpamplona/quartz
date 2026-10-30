@@ -143,6 +143,10 @@ suspend fun post(client: NostrClient) {
   names): `event.addressTagOrNull()` (`kind:pubkey:d`) or `event.addressOrNull()` (`Address`) in
   `nip01Core.core`. Dispatched on the kind, so it works on a plain `Event` too; null for regular
   and ephemeral kinds. `event.supersedes(other)` is the NIP-01 winner rule (newest, then lowest id).
+- **What a pointer event is about** (a NIP-32 label's targets, a NIP-85 assertion's `d` subject, a
+  Trusted List's members with their scores, a NIP-51 people list's `p`s):
+  `SubjectReferences.of(event)` in `nip01Core.hints`, kind-dispatched, values canonical. Mentions
+  and threading links are the hint providers' (`linkedPubKeys()`, …), not subjects.
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
