@@ -637,6 +637,31 @@ val socketBuilder = BasicOkHttpWebSocket.Builder { url -> httpClient }
 val client = NostrClient(socketBuilder, scope)
 ```
 
+### Holding many relays at once
+
+An open OkHttp websocket holds one `Dispatcher` slot, and one thread, until it closes. With the
+default `maxRequests` of 64, every relay past the 64th waits in OkHttp's queue with no error, so size
+it above the most sockets you hold at once. Resolve through `SurgeDns`: it caches answers, so a
+reconnect resolves nothing, and its default `BoundedDns` asks at most 64 names at once, because a
+resolver handed one lookup per relay in the same instant drops a share of them.
+
+```kotlin
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.SurgeDns
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
+
+val fleetHttpClient = OkHttpClient.Builder()
+    .dispatcher(Dispatcher().apply { maxRequests = 4096; maxRequestsPerHost = 20 })
+    .dns(SurgeDns())
+    .build()
+
+val fleetClient = NostrClient(BasicOkHttpWebSocket.Builder { fleetHttpClient }, scope)
+```
+
+On JDK 21 or newer (not Android), `Dispatcher(Executors.newVirtualThreadPerTaskExecutor())` keeps
+each socket's thread from being a platform thread that the dialing caller has to start.
+
 ## Full Example: Simple Feed Reader
 
 ```kotlin
