@@ -226,7 +226,8 @@ class NostrClient(
             )
     }
 
-    val refreshConnection = MutableStateFlow(Reconnect(false, false))
+    // Starts on the routine reconnect: a full one at the first tick redialed what a subscription made at start had dialed.
+    val refreshConnection = MutableStateFlow(Reconnect(onlyIfChanged = true, ignoreRetryDelays = false))
 
     /**
      * Every [reconnect] since the debounce last fired, merged. The debounce only delivers
@@ -375,6 +376,7 @@ class NostrClient(
         val relaysToUpdate = activeRequests.addOrUpdate(subId, filters, listener)
 
         if (isActive()) {
+            joinPool(filters)
             activeRequests.sendToRelayIfChanged(subId, relaysToUpdate) { relay, cmd ->
                 if (cmd is CloseCmd || cmd is AuthCmd) {
                     relayPool.sendIfConnected(relay, cmd)
@@ -391,6 +393,16 @@ class NostrClient(
         }
     }
 
+    /**
+     * Adds every relay [filters] asks something of to the pool in one membership change. The send
+     * below would add each on its own, and every addition republishes the whole membership: a
+     * subscription over a few thousand relays spent most of its call copying it.
+     */
+    private fun joinPool(filters: Map<NormalizedRelayUrl, List<Filter>>) {
+        if (filters.size < 2) return
+        relayPool.addAllRelays(filters.mapNotNull { (relay, asks) -> relay.takeIf { asks.isNotEmpty() } })
+    }
+
     override fun count(
         subId: String,
         filters: Map<NormalizedRelayUrl, List<Filter>>,
@@ -398,6 +410,7 @@ class NostrClient(
         val relaysToUpdate = activeCounts.addOrUpdate(subId, filters)
 
         if (isActive()) {
+            joinPool(filters)
             activeCounts.sendToRelayIfChanged(subId, relaysToUpdate) { relay, cmd ->
                 if (cmd is CloseCmd || cmd is AuthCmd) {
                     relayPool.sendIfConnected(relay, cmd)
