@@ -151,6 +151,7 @@ class NamecoinNameResolverExceptionTest {
                             override suspend fun nameShowWithFallback(
                                 identifier: String,
                                 servers: List<ElectrumxServer>,
+                                hedgeDelayMs: Long,
                             ): NameShowResult? = throw NamecoinLookupException.ServersUnreachable(RuntimeException("simulated"))
                         },
                     lookupTimeoutMs = 500L,
@@ -166,6 +167,7 @@ class NamecoinNameResolverExceptionTest {
             override suspend fun nameShowWithFallback(
                 identifier: String,
                 servers: List<ElectrumxServer>,
+                hedgeDelayMs: Long,
             ): NameShowResult? = throw exception
         }
 }

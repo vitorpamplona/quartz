@@ -84,6 +84,7 @@ class CompositeNamecoinBackend(
     override suspend fun nameShowWithFallback(
         identifier: String,
         servers: List<ElectrumxServer>,
+        hedgeDelayMs: Long,
     ): NameShowResult? {
         val chain = buildChain()
         var lastUnreachable: NamecoinLookupException.ServersUnreachable? = null
