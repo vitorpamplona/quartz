@@ -53,7 +53,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * are inserted.
  *
  * Live fanout from [submit] / [insert] to interested subscribers is index-driven via
- * [FilterIndex]: each [query] registers its filters; on accepted ingest the index returns
+ * [FilterIndex]: each REQ ([openSubscription], or [query] / [queryRaw]) registers its
+ * filters; on accepted ingest the index returns
  * the (much smaller) candidate set and we deliver only to those whose filters actually
  * match. This avoids the quadratic O(N_subscribers × N_filters_per_sub) per-event walk
  * that a SharedFlow-based broadcast would do. The index is partitioned by the
@@ -87,7 +88,7 @@ class LiveEventStore(
      * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
      * the thread that accepted the event, as before executors existed.
      */
-    private val inline = Partition(null)
+    private val unpartitioned = Partition(null)
 
     /**
      * One partition per [FanoutExecutor] that holds subscriptions, copy-on-write. There are
@@ -102,7 +103,7 @@ class LiveEventStore(
     /** Live subscriptions registered right now: open REQs, including ones still replaying. */
     val liveSubscriptionCount: Int
         get() {
-            var n = inline.index.size()
+            var n = unpartitioned.index.size()
             for (partition in partitions.load()) n += partition.index.size()
             return n
         }
@@ -549,7 +550,7 @@ class LiveEventStore(
      */
     private fun fanout(event: Event) {
         var body: SharedBody? = null
-        val local = inline.index.candidatesFor(event)
+        val local = unpartitioned.index.candidatesFor(event)
         if (local.isNotEmpty()) {
             body = SharedBody(event)
             deliver(local, event, body)
@@ -581,8 +582,8 @@ class LiveEventStore(
     }
 
     /**
-     * Registers [filters] in the partition of the connection's executor (the inline one when
-     * it has none) and returns the subscription. Complete once this returns: an event accepted
+     * Registers [filters] in the partition of the connection's executor (the [unpartitioned] one
+     * when it has none) and returns the subscription. Complete once this returns: an event accepted
      * from then on reaches it.
      */
     private fun register(
@@ -591,7 +592,7 @@ class LiveEventStore(
         listener: LiveListener,
     ): LiveSub {
         val executor = ctx.liveExecutor
-        val sub = LiveSub(filters, if (executor == null) inline else joinPartition(executor), listener, ctx)
+        val sub = LiveSub(filters, if (executor == null) unpartitioned else joinPartition(executor), listener, ctx)
         sub.partition.index.register(filters, sub)
         return sub
     }

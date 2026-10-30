@@ -66,7 +66,11 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * Represents an active session between a Nostr client and the relay.
- * Each one of these is a connection that can hold many subscriptions
+ * Each one of these is a connection that can hold many subscriptions.
+ *
+ * End it with [close]. On a [LiveSubscriptionBackend] a REQ whose replay is done lives in
+ * the backend's index rather than in [scope], so cancelling the scope alone leaves it
+ * registered and delivering.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class RelaySession(
@@ -111,11 +115,11 @@ class RelaySession(
         id: Long = nextConnectionId(),
     ) : this(store, policy, scope, SessionSink.of(onSend), onClose, negentropySettings, id)
 
-    /**
-     * Open REQs by sub id: a [LiveReq] when the backend is a [LiveSubscriptionBackend] (no
-     * coroutine once its replay is done), else the [Job] parked at the live tail.
-     */
-    private val subscriptions = LargeCache<String, Any>()
+    /** Open REQs by sub id. */
+    private val subscriptions = LargeCache<String, OpenReq>()
+
+    /** [sink] when it takes live frames in parts, decided once per connection. */
+    private val liveFrameSink = sink as? LiveFrameSink
 
     /**
      * The authenticated-identity store for this connection. The engine is the
@@ -155,19 +159,12 @@ class RelaySession(
 
     private fun cancelSubscription(subId: String): Boolean =
         subscriptions.remove(subId)?.let {
-            cancelEntry(it)
+            it.cancel()
             true
         } ?: false
 
-    private fun cancelEntry(entry: Any) {
-        when (entry) {
-            is LiveReq -> entry.cancel()
-            is Job -> entry.cancel()
-        }
-    }
-
     fun cancelAllSubscriptions() {
-        subscriptions.forEach { _, entry -> cancelEntry(entry) }
+        subscriptions.forEach { _, req -> req.cancel() }
         subscriptions.clear()
         negentropy.clear()
     }
@@ -189,16 +186,40 @@ class RelaySession(
         }
     }
 
-    /** [sendRaw] for a live `EVENT` frame, in parts, to a [LiveFrameSink]. */
+    /**
+     * A live `EVENT` frame whose [body] is already serialized (once per event, shared across
+     * every matching subscription). A [LiveFrameSink] takes the prefix and the shared body
+     * apart, so it can encode the body once per event across all its sockets; any other sink
+     * gets them spliced into one frame, with no per-event EventMessage or re-serialize.
+     */
     private fun sendLive(
         framePrefix: String,
         body: String,
     ) {
+        val parts = liveFrameSink
+        if (parts == null) {
+            sendRaw(
+                buildString(framePrefix.length + body.length + 1) {
+                    append(framePrefix)
+                    append(body)
+                    append(']')
+                },
+            )
+            return
+        }
         try {
-            (sink as LiveFrameSink).liveEvent(framePrefix, body)
+            parts.liveEvent(framePrefix, body)
         } catch (e: Exception) {
             Log.w("ClientSession") { "Failed to send to ${e.message}" }
         }
+    }
+
+    /** An event on the screened path: materialized, and sent only if the policy allows it. */
+    private fun sendScreened(
+        subId: String,
+        event: Event,
+    ) {
+        if (policy.canSendToSession(event)) send(EventMessage(subId, event))
     }
 
     override fun close() {
@@ -442,11 +463,11 @@ class RelaySession(
         // stored row is counted but never sent. Zero-decode path only: the screened path's
         // single `onEach` also carries live events accepted mid-replay, so stored rows can't
         // be told apart there, and a policy that vetoes rows could not honestly say "finish".
-        val probe = if (completenessHints && !policy.filtersOutgoingEvents) EoseCompletenessProbe.of(acceptedFilters) else null
+        val screened = policy.filtersOutgoingEvents
+        val probe = if (completenessHints && !screened) EoseCompletenessProbe.of(acceptedFilters) else null
         val filters = probe?.queryFilters ?: acceptedFilters
         val eose = { send(EoseMessage(cmd.subId, probe?.hints())) }
 
-        val screened = policy.filtersOutgoingEvents
         // The `["EVENT","<subId>",` prefix is built once per subscription, not per row.
         val framePrefix =
             if (screened) {
@@ -459,15 +480,16 @@ class RelaySession(
                 }
             }
 
+        val req = OpenReq(cmd.subId, framePrefix)
         val live = store as? LiveSubscriptionBackend
         if (live == null) {
-            subscriptions.put(cmd.subId, launchParkedReq(cmd.subId, filters, framePrefix, probe, eose))
+            req.replay = launchParkedReq(req, filters, probe, eose)
+            subscriptions.put(cmd.subId, req)
             return
         }
 
         // Registered before this returns, so the slot is in [subscriptions] before any
         // CLOSE can look for it; live events may already be arriving on the listener.
-        val req = LiveReq(cmd.subId, framePrefix)
         val subscription =
             try {
                 live.openSubscription(requestContext, filters, req)
@@ -484,22 +506,20 @@ class RelaySession(
         // free, so EVENT frames and EOSE go out without a scheduler hop
         // (SmallReqFloorBenchmark: the hop was most of the dispatch
         // slice on small REQs). The coroutine ends at EOSE: from then on
-        // the subscription is the [LiveReq] and its registration.
+        // the subscription is the [OpenReq] and its registration.
         val replay =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
+                    // A replay that ignores cancellation keeps producing rows after a
+                    // CLOSE: none of them, nor its EOSE, may reach the client.
                     if (framePrefix == null) {
                         // Screened path: every event is materialized so the
                         // policy can veto it per session.
                         subscription.replay(
-                            onEach = { event ->
-                                if (!req.closed && policy.canSendToSession(event)) send(EventMessage(cmd.subId, event))
-                            },
+                            onEach = { event -> if (!req.closed) sendScreened(cmd.subId, event) },
                             onEose = { if (!req.closed) eose() },
                         )
                     } else {
-                        // A replay that ignores cancellation keeps producing rows after a
-                        // CLOSE: none of them, nor its EOSE, may reach the client.
                         subscription.replayRaw(
                             onEachStored = { raw -> if (!req.closed) sendStored(framePrefix, raw, probe) },
                             onEose = { if (!req.closed) eose() },
@@ -526,20 +546,23 @@ class RelaySession(
     }
 
     /**
-     * One open REQ on a [LiveSubscriptionBackend], and the listener its live events arrive
-     * on. After EOSE this and the backend's registration are all the REQ keeps.
+     * One open REQ, and the listener its live events arrive on. On a
+     * [LiveSubscriptionBackend] it holds the backend's registration, plus the replay coroutine
+     * until EOSE; after that it and the registration are all the REQ keeps. On any other
+     * backend it holds the coroutine parked at the live tail.
      *
      * @param framePrefix `["EVENT","<subId>",` on the zero-decode path; null when the policy
-     *   screens every event, so live events go out as [EventMessage]s after
+     *   screens every event, so events go out as [EventMessage]s after
      *   [IRelayPolicy.canSendToSession].
      */
-    private inner class LiveReq(
+    private inner class OpenReq(
         val subId: String,
         val framePrefix: String?,
     ) : LiveListener {
-        lateinit var subscription: LiveSubscription
+        /** The backend's registration, on a [LiveSubscriptionBackend]. */
+        var subscription: LiveSubscription? = null
 
-        /** The replay coroutine, until it ends. */
+        /** The replay coroutine until it ends, or the parked one on any other backend. */
         @Volatile
         var replay: Job? = null
 
@@ -551,17 +574,13 @@ class RelaySession(
             event: Event,
             body: String,
         ) {
-            when {
-                framePrefix == null -> if (policy.canSendToSession(event)) send(EventMessage(subId, event))
-                sink is LiveFrameSink -> sendLive(framePrefix, body)
-                else -> sendLiveRaw(framePrefix, body)
-            }
+            if (framePrefix == null) sendScreened(subId, event) else sendLive(framePrefix, body)
         }
 
         fun cancel() {
             closed = true
             replay?.cancel()
-            subscription.cancel()
+            subscription?.cancel()
         }
     }
 
@@ -583,32 +602,13 @@ class RelaySession(
     }
 
     /**
-     * A live event spliced into the subscription's frame prefix: its wire body is already
-     * serialized (once per event, shared across every matching subscription), so no
-     * per-event EventMessage or re-serialize.
-     */
-    private fun sendLiveRaw(
-        framePrefix: String,
-        body: String,
-    ) {
-        sendRaw(
-            buildString(framePrefix.length + body.length + 1) {
-                append(framePrefix)
-                append(body)
-                append(']')
-            },
-        )
-    }
-
-    /**
      * The REQ path for a backend that is not a [LiveSubscriptionBackend]: one coroutine per
      * subscription, parked inside [SessionBackend.queryRaw] / [SessionBackend.query] for the
      * live tail until cancelled. A finite backend returns after EOSE and the job completes.
      */
     private fun launchParkedReq(
-        subId: String,
+        req: OpenReq,
         filters: List<Filter>,
-        framePrefix: String?,
         probe: EoseCompletenessProbe?,
         eose: () -> Unit,
     ): Job =
@@ -618,15 +618,12 @@ class RelaySession(
         // sequentially, so nothing can target the sub earlier.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
+                val framePrefix = req.framePrefix
                 if (framePrefix == null) {
                     store.query(
                         ctx = requestContext,
                         filters = filters,
-                        onEach = { event ->
-                            if (policy.canSendToSession(event)) {
-                                send(EventMessage(subId, event))
-                            }
-                        },
+                        onEach = { event -> sendScreened(req.subId, event) },
                         onEose = { eose() },
                     )
                 } else {
@@ -634,22 +631,14 @@ class RelaySession(
                         ctx = requestContext,
                         filters = filters,
                         onEachStored = { raw -> sendStored(framePrefix, raw, probe) },
-                        // A LiveFrameSink takes the prefix and the shared
-                        // body apart, so it can encode the body once per
-                        // event across all its sockets.
-                        onEachLive =
-                            if (sink is LiveFrameSink) {
-                                { _, body -> sendLive(framePrefix, body) }
-                            } else {
-                                { _, body -> sendLiveRaw(framePrefix, body) }
-                            },
+                        onEachLive = { event, body -> req.onLive(event, body) },
                         onEose = { eose() },
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                send(ClosedMessage.of(subId, MachineReadablePrefix.ERROR, e.message ?: "query failed"))
+                send(ClosedMessage.of(req.subId, MachineReadablePrefix.ERROR, e.message ?: "query failed"))
             }
         }
 

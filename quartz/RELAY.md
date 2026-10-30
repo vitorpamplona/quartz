@@ -197,9 +197,18 @@ override fun openSubscription(ctx: RequestContext, filters: List<Filter>, onLive
     return object : LiveSubscription by inner {
         override suspend fun replayRaw(onEachStored: (RawEvent) -> Unit, onEose: () -> Unit) =
             timed { inner.replayRaw(onEachStored, onEose) }
+
+        // The path for sessions whose policy screens events: gate it too.
+        override suspend fun replay(onEach: (Event) -> Unit, onEose: () -> Unit) =
+            timed { inner.replay(onEach, onEose) }
     }
 }
 ```
+
+A REQ on this path lives in the index, not in a coroutine, once its replay ends: end a session
+with `RelaySession.close()` (the server classes do), since cancelling its scope no longer
+unregisters it. A `FanoutExecutor` owns the queue between the ingest and its thread (one task per
+accepted event it may deliver); bound it if a slow loop must not grow it without limit.
 
 `LiveEventStore.liveSubscriptionCount` reports how many REQs are registered.
 

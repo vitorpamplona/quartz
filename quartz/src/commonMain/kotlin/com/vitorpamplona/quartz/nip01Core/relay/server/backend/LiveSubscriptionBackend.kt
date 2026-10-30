@@ -33,7 +33,14 @@ import com.vitorpamplona.quartz.nip01Core.store.RawEvent
  * A separate interface on purpose: a wrapper written as `SessionBackend by inner` that
  * overrides `queryRaw` to gate or time reads stays on that path, instead of having this
  * method forwarded past its override. To wrap this path, implement it and decorate both the
- * [LiveListener] (live delivery) and the returned [LiveSubscription] (the replay).
+ * [LiveListener] (live delivery) and the returned [LiveSubscription] (both [LiveSubscription.replayRaw]
+ * and [LiveSubscription.replay]: the second serves sessions whose policy screens events).
+ * The same trap applies one level up: a wrapper declared `: LiveSubscriptionBackend by inner`
+ * that overrides only `queryRaw` has [openSubscription] forwarded past it.
+ *
+ * Once its replay ends, a REQ here lives only in the backend's index, not in a coroutine, so
+ * cancelling the session's scope no longer ends it: its owner must [LiveSubscription.cancel]
+ * it ([com.vitorpamplona.quartz.nip01Core.relay.server.RelaySession.close] does).
  */
 interface LiveSubscriptionBackend : SessionBackend {
     /**

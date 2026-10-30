@@ -191,9 +191,10 @@ class FilterIndex<S : Any> {
      * The index as it stood at one moment ([snapshot]). Immutable, so it can be
      * read on another thread later and still answer for that moment: a
      * subscriber registered afterwards is not in it, and one unregistered
-     * afterwards still is.
+     * afterwards still is. Sealed: only [FilterIndex] makes them, so members
+     * can be added later.
      */
-    interface Snapshot<S> {
+    sealed interface Snapshot<S> {
         fun isEmpty(): Boolean
 
         /** Same as [FilterIndex.candidatesFor], against this snapshot. */

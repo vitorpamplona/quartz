@@ -32,8 +32,9 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 interface EventIngest : AutoCloseable {
     /**
      * Takes [event] for writing and fires [onComplete] exactly once with its outcome,
-     * from any thread, in any order relative to other events. Suspends only to apply
-     * backpressure. [skipVerify] exempts an event from signature verification, for
+     * from any thread, in any order relative to other events. `Accepted` must mean the
+     * write is durable: the publisher's `OK true` goes out from this callback. Suspends
+     * only to apply backpressure. [skipVerify] exempts an event from signature verification, for
      * traffic from a source that already verified it.
      */
     suspend fun submit(

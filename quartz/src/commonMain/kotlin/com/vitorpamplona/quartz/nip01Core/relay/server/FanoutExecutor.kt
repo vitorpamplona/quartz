@@ -32,6 +32,11 @@ package com.vitorpamplona.quartz.nip01Core.relay.server
  *
  * The instance is the partition key: give every sink served by one thread the same instance
  * (one per event loop), not a new wrapper per connection.
+ *
+ * The executor owns the queue between the ingest and its thread: each accepted event it may
+ * deliver adds one task, holding the event and a snapshot of its subscriptions, so an executor
+ * that falls behind grows that queue at the ingest rate. Bound it if that matters; a task it
+ * refuses is logged and that event is not delivered to its subscriptions.
  */
 interface FanoutExecutor {
     /**
