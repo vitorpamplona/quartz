@@ -37,6 +37,7 @@ import com.vitorpamplona.quartz.nip34Git.repository.NostrCloneUrl
  */
 object GraspServer {
     /** ngit's default GRASP servers, used when the user has no kind:10317 list. */
+    @Deprecated("Quartz no longer picks GRASP servers: keep your own defaults. Removed in 3.0.0.")
     val DEFAULT_SERVERS = listOf("relay.ngit.dev", "gitnostr.com")
 
     /**

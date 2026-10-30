@@ -70,7 +70,7 @@ For tests / offline code, `EmptyNip05Client` is a no-op stub.
 | `Nip05Fetcher` / `OkHttpNip05Fetcher` | `Nip05Fetcher.kt`, `OkHttpNip05Fetcher.kt` (jvmAndroid) | Transport SAM. OkHttp actual disables redirects + runs on IO. |
 | `Nip05Parser` | `Nip05Parser.kt` | JSON `.well-known/nostr.json` codec: `parseHexKey`, `parseHexKeyAndRelays`, `parse` → `KeyInfoSet`, `parseClinkOffer`. |
 | `Nip05KeyInfo` / `KeyInfoSet` | `Nip05KeyInfo.kt`, `KeyInfoSet.kt` | `Nip05KeyInfo(pubkey, relays)`; `KeyInfoSet(names: Map, relays: Map)` = the full domain listing. |
-| `NamecoinNameResolver` | `namecoin/NamecoinNameResolver.kt` | `.bit` / `d/…` / `id/…` blockchain identifiers. `isNamecoinIdentifier(str)`, `resolve(str)`. Invoked automatically by `Nip05Client` — you rarely call it directly. |
+| `NamecoinNameResolver` | `namecoin/NamecoinNameResolver.kt` | `.bit` / `d/…` / `id/…` blockchain identifiers. `isNamecoinIdentifier(str)`, `resolve(str)`. Invoked automatically by `Nip05Client` — you rarely call it directly. Quartz ships no ElectrumX servers: the app passes `serverListProvider`, and each `ElectrumxServer` carries its own `pinnedCertsPem` (trusted for that server only). |
 
 ## When you only need the pure (synchronous, no-network) part
 

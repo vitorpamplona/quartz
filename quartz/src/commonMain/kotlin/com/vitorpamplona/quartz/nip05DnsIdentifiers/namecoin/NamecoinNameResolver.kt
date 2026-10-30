@@ -93,12 +93,25 @@ data class NamecoinNostrResult(
  * It is designed to be used alongside Amethyst's existing NIP-05
  * verifier: if an identifier ends with `.bit`, it should be routed
  * here instead of to the HTTP-based NIP-05 path.
+ *
+ * Quartz ships no ElectrumX server list: [serverListProvider] supplies the
+ * servers to query, in order, and is read on every lookup.
  */
 class NamecoinNameResolver(
     private val electrumxClient: IElectrumXClient,
     private val lookupTimeoutMs: Long = 20_000L,
-    private val serverListProvider: () -> List<ElectrumxServer> = { DEFAULT_ELECTRUMX_SERVERS },
+    private val serverListProvider: () -> List<ElectrumxServer>,
 ) {
+    @Suppress("DEPRECATION")
+    @Deprecated(
+        "Quartz no longer picks ElectrumX servers: pass serverListProvider. Removed in 3.0.0.",
+        ReplaceWith("NamecoinNameResolver(electrumxClient, lookupTimeoutMs, serverListProvider)"),
+    )
+    constructor(
+        electrumxClient: IElectrumXClient,
+        lookupTimeoutMs: Long = 20_000L,
+    ) : this(electrumxClient, lookupTimeoutMs, { DEFAULT_ELECTRUMX_SERVERS })
+
     private val json =
         Json {
             ignoreUnknownKeys = true
