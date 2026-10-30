@@ -1497,8 +1497,5 @@ private fun List<String>?.hasHint(hint: String) = this != null && contains(hint)
  */
 internal fun Filter.isRankedSearch(): Boolean {
     val query = SearchQuery.parse(search ?: return false)
-    return query.hasText || query.extension(OBSERVER_EXTENSION) != null
+    return query.hasText || query.extension(SearchQuery.OBSERVER) != null
 }
-
-/** search.brainstorm.world's trust-ranking token: `observer:<64-hex pubkey>`. Not a NIP-50 key. */
-private const val OBSERVER_EXTENSION = "observer"

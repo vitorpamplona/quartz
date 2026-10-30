@@ -128,7 +128,9 @@ profile fields space-joined; kind 30063 indexes release notes only for NIP-82 re
 - `nip50Search/SearchQuery.kt` — `SearchQuery.parse(search)` splits `terms` from
   `extensions`. A token is an extension iff it looks like `lowercasekey:value` with the value not
   starting with `//` (URLs stay text); duplicate keys keep the last; unknown keys are kept
-  (`extension(key)`). Typed: `includeSpam`, `domain`, `language`, `sentiment`, `nsfw`.
+  (`extension(key)`). Typed: `includeSpam`, `domain`, `language` (raw) / `languageCode` (primary
+  subtag, `pt-BR` → `pt`), `sentiment`, `nsfw`, and the non-NIP-50 `observer` (`SearchQuery.OBSERVER`,
+  64-hex lowercased or null; search.brainstorm.world's web-of-trust lens).
   `stripExtensions()` / `Filter.strippingSearchExtensions()` is what the built-in stores apply:
   unsupported extensions are ignored, so an extensions-only search is unconstrained. A store
   that implements extensions gets the raw string and should parse it with `SearchQuery.parse`.

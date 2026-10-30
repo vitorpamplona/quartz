@@ -334,6 +334,10 @@ q.domain       // "example.com"
 q.nsfwIncluded // false  (NIP-50 default is true when the token is absent)
 ```
 
+`q.languageCode` reads `language:pt-BR` as `pt`, and `q.observer` reads the non-NIP-50
+`observer:<pubkey>` lens (`SearchQuery.OBSERVER`) as 64 lowercase hex, or null when the value is
+not a hex pubkey. A web-of-trust store ranks by it the way it ranks by `StoreQueryContext`.
+
 `Filter.search` reaches every backend **verbatim**, extension tokens included
 — the relay layer never rewrites it. Which extensions are directives and which
 are noise is a property of the store, so the `IEventStore` contract puts the

@@ -66,7 +66,8 @@ import kotlin.coroutines.CoroutineContext
  * use outside a relay), so every read needs a null-tolerant fallback such
  * as an operator-configured default observer, or no gate at all. A store
  * whose lens can also come from the search string (an `observer:`
- * extension) decides which wins and documents it.
+ * extension, [com.vitorpamplona.quartz.nip50Search.SearchQuery.observer])
+ * decides which wins and documents it.
  */
 class StoreQueryContext(
     /**
