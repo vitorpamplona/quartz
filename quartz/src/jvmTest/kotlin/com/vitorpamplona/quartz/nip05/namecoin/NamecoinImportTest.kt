@@ -580,7 +580,6 @@ class NamecoinImportTest {
         override suspend fun nameShowWithFallback(
             identifier: String,
             servers: List<ElectrumxServer>,
-            hedgeDelayMs: Long,
         ): NameShowResult? {
             queriedNames += identifier
             val value = records[identifier] ?: return null

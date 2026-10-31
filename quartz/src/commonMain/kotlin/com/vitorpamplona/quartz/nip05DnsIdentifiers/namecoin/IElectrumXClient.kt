@@ -20,13 +20,9 @@
  */
 package com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin
 
-/** Delay between starting consecutive servers in a hedged lookup. */
-const val DEFAULT_HEDGE_DELAY_MS = 500L
-
 interface IElectrumXClient {
     suspend fun nameShowWithFallback(
         identifier: String,
         servers: List<ElectrumxServer>,
-        hedgeDelayMs: Long = DEFAULT_HEDGE_DELAY_MS,
     ): NameShowResult?
 }

@@ -63,8 +63,12 @@ class HedgedElectrumXClientTest {
                     val conn = serverSocket.accept()
                     accepted.countDown()
                     try {
-                        // Parked until the client disappears: EOF (-1) or SocketException.
-                        conn.getInputStream().read()
+                        // Swallow whatever the client sends and never answer. Parked
+                        // until the client disappears: EOF (-1) or SocketException.
+                        val input = conn.getInputStream()
+                        while (input.read() != -1) {
+                            // keep draining
+                        }
                     } catch (_: Exception) {
                         // SocketException is fine too — the client closed.
                     }
@@ -150,13 +154,13 @@ class HedgedElectrumXClientTest {
         runBlocking {
             StalledServer().use { stalled ->
                 FakeElectrumXServer("d/test", "{}").use { healthy ->
-                    val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000)
+                    val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000, hedgeDelayMs = 300)
                     val servers = listOf(plaintextServer(stalled.port), plaintextServer(healthy.port))
 
                     val start = System.currentTimeMillis()
                     val result =
                         withTimeoutOrNull(5_000) {
-                            client.nameShowWithFallback("d/test", servers, hedgeDelayMs = 300)
+                            client.nameShowWithFallback("d/test", servers)
                         }
                     val elapsed = System.currentTimeMillis() - start
 
@@ -198,12 +202,12 @@ class HedgedElectrumXClientTest {
     fun `all servers stalled fails with ServersUnreachable bounded by socket timeouts`() {
         StalledServer().use { s1 ->
             StalledServer().use { s2 ->
-                val client = ElectrumXClient(connectTimeoutMs = 1_000, readTimeoutMs = 800)
+                val client = ElectrumXClient(connectTimeoutMs = 1_000, readTimeoutMs = 800, hedgeDelayMs = 200)
                 val servers = listOf(plaintextServer(s1.port), plaintextServer(s2.port))
 
                 val start = System.currentTimeMillis()
                 assertThrows(NamecoinLookupException.ServersUnreachable::class.java) {
-                    runBlocking { client.nameShowWithFallback("d/test", servers, hedgeDelayMs = 200) }
+                    runBlocking { client.nameShowWithFallback("d/test", servers) }
                 }
                 val elapsed = System.currentTimeMillis() - start
                 assertTrue("took ${elapsed}ms; read timeouts should bound it near 1s", elapsed < 5_000)
@@ -215,14 +219,31 @@ class HedgedElectrumXClientTest {
     fun `NameNotFound from a fast server wins the race against a stalled one`() {
         StalledServer().use { stalled ->
             FakeElectrumXServer("d/test", "{}", historyEmpty = true).use { emptyHealthy ->
-                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000)
+                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000, hedgeDelayMs = 200)
                 // Stalled first: the definitive NameNotFound must still win.
                 val servers = listOf(plaintextServer(stalled.port), plaintextServer(emptyHealthy.port))
 
                 assertThrows(NamecoinLookupException.NameNotFound::class.java) {
-                    runBlocking { client.nameShowWithFallback("d/test", servers, hedgeDelayMs = 200) }
+                    runBlocking { client.nameShowWithFallback("d/test", servers) }
                 }
             }
+        }
+    }
+
+    @Test
+    fun `a server that fails fast starts the next one without waiting for the hedge delay`() {
+        // Bind and release a port so connecting to it is refused at once.
+        val refusedPort = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+        FakeElectrumXServer("d/test", "{}").use { healthy ->
+            val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 5_000, hedgeDelayMs = 30_000)
+            val servers = listOf(plaintextServer(refusedPort), plaintextServer(healthy.port))
+
+            val start = System.currentTimeMillis()
+            val result = runBlocking { client.nameShowWithFallback("d/test", servers) }
+            val elapsed = System.currentTimeMillis() - start
+
+            assertEquals("{}", result?.value)
+            assertTrue("took ${elapsed}ms; the refused server should hand over at once, not after 30s", elapsed < 5_000)
         }
     }
 }
