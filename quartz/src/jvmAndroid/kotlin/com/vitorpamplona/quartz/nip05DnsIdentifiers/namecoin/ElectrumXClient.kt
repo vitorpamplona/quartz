@@ -214,6 +214,7 @@ class ElectrumXClient(
 
         // SupervisorJob: one attempt's failure must not cancel the others.
         private val raceJob = SupervisorJob(scope.coroutineContext[Job])
+        private val raceScope = CoroutineScope(scope.coroutineContext + raceJob)
         private val lock = Any()
         private var nextIndex = 0
         private var running = 0
@@ -238,7 +239,7 @@ class ElectrumXClient(
                     running++
                     servers[nextIndex++]
                 }
-            scope.launch(raceJob) { attempt(server) }
+            raceScope.launch { attempt(server) }
         }
 
         private suspend fun CoroutineScope.attempt(server: ElectrumxServer) {
@@ -286,7 +287,7 @@ class ElectrumXClient(
             if (first) {
                 // Give the attempts already running a bounded chance to
                 // produce the record.
-                scope.launch(raceJob) {
+                raceScope.launch {
                     delay(hedgeDelayMs)
                     answer.completeExceptionally(e)
                 }

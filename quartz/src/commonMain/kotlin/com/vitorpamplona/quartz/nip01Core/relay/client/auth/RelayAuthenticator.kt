@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -204,6 +205,10 @@ class RelayAuthenticator(
             try {
                 val ev = RelayAuthEvent.build(relay.url, challenge)
                 signWithAllLoggedInUsers(relay.url, ev, interactive).forEach { authEvent ->
+                    // destroy() may have run while the signer worked. A signer that
+                    // returns without suspending never hits a cancellation point, so
+                    // check here: no AUTH may go out after destroy().
+                    ensureActive()
                     // only send replies to new challenges to avoid infinite loop:
                     if (authStatus.get(relay.url)?.saveAuthSubmission(authEvent) == true) {
                         relay.sendIfConnected(AuthCmd(authEvent))

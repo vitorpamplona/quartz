@@ -92,4 +92,48 @@ class RelayAuthenticatorDestroyTest {
             assertTrue(scope.isActive, "the host's scope is not cancelled")
             scope.cancel()
         }
+
+    @Test
+    fun destroyStopsAnAuthWhoseSignerReturnsWithoutSuspending() =
+        runBlocking {
+            // The signer's answer is ready by the time it asks for it, so its await()
+            // returns at once without checking for cancellation: destroy() lands in
+            // the gap between signerCalled and signerReturns.await(). Nothing after
+            // that suspends, so only an explicit check stops the send.
+            val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            val signer = NostrSignerInternal(KeyPair())
+            val signerReturns = CompletableDeferred<Unit>()
+            val signerCalled = CompletableDeferred<Unit>()
+            val destroyed = CompletableDeferred<Unit>()
+
+            val client = CapturingClient()
+            val authenticator =
+                RelayAuthenticator(
+                    client = client,
+                    scope = scope,
+                    signWithAllLoggedInUsers = { _, template, _ ->
+                        signerCalled.complete(Unit)
+                        // Block, not suspend, until the test has destroyed the
+                        // authenticator, so the cancellation can't interrupt this wait.
+                        while (!destroyed.isCompleted) Thread.sleep(5)
+                        signerReturns.await()
+                        listOf(signer.sign(template))
+                    },
+                )
+            val listener = client.captured ?: error("RelayAuthenticator did not register a listener")
+            val relay = FakeRelayClient(NormalizedRelayUrl("wss://relay.example/"))
+
+            listener.onConnecting(relay)
+            listener.onIncomingMessage(relay, "", AuthMessage("chal-1"))
+            signerCalled.await()
+
+            authenticator.destroy()
+            signerReturns.complete(Unit)
+            destroyed.complete(Unit)
+            delay(200)
+
+            assertEquals(emptyList(), relay.sent.filterIsInstance<AuthCmd>(), "no AUTH goes out after destroy()")
+            assertTrue(scope.isActive, "the host's scope is not cancelled")
+            scope.cancel()
+        }
 }
