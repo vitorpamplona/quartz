@@ -199,6 +199,27 @@ class DrssWritesTest {
     }
 
     @Test
+    fun aLegacyRecordThatLoadedLateStillMergesIn() {
+        // A 30078 saved before the 30054 arrived lacks its completion; the next save takes both.
+        val current = DrssListenProgressAppDataEvent.build(episode, position = 100, durationInSeconds = 700, createdAt = 7_000).parse()
+        val legacy =
+            EventFactory.create(
+                "11".repeat(32),
+                me,
+                1_500,
+                DrssListenProgressEvent.KIND,
+                arrayOf(arrayOf("d", episode.dTag), episode.toATagArray(), arrayOf("completed", "1500"), arrayOf("plays", "3")),
+                "",
+                "00".repeat(64),
+            ) as DrssListenProgressEvent
+        val next = DrssListenProgressAppDataEvent.next(listOf(current, legacy), episode, position = 160, durationInSeconds = null, createdAt = 8_000).parse()
+        assertEquals(160, next.position())
+        assertEquals(1_500, next.completedAt())
+        assertEquals(3, next.plays())
+        assertEquals(700, next.durationInSeconds(), "from the record being replaced")
+    }
+
+    @Test
     fun foldersGainLoseAndRenameChildren() {
         val feeds = ATag(30000, me, "drss-feeds")
         val podcasts = ATag(30004, me, "drss-podcasts")

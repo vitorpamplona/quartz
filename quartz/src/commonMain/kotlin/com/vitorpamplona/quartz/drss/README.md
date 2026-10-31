@@ -56,7 +56,8 @@ follow NIP-65's `read` / `write` and are inferred: drss's only public preference
   `DrssListenProgress`. Fetch a listener's records with `#l` = `listen-progress` on kind 30078:
   relays index the label, and the rest of 30078 is every other app's preferences.
 - `DrssListenProgressAppDataEvent.next(earlier, …)` writes progress by drss's rules (`earlier` may
-  be a 30054 record, whose completion and plays carry over): the playhead is the resume
+  be a 30054 record, whose completion and plays carry over; pass both records when an episode has
+  a 30078 and a 30054 one, and they merge as drss's lift merges them): the playhead is the resume
   point and goes when the episode ends, the first completion stands, and plays only grow.
   `DrssListenPass` counts a play when playback crosses 90% of the episode, and again only after the
   listener goes back below 10%. drss saves every minute while playing (`RELAY_SAVE_INTERVAL_SECONDS`),

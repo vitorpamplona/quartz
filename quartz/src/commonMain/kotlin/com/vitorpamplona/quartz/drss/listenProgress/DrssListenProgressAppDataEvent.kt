@@ -157,16 +157,42 @@ class DrssListenProgressAppDataEvent(
             countsAPlay: Boolean = false,
             ended: Boolean = false,
             createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<DrssListenProgressAppDataEvent> = next(listOfNotNull(earlier), episode, position, durationInSeconds, countsAPlay, ended, createdAt)
+
+        /**
+         * [next] over every record the listener holds for [episode], first the one to replace: the
+         * kind-30078 record and a kind-30054 one drss has not lifted yet, which can both exist when
+         * a save ran before the older record loaded. They merge as drss's lift merges them: the
+         * earliest completion stands, the play count is the highest, and the duration comes from
+         * the first record that has one.
+         */
+        fun next(
+            earlier: List<DrssListenProgress>,
+            episode: ATag,
+            position: Long?,
+            durationInSeconds: Long?,
+            countsAPlay: Boolean = false,
+            ended: Boolean = false,
+            createdAt: Long = TimeUtils.now(),
         ): EventTemplate<DrssListenProgressAppDataEvent> {
-            val earlierCompletion = earlier?.completedAt()
+            var earlierCompletion: Long? = null
+            var earlierPlays = 0L
+            var earlierDuration: Long? = null
+            for (record in earlier) {
+                val completed = record.completedAt()
+                val known = earlierCompletion
+                if (completed != null && (known == null || completed < known)) earlierCompletion = completed
+                // A completion recorded before drss counted plays stands for one.
+                val plays = record.plays() ?: if (completed != null) 1L else 0L
+                if (plays > earlierPlays) earlierPlays = plays
+                if (earlierDuration == null) earlierDuration = record.durationInSeconds()
+            }
             val completedAt = earlierCompletion ?: if (ended || countsAPlay) createdAt else null
-            // A completion recorded before drss counted plays stands for one.
-            val earlierPlays = earlier?.plays() ?: if (earlierCompletion != null) 1L else 0L
             val plays = earlierPlays + if (countsAPlay) 1 else 0
             return build(
                 episode = episode,
                 position = if (ended) null else position?.coerceAtLeast(0),
-                durationInSeconds = durationInSeconds?.takeIf { it > 0 } ?: earlier?.durationInSeconds(),
+                durationInSeconds = durationInSeconds?.takeIf { it > 0 } ?: earlierDuration,
                 completedAt = completedAt,
                 plays = plays.takeIf { it > 0 },
                 createdAt = createdAt,
