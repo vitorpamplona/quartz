@@ -28,7 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.core.UnrecognizedShape
 
 /**
  * A kind-30054 event that is neither a Podcasting-2.0 [Podcasting20EpisodeEvent] nor drss.io's
- * [DrssListenProgressEvent], the two formats published on this number. Still addressable, so stores
+ * legacy [DrssListenProgressEvent], the two formats published on this number. Still addressable, so stores
  * replace and delete it by `d`; not a SearchableEvent, so it is never indexed.
  */
 @Immutable

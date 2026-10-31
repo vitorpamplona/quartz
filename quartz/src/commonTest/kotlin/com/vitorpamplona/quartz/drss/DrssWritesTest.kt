@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.drss.eventList.DrssEventListEvent
 import com.vitorpamplona.quartz.drss.eventList.tags.ListItemTag
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenPass
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressAppDataEvent
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
 import com.vitorpamplona.quartz.drss.readWriteLists.DrssReadWriteListsEvent
@@ -125,24 +126,25 @@ class DrssWritesTest {
 
     @Test
     fun progressKeepsTheFirstCompletionAndOnlyGrowsPlays() {
-        val first = DrssListenProgressEvent.next(null, episode, position = 300, durationInSeconds = 700, createdAt = 1_000).parse()
+        val first = DrssListenProgressAppDataEvent.next(null, episode, position = 300, durationInSeconds = 700, createdAt = 1_000).parse()
         assertEquals(300, first.position())
         assertNull(first.completedAt())
         assertNull(first.plays())
-        assertEquals(episode.dTag, first.dTag())
+        assertEquals("drss-listen-progress:" + episode.dTag, first.dTag())
+        assertEquals(DrssListenProgressAppDataEvent.createAddress(me, Address(episode.kind, episode.pubKeyHex, episode.dTag)), first.address())
 
-        val played = DrssListenProgressEvent.next(first, episode, position = 640, durationInSeconds = 700, countsAPlay = true, createdAt = 2_000).parse()
+        val played = DrssListenProgressAppDataEvent.next(first, episode, position = 640, durationInSeconds = 700, countsAPlay = true, createdAt = 2_000).parse()
         assertEquals(640, played.position())
         assertEquals(2_000, played.completedAt())
         assertEquals(1, played.plays())
 
-        val ended = DrssListenProgressEvent.next(played, episode, position = 700, durationInSeconds = null, ended = true, createdAt = 3_000).parse()
+        val ended = DrssListenProgressAppDataEvent.next(played, episode, position = 700, durationInSeconds = null, ended = true, createdAt = 3_000).parse()
         assertNull(ended.position(), "the end is not a resume point")
         assertEquals(2_000, ended.completedAt(), "the first completion stands")
         assertEquals(1, ended.plays())
         assertEquals(700, ended.durationInSeconds(), "carried from the earlier record")
 
-        val replay = DrssListenProgressEvent.next(ended, episode, position = 20, durationInSeconds = 700, createdAt = 4_000).parse()
+        val replay = DrssListenProgressAppDataEvent.next(ended, episode, position = 20, durationInSeconds = 700, createdAt = 4_000).parse()
         assertEquals(20, replay.position())
         assertEquals(2_000, replay.completedAt())
         assertEquals(1, replay.plays())
@@ -150,10 +152,50 @@ class DrssWritesTest {
 
     @Test
     fun aCompletionFromBeforePlaysWereCountedIsOnePlay() {
-        val old = DrssListenProgressEvent.build(episode, completedAt = 1_500, durationInSeconds = 700, createdAt = 1_500).parse()
-        val again = DrssListenProgressEvent.next(old, episode, position = 650, durationInSeconds = 700, countsAPlay = true, createdAt = 5_000).parse()
+        val old = DrssListenProgressAppDataEvent.build(episode, completedAt = 1_500, durationInSeconds = 700, createdAt = 1_500).parse()
+        val again = DrssListenProgressAppDataEvent.next(old, episode, position = 650, durationInSeconds = 700, countsAPlay = true, createdAt = 5_000).parse()
         assertEquals(2, again.plays())
         assertEquals(1_500, again.completedAt())
+    }
+
+    @Test
+    fun progressWritesTheSameTagsDrssWrites() {
+        // drss's own record on relay.nostr.io, 2026-10-31, without its `a` relay hint.
+        val written = DrssListenProgressAppDataEvent.build(episode, position = 2, durationInSeconds = 494, createdAt = 1_793_469_879).parse()
+        assertEquals(
+            listOf(
+                listOf("d", "drss-listen-progress:seroter-daily-reading-844"),
+                listOf("a", episode.toTag()),
+                listOf("L", "drss"),
+                listOf("l", "listen-progress", "drss"),
+                listOf("position", "2"),
+                listOf("duration", "494"),
+            ),
+            written.tags.map { it.toList() },
+        )
+    }
+
+    @Test
+    fun aLegacyRecordCarriesItsCompletionAndPlaysIntoKind30078() {
+        // What drss's lift does with a 30054 record: the next save is a 30078 that keeps its numbers.
+        val legacy =
+            assertIs<DrssListenProgressEvent>(
+                EventFactory.create(
+                    "11".repeat(32),
+                    me,
+                    1_500,
+                    DrssListenProgressEvent.KIND,
+                    arrayOf(arrayOf("d", episode.dTag), episode.toATagArray(), arrayOf("duration", "700"), arrayOf("completed", "1500"), arrayOf("plays", "2")),
+                    "",
+                    "00".repeat(64),
+                ),
+            )
+        val next = DrssListenProgressAppDataEvent.next(legacy, episode, position = 30, durationInSeconds = null, createdAt = 6_000).parse()
+        assertEquals(DrssListenProgressAppDataEvent.KIND, next.kind)
+        assertEquals(30, next.position())
+        assertEquals(1_500, next.completedAt())
+        assertEquals(2, next.plays())
+        assertEquals(700, next.durationInSeconds())
     }
 
     @Test

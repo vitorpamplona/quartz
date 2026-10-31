@@ -750,7 +750,8 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
 | 30054 | `Podcasting20EpisodeEvent` | edit -> EDITED (E); t -> HASHTAG (T) | editsEventId() (EditTag::parse), topics() (hashtags) | Podcasting-2.0 draft (not a NIP; podstr). edit = 'the event id of the original publication when an addressable episode/trailer is updated' - fits draft EDITED. person tags carry names/URLs, not pubkeys (not modelled). Quartz: EditTag.parse does not check 64-hex. |
-| 30054 | `DrssListenProgressEvent` | a -> TRACKED (A) | episodeAddressId() (ATag) | drss.io's listening progress in a 30023 episode article; position, duration, completed and plays are values. Chosen after the episode check. |
+| 30054 | `DrssListenProgressEvent` | a -> TRACKED (A) | episodeAddressId() (ATag) | drss.io's listening progress in a 30023 episode article until 2026-10 (now 30078); position, duration, completed and plays are values. Chosen after the episode check. |
+| 30078 | `DrssListenProgressAppDataEvent` | a -> TRACKED (A) | episodeAddressId() (ATag) | drss.io's listening progress since 2026-10 (`d` = `drss-listen-progress:<episode d>`, `L`/`l` labels); the same values as the 30054 record. |
 | 30054 | `UnrecognizedKind30054Event` | *none* | – | neither an episode nor drss progress. |
 | 30100 | `DrssFeedListEvent` | p -> MEMBER (U) | feedKeys() (FeedTag) | drss's older feed list, like a NIP-51 follow set of feed bots (draft: MEMBER). |
 | 30101 | `DrssListFolderEvent` | a -> CURATED (A) | childAddressIds() (ATag) | drss's folder of lists (draft: CURATED). |

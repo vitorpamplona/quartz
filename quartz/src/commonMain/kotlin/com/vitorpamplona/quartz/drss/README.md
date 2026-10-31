@@ -8,7 +8,8 @@ numbers other apps use too.
 
 drss's source and its specs (`docs/operations/nuds/` in its repo) are private. These classes follow
 the events relays hold and the reader's public scripts (`https://drss.io/static/js/*.js`), as seen
-on 2026-10-28. Every shape is kept addressable.
+on 2026-10-28 (listening progress re-checked on 2026-10-31, after drss moved it to 30078). Every
+shape is kept addressable.
 
 Each package follows Quartz's layout: tag classes under `tags/` (`parse` / `assemble`), accessors
 in `TagArrayExt.kt`, builder steps in `TagArrayBuilderExt.kt` and a `build()` on the event. Every
@@ -21,7 +22,8 @@ numbers) parses back as the `UnrecognizedKind…Event`, as drss's own empty ones
 
 | Kind | Class | Shape | Shared with |
 |---|---|---|---|
-| 30054 | `DrssListenProgressEvent` | `a` → the episode article, `position`, `duration`, `completed`, `plays` | Podcasting-2.0 episodes (`Podcasting20EpisodeEvent`, checked first) |
+| 30078 | `DrssListenProgressAppDataEvent` | `d` = `drss-listen-progress:<episode d>`, `a` → the episode article, `L` = `drss`, `l` = `listen-progress`, `position`, `duration`, `completed`, `plays` | every app's NIP-78 preferences (`AppSpecificDataEvent`) |
+| 30054 | `DrssListenProgressEvent` (legacy) | `d` = the episode's `d`, then the same tags without the labels | Podcasting-2.0 episodes (`Podcasting20EpisodeEvent`, checked first) |
 | 30100 | `DrssFeedListEvent` | only `d`, `p` (feed bot, relay, title) and `title`; no content | CI job statuses, room listings, showcase projects, catalogs |
 | 30101 | `DrssListFolderEvent` | every `a` names a list kind (30000, 30003, 30004, 30100–30102, 30104) | room memberships, game handshakes, voting rounds |
 | 30102 | `DrssEventListEvent` | only `d`, `e` and `title` | votes, model-file announcements, vouch counters |
@@ -48,7 +50,13 @@ follow NIP-65's `read` / `write` and are inferred: drss's only public preference
 - `DrssListFolderEvent.addChild` / `removeChild` / `retitle` and `DrssProvenanceFolderEvent`'s
   `addChild` / `removeChild` keep the folder's other tags. A folder cannot lose its last child; delete
   it instead.
-- `DrssListenProgressEvent.next(earlier, …)` writes progress by drss's rules: the playhead is the resume
+- Listening progress is a kind-30078 record, `DrssListenProgressAppDataEvent`. drss wrote it as
+  kind 30054 until 2026-10 and now lifts those into 30078 and deletes them, so `DrssListenProgressEvent`
+  (30054) only reads what is left; its `build` and `next` are deprecated. Both are a
+  `DrssListenProgress`. Fetch a listener's records with `#l` = `listen-progress` on kind 30078:
+  relays index the label, and the rest of 30078 is every other app's preferences.
+- `DrssListenProgressAppDataEvent.next(earlier, …)` writes progress by drss's rules (`earlier` may
+  be a 30054 record, whose completion and plays carry over): the playhead is the resume
   point and goes when the episode ends, the first completion stands, and plays only grow.
   `DrssListenPass` counts a play when playback crosses 90% of the episode, and again only after the
   listener goes back below 10%. drss saves every minute while playing (`RELAY_SAVE_INTERVAL_SECONDS`),

@@ -25,14 +25,22 @@ import com.vitorpamplona.quartz.drss.listenProgress.tags.PlaysTag
 import com.vitorpamplona.quartz.drss.listenProgress.tags.PositionTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
+import com.vitorpamplona.quartz.nip32Labeling.tags.LabelNamespaceTag
+import com.vitorpamplona.quartz.nip32Labeling.tags.LabelTag
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags.DurationTag
 
-fun TagArrayBuilder<DrssListenProgressEvent>.episode(episode: ATag) = addUnique(episode.toATagArray())
+fun <T : DrssListenProgress> TagArrayBuilder<T>.episode(episode: ATag) = addUnique(episode.toATagArray())
 
-fun TagArrayBuilder<DrssListenProgressEvent>.position(seconds: Long) = addUnique(PositionTag.assemble(seconds))
+fun <T : DrssListenProgress> TagArrayBuilder<T>.position(seconds: Long) = addUnique(PositionTag.assemble(seconds))
 
-fun TagArrayBuilder<DrssListenProgressEvent>.duration(seconds: Long) = addUnique(DurationTag.assemble(seconds))
+fun <T : DrssListenProgress> TagArrayBuilder<T>.duration(seconds: Long) = addUnique(DurationTag.assemble(seconds))
 
-fun TagArrayBuilder<DrssListenProgressEvent>.completed(at: Long) = addUnique(CompletedTag.assemble(at))
+fun <T : DrssListenProgress> TagArrayBuilder<T>.completed(at: Long) = addUnique(CompletedTag.assemble(at))
 
-fun TagArrayBuilder<DrssListenProgressEvent>.plays(count: Long) = addUnique(PlaysTag.assemble(count))
+fun <T : DrssListenProgress> TagArrayBuilder<T>.plays(count: Long) = addUnique(PlaysTag.assemble(count))
+
+/** drss's NIP-32 labels on a kind-30078 record: `L` = `drss`, `l` = `listen-progress`. */
+fun TagArrayBuilder<DrssListenProgressAppDataEvent>.drssLabels() {
+    addUnique(LabelNamespaceTag.assemble(DrssListenProgressAppDataEvent.NAMESPACE))
+    addUnique(LabelTag.assemble(DrssListenProgressAppDataEvent.LABEL, DrssListenProgressAppDataEvent.NAMESPACE))
+}
