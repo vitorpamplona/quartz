@@ -240,86 +240,22 @@ object PGNParser {
     }
 
     /**
-     * Generate list of positions by replaying moves from starting position
-     *
-     * Note: This implementation uses simplified move application.
-     * Full legal move validation would require complete chess engine logic.
+     * The position before the first move and after each one, played by the rules (see
+     * [SanReplay]). A move no piece can legally make freezes the board: it and every move after
+     * it repeat the last position that was reached, so there is still one position per move.
      */
     private fun generatePositions(moves: List<ChessMove>): List<ChessPosition> {
-        val positions = mutableListOf(ChessPosition.initial())
+        val positions = ArrayList<ChessPosition>(moves.size + 1)
         var current = ChessPosition.initial()
-
+        var playable = true
+        positions.add(current)
         moves.forEach { move ->
-            try {
-                current =
-                    when {
-                        move.isCastling -> {
-                            // Castling
-                            val kingSide = move.toSquare.contains("g")
-                            current.makeCastlingMove(kingSide)
-                        }
-
-                        move.fromSquare != null -> {
-                            // Move with disambiguation (we can infer full source)
-                            // For now, just use simplified move
-                            makeSimplifiedMove(current, move)
-                        }
-
-                        else -> {
-                            // Regular move
-                            makeSimplifiedMove(current, move)
-                        }
-                    }
-                positions.add(current)
-            } catch (e: Exception) {
-                // If move application fails, keep previous position
-                positions.add(current)
+            if (playable) {
+                val next = SanReplay.play(current, move)
+                if (next == null) playable = false else current = next
             }
+            positions.add(current)
         }
-
         return positions
-    }
-
-    /**
-     * Simplified move application without full legal move validation
-     * Finds piece that can move to destination and creates new position
-     */
-    private fun makeSimplifiedMove(
-        position: ChessPosition,
-        move: ChessMove,
-    ): ChessPosition {
-        // For MVP: Try to find a piece of the right type that could move to destination
-        // This is simplified and doesn't validate full chess rules
-        val targetSquare = move.toSquare
-
-        // Find all pieces of the moving color and type
-        val candidates = mutableListOf<String>()
-        for (rank in 0..7) {
-            for (file in 0..7) {
-                val piece = position.pieceAt(file, rank)
-                if (piece != null &&
-                    piece.color == move.color &&
-                    piece.type == move.piece
-                ) {
-                    val square = "${'a' + file}${rank + 1}"
-                    candidates.add(square)
-                }
-            }
-        }
-
-        // Use disambiguation if provided
-        val fromSquare =
-            if (move.fromSquare != null) {
-                candidates.firstOrNull { it.contains(move.fromSquare) }
-            } else {
-                candidates.firstOrNull()
-            } ?: ""
-
-        return if (fromSquare.isNotEmpty()) {
-            position.makeMove(fromSquare, targetSquare, move.promotion)
-        } else {
-            // If we can't find source, return current position unchanged
-            position
-        }
     }
 }

@@ -451,4 +451,60 @@ class PGNParserTest {
         assertEquals(PieceType.ROOK, game.moves[10].piece)
         assertEquals(PieceType.ROOK, game.moves[11].piece)
     }
+
+    private fun ChessGame.finalPosition() = positions.last()
+
+    private fun piece(
+        type: PieceType,
+        color: Color,
+    ) = ChessPiece(type, color)
+
+    // Positions: each SAN move is played by the piece that can legally make it.
+    @Test
+    fun `the opera game ends in its real final position`() {
+        val pgn =
+            "1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 " +
+                "10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0"
+        val final = PGNParser.parse(pgn).getOrThrow().finalPosition()
+
+        assertEquals(piece(PieceType.KING, Color.WHITE), final["c1"], "O-O-O puts the king on c1")
+        assertEquals(piece(PieceType.ROOK, Color.WHITE), final["d8"])
+        assertEquals(piece(PieceType.BISHOP, Color.WHITE), final["g5"])
+        assertEquals(piece(PieceType.KING, Color.BLACK), final["e8"])
+        assertEquals(piece(PieceType.QUEEN, Color.BLACK), final["e6"])
+        assertEquals(piece(PieceType.KNIGHT, Color.BLACK), final["b8"])
+        assertEquals(null, final["e1"])
+        assertEquals(null, final["b1"], "the b1 knight went to c3 and was captured")
+        assertEquals(null, final["g1"], "2. Nf3 is the g1 knight")
+        assertEquals(Color.BLACK, final.activeColor)
+        assertEquals(17, final.moveNumber)
+    }
+
+    @Test
+    fun `a pinned piece is not the one that moves`() {
+        // After 2... Bb4+ 3. Nc3 the c3 knight is pinned to the king. Both knights reach e2, but
+        // only g1's move is legal, so SAN writes plain Ne2 and the replay must not call it ambiguous.
+        val final = PGNParser.parse("1. e4 e6 2. d4 Bb4+ 3. Nc3 Nf6 4. Ne2 *").getOrThrow().finalPosition()
+
+        assertEquals(piece(PieceType.KNIGHT, Color.WHITE), final["c3"])
+        assertEquals(piece(PieceType.KNIGHT, Color.WHITE), final["e2"])
+        assertEquals(null, final["g1"])
+    }
+
+    @Test
+    fun `en passant removes the passed pawn`() {
+        val final = PGNParser.parse("1. e4 a6 2. e5 d5 3. exd6 *").getOrThrow().finalPosition()
+
+        assertEquals(piece(PieceType.PAWN, Color.WHITE), final["d6"])
+        assertEquals(null, final["d5"])
+        assertEquals(null, final["e5"])
+    }
+
+    @Test
+    fun `an unreadable move freezes the board instead of guessing`() {
+        val game = PGNParser.parse("1. e4 e5 2. Ke3 Nc6 *").getOrThrow()
+
+        assertEquals(game.moves.size + 1, game.positions.size)
+        assertEquals(game.positions[2], game.finalPosition(), "Ke3 is illegal, so nothing after it is played")
+    }
 }

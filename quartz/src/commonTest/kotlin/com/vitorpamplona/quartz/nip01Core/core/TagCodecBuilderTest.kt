@@ -90,9 +90,15 @@ class TagCodecBuilderTest {
     }
 
     @Test
-    fun jesterStartWritesThePositionHash() {
-        val template = JesterEvent.buildPrivateStart(opponent, Color.WHITE)
-        assertEquals(listOf(listOf("e", JesterProtocol.START_POSITION_HASH), listOf("p", opponent)), template.tags.named("e", "p"))
+    fun jesterOpenChallengeWritesThePositionHash() {
+        val template = JesterEvent.buildChallenge(Color.WHITE, null)
+        assertEquals(listOf(listOf("e", JesterProtocol.START_POSITION_HASH)), template.tags.named("e", "p"))
+    }
+
+    @Test
+    fun jesterDirectChallengeWritesThePrivateRef() {
+        val template = JesterEvent.buildChallenge(Color.WHITE, opponent)
+        assertEquals(listOf(listOf("e", JesterProtocol.privateStartRef(opponent)), listOf("p", opponent)), template.tags.named("e", "p"))
     }
 
     @Test

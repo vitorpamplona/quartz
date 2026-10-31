@@ -59,9 +59,10 @@ class JesterEvent(
 ) : Event(id, pubKey, createdAt, JesterProtocol.KIND, tags, content, sig),
     EventHintProvider,
     PubKeyHintProvider {
-    // `e` tags are the game's start event and the move it follows; a start event's own `e` is
-    // the START_POSITION_HASH constant, which is a position digest, not an event to fetch.
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull { tag -> ETag.parseAsHint(tag)?.takeIf { it.eventId != JesterProtocol.START_POSITION_HASH } }
+    // A move's `e` tags are its game's start event and the move it follows. A start event's are
+    // discovery references (START_POSITION_HASH, or a direct challenge's private ref): digests,
+    // not events to fetch, so a start event hints and links no event.
+    override fun eventHints(): List<EventIdHint> = if (isStartEvent()) emptyList() else tags.mapNotNull { tag -> ETag.parseAsHint(tag)?.takeIf { it.eventId != JesterProtocol.START_POSITION_HASH } }
 
     /** `ROOT`: the game's start event; `PARENT`: the move this one follows (`e`). */
     override fun linkedEventIds(): List<HexKey> = gameEventIds()
@@ -71,8 +72,23 @@ class JesterEvent(
     /** `OPPONENT`: the other player of a private game (`p`). */
     override fun linkedPubKeys(): List<HexKey> = opponentKeys()
 
-    /** The `e` ids, in tag order (the start event, then the move this one follows), minus START_POSITION_HASH. */
-    fun gameEventIds(): List<HexKey> = tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+    /** A move's `e` ids, in tag order: the start event, then the move it follows. Empty for a start event, whose `e` tags are references, not events. */
+    fun gameEventIds(): List<HexKey> = if (isStartEvent()) emptyList() else tags.mapNotNull { tag -> ETag.parseId(tag)?.takeIf { it != JesterProtocol.START_POSITION_HASH } }
+
+    /** A direct challenge's private references (see [JesterProtocol.privateStartRef]); empty for an open one or a move. */
+    fun privateStartRefs(): List<HexKey> = if (isStartEvent()) tags.gameEventRefs().filter { it != JesterProtocol.START_POSITION_HASH } else emptyList()
+
+    /**
+     * True when [pubkey] may take this challenge's empty seat: anyone on an open challenge, only
+     * the named player on a direct one (by its private reference, or by its `p` when it has none).
+     */
+    fun isSeatOpenTo(pubkey: HexKey): Boolean {
+        if (pubkey == this.pubKey) return false
+        val refs = privateStartRefs()
+        if (refs.isNotEmpty()) return JesterProtocol.privateStartRef(pubkey) in refs
+        val named = opponentKeys()
+        return named.isEmpty() || pubkey in named
+    }
 
     /** Every 64-char `p` key, in tag order. Jester writes one; [opponentPubkey] reads the first `p` unvalidated. */
     fun opponentKeys(): List<HexKey> = tags.taggedUserIds()
@@ -106,11 +122,14 @@ class JesterEvent(
     /** Get the nonce (for start events) */
     fun nonce(): String? = parsedContent?.nonce
 
-    /** Get the player color choice (for start events) */
+    /** The challenger's colour, from `playerColor` or nostr.blue's `player_color`; null when it says neither. */
     fun playerColor(): Color? =
-        parsedContent?.playerColor?.let {
+        (parsedContent?.playerColor ?: parsedContent?.playerColorSnakeCase)?.let {
             if (it == "white") Color.WHITE else Color.BLACK
         }
+
+    /** True when this move offers its opponent a draw (`draw_offered`). */
+    fun drawOffered(): Boolean = parsedContent?.drawOffered == true
 
     /** Get the game result (for end events) */
     fun result(): String? = parsedContent?.result
@@ -152,7 +171,8 @@ class JesterEvent(
                     fen = JesterProtocol.FEN_START,
                     history = emptyList(),
                     nonce = nonce,
-                    playerColor = if (playerColor == Color.WHITE) "white" else "black",
+                    playerColor = colorName(playerColor),
+                    playerColorSnakeCase = colorName(playerColor),
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
                 // Reference the standard start position for game discovery
@@ -162,38 +182,48 @@ class JesterEvent(
         }
 
         /**
-         * Build a private game start event (direct challenge)
-         *
-         * @param opponentPubkey Pubkey of the challenged player
-         * @param playerColor Color the challenger wants to play
-         * @param nonce Unique nonce for this game
-         * @param createdAt Event timestamp
+         * A game start the way jesterui writes one: an open challenge ([opponentPubkey] null)
+         * refers to the start position, so every lobby finds it; a direct one refers only to its
+         * opponent's [JesterProtocol.privateStartRef], which keeps it out of the lobby, and also
+         * tags them so clients that read `#p` notify them. jesterui seats the creator as white
+         * whatever [playerColor] says; Amethyst and nostr.blue read it.
          */
-        fun buildPrivateStart(
-            opponentPubkey: String,
+        fun buildChallenge(
             playerColor: Color,
+            opponentPubkey: HexKey?,
             nonce: String = generateNonce(),
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<JesterEvent>.() -> Unit = {},
         ): EventTemplate<JesterEvent> {
+            if (opponentPubkey == null) return buildStart(playerColor, nonce, createdAt, initializer)
             val content =
                 JesterContent(
                     kind = JesterProtocol.CONTENT_KIND_START,
                     fen = JesterProtocol.FEN_START,
                     history = emptyList(),
                     nonce = nonce,
-                    playerColor = if (playerColor == Color.WHITE) "white" else "black",
+                    playerColor = colorName(playerColor),
+                    playerColorSnakeCase = colorName(playerColor),
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
-                // Reference the standard start position
-                gameEventRef(JesterProtocol.START_POSITION_HASH)
-                // Tag the opponent for notifications (only if valid pubkey)
-                if (opponentPubkey.isNotEmpty() && opponentPubkey.length == 64) {
-                    jesterOpponent(opponentPubkey)
-                }
+                gameEventRef(JesterProtocol.privateStartRef(opponentPubkey))
+                jesterOpponent(opponentPubkey)
                 initializer()
             }
         }
+
+        /**
+         * Build a private game start event (direct challenge). It now writes jesterui's private
+         * reference instead of START_POSITION_HASH, so the game no longer shows in public lobbies.
+         */
+        @Deprecated("Use buildChallenge instead. Removed in 3.0.0.", ReplaceWith("buildChallenge(playerColor, opponentPubkey, nonce, createdAt, initializer)"))
+        fun buildPrivateStart(
+            opponentPubkey: String,
+            playerColor: Color,
+            nonce: String = generateNonce(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<JesterEvent>.() -> Unit = {},
+        ): EventTemplate<JesterEvent> = buildChallenge(playerColor, opponentPubkey.takeIf { it.length == 64 }, nonce, createdAt, initializer)
 
         /**
          * Build a move event
@@ -204,6 +234,7 @@ class JesterEvent(
          * @param fen Resulting board position in FEN
          * @param history Complete move history including this move
          * @param opponentPubkey Opponent's pubkey for notifications
+         * @param drawOffered The move also offers the opponent a draw (`draw_offered`)
          * @param createdAt Event timestamp
          */
         fun buildMove(
@@ -213,6 +244,7 @@ class JesterEvent(
             fen: String,
             history: List<String>,
             opponentPubkey: String,
+            drawOffered: Boolean,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<JesterEvent>.() -> Unit = {},
         ): EventTemplate<JesterEvent> {
@@ -222,6 +254,7 @@ class JesterEvent(
                     fen = fen,
                     move = move,
                     history = history,
+                    drawOffered = drawOffered.takeIf { it },
                 )
             return eventTemplate(KIND, JsonMapper.toJson(content), createdAt) {
                 // e-tags: [startId, headId]
@@ -234,6 +267,17 @@ class JesterEvent(
                 initializer()
             }
         }
+
+        fun buildMove(
+            startEventId: String,
+            headEventId: String,
+            move: String,
+            fen: String,
+            history: List<String>,
+            opponentPubkey: String,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<JesterEvent>.() -> Unit = {},
+        ): EventTemplate<JesterEvent> = buildMove(startEventId, headEventId, move, fen, history, opponentPubkey, false, createdAt, initializer)
 
         /**
          * Build a game end move (includes result in content)
@@ -272,6 +316,8 @@ class JesterEvent(
                 initializer()
             }
         }
+
+        private fun colorName(color: Color) = if (color == Color.WHITE) "white" else "black"
 
         private fun generateNonce(): String {
             val chars = "abcdefghijklmnopqrstuvwxyz0123456789"

@@ -1,7 +1,10 @@
 # Jester chess: what the protocol leaves out, and how to fill it
 
-Status: proposal, nothing implemented here yet. Amethyst's app-side rework (lobby and board on
-the normal feed and subscription machinery) landed separately and needed no wire change.
+Status: partly implemented (2026-10-31). Done in quartz: items 1, 2 (validated move-less endings,
+including abandonment claims behind an app-given delay), 3, 4 (`JesterGameEvents.mainLine()`), 5
+and the `KindNames` label in 6. Still open: 7 (notifications), 9 (chat), 10 (deprecating
+30064–30068), and the NIP-32 `#l` end label proposed below. Amethyst's app-side rework (lobby and
+board on the normal feed and subscription machinery) landed separately and needed no wire change.
 
 ## Where Jester stands (checked 2026-10-30)
 
@@ -64,6 +67,14 @@ it keeps working. It just doesn't see the new feature.
 10. **Kinds 30064 to 30068.** No one uses them, and each move is addressable, so it is replaceable.
     Proposal: deprecate them in quartz (`Removed in` the next major), and drop them from Amethyst's
     feeds and notifications.
+
+## Proposed: a label relays can filter endings by
+
+Relays filter on single-letter tags, never on content, so today a client finds the games someone
+ended only by downloading their moves. A NIP-32 self-label on the ending event,
+`["L","jester"], ["l","end","jester"]`, would make `{kinds:[30], authors:[u], "#l":["end"]}` and
+`{kinds:[30], "#p":[u], "#l":["end"]}` exact: one event per finished game, for both players.
+Additive; endings from clients that don't write it still need the author fetch.
 
 ## Decisions for the maintainer
 

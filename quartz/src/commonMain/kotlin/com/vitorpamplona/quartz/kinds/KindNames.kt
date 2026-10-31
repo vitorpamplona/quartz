@@ -557,7 +557,7 @@ object KindNames {
             CalendarTimeSlotEvent.KIND to KindName("Appointment", "52"),
             CalendarRSVPEvent.KIND to KindName("Appt RSVP", "52"),
             ChessGameEvent.KIND to KindName("Chess Games", "64"),
-            JesterEvent.KIND to KindName("Chess Auth", "64"),
+            JesterEvent.KIND to KindName("Jester Chess", null),
             FavoriteRelayListEvent.KIND to KindName("Favorite Relays", "51"),
             LiveChessGameChallengeEvent.KIND to KindName("Chess Challenges", "64"),
             LiveChessGameAcceptEvent.KIND to KindName("Chess Game Accept", "64"),
