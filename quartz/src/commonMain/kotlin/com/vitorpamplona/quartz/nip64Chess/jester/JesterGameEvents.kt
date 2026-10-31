@@ -53,7 +53,11 @@ data class JesterGameEvents(
         val seats = mutableMapOf<Color, HexKey>(challengerColor to start.pubKey)
         // A challenge that names its opponent seats them from the start; a jesterui one, filed only
         // under a private ref, seats them when they move.
-        start.opponentKeys().firstOrNull()?.takeIf { it != start.pubKey }?.let { seats[challengerColor.opposite()] = it }
+        start
+            .opponentKeys()
+            .firstOrNull()
+            ?.takeIf { it != start.pubKey }
+            ?.let { seats[challengerColor.opposite()] = it }
         val gameMoves = moves.filter { it.isMoveEvent() && it.startEventId() == start.id }
 
         val line = ArrayList<JesterEvent>()

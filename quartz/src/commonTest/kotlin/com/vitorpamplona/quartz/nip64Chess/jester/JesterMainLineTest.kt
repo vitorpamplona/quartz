@@ -155,7 +155,7 @@ class JesterMainLineTest {
     }
 
     @Test
-    fun `the loser can resign, the winner cannot resign for them`() {
+    fun `the loser can resign but the winner cannot resign for them`() {
         val e4 = move("m1", alice, START, listOf("e4"), 2000)
         val e5 = move("m2", bob, "m1", listOf("e4", "e5"), 2001)
         val history = listOf("e4", "e5")
