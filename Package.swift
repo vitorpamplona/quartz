@@ -17,8 +17,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "QuartzKit",
-            url: "https://github.com/vitorpamplona/quartz/releases/download/v2.10.1/QuartzKit.xcframework.zip",
-            checksum: "cb8fa7a4f3177d038bb5ee00642ad5db6ae7bdbf91b1a3c4289830ebe36e4299"
+            url: "https://github.com/vitorpamplona/quartz/releases/download/v2.11.0/QuartzKit.xcframework.zip",
+            checksum: "1fb9271fb11eca8dac8862592b7dbc725c5ce25c925272291ec1bbb2021c6d75"
         ),
     ]
 )
