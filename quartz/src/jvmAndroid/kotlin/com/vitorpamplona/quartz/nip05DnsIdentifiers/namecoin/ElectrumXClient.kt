@@ -22,7 +22,19 @@ package com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin
 
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -50,6 +62,7 @@ import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.SocketFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
@@ -82,7 +95,19 @@ class ElectrumXClient(
     private val connectTimeoutMs: Long = 10_000L,
     private val readTimeoutMs: Long = 15_000L,
     private val socketFactory: () -> SocketFactory = { SocketFactory.getDefault() },
+    /**
+     * How long [nameShowWithFallback] waits on one server before it also
+     * starts the next one. A server that fails starts the next one at once.
+     */
+    private val hedgeDelayMs: Long = DEFAULT_HEDGE_DELAY_MS,
 ) : IElectrumXClient {
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(
+        connectTimeoutMs: Long = 10_000L,
+        readTimeoutMs: Long = 15_000L,
+        socketFactory: () -> SocketFactory = { SocketFactory.getDefault() },
+    ) : this(connectTimeoutMs, readTimeoutMs, socketFactory, DEFAULT_HEDGE_DELAY_MS)
+
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -107,21 +132,40 @@ class ElectrumXClient(
         identifier: String,
         server: ElectrumxServer,
     ): NameShowResult? =
-        withContext(Dispatchers.IO) {
-            val mutex = serverMutexes.getOrPut("${server.host}:${server.port}") { Mutex() }
-            mutex.withLock {
-                try {
-                    connectAndQuery(identifier, server)
-                } catch (e: NamecoinLookupException) {
-                    // Propagate name-not-found and expired — these are definitive answers.
-                    throw e
-                } catch (e: Exception) {
-                    // Log but don't crash — callers handle null gracefully.
-                    Log.w("ElectrumXClient", "Failed to look up $identifier on ${server.host}:${server.port}", e)
-                    null
-                }
-            }
+        try {
+            queryServer(identifier, server)
+        } catch (e: CancellationException) {
+            // Cancellation (e.g. this attempt lost the hedged race)
+            // must propagate — never swallow it as a lookup failure.
+            throw e
+        } catch (e: NamecoinLookupException) {
+            // Propagate name-not-found and expired — these are definitive answers.
+            throw e
+        } catch (e: Exception) {
+            // Log but don't crash — callers handle null gracefully.
+            logFailure(identifier, server, e)
+            null
         }
+
+    /**
+     * One lookup on one server, one at a time per server. Unlike [nameShow]
+     * it throws transport failures, so the race can report their cause.
+     */
+    private suspend fun queryServer(
+        identifier: String,
+        server: ElectrumxServer,
+    ): NameShowResult? =
+        withContext(Dispatchers.IO) {
+            serverMutexes
+                .getOrPut("${server.host}:${server.port}") { Mutex() }
+                .withLock { connectAndQuery(identifier, server) }
+        }
+
+    private fun logFailure(
+        identifier: String,
+        server: ElectrumxServer,
+        e: Exception,
+    ) = Log.w("ElectrumXClient", "Failed to look up $identifier on ${server.host}:${server.port}", e)
 
     @Suppress("DEPRECATION")
     @Deprecated(
@@ -131,10 +175,20 @@ class ElectrumXClient(
     suspend fun nameShow(identifier: String): NameShowResult? = nameShow(identifier, DEFAULT_ELECTRUMX_SERVERS.first())
 
     /**
-     * Try each server in order until one succeeds.
+     * Race the servers with staggered (hedged) starts until one gives a
+     * definitive answer.
+     *
+     * The first server starts at once. Each next one starts when the one
+     * before it fails, or after [hedgeDelayMs] if it is still running. A
+     * found record wins at once. A negative answer (the name does not exist
+     * or has expired) stops new attempts but waits up to [hedgeDelayMs] for
+     * the ones already running, so a server that is behind on the chain, or
+     * lying, cannot beat a slower server that holds the record. The other
+     * attempts are then cancelled, and their sockets are closed, so a
+     * stalled server costs [hedgeDelayMs] instead of its socket timeouts.
      *
      * @param identifier Full Namecoin name, e.g. "d/example"
-     * @param servers    Ordered server list to try
+     * @param servers    Servers in order of preference
      * @throws NamecoinLookupException.NameNotFound if the name definitively doesn't exist
      * @throws NamecoinLookupException.NameExpired if the name has expired
      * @throws NamecoinLookupException.ServersUnreachable if all servers failed with connection errors
@@ -142,21 +196,112 @@ class ElectrumXClient(
     override suspend fun nameShowWithFallback(
         identifier: String,
         servers: List<ElectrumxServer>,
-    ): NameShowResult? {
-        var lastError: Exception? = null
-        for (server in servers) {
+    ): NameShowResult? =
+        coroutineScope {
+            if (servers.isEmpty()) {
+                throw NamecoinLookupException.ServersUnreachable(null)
+            }
+            HedgedRace(this, identifier, servers).run()
+        }
+
+    /** State of one [nameShowWithFallback] call. Every field is guarded by [lock]. */
+    private inner class HedgedRace(
+        private val scope: CoroutineScope,
+        private val identifier: String,
+        private val servers: List<ElectrumxServer>,
+    ) {
+        private val answer = CompletableDeferred<NameShowResult>()
+
+        // SupervisorJob: one attempt's failure must not cancel the others.
+        private val raceJob = SupervisorJob(scope.coroutineContext[Job])
+        private val lock = Any()
+        private var nextIndex = 0
+        private var running = 0
+        private var negative: NamecoinLookupException? = null
+        private var lastError: Exception? = null
+
+        suspend fun run(): NameShowResult {
+            startNext()
             try {
-                val result = nameShow(identifier, server)
-                if (result != null) return result
-            } catch (e: NamecoinLookupException.NameNotFound) {
-                throw e // Definitive answer from blockchain — no point trying other servers
-            } catch (e: NamecoinLookupException.NameExpired) {
-                throw e // Definitive answer
-            } catch (e: Exception) {
-                lastError = e // Server error — try next server
+                return answer.await()
+            } finally {
+                // The losers' sockets close on cancellation (see
+                // connectAndQuery), so the caller's scope unwinds right away.
+                raceJob.cancel()
             }
         }
-        throw NamecoinLookupException.ServersUnreachable(lastError)
+
+        private fun startNext() {
+            val server =
+                synchronized(lock) {
+                    if (negative != null || nextIndex >= servers.size) return
+                    running++
+                    servers[nextIndex++]
+                }
+            scope.launch(raceJob) { attempt(server) }
+        }
+
+        private suspend fun CoroutineScope.attempt(server: ElectrumxServer) {
+            val hedge =
+                launch {
+                    delay(hedgeDelayMs)
+                    startNext()
+                }
+            try {
+                val result = queryServer(identifier, server)
+                if (result != null) answer.complete(result) else failed(null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: NamecoinLookupException.NameNotFound) {
+                negativeAnswer(e)
+            } catch (e: NamecoinLookupException.NameExpired) {
+                negativeAnswer(e)
+            } catch (e: Exception) {
+                logFailure(identifier, server, e)
+                failed(e)
+            } catch (e: Throwable) {
+                // An Error must reach the caller, not the global exception
+                // handler that SupervisorJob children report to.
+                answer.completeExceptionally(e)
+            } finally {
+                hedge.cancel()
+            }
+        }
+
+        private fun failed(error: Exception?) {
+            synchronized(lock) {
+                running--
+                if (error != null) lastError = error
+            }
+            startNext()
+            settleIfDone()
+        }
+
+        private fun negativeAnswer(e: NamecoinLookupException) {
+            val first =
+                synchronized(lock) {
+                    running--
+                    (negative == null).also { if (it) negative = e }
+                }
+            if (first) {
+                // Give the attempts already running a bounded chance to
+                // produce the record.
+                scope.launch(raceJob) {
+                    delay(hedgeDelayMs)
+                    answer.completeExceptionally(e)
+                }
+            }
+            settleIfDone()
+        }
+
+        private fun settleIfDone() {
+            val outcome =
+                synchronized(lock) {
+                    if (running > 0 || (negative == null && nextIndex < servers.size)) return
+                    negative ?: NamecoinLookupException.ServersUnreachable(lastError)
+                }
+            answer.completeExceptionally(outcome)
+        }
     }
 
     /**
@@ -317,12 +462,50 @@ class ElectrumXClient(
 
     // ── internals ──────────────────────────────────────────────────────
 
-    private fun connectAndQuery(
+    private suspend fun connectAndQuery(
         identifier: String,
         server: ElectrumxServer,
+    ): NameShowResult? =
+        coroutineScope {
+            // Blocking socket I/O (connect, TLS handshake, readLine) ignores
+            // coroutine cancellation, so a watcher coroutine closes the active
+            // socket as soon as this coroutine is cancelled. The close unblocks
+            // the parked I/O with a SocketException within milliseconds instead
+            // of waiting out the socket timeout. UNDISPATCHED enters the try
+            // before this function moves on, so a cancellation that arrives
+            // before the watcher was scheduled still runs the finally.
+            val closer = SocketCloser()
+            val watcher =
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        closer.close()
+                    }
+                }
+            try {
+                // Callers run this on Dispatchers.IO: the watcher needs a
+                // second thread to close the socket while this one is parked.
+                queryOnSocket(identifier, server, closer)
+            } catch (e: Exception) {
+                // If cancellation caused this failure, surface the
+                // CancellationException so structured concurrency unwinds cleanly.
+                currentCoroutineContext().ensureActive()
+                throw e
+            } finally {
+                // Cancelling the watcher also closes the socket on the normal
+                // path. That is a no-op after queryOnSocket closed it, and it
+                // closes the TCP socket when createSocket threw after connect.
+                watcher.cancel()
+            }
+        }
+
+    private fun queryOnSocket(
+        identifier: String,
+        server: ElectrumxServer,
+        closer: SocketCloser,
     ): NameShowResult? {
-        val socket = createSocket(server)
-        socket.soTimeout = readTimeoutMs.toInt()
+        val socket = createSocket(server, closer)
         val writer = PrintWriter(socket.getOutputStream(), true)
         val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
 
@@ -609,11 +792,24 @@ class ElectrumXClient(
         return data
     }
 
-    private fun createSocket(server: ElectrumxServer): Socket {
+    private fun createSocket(
+        server: ElectrumxServer,
+        closer: SocketCloser? = null,
+    ): Socket {
         // Create the base socket through the injected factory, which
         // may route through a SOCKS proxy (e.g. Tor) if configured.
         val baseSocket =
             socketFactory().createSocket().apply {
+                // Set the read timeout BEFORE connect(): the TLS handshake
+                // below performs blocking reads, and layered SSLSocket reads
+                // bottom out at this socket's streams, so this one timeout
+                // bounds the handshake as well as later reads.
+                soTimeout = readTimeoutMs.toInt()
+                // Register the TCP socket before connect() so a cancelled
+                // lookup can close it while the connect or the handshake is
+                // parked. Closing the TCP socket, not the TLS one layered on
+                // it, unblocks every read without waiting on TLS locks.
+                closer?.register(this)
                 connect(InetSocketAddress(server.host, server.port), connectTimeoutMs.toInt())
             }
 
@@ -642,6 +838,8 @@ class ElectrumXClient(
                         fallbackSocket.enabledProtocols = modern.toTypedArray()
                     }
                 }
+                // Conscrypt's SSL sockets keep a read timeout of their own.
+                fallbackSocket.soTimeout = readTimeoutMs.toInt()
                 return fallbackSocket
             }
             throw e
@@ -656,6 +854,9 @@ class ElectrumXClient(
                 sslSocket.enabledProtocols = modern.toTypedArray()
             }
         }
+
+        // Conscrypt's SSL sockets keep a read timeout of their own.
+        sslSocket.soTimeout = readTimeoutMs.toInt()
 
         return sslSocket
     }
@@ -835,7 +1036,36 @@ class ElectrumXClient(
         return sslContext.socketFactory
     }
 
+    /**
+     * Closes a lookup's socket once the lookup is cancelled, including a
+     * socket registered after the cancellation: [register] and [close] each
+     * write their own field before reading the other's, so one of them
+     * always sees both.
+     */
+    private class SocketCloser {
+        private val socket = AtomicReference<Socket?>(null)
+
+        @Volatile
+        private var closed = false
+
+        fun register(s: Socket) {
+            socket.set(s)
+            if (closed) runCatching { s.close() }
+        }
+
+        fun close() {
+            closed = true
+            socket.get()?.let { runCatching { it.close() } }
+        }
+    }
+
     companion object {
+        /**
+         * Default [hedgeDelayMs]. A healthy server answers a lookup in about
+         * one to one and a half seconds, so most lookups open one connection.
+         */
+        const val DEFAULT_HEDGE_DELAY_MS = 1_500L
+
         private const val PROTOCOL_VERSION = "1.4"
 
         /**
