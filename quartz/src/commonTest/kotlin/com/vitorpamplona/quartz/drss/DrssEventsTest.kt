@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.drss.feedList.UnrecognizedKind30100Event
 import com.vitorpamplona.quartz.drss.feedList.tags.FeedTag
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.listFolder.UnrecognizedKind30101Event
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressAppDataEvent
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
@@ -43,6 +44,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFields
 import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
+import com.vitorpamplona.quartz.nip78AppData.AppSpecificDataEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.utils.DeterministicSigner
@@ -366,6 +368,62 @@ class DrssEventsTest {
             arrayOf("alt", "Podcast show: drift"),
         )
 
+    // ---- 30078 listening progress ----
+
+    private val progress78Completed =
+        event(
+            30078,
+            "dd81a8bacbab0b5c3007d1672fb8301383b4e9583d431835985057223eb298a5",
+            "",
+            arrayOf("d", "drss-listen-progress:824fdddd19248bc8638634a24f79ad90410031ed51b2d89b1489e6eeceb2ceed"),
+            arrayOf("a", "30023:1081bed6da5db5b134d0162faea7c81eff2df66b7459e0e507aeaac46dd9103f:824fdddd19248bc8638634a24f79ad90410031ed51b2d89b1489e6eeceb2ceed"),
+            arrayOf("L", "drss"),
+            arrayOf("l", "listen-progress", "drss"),
+            arrayOf("position", "1571"),
+            arrayOf("duration", "3510"),
+            arrayOf("completed", "1793474448"),
+            arrayOf("plays", "1"),
+        )
+
+    private val progress78Started =
+        event(
+            30078,
+            "dd81a8bacbab0b5c3007d1672fb8301383b4e9583d431835985057223eb298a5",
+            "",
+            arrayOf("d", "drss-listen-progress:seroter-daily-reading-877"),
+            arrayOf("a", "30023:4093f1972489272756a98103e457a26914f00216317cf38d57710b431360d30b:seroter-daily-reading-877", "wss://relay.drss.io"),
+            arrayOf("L", "drss"),
+            arrayOf("l", "listen-progress", "drss"),
+            arrayOf("position", "2"),
+            arrayOf("duration", "494"),
+        )
+
+    @Test
+    fun appDataListenProgressReadsEveryTag() {
+        val done = assertIs<DrssListenProgressAppDataEvent>(progress78Completed)
+        assertEquals(1571L, done.position())
+        assertEquals(3510L, done.durationInSeconds())
+        assertEquals(1793474448L, done.completedAt())
+        assertEquals(1L, done.plays())
+        assertEquals("30023:1081bed6da5db5b134d0162faea7c81eff2df66b7459e0e507aeaac46dd9103f:824fdddd19248bc8638634a24f79ad90410031ed51b2d89b1489e6eeceb2ceed", done.episodeAddressId())
+        assertEquals(listOf(done.episodeAddressId()), done.linkedAddressIds())
+
+        val started = assertIs<DrssListenProgressAppDataEvent>(progress78Started)
+        assertEquals(2L, started.position())
+        assertNull(started.completedAt())
+        assertEquals(listOf("wss://relay.drss.io/"), started.addressHints().map { it.relay.url })
+    }
+
+    @Test
+    fun otherAppDataStaysGeneric() {
+        val episode = arrayOf("a", "30023:${"dd".repeat(32)}:x")
+        // The prefix without numbers, numbers without the prefix, and another app's record.
+        assertIs<AppSpecificDataEvent>(event(30078, "22".repeat(32), "", arrayOf("d", "drss-listen-progress:x"), episode))
+        assertIs<AppSpecificDataEvent>(event(30078, "22".repeat(32), "", arrayOf("d", "x"), episode, arrayOf("position", "10")))
+        assertIs<AppSpecificDataEvent>(event(30078, "22".repeat(32), "", arrayOf("d", "nwc-wallet-backup"), arrayOf("client", "Wisp")))
+        assertIs<AppSpecificDataEvent>(EventFactory.probe(30078))
+    }
+
     // ---- 30054 listening progress ----
 
     @Test
@@ -495,7 +553,7 @@ class DrssEventsTest {
         listOf(feedlistDrss, folderRoot, evlistTitled, pfolderDrss, provDrss, show).forEach {
             assertTrue(it is SearchableEvent, it.toJson())
         }
-        listOf(progressCompleted, feedlistCi, folderRoom, evlistWaifu, pfolderRodada, provDitto).forEach {
+        listOf(progressCompleted, progress78Completed, feedlistCi, folderRoom, evlistWaifu, pfolderRodada, provDitto).forEach {
             assertTrue(it is AddressableEvent, it.toJson())
             assertFalse(it is SearchableEvent, it.toJson())
             assertEquals(IndexableFields.None, SearchFieldExtractor.extract(it), it.toJson())
@@ -545,8 +603,8 @@ class DrssEventsTest {
         val episode = ATag(30023, "dd".repeat(32), "episode-1", RelayUrlNormalizer.normalizeOrNull("wss://relay.drss.io"))
         val bot = PTag("ee".repeat(32), RelayUrlNormalizer.normalizeOrNull("wss://relay.drss.io"))
 
-        val progress = assertIs<DrssListenProgressEvent>(roundTrip(signer.sign<DrssListenProgressEvent>(DrssListenProgressEvent.build(episode, position = 733, durationInSeconds = 2744))))
-        assertEquals("episode-1", progress.dTag())
+        val progress = assertIs<DrssListenProgressAppDataEvent>(roundTrip(signer.sign<DrssListenProgressAppDataEvent>(DrssListenProgressAppDataEvent.build(episode, position = 733, durationInSeconds = 2744))))
+        assertEquals("drss-listen-progress:episode-1", progress.dTag())
         assertEquals(episode.toTag(), progress.episodeAddressId())
         assertEquals(733L, progress.position())
         assertEquals(2744L, progress.durationInSeconds())
@@ -585,8 +643,12 @@ class DrssEventsTest {
         val emptyFolder = DrssListFolderEvent.build("empty", "Empty", emptyList())
         assertIs<UnrecognizedKind30101Event>(signer.sign<Event>(emptyFolder.createdAt, emptyFolder.kind, emptyFolder.tags, emptyFolder.content))
 
-        val noNumbers = DrssListenProgressEvent.build(ATag(30023, "dd".repeat(32), "x", null))
-        assertIs<UnrecognizedKind30054Event>(signer.sign<Event>(noNumbers.createdAt, noNumbers.kind, noNumbers.tags, noNumbers.content))
+        val noNumbers = DrssListenProgressAppDataEvent.build(ATag(30023, "dd".repeat(32), "x", null))
+        assertIs<AppSpecificDataEvent>(signer.sign<Event>(noNumbers.createdAt, noNumbers.kind, noNumbers.tags, noNumbers.content))
+
+        @Suppress("DEPRECATION")
+        val legacyNoNumbers = DrssListenProgressEvent.build(ATag(30023, "dd".repeat(32), "x", null))
+        assertIs<UnrecognizedKind30054Event>(signer.sign<Event>(legacyNoNumbers.createdAt, legacyNoNumbers.kind, legacyNoNumbers.tags, legacyNoNumbers.content))
     }
 
     @Test

@@ -40,9 +40,11 @@ import com.vitorpamplona.quartz.nipXXPodcasting20.episode.tags.DurationTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
- * drss.io's listening progress in one episode (kind 30054, which it shares with the Podcasting-2.0
- * [Podcasting20EpisodeEvent]). drss bridges a podcast's RSS feed to Nostr as one kind-30023 article
- * per episode, its audio in an `imeta`; its Listen player saves where the listener is in each:
+ * drss.io's listening progress in one episode as it wrote it until 2026-10: kind 30054, which it
+ * shared with the Podcasting-2.0 [Podcasting20EpisodeEvent]. drss now writes the same record as a
+ * NIP-78 [DrssListenProgressAppDataEvent] (kind 30078); its History page lifts a listener's 30054
+ * records into that kind and deletes them. This class reads the ones still on relays; both answer
+ * as a [DrssListenProgress].
  *
  * - `d` = the episode article's own `d`, so each episode has one record per listener;
  * - `a` = the episode article (`30023:<feed bot>:<d>`);
@@ -51,8 +53,6 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * - `completed` = when the listener first played it through (unix seconds);
  * - `plays` = how many times the playhead crossed 90% of the episode.
  *
- * The player saves at most once a minute while playing, and on pause, end and tab hide. drss's
- * source is private: this follows the events it publishes and its `static/js/listen-player.js`.
  * Nothing to search: it is numbers about another event.
  */
 @Immutable
@@ -64,22 +64,19 @@ class DrssListenProgressEvent(
     content: String,
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
+    DrssListenProgress,
     AddressHintProvider {
-    /** The episode article this record tracks (`a`). */
-    fun episode(): ATag? = tags.episode()
+    override fun episode(): ATag? = tags.episode()
 
-    /** The address of [episode], as `kind:pubkey:d`. */
-    fun episodeAddressId(): String? = episode()?.toTag()
+    override fun episodeAddressId(): String? = episode()?.toTag()
 
-    /** The playhead in seconds, or null once the episode was played to the end. */
-    fun position(): Long? = tags.position()
+    override fun position(): Long? = tags.position()
 
-    fun durationInSeconds(): Long? = tags.durationInSeconds()
+    override fun durationInSeconds(): Long? = tags.durationInSeconds()
 
-    /** When the listener first played the episode through (unix seconds). */
-    fun completedAt(): Long? = tags.completedAt()
+    override fun completedAt(): Long? = tags.completedAt()
 
-    fun plays(): Long? = tags.plays()
+    override fun plays(): Long? = tags.plays()
 
     override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
@@ -105,6 +102,10 @@ class DrssListenProgressEvent(
          * A record of where the listener is in [episode]. Give at least one of the numbers, or it
          * parses back as an `UnrecognizedKind30054Event`.
          */
+        @Deprecated(
+            "drss.io moved listening progress to kind 30078: use DrssListenProgressAppDataEvent.build. Removed in 3.0.0.",
+            ReplaceWith("DrssListenProgressAppDataEvent.build(episode, position, durationInSeconds, completedAt, plays, createdAt)"),
+        )
         fun build(
             episode: ATag,
             position: Long? = null,
@@ -129,6 +130,11 @@ class DrssListenProgressEvent(
          * play count only grows, by one when this save [countsAPlay] (see [DrssListenPass]). Reaching
          * the end or counting a play completes the episode.
          */
+        @Deprecated(
+            "drss.io moved listening progress to kind 30078: use DrssListenProgressAppDataEvent.next. Removed in 3.0.0.",
+            ReplaceWith("DrssListenProgressAppDataEvent.next(earlier, episode, position, durationInSeconds, countsAPlay, ended, createdAt)"),
+        )
+        @Suppress("DEPRECATION")
         fun next(
             earlier: DrssListenProgressEvent?,
             episode: ATag,

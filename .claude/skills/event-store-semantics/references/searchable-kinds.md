@@ -5,7 +5,7 @@ expression. **Update this file in the same PR as any change to the searchable se
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
 Counts: 216 concrete classes covering 216 kind values (`GitStatusEvent` spans 4 kinds;
-kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's listening progress, and drss.io's 30100, 30101, 30102, 30104 and 31985 with other apps — see the footnotes). The kind
+kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's legacy listening progress, and drss.io's 30100, 30101, 30102, 30104 and 31985 with other apps — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
 
@@ -120,7 +120,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30040 | PublicationIndexEvent | experimental/publications | `listOfNotNull(title(), author(), summary())` NL |
 | 30041 | PublicationContentEvent | experimental/publications | `listOfNotNull(title(), content)` NL |
 | 30045 | BookshelfDirectoryEvent | experimental/library | `listOfNotNull(title(), summary(), content)` NL |
-| 30054 | Podcasting20EpisodeEvent | nipXXPodcasting20/episode | `(listOfNotNull(title(), description(), content) + personNames() + soundbiteTitles() + topics())` NL — drss.io's listening-progress records on this kind (no `title`, `audio` or `video`) parse as `DrssListenProgressEvent` and are not indexed |
+| 30054 | Podcasting20EpisodeEvent | nipXXPodcasting20/episode | `(listOfNotNull(title(), description(), content) + personNames() + soundbiteTitles() + topics())` NL — drss.io's legacy listening-progress records on this kind (no `title`, `audio` or `video`) parse as `DrssListenProgressEvent` and are not indexed |
 | 30055 | Podcasting20TrailerEvent | nipXXPodcasting20/trailer | `listOfNotNull(title(), content)` NL |
 | 30063 | ReleaseArtifactSetEvent † | nip51Lists/releaseArtifactSet | `listOfNotNull(title(), description(), searchableReleaseNotes())` NL |
 | 30066 | LiveChessMoveEvent | nip64Chess/move | `content` |
@@ -266,7 +266,8 @@ same way: `KanbanCardEvent` on a `title` or an `a` to a 30301 board, else
 rounds, file announcements, Ditto's ratings…). `EventFactory` builds the drss class only for drss's
 shape (see `drss/README.md`) and an `UnrecognizedKind30100Event` / `…30101…` / `…30102…` / `…30104…`
 / `UnrecognizedKind31985Event` otherwise — addressable but unsearchable. Kind-level probes answer
-as the drss class. Its 30054 listening progress is a `DrssListenProgressEvent`, not searchable.
+as the drss class. Its listening progress, `DrssListenProgressAppDataEvent` (30078) and the legacy
+`DrssListenProgressEvent` (30054), is not searchable.
 
 ## Abstract bases (no kind of their own)
 

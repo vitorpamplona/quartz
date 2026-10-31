@@ -187,8 +187,8 @@ class Podcasting20EpisodeEvent(
 
         /**
          * An episode carries a `title`, an `audio` or a `video` (the draft requires the first two).
-         * The listening-progress records drss.io saves on this kind carry none of them, and
-         * parse as `DrssListenProgressEvent`.
+         * The listening-progress records drss.io saved on this kind until 2026-10 carry none of
+         * them, and parse as `DrssListenProgressEvent`.
          */
         fun isPodcastEpisode(tags: TagArray): Boolean =
             tags.fastAny {

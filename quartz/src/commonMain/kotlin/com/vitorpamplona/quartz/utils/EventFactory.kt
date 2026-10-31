@@ -123,6 +123,7 @@ import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.feedList.UnrecognizedKind30100Event
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.listFolder.UnrecognizedKind30101Event
+import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressAppDataEvent
 import com.vitorpamplona.quartz.drss.listenProgress.DrssListenProgressEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
@@ -659,10 +660,10 @@ class EventFactory {
                 AppRecommendationEvent.KIND -> AppRecommendationEvent(id, pubKey, createdAt, tags, content, sig)
                 AppDataEvent.KIND -> AppDataEvent(id, pubKey, createdAt, tags, content, sig)
                 AppSpecificDataEvent.KIND ->
-                    if (DrssReadWriteListsEvent.isReadWriteLists(tags)) {
-                        DrssReadWriteListsEvent(id, pubKey, createdAt, tags, content, sig)
-                    } else {
-                        AppSpecificDataEvent(id, pubKey, createdAt, tags, content, sig)
+                    when {
+                        DrssListenProgressAppDataEvent.isListenProgress(tags) -> DrssListenProgressAppDataEvent(id, pubKey, createdAt, tags, content, sig)
+                        DrssReadWriteListsEvent.isReadWriteLists(tags) -> DrssReadWriteListsEvent(id, pubKey, createdAt, tags, content, sig)
+                        else -> AppSpecificDataEvent(id, pubKey, createdAt, tags, content, sig)
                     }
                 AttestationEvent.KIND -> AttestationEvent(id, pubKey, createdAt, tags, content, sig)
                 AttestationRequestEvent.KIND -> AttestationRequestEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1117,8 +1118,9 @@ class EventFactory {
                 ThemeDefinitionEvent.KIND -> ThemeDefinitionEvent(id, pubKey, createdAt, tags, content, sig)
                 AuthoredPodcastsEvent.KIND -> AuthoredPodcastsEvent(id, pubKey, createdAt, tags, content, sig)
                 FavoritePodcastsListEvent.KIND -> FavoritePodcastsListEvent(id, pubKey, createdAt, tags, content, sig)
-                // Podcasting-2.0 episodes (podstr's draft) share 30054 with drss.io's listening-progress
-                // records (`position`, `duration`, an `a` to the 30023 article the episode is bridged as).
+                // Podcasting-2.0 episodes (podstr's draft) share 30054 with the listening-progress records
+                // drss.io wrote until it moved them to 30078 (`position`, `duration`, an `a` to the 30023
+                // article the episode is bridged as).
                 Podcasting20EpisodeEvent.KIND ->
                     when {
                         Podcasting20EpisodeEvent.isPodcastEpisode(tags) -> Podcasting20EpisodeEvent(id, pubKey, createdAt, tags, content, sig)
