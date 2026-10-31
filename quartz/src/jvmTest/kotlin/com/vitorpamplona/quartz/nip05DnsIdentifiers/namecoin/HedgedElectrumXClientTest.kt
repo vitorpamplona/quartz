@@ -85,11 +85,32 @@ class HedgedElectrumXClientTest {
         }
     }
 
+    /** Accepts the TCP connection and closes it at once: the client reads EOF. */
+    private class ClosingServer : AutoCloseable {
+        private val serverSocket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val port: Int = serverSocket.localPort
+
+        private val t =
+            thread(start = true) {
+                try {
+                    serverSocket.accept().close()
+                } catch (_: Exception) {
+                    // Server socket closed before a client connected.
+                }
+            }
+
+        override fun close() {
+            runCatching { serverSocket.close() }
+            runCatching { t.join(2_000) }
+        }
+    }
+
     /** Minimal plaintext ElectrumX server: answers the four RPCs connectAndQuery makes. */
     private class FakeElectrumXServer(
         private val identifier: String,
         private val value: String,
         private val historyEmpty: Boolean = false,
+        private val historyDelayMs: Long = 0,
     ) : AutoCloseable {
         private val serverSocket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val port: Int = serverSocket.localPort
@@ -102,6 +123,9 @@ class HedgedElectrumXClientTest {
                         val writer = PrintWriter(conn.getOutputStream(), true)
                         while (true) {
                             val line = reader.readLine() ?: break
+                            if (line.contains("\"blockchain.scripthash.get_history\"") && historyDelayMs > 0) {
+                                Thread.sleep(historyDelayMs)
+                            }
                             val id = Regex("\"id\":(\\d+)").find(line)?.groupValues?.get(1) ?: "0"
                             val response =
                                 when {
@@ -216,34 +240,54 @@ class HedgedElectrumXClientTest {
     }
 
     @Test
-    fun `NameNotFound from a fast server wins the race against a stalled one`() {
-        StalledServer().use { stalled ->
-            FakeElectrumXServer("d/test", "{}", historyEmpty = true).use { emptyHealthy ->
-                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000, hedgeDelayMs = 200)
-                // Stalled first: the definitive NameNotFound must still win.
-                val servers = listOf(plaintextServer(stalled.port), plaintextServer(emptyHealthy.port))
+    fun `a server that fails fast starts the next one without waiting for the hedge delay`() {
+        ClosingServer().use { closing ->
+            FakeElectrumXServer("d/test", "{}").use { healthy ->
+                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 5_000, hedgeDelayMs = 30_000)
+                val servers = listOf(plaintextServer(closing.port), plaintextServer(healthy.port))
 
-                assertThrows(NamecoinLookupException.NameNotFound::class.java) {
-                    runBlocking { client.nameShowWithFallback("d/test", servers) }
-                }
+                val start = System.currentTimeMillis()
+                val result = runBlocking { client.nameShowWithFallback("d/test", servers) }
+                val elapsed = System.currentTimeMillis() - start
+
+                assertEquals("{}", result?.value)
+                assertTrue("took ${elapsed}ms; the failed server should hand over at once, not after 30s", elapsed < 5_000)
             }
         }
     }
 
     @Test
-    fun `a server that fails fast starts the next one without waiting for the hedge delay`() {
-        // Bind and release a port so connecting to it is refused at once.
-        val refusedPort = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
-        FakeElectrumXServer("d/test", "{}").use { healthy ->
-            val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 5_000, hedgeDelayMs = 30_000)
-            val servers = listOf(plaintextServer(refusedPort), plaintextServer(healthy.port))
+    fun `a slower server's record beats a faster server's NameNotFound`() {
+        // The empty server starts at 400ms and answers NameNotFound at once;
+        // the record holder answers about 600ms in. Without the grace period
+        // the NameNotFound would win; with it (400ms, until about 800ms) the
+        // record does.
+        FakeElectrumXServer("d/test", "{}", historyDelayMs = 600).use { slowHolder ->
+            FakeElectrumXServer("d/test", "{}", historyEmpty = true).use { fastEmpty ->
+                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 5_000, hedgeDelayMs = 400)
+                val servers = listOf(plaintextServer(slowHolder.port), plaintextServer(fastEmpty.port))
 
-            val start = System.currentTimeMillis()
-            val result = runBlocking { client.nameShowWithFallback("d/test", servers) }
-            val elapsed = System.currentTimeMillis() - start
+                val result = runBlocking { client.nameShowWithFallback("d/test", servers) }
 
-            assertEquals("{}", result?.value)
-            assertTrue("took ${elapsed}ms; the refused server should hand over at once, not after 30s", elapsed < 5_000)
+                assertEquals("{}", result?.value)
+            }
+        }
+    }
+
+    @Test
+    fun `NameNotFound waits for a stalled server only up to the hedge delay`() {
+        StalledServer().use { stalled ->
+            FakeElectrumXServer("d/test", "{}", historyEmpty = true).use { empty ->
+                val client = ElectrumXClient(connectTimeoutMs = 2_000, readTimeoutMs = 60_000, hedgeDelayMs = 300)
+                val servers = listOf(plaintextServer(stalled.port), plaintextServer(empty.port))
+
+                val start = System.currentTimeMillis()
+                assertThrows(NamecoinLookupException.NameNotFound::class.java) {
+                    runBlocking { client.nameShowWithFallback("d/test", servers) }
+                }
+                val elapsed = System.currentTimeMillis() - start
+                assertTrue("took ${elapsed}ms; expected about 600ms (start hedge + negative grace)", elapsed in 500..3_000)
+            }
         }
     }
 }
