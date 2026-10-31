@@ -20,6 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip64Chess.jester
 
+import com.vitorpamplona.crypto.sha2.sha256
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
+
 /**
  * Jester Protocol Constants
  *
@@ -56,4 +60,14 @@ object JesterProtocol {
 
     /** Content kind for chat */
     const val CONTENT_KIND_CHAT = 2
+
+    /**
+     * The `e` reference jesterui files a direct challenge under:
+     * `sha256(sha256hex(pubkey) + START_POSITION_HASH)`, both hashes as lowercase hex strings.
+     * The challenged player finds their challenges by asking relays for `#e` = this, which keeps
+     * them out of the public lobby (`#e` = [START_POSITION_HASH]).
+     */
+    fun privateStartRef(pubkey: HexKey): HexKey = sha256Hex(sha256Hex(pubkey) + START_POSITION_HASH)
+
+    private fun sha256Hex(value: String): HexKey = sha256(value.encodeToByteArray()).toHexKey()
 }

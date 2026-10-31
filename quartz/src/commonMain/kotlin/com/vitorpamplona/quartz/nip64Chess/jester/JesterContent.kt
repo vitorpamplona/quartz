@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip64Chess.jester
 
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -45,4 +46,22 @@ data class JesterContent(
     val playerColor: String? = null, // "white" or "black" - challenger's color choice
     val result: String? = null, // "1-0", "0-1", "1/2-1/2" for game end
     val termination: String? = null, // "checkmate", "resignation", "draw_agreement", etc.
-)
+    // nostr.blue's spelling of the challenger's colour; readers take either, writers write both.
+    @SerialName("player_color") val playerColorSnakeCase: String? = null,
+    // On a move: its author offers a draw. The other player accepts with a draw-agreement end, or
+    // declines by moving. Same name as nostr.blue's.
+    @SerialName("draw_offered") val drawOffered: Boolean? = null,
+) {
+    @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        version: String = "0",
+        kind: Int,
+        fen: String = JesterProtocol.FEN_START,
+        move: String? = null,
+        history: List<String> = emptyList(),
+        nonce: String? = null,
+        playerColor: String? = null,
+        result: String? = null,
+        termination: String? = null,
+    ) : this(version, kind, fen, move, history, nonce, playerColor, result, termination, null, null)
+}
