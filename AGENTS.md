@@ -150,8 +150,8 @@ Both agents read the same rules, skills and checks, laid out like Amethyst's:
   Never write a rule in a `CLAUDE.md`.
 - **Skills are written once**, in `.claude/skills/<name>/`, and symlinked from
   `.agents/skills/<name>`. Never copy a skill into `.agents/`. Here: `nostr-expert` (event
-  classes, tags, NIP-19, NIP-44, mapping a NIP to Quartz) and `event-store-semantics` (the
-  `IEventStore` contract and NIP-50 search).
+  classes, tags, NIP-19, NIP-44, mapping a NIP to Quartz), `event-store-semantics` (the
+  `IEventStore` contract and NIP-50 search) and `ngit-pr` (PRs on GitHub or as nostr proposals).
 - **A skill's `description` is how both agents decide to load it.** Keep its concrete class
   names, paths and commands; 120–300 characters, strongest triggers first.
 - **Shared checks live in `tools/agent-hooks/`.** `.claude/settings.json` and `.codex/hooks.json`
@@ -189,6 +189,17 @@ Between majors, a breaking change ships as a deprecation:
 - Conventional commits: `!` (`refactor!:`, `BREAKING CHANGE:`) marks a breaking commit and only
   lands for a major, so `git log --oneline v<last>..main` shows whether the next release can be a
   minor. A deprecation is a plain `feat:` or `refactor:`.
+
+## Remotes and pull requests
+
+The repo is on GitHub, `github.com/vitorpamplona/quartz`, which holds the canonical `main`, and on
+nostr as a NIP-34 repository,
+`nostr://npub1gcxzte5zlkncx26j68ez60fzkvtkm9e0vrwdcvsjakxf9mu9qewqlfnj5z/relay.ngit.dev/quartz`: a
+push to that remote goes to its GRASP git servers and to GitHub. A PR can go out either way: a
+GitHub PR (`gh`), or a nostr proposal (`ngit`, a `pr/…` branch, reviewed on
+[gitworkshop.dev](https://gitworkshop.dev/npub1gcxzte5zlkncx26j68ez60fzkvtkm9e0vrwdcvsjakxf9mu9qewqlfnj5z/relay.ngit.dev/quartz)).
+Remote names vary per clone, so identify them by URL. Open a PR only when the human you work for
+asks, and before opening, revising or merging one by either path, use the `ngit-pr` skill.
 
 ## Releasing
 
