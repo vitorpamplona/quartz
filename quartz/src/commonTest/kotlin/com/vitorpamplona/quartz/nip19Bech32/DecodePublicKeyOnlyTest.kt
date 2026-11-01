@@ -63,6 +63,7 @@ class DecodePublicKeyOnlyTest {
         assertNull(decodePublicKeyOnlyAsHexOrNull("abcd"), "hex that is not 32 bytes")
         assertNull(decodePublicKeyOnlyAsHexOrNull(pubkey + "00"))
         assertNull(decodePublicKeyOnlyAsHexOrNull("zz".repeat(32)))
+        @Suppress("DEPRECATION") // note1 is deprecated, but still an entity this must refuse
         assertNull(decodePublicKeyOnlyAsHexOrNull(pubkey.hexToByteArray().toNote()))
         assertNull(decodePublicKeyOnlyAsHexOrNull(npub.dropLast(1) + if (npub.last() == 'q') "p" else "q"), "a bad checksum")
         // The lenient decoder accepts any even-length hex, for comparison.

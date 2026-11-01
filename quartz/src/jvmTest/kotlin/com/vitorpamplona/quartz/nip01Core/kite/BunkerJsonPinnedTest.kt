@@ -163,8 +163,8 @@ class BunkerJsonPinnedTest {
         val pin = Pin("bunker writes")
         for (v in values) {
             pin.add(OptimizedJsonMapper.toJson(v))
-            assertEquals(KiteWriter.toJsonOrNull(v), OptimizedJsonMapper.toJson(v), describe(v as BunkerMessage))
-            assertEquals(KotlinSerializationMapper.toJson(v), OptimizedJsonMapper.toJson(v), "kotlinx: " + describe(v as BunkerMessage))
+            assertEquals(KiteWriter.toJsonOrNull(v), OptimizedJsonMapper.toJson(v), describe(v))
+            assertEquals(KotlinSerializationMapper.toJson(v), OptimizedJsonMapper.toJson(v), "kotlinx: " + describe(v))
         }
         pin.check(PIN_WRITES)
     }

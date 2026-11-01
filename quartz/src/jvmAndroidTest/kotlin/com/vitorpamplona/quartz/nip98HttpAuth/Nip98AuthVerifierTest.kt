@@ -25,7 +25,6 @@ import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -201,6 +200,5 @@ class Nip98AuthVerifierTest {
         val forged = HTTPAuthorizationEvent(signed.id, NostrSignerSync(KeyPair()).pubKey, signed.createdAt, signed.tags, signed.content, signed.sig)
         val r = verifier.preverify(forged.toAuthToken(), "POST", "http://x/")
         assertTrue(assertIs<Nip98AuthVerifier.Result.Malformed>(r).reason.contains("signature"))
-        assertFalse(r is Nip98AuthVerifier.Result.Verified)
     }
 }
