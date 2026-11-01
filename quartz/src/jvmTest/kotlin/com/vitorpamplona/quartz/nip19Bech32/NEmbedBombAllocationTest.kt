@@ -39,10 +39,9 @@ class NEmbedBombAllocationTest {
         val compressed = GZip.compress(" ".repeat(50 * 1024 * 1024) + "{}")
 
         val threads = ManagementFactory.getThreadMXBean() as ThreadMXBean
-        val id = Thread.currentThread().id
-        val before = threads.getThreadAllocatedBytes(id)
+        val before = threads.currentThreadAllocatedBytes
         val parsed = runCatching { NEmbed.parse(compressed) }.getOrNull()
-        val allocated = threads.getThreadAllocatedBytes(id) - before
+        val allocated = threads.currentThreadAllocatedBytes - before
 
         assertNull(parsed)
         assertTrue(allocated < 8L * 1024 * 1024, "parse allocated $allocated bytes for a ${compressed.size}-byte payload")

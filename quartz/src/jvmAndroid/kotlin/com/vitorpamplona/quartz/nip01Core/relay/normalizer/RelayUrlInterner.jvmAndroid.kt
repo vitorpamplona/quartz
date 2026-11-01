@@ -61,7 +61,9 @@ actual class RelayUrlInterner {
 
     internal actual fun clear() {
         cache.clear()
-        while (collected.poll() != null) Unit
+        while (collected.poll() != null) {
+            // drains the references the GC queued
+        }
     }
 
     /** Removes the entries whose relay was collected. Two-argument remove spares a slot re-filled since. */

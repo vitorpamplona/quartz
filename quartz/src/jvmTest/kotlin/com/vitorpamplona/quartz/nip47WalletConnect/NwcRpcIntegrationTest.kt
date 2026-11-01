@@ -141,8 +141,8 @@ class NwcRpcIntegrationTest {
             val response = responseEvent.decrypt(clientSigner)
             assertIs<MakeInvoiceSuccessResponse>(response)
             assertNotNull(response.result)
-            assertEquals(fakeInvoice, response.result?.invoice)
-            assertEquals("abc123hash", response.result?.payment_hash)
+            assertEquals(fakeInvoice, response.result.invoice)
+            assertEquals("abc123hash", response.result.payment_hash)
         }
 
     @Test
