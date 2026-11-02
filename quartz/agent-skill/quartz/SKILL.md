@@ -85,7 +85,7 @@ in `NostrClient` completion — import them by name:
 | Verify/store as events arrive, per-relay results | `fetchAllWithHooks` |
 | Many relays at once | `fetchAllPagesFromPool`, `fetchAllPagesFromPoolWithHooks` |
 | Live subscription | `subscribeAsFlow(relay, filter)` (`…client.reqs`) |
-| Live tail for a long-running consumer (indexer, mirror) | `liveEvents(relay, filters, since)`: a `Flow<Event>` with backpressure that resumes from when it was last caught up after a reconnect, and ends with `LiveEventsClosedException` when the relay closes it |
+| Live tail for a long-running consumer (indexer, mirror) | `subscribeEvents(relay, filters, since)`: a `Flow<Event>` with backpressure that resumes from when it was last caught up after a reconnect, and ends with `SubscriptionClosedException` when the relay closes it |
 | NIP-45 count | `count(relay, filter)`, `countMerged(relays, filter)` |
 | NIP-77 sync | `negentropySync`, `negentropySyncOrFetch` |
 | Publish and wait for `OK` | `publishAndConfirm(event, relays)`, `publishAndConfirmDetailed` |

@@ -57,7 +57,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * - **A closed subscription ends the flow.** After a CLOSED the client does not send the REQ
  *   again on its own (except a `rate-limited:` one that states a back-off, which it retries), so
  *   the subscription would stay silent until something reconnected the relay. Instead, a CLOSED
- *   for which [endsOnClosed] is true completes the flow with [LiveEventsClosedException], and
+ *   for which [endsOnClosed] is true completes the flow with [SubscriptionClosedException], and
  *   the caller decides: collect again, back off, or stop. By default every CLOSED but
  *   `auth-required:` ends it, since a client with a signer authenticates and the REQ is replayed;
  *   a client that can't answer AUTH should end on that one too.
@@ -66,7 +66,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * in [filters] is replaced.
  */
 @OptIn(ExperimentalAtomicApi::class)
-fun INostrClient.liveEvents(
+fun INostrClient.subscribeEvents(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
     since: Long? = null,
@@ -121,7 +121,7 @@ fun INostrClient.liveEvents(
                     if (relay != target) return
                     // Retried by the client once the relay's stated back-off passes.
                     if (RetryAfter.parse(message, params) != null) return
-                    if (endsOnClosed(message)) close(LiveEventsClosedException(relay, message))
+                    if (endsOnClosed(message)) close(SubscriptionClosedException(relay, message))
                 }
             }
 
@@ -145,8 +145,8 @@ fun INostrClient.liveEvents(
         awaitClose { unsubscribe(subId) }
     }
 
-/** The relay ended a [liveEvents] subscription with a CLOSED, and the client won't re-send it on its own. */
-class LiveEventsClosedException(
+/** The relay ended a [subscribeEvents] subscription with a CLOSED, and the client won't re-send it on its own. */
+class SubscriptionClosedException(
     val relay: NormalizedRelayUrl,
     val reason: String,
 ) : Exception("${relay.url} closed the live subscription: $reason")

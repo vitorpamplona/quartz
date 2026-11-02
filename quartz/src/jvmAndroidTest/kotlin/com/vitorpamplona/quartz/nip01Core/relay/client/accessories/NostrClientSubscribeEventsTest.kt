@@ -53,7 +53,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class NostrClientLiveEventsTest {
+class NostrClientSubscribeEventsTest {
     /** Every REQ the relay accepted, across connections. */
     private val reqs = CopyOnWriteArrayList<ReqCmd>()
     private var refuseWith: String? = null
@@ -100,7 +100,7 @@ class NostrClientLiveEventsTest {
     private fun live(
         since: Long? = null,
         endsOnClosed: (String) -> Boolean = { !it.startsWith("auth-required:") },
-    ) = client.liveEvents(
+    ) = client.subscribeEvents(
         relay = relay,
         filters = listOf(Filter(kinds = listOf(1))),
         since = since,
@@ -171,7 +171,7 @@ class NostrClientLiveEventsTest {
         runBlocking<Unit> {
             refuseWith = "restricted: members only"
             val outcome = withTimeout(5_000) { runCatching { live().collect { } }.exceptionOrNull() }
-            assertIs<LiveEventsClosedException>(outcome)
+            assertIs<SubscriptionClosedException>(outcome)
             assertEquals("restricted: members only", outcome.reason)
         }
 
@@ -184,7 +184,7 @@ class NostrClientLiveEventsTest {
             ended.cancel()
 
             val outcome = withTimeout(5_000) { runCatching { live(endsOnClosed = { true }).collect { } }.exceptionOrNull() }
-            assertIs<LiveEventsClosedException>(outcome)
+            assertIs<SubscriptionClosedException>(outcome)
         }
 
     @Test
