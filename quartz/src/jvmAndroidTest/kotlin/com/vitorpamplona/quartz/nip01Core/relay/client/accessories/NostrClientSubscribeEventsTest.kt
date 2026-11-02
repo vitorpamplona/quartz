@@ -38,14 +38,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,9 +61,13 @@ class NostrClientSubscribeEventsTest {
     private val reqs = CopyOnWriteArrayList<ReqCmd>()
     private var refuseWith: String? = null
 
+    /** How many REQs to refuse as `rate-limited:` with a back-off before accepting. */
+    private val rateLimitedReqs = AtomicInteger(0)
+
     private inner class RecordingPolicy : PassThroughPolicy() {
         override fun accept(cmd: ReqCmd): PolicyResult<ReqCmd> {
             refuseWith?.let { return PolicyResult.Rejected(it) }
+            if (rateLimitedReqs.getAndDecrement() > 0) return PolicyResult.Rejected.rateLimited("slow down", retryAfterMs = 300)
             reqs += cmd
             return PolicyResult.Accepted(cmd)
         }
@@ -87,6 +94,7 @@ class NostrClientSubscribeEventsTest {
     private val relay = InProcessRelays.DEFAULT_URL
     private val signer = NostrSignerSync()
     private var clock = 1_000_000L
+    private val resumePoints = CopyOnWriteArrayList<Long>()
 
     @AfterTest
     fun tearDown() {
@@ -100,6 +108,7 @@ class NostrClientSubscribeEventsTest {
     private fun live(
         since: Long? = null,
         endsOnClosed: (String) -> Boolean = { !it.startsWith("auth-required:") },
+        replayTimeoutMs: Long = 30_000,
     ) = client.subscribeEvents(
         relay = relay,
         filters = listOf(Filter(kinds = listOf(1))),
@@ -107,10 +116,14 @@ class NostrClientSubscribeEventsTest {
         overlapSeconds = 60,
         sinceUpdateIntervalMs = 100,
         endsOnClosed = endsOnClosed,
+        replayTimeoutMs = replayTimeoutMs,
+        onResumePoint = { resumePoints += it },
         nowInSeconds = { clock },
     )
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
+
+    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (point !in resumePoints) delay(20) }
 
     @Test
     fun storedEventsThenLiveOnes() =
@@ -121,8 +134,7 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live().collect { received.send(it) } }
 
             assertEquals(stored.id, withTimeout(5_000) { received.receive() }.id)
-            awaitReqs(1)
-            delay(200)
+            awaitResumePoint(clock - 60) // EOSE seen: the subscription is live
             val fresh = note(200)
             hub.getOrCreate(relay).publish(fresh)
             assertEquals(fresh.id, withTimeout(5_000) { received.receive() }.id)
@@ -135,10 +147,10 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live(since = 500).collect { } }
             awaitReqs(1)
             assertEquals(500L, reqs[0].filters.single().since)
-            delay(400) // EOSE at clock 1_000_000: since moves to 999_940, stored without a REQ
+            awaitResumePoint(999_940) // EOSE at clock 1_000_000, minus the overlap: stored without a REQ
 
             clock += 3_600 // an hour with nothing arriving: still caught up only at 1_000_000
-            delay(400)
+            delay(400) // several since-update ticks, none of which may move it
             builder.dropAll()
 
             awaitReqs(2)
@@ -151,19 +163,57 @@ class NostrClientSubscribeEventsTest {
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
-            awaitReqs(1)
-            delay(200)
+            awaitResumePoint(999_940)
 
             clock += 1_000
             hub.getOrCreate(relay).publish(note(clock))
             withTimeout(5_000) { received.receive() }
-            delay(400)
+            awaitResumePoint(clock - 60)
             assertEquals(1, reqs.size, "a since-only change is stored, not sent")
 
             builder.dropAll()
             awaitReqs(2)
             assertEquals(clock - 60, reqs[1].filters.single().since)
             job.cancel()
+        }
+
+    @Test
+    fun aCollectorThatStopsMidSendLeavesTheConnectionServingOthers() =
+        runBlocking<Unit> {
+            val other = Channel<Event>(Channel.UNLIMITED)
+            val otherJob = scope.launch { live().collect { other.send(it) } }
+            // No buffer: the second event's send suspends on the connection's delivery coroutine
+            // while this collector is stuck on the first.
+            val stuckJob = scope.launch { live().buffer(Channel.RENDEZVOUS).collect { awaitCancellation() } }
+            awaitReqs(2)
+
+            val first = note(clock)
+            hub.getOrCreate(relay).publish(first)
+            assertEquals(first.id, withTimeout(5_000) { other.receive() }.id)
+            val second = note(clock + 1)
+            hub.getOrCreate(relay).publish(second)
+            delay(300) // the delivery coroutine is now suspended in the stuck flow's send
+            stuckJob.cancel()
+
+            assertEquals(second.id, withTimeout(5_000) { other.receive() }.id)
+            val third = note(clock + 2)
+            hub.getOrCreate(relay).publish(third)
+            assertEquals(third.id, withTimeout(5_000) { other.receive() }.id, "the connection still delivers")
+            otherJob.cancel()
+        }
+
+    @Test
+    fun aRateLimitWithABackOffKeepsTheFlow() =
+        runBlocking<Unit> {
+            rateLimitedReqs.set(1)
+            val stored = note(100)
+            hub.getOrCreate(relay).preload(stored)
+            val received = Channel<Event>(Channel.UNLIMITED)
+            val outcome = scope.async { runCatching { live().collect { received.send(it) } } }
+
+            assertEquals(stored.id, withTimeout(5_000) { received.receive() }.id, "the client retried after the back-off")
+            assertTrue(outcome.isActive, "a retried rate limit must not end the flow")
+            outcome.cancel()
         }
 
     @Test
@@ -176,15 +226,17 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
-    fun anAuthChallengeDoesNotEndTheFlowByDefault() =
+    fun anAuthChallengeWaitsForAReplayThenEnds() =
         runBlocking<Unit> {
             refuseWith = "auth-required: sign in"
-            val ended = scope.async { runCatching { live().collect { } } }
-            assertNull(withTimeoutOrNull(1_000) { ended.await() }, "the client may still authenticate and replay the REQ")
-            ended.cancel()
+            val waiting = scope.async { runCatching { live().collect { } } }
+            assertNull(withTimeoutOrNull(1_000) { waiting.await() }, "the client may still authenticate and replay the REQ")
+            waiting.cancel()
 
-            val outcome = withTimeout(5_000) { runCatching { live(endsOnClosed = { true }).collect { } }.exceptionOrNull() }
+            // Nothing here authenticates, so nothing replays it: the flow ends once the wait runs out.
+            val outcome = withTimeout(5_000) { runCatching { live(replayTimeoutMs = 300).collect { } }.exceptionOrNull() }
             assertIs<SubscriptionClosedException>(outcome)
+            assertEquals("auth-required: sign in", outcome.reason)
         }
 
     @Test
@@ -192,12 +244,19 @@ class NostrClientSubscribeEventsTest {
         runBlocking<Unit> {
             val job = scope.launch { live().collect { } }
             awaitReqs(1)
+            val cancelled = reqs[0].subId
+            // Keeps the relay wanted, so the client reconnects after the drop and re-sends every
+            // REQ it still holds: a leaked one would come back with it.
+            val kept = scope.launch { live().collect { } }
+            awaitReqs(2)
+            val keptSub = reqs[1].subId
             job.cancel()
             job.join()
-            delay(200)
+
             builder.dropAll()
-            delay(2_500)
-            assertEquals(1, reqs.size, "nothing re-sends a REQ nobody is collecting")
-            assertTrue(job.isCancelled)
+            withTimeout(10_000) { while (reqs.drop(2).none { it.subId == keptSub }) delay(20) }
+            delay(300)
+            assertTrue(reqs.drop(2).none { it.subId == cancelled }, "nothing re-sends a REQ nobody is collecting")
+            kept.cancel()
         }
 }

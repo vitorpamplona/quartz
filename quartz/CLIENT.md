@@ -251,9 +251,12 @@ fun main() = runBlocking {
 
 A service that tails a relay for as long as it runs (an indexer, a mirror) should use
 `client.subscribeEvents(relay, filters, since)` (`…client.accessories`) instead. It is a `Flow<Event>`
-with backpressure, and after a reconnect it asks from when it was last caught up, minus an
-overlap, so an outage loses nothing. When the relay CLOSEs the subscription, which the client
-won't re-send on its own, the flow ends with `SubscriptionClosedException`.
+with backpressure. After a reconnect it asks again from when it was last caught up, minus an
+overlap, and `onResumePoint` hands you that point to persist for a restart. `since` filters on
+`created_at`, so an event the relay stores during an outage with an older `created_at` is not
+sent again: reconcile the gap (`negentropySync`) if every event matters. When the relay CLOSEs
+the subscription, which the client won't re-send on its own, the flow ends with
+`SubscriptionClosedException`.
 
 ### 5. Publish Events
 
