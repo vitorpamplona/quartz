@@ -249,6 +249,12 @@ fun main() = runBlocking {
 }
 ```
 
+A service that tails a relay for as long as it runs (an indexer, a mirror) should use
+`client.liveEvents(relay, filters, since)` (`…client.accessories`) instead. It is a `Flow<Event>`
+with backpressure, and after a reconnect it asks from when it was last caught up, minus an
+overlap, so an outage loses nothing. When the relay CLOSEs the subscription, which the client
+won't re-send on its own, the flow ends with `LiveEventsClosedException`.
+
 ### 5. Publish Events
 
 Create a key pair, sign an event, and publish it to relays:
