@@ -26,7 +26,9 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
+import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadablePrefix
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -58,19 +60,23 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *   behind holds up the subscription instead of losing events. That also holds up every other
  *   subscription on [relay]'s connection; add a `buffer()` to decouple them. A collector that
  *   stops (cancelled, or the flow ended) never disturbs the connection: its pending events are dropped.
- * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ. Its `since` is
- *   moved forward only when this subscription is known to be caught up — at EOSE, and at each live
- *   event — minus [overlapSeconds]: on EOSE at once, otherwise at most every [sinceUpdateIntervalMs]
- *   (a `since`-only change is stored without a new REQ). A connection that drops for an hour asks
- *   again from just before the drop, not from an hour later. Expect the overlap's events again.
+ * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ. The moment this
+ *   subscription was last known to be caught up (at EOSE, and at each live event) is kept in
+ *   memory, and the stored filters are rewritten from it, minus [overlapSeconds], once per
+ *   disconnect: the client tells its connection listeners before it schedules the reconnect, so the
+ *   re-sent REQ carries it. A connection that drops for an hour asks again from just before the
+ *   drop, not from an hour later, and a healthy one costs nothing per event. Expect the overlap's
+ *   events again. (A REQ the client re-sends on a live connection, after an AUTH, keeps the older
+ *   `since`: it re-reads more than it needs, and misses nothing.)
  * - **What a resume can't see.** `since` filters on `created_at`. An event the relay stores while
  *   the connection is down, but created before the resume point (a relay mirroring others does
  *   this all the time), is not sent again; nor is anything past the relay's own cap on stored
  *   results for one REQ. If every event matters, reconcile the gap too (`negentropySync`).
- * - **Restarts resume.** [onResumePoint] hears each `since` the subscription would resume from.
- *   Persist it and, after a restart, set it as the filters' `since`. It covers what was handed to this flow,
- *   so it can run ahead of what a lagging collector has processed by up to its buffer; the
- *   overlap covers a lag shorter than [overlapSeconds].
+ * - **Restarts resume.** A crash fires no disconnect, so [onResumePoint] hears the resume point at
+ *   EOSE and then at most every [resumePointIntervalMs] while it moves. Persist it and, after a
+ *   restart, set it as the filters' `since`. It covers what was handed to this flow, so it can run
+ *   ahead of what a lagging collector has processed by up to its buffer; the overlap covers a lag
+ *   shorter than [overlapSeconds].
  * - **A closed subscription ends the flow.** After a CLOSED the client does not send the REQ
  *   again on its own, so the subscription would stay silent until something reconnected the
  *   relay. Instead the flow completes with [SubscriptionClosedException], and the caller decides:
@@ -92,7 +98,7 @@ fun INostrClient.subscribeEvents(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
     overlapSeconds: Long = 60,
-    sinceUpdateIntervalMs: Long = 300_000,
+    resumePointIntervalMs: Long = 60_000,
     authSettleMs: Long = 120_000,
     onResumePoint: (since: Long) -> Unit = {},
     nowInSeconds: () -> Long = TimeUtils::now,
@@ -105,10 +111,12 @@ fun INostrClient.subscribeEvents(
         // AUTHs accepted on the relay as of the last time it served us: an `auth-required:` refusal
         // waits for one newer than this, which is when the client re-sends the REQ.
         val authMark = AtomicInt(authSuccessMark(target))
+        // The resume point the stored filters carry; 0 = still the filters as given.
+        val storedFrom = AtomicLong(0L)
         // Completed when the flow ends, before the unsubscribe: a send waiting for room gives up on
         // it, and a `since` update racing the unsubscribe undoes its own subscribe.
         val stopped = CompletableDeferred<Unit>()
-        val sinceUpdates = Channel<Unit>(Channel.CONFLATED)
+        val caughtUp = Channel<Unit>(Channel.CONFLATED)
 
         // A filter that already starts later than the resume point keeps its own `since`.
         fun filtersFrom(from: Long) = filters.map { f -> f.since?.takeIf { it >= from }?.let { f } ?: f.copy(since = from) }
@@ -157,7 +165,7 @@ fun INostrClient.subscribeEvents(
                     if (relay != target) return
                     authMark.store(authSuccessMark(target))
                     caughtUpAt.store(nowInSeconds())
-                    sinceUpdates.trySend(Unit)
+                    caughtUp.trySend(Unit)
                 }
 
                 override fun onClosed(
@@ -191,31 +199,48 @@ fun INostrClient.subscribeEvents(
                 }
             }
 
-        // Only this coroutine moves `since`, so the stored filters never go backwards.
+        // Rewrites the stored filters from the caught-up moment, once per disconnect, before the
+        // client re-sends them. Runs synchronously in the client's disconnect callback: a coroutine
+        // could lose the race with the reconnect.
+        val connection =
+            object : RelayConnectionListener {
+                override fun onDisconnected(relay: IRelayClient) {
+                    if (relay.url != target || stopped.isCompleted) return
+                    val at = caughtUpAt.load()
+                    if (at == 0L) return
+                    val from = at - overlapSeconds
+                    // Only forward: a stale callback never moves `since` back.
+                    while (true) {
+                        val current = storedFrom.load()
+                        if (current != 0L && from <= current) return
+                        if (storedFrom.compareAndSet(current, from)) break
+                    }
+                    subscribe(subId, mapOf(target to filtersFrom(from)), listener)
+                    // The flow ended while this subscribed: awaitClose's unsubscribe may already have run.
+                    if (stopped.isCompleted) unsubscribe(subId)
+                }
+            }
+
+        // Reports the resume point for restarts. Costs the client nothing: it only reads memory.
         launch {
-            var stored: Long? = null
+            var reported = 0L
             while (true) {
-                withTimeoutOrNull(sinceUpdateIntervalMs) { sinceUpdates.receive() }
+                withTimeoutOrNull(resumePointIntervalMs) { caughtUp.receive() }
                 val at = caughtUpAt.load()
                 if (at == 0L) continue
                 val from = at - overlapSeconds
-                val current = stored
-                if (current != null && from <= current) continue
-                if (stopped.isCompleted) break
-                subscribe(subId, mapOf(target to filtersFrom(from)), listener)
-                // The flow ended while this subscribed: awaitClose's unsubscribe may already have run.
-                if (stopped.isCompleted) {
-                    unsubscribe(subId)
-                    break
+                if (from > reported) {
+                    reported = from
+                    onResumePoint(from)
                 }
-                stored = from
-                onResumePoint(from)
             }
         }
 
+        addConnectionListener(connection)
         subscribe(subId, mapOf(target to filters), listener)
         awaitClose {
             stopped.complete(Unit)
+            removeConnectionListener(connection)
             unsubscribe(subId)
         }
     }

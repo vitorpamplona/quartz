@@ -21,7 +21,9 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -106,12 +108,27 @@ class NostrClientSubscribeEventsTest {
 
     private fun live(since: Long? = null) = live(listOf(Filter(kinds = listOf(1), since = since)))
 
+    /** The client, counting how often the stored filters are rewritten. */
+    private val counting =
+        object : INostrClient by client {
+            val subscribes = AtomicInteger(0)
+
+            override fun subscribe(
+                subId: String,
+                filters: Map<NormalizedRelayUrl, List<Filter>>,
+                listener: SubscriptionListener?,
+            ) {
+                subscribes.incrementAndGet()
+                client.subscribe(subId, filters, listener)
+            }
+        }
+
     private fun live(filters: List<Filter>) =
-        client.subscribeEvents(
+        counting.subscribeEvents(
             relay = relay,
             filters = filters,
             overlapSeconds = 60,
-            sinceUpdateIntervalMs = 100,
+            resumePointIntervalMs = 100,
             onResumePoint = { resumePoints += it },
             nowInSeconds = { clock },
         )
@@ -168,6 +185,27 @@ class NostrClientSubscribeEventsTest {
 
             builder.dropAll()
             awaitReqs(2)
+            assertEquals(clock - 60, reqs[1].filters.single().since)
+            job.cancel()
+        }
+
+    @Test
+    fun aHealthyConnectionNeverRewritesTheFiltersOnlyADisconnectDoes() =
+        runBlocking<Unit> {
+            val received = Channel<Event>(Channel.UNLIMITED)
+            val job = scope.launch { live(since = 500).collect { received.send(it) } }
+            awaitResumePoint(999_940)
+            repeat(5) {
+                clock += 100
+                hub.getOrCreate(relay).publish(note(clock))
+                withTimeout(5_000) { received.receive() }
+            }
+            awaitResumePoint(clock - 60)
+            assertEquals(1, counting.subscribes.get(), "live events move the resume point in memory only")
+
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(2, counting.subscribes.get(), "one rewrite for the disconnect")
             assertEquals(clock - 60, reqs[1].filters.single().since)
             job.cancel()
         }
