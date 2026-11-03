@@ -84,8 +84,8 @@ in `NostrClient` completion — import them by name:
 | More than a relay's per-REQ cap | `fetchAllPages(relay, filters) { event -> }`; only `PagedFetchResult.End.DRAINED` proves there is nothing more |
 | Verify/store as events arrive, per-relay results | `fetchAllWithHooks` |
 | Many relays at once | `fetchAllPagesFromPool`, `fetchAllPagesFromPoolWithHooks` |
-| Live subscription | `subscribeAsFlow(relay, filter)` (`…client.reqs`) |
-| Live tail for a long-running consumer (indexer, mirror) | `subscribeEvents(relay, filters, resume = CaughtUpResume())`: a `Flow<Event>` with backpressure that, after a reconnect, resumes where its `ResumePolicy` says (by default when it was last caught up; read `resumeFrom()` to persist for restarts), and ends with `SubscriptionClosedException` when the relay closes it. It resumes by `created_at`: events a relay stores late are not re-sent |
+| Live subscription | `subscribeAsFlow(relay, filter)` (a list, for a screen) or `subscribe(relay, filters) { event -> }` (a callback; returns a `DynamicSubscription`), both in `…client.reqs`. Both resume after a reconnect and stay open through a CLOSED, which the client sends again on the next reconnect or AUTH |
+| Live tail for a long-running consumer (indexer, mirror) | `subscribeEvents(relay, filters, resume = CaughtUpResume())`, or `subscribeEvents(mapOf(relay to filters, …))` for several: one `Flow<Event>` with backpressure that, after a reconnect, resumes where its `ResumePolicy` says, per relay (by default when it was last caught up; read `resumeFrom(relay, filters)` to persist for restarts), and ends with `SubscriptionClosedException` naming the relay when one closes it. It resumes by `created_at`: events a relay stores late are not re-sent |
 | NIP-45 count | `count(relay, filter)`, `countMerged(relays, filter)` |
 | NIP-77 sync | `negentropySync`, `negentropySyncOrFetch` |
 | Publish and wait for `OK` | `publishAndConfirm(event, relays)`, `publishAndConfirmDetailed` |

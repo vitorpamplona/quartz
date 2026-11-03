@@ -27,21 +27,36 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 
 /**
- * A subscription whose filters come from [filter]. [refresh] re-reads it and sends what changed;
- * the pool also re-reads it each time it writes this subscription's REQ on a connection (the first
- * one, a reconnect, the replay after an AUTH), so a re-sent REQ carries what [filter] returns now,
- * a moved `since` for instance, not what it returned at the last [refresh].
+ * A live subscription with a callback, open until [close]: what `subscribe(relay, filters) { }`
+ * and `subscribe(filters = { … }) { }` return.
  *
- * Which relays the subscription is open on changes only on [refresh]: a relay [filter] no longer
- * names keeps the filters it was last given. [filter] runs on the connection's thread then, so keep
- * it cheap.
+ * - **Filters come from [filter].** [refresh] re-reads it and sends what changed. The pool also
+ *   re-reads it each time it writes the REQ on a connection (the first one, a reconnect, the
+ *   replay after an AUTH), so a re-sent REQ carries what [filter] returns now. Which relays it is
+ *   open on changes only on [refresh]: a relay [filter] no longer names keeps the filters it was
+ *   last given. [filter] runs on the connection's thread then, so keep it cheap.
+ * - **Reconnects resume.** [resume] hears when each relay's REQ is caught up (EOSE, live events)
+ *   and moves the re-sent filters' `since` to just before that, so a reconnect doesn't download
+ *   the relay's whole history again. Filters that changed since then are sent as given. A null
+ *   [resume] re-sends the filters as given.
+ * - **A CLOSED doesn't end it.** The client sends the REQ again on the next reconnect or AUTH,
+ *   unless the relay keeps refusing the same filters. To stop on a CLOSED, or to tail a relay with
+ *   backpressure, use `subscribeEvents`.
  */
 class DynamicSubscription(
     val client: INostrClient,
     val filter: () -> Map<NormalizedRelayUrl, List<Filter>>,
+    val resume: ResumePolicy? = CaughtUpResume(),
     val onEvent: (event: Event) -> Unit = {},
 ) : SubscriptionListener,
     SubscriptionHandle {
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(
+        client: INostrClient,
+        filter: () -> Map<NormalizedRelayUrl, List<Filter>>,
+        onEvent: (event: Event) -> Unit = {},
+    ) : this(client, filter, CaughtUpResume(), onEvent)
+
     val subId = RandomInstance.randomChars(10)
 
     override suspend fun onEvent(
@@ -51,13 +66,24 @@ class DynamicSubscription(
         forFilters: List<Filter>?,
     ) {
         onEvent(event)
+        if (isLive) resume?.onCaughtUp(relay, forFilters)
     }
 
-    /** What [filter] returns for [relay] now, so a re-sent REQ is current. */
+    override fun onEose(
+        relay: NormalizedRelayUrl,
+        forFilters: List<Filter>?,
+    ) {
+        resume?.onCaughtUp(relay, forFilters)
+    }
+
+    /** What [filter] returns for [relay] now, moved to where [resume] says, so a re-sent REQ is current. */
     override fun filtersForSync(
         relay: NormalizedRelayUrl,
         filters: List<Filter>,
-    ): List<Filter>? = filter()[relay]
+    ): List<Filter>? {
+        val current = filter()[relay] ?: return null
+        return resume?.resume(relay, current) ?: current
+    }
 
     /**
      * Creates or Updates the filter with relays. This method should be called
@@ -75,4 +101,4 @@ class DynamicSubscription(
 fun INostrClient.subscribe(
     filters: () -> Map<NormalizedRelayUrl, List<Filter>>,
     onEvent: (event: Event) -> Unit = {},
-): SubscriptionHandle = DynamicSubscription(this, filters, onEvent)
+): SubscriptionHandle = DynamicSubscription(this, filters, onEvent = onEvent)

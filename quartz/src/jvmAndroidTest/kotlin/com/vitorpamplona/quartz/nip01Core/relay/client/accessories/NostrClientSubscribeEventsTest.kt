@@ -23,10 +23,13 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
@@ -34,6 +37,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.testing.InProcessRelays
+import com.vitorpamplona.quartz.testing.TestRelay
 import com.vitorpamplona.quartz.testing.preload
 import com.vitorpamplona.quartz.testing.publish
 import kotlinx.coroutines.CoroutineScope
@@ -137,7 +141,7 @@ class NostrClientSubscribeEventsTest {
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
     /** Waits until the stream has reported being caught up at [point] + the overlap. */
-    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (resume.resumeFrom() != point) delay(20) }
+    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (resume.caughtUpAt(relay)?.minus(resume.overlapSeconds) != point) delay(20) }
 
     @Test
     fun storedEventsThenLiveOnes() =
@@ -232,9 +236,15 @@ class NostrClientSubscribeEventsTest {
             var answer: Long? = null
             val fixed =
                 object : ResumePolicy {
-                    override fun onCaughtUp() {}
+                    override fun onCaughtUp(
+                        relay: NormalizedRelayUrl,
+                        filters: List<Filter>?,
+                    ) {}
 
-                    override fun resumeFrom(): Long? {
+                    override fun resumeFrom(
+                        relay: NormalizedRelayUrl,
+                        filters: List<Filter>,
+                    ): Long? {
                         asked.incrementAndGet()
                         return answer
                     }
@@ -304,6 +314,74 @@ class NostrClientSubscribeEventsTest {
             assertEquals(stored.id, withTimeout(5_000) { received.receive() }.id, "the client retried after the back-off")
             assertTrue(outcome.isActive, "a retried rate limit must not end the flow")
             outcome.cancel()
+        }
+
+    @Test
+    fun aResumedReqIsNotUndoneAtItsEoseAndTheNextReconnectResumesAgain() =
+        runBlocking<Unit> {
+            val job = scope.launch { live(since = 500).collect { } }
+            awaitResumePoint(999_940)
+
+            clock += 1_000
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(999_940L, reqs[1].filters.single().since)
+            awaitResumePoint(clock - 60) // the resumed REQ's EOSE
+            delay(300)
+            assertEquals(2, reqs.size, "the resumed REQ's EOSE sends nothing: the pool knows it stands for since = 500")
+
+            builder.dropAll()
+            awaitReqs(3)
+            assertEquals(clock - 60, reqs[2].filters.single().since, "resumed again from the new point")
+            delay(300)
+            assertEquals(3, reqs.size)
+            job.cancel()
+        }
+
+    @Test
+    fun severalRelaysInOneFlowEachResumeFromTheirOwnPoint() =
+        runBlocking<Unit> {
+            val other = RelayUrlNormalizer.normalize("ws://127.0.0.1:7771/")
+            val a = note(100)
+            val b = note(101)
+            hub.getOrCreate(relay).preload(a)
+            hub.getOrCreate(other).preload(b)
+            val filters = listOf(Filter(kinds = listOf(1), since = 50))
+            val received = Channel<Event>(Channel.UNLIMITED)
+            val job = scope.launch { counting.subscribeEvents(mapOf(relay to filters, other to filters), resume).collect { received.send(it) } }
+
+            assertEquals(setOf(a.id, b.id), withTimeout(5_000) { setOf(received.receive().id, received.receive().id) })
+            withTimeout(10_000) { while (resume.caughtUpAt(relay) == null || resume.caughtUpAt(other) == null) delay(20) }
+
+            clock += 1_000 // a live event on one relay only moves that relay's point
+            hub.getOrCreate(other).publish(note(clock))
+            withTimeout(5_000) { received.receive() }
+            withTimeout(10_000) { while (resume.caughtUpAt(other) != clock) delay(20) }
+
+            builder.dropAll()
+            awaitReqs(4)
+            assertEquals(setOf(999_940L, clock - 60), reqs.drop(2).map { it.filters.single().since }.toSet())
+            job.cancel()
+        }
+
+    @Test
+    fun oneRelaysClosedEndsTheFlowAndNamesIt() =
+        runBlocking<Unit> {
+            val other = RelayUrlNormalizer.normalize("ws://127.0.0.1:7771/")
+            hub.register(
+                TestRelay(
+                    url = other,
+                    policyBuilder = {
+                        object : PassThroughPolicy() {
+                            override fun accept(cmd: ReqCmd): PolicyResult<ReqCmd> = PolicyResult.Rejected("restricted: members only")
+                        }
+                    },
+                ),
+            )
+            val filters = listOf(Filter(kinds = listOf(1)))
+            val outcome = withTimeout(5_000) { runCatching { client.subscribeEvents(mapOf(relay to filters, other to filters)).collect { } }.exceptionOrNull() }
+            assertIs<SubscriptionClosedException>(outcome)
+            assertEquals(other, outcome.relay)
         }
 
     @Test

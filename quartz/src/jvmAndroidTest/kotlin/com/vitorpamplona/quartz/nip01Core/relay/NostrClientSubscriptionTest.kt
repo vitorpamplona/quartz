@@ -22,7 +22,7 @@ package com.vitorpamplona.quartz.nip01Core.relay
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
-import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.StaticSubscription
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.subscribe
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.testing.RelayClientTest
 import com.vitorpamplona.quartz.testing.SyntheticEvents
@@ -44,10 +44,7 @@ class NostrClientSubscriptionTest : RelayClientTest() {
             val events = mutableSetOf<Event>()
 
             val sub =
-                StaticSubscription(
-                    client,
-                    mapOf(defaultRelayUrl to listOf(Filter(kinds = listOf(MetadataEvent.KIND), limit = 100))),
-                ) { event ->
+                client.subscribe(defaultRelayUrl, Filter(kinds = listOf(MetadataEvent.KIND), limit = 100)) { event ->
                     assertEquals(MetadataEvent.KIND, event.kind)
                     resultChannel.trySend(event)
                 }

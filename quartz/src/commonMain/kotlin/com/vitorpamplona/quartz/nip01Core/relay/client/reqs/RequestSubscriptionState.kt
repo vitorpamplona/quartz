@@ -70,6 +70,14 @@ class RequestSubscriptionState<T : Any> {
         var filters: List<Filter>? = null
 
         /**
+         * The subscription's own filters that [filters] stand for, when its listener rewrote them
+         * for the wire ([SubscriptionListener.filtersForSync]: a resumed `since`, say); null when
+         * they went as given. Deciding whether the subscription changed compares its filters with
+         * these, not with the rewrite, or every rewrite would read as a change and be undone.
+         */
+        var standsFor: List<Filter>? = null
+
+        /**
          * Survives connect/disconnect so that if new events still arrive we can link
          * them with the filters the relay was processing.
          */
@@ -178,6 +186,18 @@ class RequestSubscriptionState<T : Any> {
 
     fun currentFilters(reference: T) = peek(reference)?.filters
 
+    /**
+     * The subscription's own filters behind [wire], the filters of a REQ on [reference]: what the
+     * in-flight REQ stands for when [wire] is that REQ and its listener rewrote it, else [wire].
+     */
+    fun ownFilters(
+        reference: T,
+        wire: List<Filter>?,
+    ): List<Filter>? {
+        val state = peek(reference) ?: return wire
+        return if (wire != null && wire === state.filters) state.standsFor ?: wire else wire
+    }
+
     fun lastKnownFilterStates(reference: T) = peek(reference)?.lastKnownFilters
 
     fun currentState(reference: T) = peek(reference)?.status
@@ -222,8 +242,10 @@ class RequestSubscriptionState<T : Any> {
     fun onOpenReq(
         reference: T,
         filters: List<Filter>,
+        standsFor: List<Filter>? = null,
     ) {
         val state = mutable(reference)
+        state.standsFor = standsFor
         state.filtersBefore = state.lastKnownFilters
         state.liveBefore = state.status == ReqSubStatus.LIVE || state.streamingOld
         state.unwritten = true
@@ -257,6 +279,7 @@ class RequestSubscriptionState<T : Any> {
         filters: List<Filter>,
     ) {
         val state = mutable(reference)
+        if (filters !== state.filters) state.standsFor = null
         state.status = ReqSubStatus.SENT
         state.filters = filters
         state.lastKnownFilters = filters
@@ -278,6 +301,7 @@ class RequestSubscriptionState<T : Any> {
     ) {
         val state = mutable(reference)
         if (state.status == null) state.status = ReqSubStatus.SENT
+        if (filters !== state.filters) state.standsFor = null
         state.filters = filters
         state.lastKnownFilters = filters
         state.unwritten = false
@@ -288,6 +312,7 @@ class RequestSubscriptionState<T : Any> {
         val state = mutable(reference)
         state.status = ReqSubStatus.CLOSED
         state.filters = null
+        state.standsFor = null
         state.unwritten = false
         state.streamingOld = false
     }
@@ -298,6 +323,7 @@ class RequestSubscriptionState<T : Any> {
         peek(reference)?.let {
             it.status = null
             it.filters = null
+            it.standsFor = null
             it.unwritten = false
             it.streamingOld = false
         }
@@ -307,6 +333,7 @@ class RequestSubscriptionState<T : Any> {
         peek(reference)?.let {
             it.status = null
             it.filters = null
+            it.standsFor = null
             it.unwritten = false
             it.streamingOld = false
         }

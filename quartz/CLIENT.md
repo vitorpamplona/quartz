@@ -253,20 +253,28 @@ A listener can also override `filtersForSync(relay, filters)`. The pool calls it
 writes the subscription's REQ on a connection (the first connection, a reconnect, the replay after
 an AUTH) and sends what it returns instead, for that REQ only: that is how a long-lived
 subscription resumes from where it got to. Derive the answer with `Filter.copy`.
-`client.subscribe(filters = { … }) { event -> … }` (`DynamicSubscription`) answers it by calling
-its lambda again, so a re-sent REQ carries what the lambda returns now; which relays it is open on
-still changes only on `refresh()`.
+`client.subscribe(relay, filters) { event -> … }` and `client.subscribe(filters = { … }) { … }`
+return a `DynamicSubscription`, which answers it for you: it re-reads its filter lambda and, after a
+reconnect, moves `since` to just before it was last caught up (`CaughtUpResume`), so a reconnect
+doesn't download the relay's history again. Which relays it is open on changes only on `refresh()`.
 
-A service that tails a relay for as long as it runs (an indexer, a mirror) should use
-`client.subscribeEvents(relay, filters)` (`…client.accessories`) instead. It is a `Flow<Event>`
-with backpressure. Each filter starts from its own `since`. After a reconnect it asks again from
-where its `ResumePolicy` says; the default, `CaughtUpResume`, uses when it was last caught up
-minus an overlap, and its `resumeFrom()` is the point to persist and set as the filters' `since`
-after a restart. `since` filters on `created_at`, so
-an event the relay stores during an outage with an older `created_at` is not sent again:
-reconcile the gap (`negentropySync`) if every event matters. When the relay CLOSEs the
-subscription, which the client won't re-send on its own, the flow ends with
-`SubscriptionClosedException`.
+When a relay CLOSEs a subscription, the client doesn't send that REQ again on the same connection.
+It does on the next reconnect, or after an AUTH, unless the relay has refused the same filters three
+times running (`blocked:`, `restricted:`, `invalid:`, `unsupported:`, a non-timeout `error:`). A
+`rate-limited:` CLOSED with a stated back-off is retried once it passes. The callback subscriptions
+and `subscribeAsFlow` stay open through a CLOSED and come back with the next re-send.
+
+A service that tails relays for as long as it runs (an indexer, a mirror) should use
+`client.subscribeEvents(relay, filters)`, or `subscribeEvents(mapOf(relay to filters, …))` for
+several (`…client.accessories`), instead. It is a `Flow<Event>` with backpressure. Each filter
+starts from its own `since`. After a reconnect it asks again from where its `ResumePolicy` says,
+per relay; the default, `CaughtUpResume`, uses when it was last caught up minus an overlap, and its
+`resumeFrom(relay, filters)` is the point to persist and set as the filters' `since` after a
+restart. `since` filters on `created_at`, so an event the relay stores during an outage with an
+older `created_at` is not sent again: reconcile the gap (`negentropySync`) if every event matters.
+Unlike the others, it ends on a CLOSED, with `SubscriptionClosedException` naming the relay: on a
+healthy connection the next re-send may never come, and a tail that is silent until the socket
+happens to drop is worse than one that stops.
 
 ### 5. Publish Events
 
