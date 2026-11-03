@@ -20,7 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.pool
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.resume
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -108,6 +111,57 @@ class PoolRequestsFiltersForSyncTest {
                 .filters
                 .single()
                 .since,
+        )
+    }
+
+    @Test
+    fun aListenerIsShownTheFiltersAsThisRelayIsSentThem() {
+        val pool = PoolRequests()
+        pool.relayRefusals.onRefused(relay, "unsupported: kind 7 is not allowed")
+        var asked: List<Filter>? = null
+        pool.addOrUpdate(
+            "live",
+            mapOf(relay to listOf(Filter(kinds = listOf(1, 7)))),
+            listener {
+                asked = it
+                null
+            },
+        )
+
+        assertEquals(
+            listOf(1),
+            pool
+                .sync()
+                .single()
+                .filters
+                .single()
+                .kinds,
+        )
+        assertEquals(listOf(1), asked?.single()?.kinds, "the kind the relay refused is already stripped")
+    }
+
+    @Test
+    fun aNarrowedSubscriptionResumes() {
+        val pool = PoolRequests()
+        pool.relayRefusals.onRefused(relay, "unsupported: kind 7 is not allowed")
+        val resume = CaughtUpResume(nowInSeconds = { 10_000 })
+        pool.addOrUpdate("live", mapOf(relay to listOf(Filter(kinds = listOf(1, 7)))), listener { resume.resume(relay, it) })
+
+        val first = pool.sync().single()
+        // What the EOSE of that REQ reports: the filters as the relay was sent them.
+        resume.onEvent(relay, Event("a".repeat(64), "b".repeat(64), 5_000, 1, emptyArray(), "", "c".repeat(128)), isLive = false)
+        resume.onEose(relay, first.filters)
+
+        pool.onConnecting(relay) // the next connection
+        assertEquals(
+            5_000L,
+            pool
+                .sync()
+                .single()
+                .filters
+                .single()
+                .since,
+            "resumed, not the whole history again",
         )
     }
 }

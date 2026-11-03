@@ -37,9 +37,8 @@ import kotlinx.coroutines.flow.conflate
  * 2. Stores the incoming events in a list, where:
  *    - Before EOSE, events are added to the end of the list
  *    - After EOSE, events are added to the beginning of the list
- * 3. If the client disconnects and reconnects, the client re-sends the req from when the
- *    subscription was last caught up ([CaughtUpResume]; two days earlier for gift wraps), not from
- *    the start:
+ * 3. If the client disconnects and reconnects, the client re-sends the req from the newest
+ *    event it delivered ([CaughtUpResume]; two days earlier for gift wraps), not from the start:
  *    - Events it sends again are ignored if they are already in the list.
  *    - New ones are added to the beginning of the list.
  * 4. A CLOSED doesn't end the flow: the client sends the req again on the next reconnect or AUTH,
@@ -83,7 +82,7 @@ fun INostrClient.subscribeAsFlow(
                         if (hasBeenLive) currentEvents.prepend(event) else currentEvents.append(event)
                         trySend(currentEvents.snapshot())
                     }
-                    if (isLive) resume.onCaughtUp(relay, forFilters)
+                    resume.onEvent(relay, event, isLive)
                 }
 
                 override fun onEose(
@@ -91,7 +90,7 @@ fun INostrClient.subscribeAsFlow(
                     forFilters: List<Filter>?,
                 ) {
                     hasBeenLive = true
-                    resume.onCaughtUp(relay, forFilters)
+                    resume.onEose(relay, forFilters)
                 }
 
                 override fun filtersForSync(

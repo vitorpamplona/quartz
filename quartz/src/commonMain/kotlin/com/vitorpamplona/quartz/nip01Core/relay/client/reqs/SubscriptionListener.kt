@@ -28,8 +28,9 @@ interface SubscriptionListener {
     /**
      * The pool is writing this subscription's REQ to [relay] on a connection: when the connection
      * opens (the first one, or any reconnect) and when it replays every REQ after a successful AUTH.
-     * Return the filters to send instead of [filters] (the ones you subscribed with), or null to
-     * send those.
+     * Return the filters to send instead of [filters], or null to send those. [filters] are the ones
+     * you subscribed with as this relay is sent them: kinds it refused by name stripped, merged to
+     * fit its cap on filters per REQ. They are what [onEose] reports for the REQ.
      *
      * This is how a long-lived subscription keeps a REQ the client re-sends on its own current, a
      * moving `since` for one: the pool asks at the moment the REQ goes out, so nothing has to keep

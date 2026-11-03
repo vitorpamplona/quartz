@@ -152,7 +152,7 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live().collect { received.send(it) } }
 
             assertEquals(stored.id, withTimeout(5_000) { received.receive() }.id)
-            awaitResumePoint(clock) // EOSE seen: the subscription is live
+            awaitResumePoint(stored.createdAt) // EOSE seen: the subscription is live
             val fresh = note(200)
             hub.getOrCreate(relay).publish(fresh)
             assertEquals(fresh.id, withTimeout(5_000) { received.receive() }.id)
@@ -160,19 +160,20 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
-    fun aReconnectResumesFromWhenTheSubscriptionWasCaughtUp() =
+    fun aReconnectResumesFromTheNewestEventDelivered() =
         runBlocking<Unit> {
+            hub.getOrCreate(relay).preload(note(999_000))
             val job = scope.launch { live(since = 500).collect { } }
             awaitReqs(1)
             assertEquals(500L, reqs[0].filters.single().since)
-            awaitResumePoint(1_000_000) // EOSE at clock 1_000_000: stored without a REQ
+            awaitResumePoint(999_000) // counted at EOSE: stored without a REQ
 
-            clock += 3_600 // an hour with nothing arriving: still caught up only at 1_000_000
-            delay(400) // several since-update ticks, none of which may move it
+            clock += 3_600 // an hour with nothing arriving: still 999_000
+            delay(400)
             builder.dropAll()
 
             awaitReqs(2)
-            assertEquals(1_000_000L, reqs[1].filters.single().since, "resume from the last time it was caught up")
+            assertEquals(999_000L, reqs[1].filters.single().since, "resume from the newest event delivered")
             job.cancel()
         }
 
@@ -180,8 +181,10 @@ class NostrClientSubscribeEventsTest {
     fun aLiveEventMovesSinceWithoutANewReq() =
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
+            hub.getOrCreate(relay).preload(note(999_000))
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
-            awaitResumePoint(1_000_000)
+            withTimeout(5_000) { received.receive() }
+            awaitResumePoint(999_000)
 
             clock += 1_000
             hub.getOrCreate(relay).publish(note(clock))
@@ -199,8 +202,10 @@ class NostrClientSubscribeEventsTest {
     fun nothingResubscribesTheResumePointRidesTheResend() =
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
+            hub.getOrCreate(relay).preload(note(999_000))
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
-            awaitResumePoint(1_000_000)
+            withTimeout(5_000) { received.receive() }
+            awaitResumePoint(999_000)
             repeat(5) {
                 clock += 100
                 hub.getOrCreate(relay).publish(note(clock))
@@ -236,7 +241,13 @@ class NostrClientSubscribeEventsTest {
             var answer: Long? = null
             val fixed =
                 object : ResumePolicy {
-                    override fun onCaughtUp(
+                    override fun onEvent(
+                        relay: NormalizedRelayUrl,
+                        event: Event,
+                        isLive: Boolean,
+                    ) {}
+
+                    override fun onEose(
                         relay: NormalizedRelayUrl,
                         filters: List<Filter>?,
                     ) {}
@@ -266,14 +277,15 @@ class NostrClientSubscribeEventsTest {
     fun eachFilterStartsFromItsOwnSinceAndNeverResumesEarlier() =
         runBlocking<Unit> {
             val later = 2_000_000L // past the resume point the reconnect will use
+            hub.getOrCreate(relay).preload(note(999_000))
             val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500), Filter(kinds = listOf(7), since = later))).collect { } }
             awaitReqs(1)
             assertEquals(listOf(500L, later), reqs[0].filters.map { it.since }, "the first REQ asks for the filters as given")
-            awaitResumePoint(1_000_000)
+            awaitResumePoint(999_000)
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(listOf(1_000_000L, later), reqs[1].filters.map { it.since }, "each moves to the resume point, never earlier than its own")
+            assertEquals(listOf(999_000L, later), reqs[1].filters.map { it.since }, "each moves to the resume point, never earlier than its own")
             job.cancel()
         }
 
@@ -319,13 +331,15 @@ class NostrClientSubscribeEventsTest {
     @Test
     fun aResumedReqIsNotUndoneAtItsEoseAndTheNextReconnectResumesAgain() =
         runBlocking<Unit> {
+            hub.getOrCreate(relay).preload(note(999_000))
             val job = scope.launch { live(since = 500).collect { } }
-            awaitResumePoint(1_000_000)
+            awaitResumePoint(999_000)
 
             clock += 1_000
             builder.dropAll()
+            hub.getOrCreate(relay).preload(note(clock)) // published while the connection was down
             awaitReqs(2)
-            assertEquals(1_000_000L, reqs[1].filters.single().since)
+            assertEquals(999_000L, reqs[1].filters.single().since)
             awaitResumePoint(clock) // the resumed REQ's EOSE
             delay(300)
             assertEquals(2, reqs.size, "the resumed REQ's EOSE sends nothing: the pool knows it stands for since = 500")
@@ -360,7 +374,7 @@ class NostrClientSubscribeEventsTest {
 
             builder.dropAll()
             awaitReqs(4)
-            assertEquals(setOf(1_000_000L, clock), reqs.drop(2).map { it.filters.single().since }.toSet())
+            assertEquals(setOf(a.createdAt, clock), reqs.drop(2).map { it.filters.single().since }.toSet())
             job.cancel()
         }
 
@@ -379,9 +393,12 @@ class NostrClientSubscribeEventsTest {
                 ),
             )
             val filters = listOf(Filter(kinds = listOf(1)))
+            val started = System.currentTimeMillis()
             val outcome = withTimeout(5_000) { runCatching { client.subscribeEvents(mapOf(relay to filters, other to filters)).collect { } }.exceptionOrNull() }
             assertIs<SubscriptionClosedException>(outcome)
             assertEquals(other, outcome.relay)
+            val took = System.currentTimeMillis() - started
+            assertTrue(took < 2_000, "a `restricted:` refusal ends it at once, without the going-away grace; took $took ms")
         }
 
     @Test

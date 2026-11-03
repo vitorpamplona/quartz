@@ -30,16 +30,14 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
  * A live subscription with a callback, open until [close]: what `subscribe(relay, filters) { }`
  * and `subscribe(filters = { … }) { }` return.
  *
- * - **Filters come from [filter].** [refresh] re-reads it and sends what changed. The pool also
- *   re-reads it each time it writes the REQ on a connection (the first one, a reconnect, the
- *   replay after an AUTH), so a re-sent REQ carries what [filter] returns now. Which relays it is
- *   open on changes only on [refresh]: a relay [filter] no longer names keeps the filters it was
- *   last given. [filter] runs on the connection's thread then, so keep it cheap.
- * - **Reconnects resume.** [resume] hears when each relay's REQ is caught up (EOSE, live events)
- *   and moves the re-sent filters' `since` to that moment (two days earlier for gift wraps, whose
- *   `created_at` NIP-59 backdates), so a reconnect doesn't download
- *   the relay's whole history again. Filters that changed since then are sent as given. A null
- *   [resume] re-sends the filters as given.
+ * - **Filters come from [filter].** [refresh] re-reads it and sends what changed; nothing else
+ *   calls it, so it runs on the caller's thread only. A reconnect re-sends what the last [refresh]
+ *   sent.
+ * - **Reconnects resume.** [resume] hears what each relay's REQ delivered and moves the re-sent
+ *   filters' `since` to the newest event handed over (two days earlier for gift wraps, whose
+ *   `created_at` NIP-59 backdates), so a reconnect doesn't download the relay's whole history
+ *   again. Filters that changed since are sent as given. A null [resume] re-sends the filters as
+ *   given.
  * - **A CLOSED doesn't end it.** The client sends the REQ again on the next reconnect or AUTH,
  *   unless the relay keeps refusing the same filters. To stop on a CLOSED, or to tail a relay with
  *   backpressure, use `subscribeEvents`.
@@ -67,24 +65,21 @@ class DynamicSubscription(
         forFilters: List<Filter>?,
     ) {
         onEvent(event)
-        if (isLive) resume?.onCaughtUp(relay, forFilters)
+        resume?.onEvent(relay, event, isLive)
     }
 
     override fun onEose(
         relay: NormalizedRelayUrl,
         forFilters: List<Filter>?,
     ) {
-        resume?.onCaughtUp(relay, forFilters)
+        resume?.onEose(relay, forFilters)
     }
 
-    /** What [filter] returns for [relay] now, moved to where [resume] says, so a re-sent REQ is current. */
+    /** The filters the pool is writing to [relay], moved to where [resume] says. */
     override fun filtersForSync(
         relay: NormalizedRelayUrl,
         filters: List<Filter>,
-    ): List<Filter>? {
-        val current = filter()[relay] ?: return null
-        return resume?.resume(relay, current) ?: current
-    }
+    ): List<Filter>? = resume?.resume(relay, filters)
 
     /**
      * Creates or Updates the filter with relays. This method should be called

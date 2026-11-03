@@ -503,13 +503,14 @@ class PoolRequests(
         //
         // Each subscription's listener may name the filters to write instead
         // ([SubscriptionListener.filtersForSync]), so a long-lived one resumes from where it got
-        // to rather than from where it started. Asked before any lock is taken.
+        // to rather than from where it started. It is shown the filters as this relay is sent them
+        // (narrowed), the same ones its EOSE will report. Asked before any lock is taken.
         desiredSubs.forEach { subId, perRelayFilters ->
             val desired = perRelayFilters[relay]
             val own = desired?.let { relayRefusals.narrow(relay, it) }
             if (!own.isNullOrEmpty()) {
-                val written = filtersForSync(subId, relay, desired)
-                val filters = if (written === desired) own else relayRefusals.narrow(relay, written)
+                val written = filtersForSync(subId, relay, own)
+                val filters = if (written === own) own else relayRefusals.narrow(relay, written)
                 val send =
                     subState(subId).let { state ->
                         state.withLock(relay) {
@@ -526,18 +527,18 @@ class PoolRequests(
         }
     }
 
-    /** [desired], or what [subId]'s listener would write instead; never lets a listener break the sync. */
+    /** [own], or what [subId]'s listener would write instead; never lets a listener break the sync. */
     private fun filtersForSync(
         subId: String,
         relay: NormalizedRelayUrl,
-        desired: List<Filter>,
+        own: List<Filter>,
     ): List<Filter> {
-        val listener = desiredSubListeners.get(subId) ?: return desired
+        val listener = desiredSubListeners.get(subId) ?: return own
         return try {
-            listener.filtersForSync(relay, desired)?.takeIf { it.isNotEmpty() } ?: desired
+            listener.filtersForSync(relay, own)?.takeIf { it.isNotEmpty() } ?: own
         } catch (e: Exception) {
             Log.w("PoolRequests", "filtersForSync failed for $subId on ${relay.url}; sending its filters as given", e)
-            desired
+            own
         }
     }
 

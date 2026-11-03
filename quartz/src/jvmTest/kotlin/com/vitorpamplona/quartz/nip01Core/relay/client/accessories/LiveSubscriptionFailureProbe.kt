@@ -25,7 +25,6 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.RelayAuthenticator
-import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.DynamicSubscription
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.subscribeAsFlow
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -188,17 +187,17 @@ class LiveSubscriptionFailureProbe {
         /** Whom the gift-wrap filter asks for: the key the session authenticates with. */
         val me: HexKey,
     ) {
-        val eResume = CaughtUpResume()
+        val eResume = ProbeResume()
         val eEvents = ConcurrentLinkedQueue<Event>()
         val eEnd = AtomicReference<Throwable?>(null)
         var eJob: Job? = null
-        val dResume = CaughtUpResume()
+        val dResume = ProbeResume()
         val dEvents = ConcurrentLinkedQueue<Event>()
         var dynamic: DynamicSubscription? = null
         val fList = AtomicReference<List<Event>>(emptyList())
         var fJob: Job? = null
 
-        fun eosed() = eResume.caughtUpAt(relay) != null && dResume.caughtUpAt(relay) != null
+        fun eosed() = eResume.eoses(relay) > 0 && dResume.eoses(relay) > 0
 
         fun all(id: String) = eEvents.any { it.id == id } && dEvents.any { it.id == id } && fList.get().any { it.id == id }
 
@@ -249,7 +248,11 @@ class LiveSubscriptionFailureProbe {
                 val subs = s.three(t.proxied)
                 try {
                     if (!waitUntil(30_000) { subs.eosed() }.also { r.check("EOSE", it) }) return r
-                    val caughtUp = subs.eResume.caughtUpAt(t.proxied)!!
+                    // A note before the cut, so there is a resume point.
+                    val first = note()
+                    pub.publish(first, t.direct!!)
+                    r.check("a note before the cut reaches all three", waitUntil(10_000) { subs.all(first.id) })
+                    val caughtUp = subs.eResume.caughtUpAt(t.proxied) ?: return r
                     delay(1_000) // a relay that challenges for AUTH has the REQs re-sent once it lands
                     val before = counts(s)
                     val closes = s.recorder.closedAt.size
@@ -427,7 +430,7 @@ class LiveSubscriptionFailureProbe {
         val r = ProbeReport("${t.name}: the first two REQs refused, the rest served")
         Session().use { s ->
             Session().use { pub ->
-                val dResume = CaughtUpResume()
+                val dResume = ProbeResume()
                 val dEvents = ConcurrentLinkedQueue<Event>()
                 val since = TimeUtils.now() - 60
                 val dynamic = DynamicSubscription(s.client, { mapOf(t.proxied to listOf(Filter(kinds = listOf(1), since = since, limit = 62))) }, dResume) { dEvents += it }
@@ -438,7 +441,7 @@ class LiveSubscriptionFailureProbe {
                     setEnabled(t.name, false)
                     delay(1_000)
                     setEnabled(t.name, true)
-                    r.check("both re-sent on the reconnect and served", waitUntil(60_000) { dResume.caughtUpAt(t.proxied) != null && listOf(62, 63).all { s.recorder.reqsOf(it).size >= 2 } })
+                    r.check("both re-sent on the reconnect and served", waitUntil(60_000) { dResume.eoses(t.proxied) > 0 && listOf(62, 63).all { s.recorder.reqsOf(it).size >= 2 } })
                     delay(1_000)
                     val n = note()
                     r.check("publish", pub.publish(n, t.direct ?: t.proxied))
@@ -478,12 +481,12 @@ class LiveSubscriptionFailureProbe {
     private suspend fun manySubscriptions(relay: NormalizedRelayUrl): ProbeReport {
         val r = ProbeReport("${relay.url}: 25 subscriptions on one connection")
         Session().use { s ->
-            val resumes = (0 until 25).map { CaughtUpResume() }
+            val resumes = (0 until 25).map { ProbeResume() }
             val subs = resumes.mapIndexed { i, resume -> DynamicSubscription(s.client, { mapOf(relay to listOf(Filter(kinds = listOf(1), limit = 100 + i))) }, resume) { } }
             try {
-                waitUntil(20_000) { resumes.all { it.caughtUpAt(relay) != null } }
+                waitUntil(20_000) { resumes.all { it.eoses(relay) > 0 } }
                 delay(2_000)
-                val served = resumes.count { it.caughtUpAt(relay) != null }
+                val served = resumes.count { it.eoses(relay) > 0 }
                 val refusedIds =
                     s.recorder.notices
                         .filter { it.startsWith("[\"CLOSED\"") }
@@ -514,7 +517,7 @@ class LiveSubscriptionFailureProbe {
                 val start = TimeUtils.now()
                 val filter = { limit: Int -> listOf(Filter(kinds = listOf(1), since = start, limit = limit)) }
                 val got = linkedMapOf("slow" to ConcurrentHashMap.newKeySet<String>(), "fast" to ConcurrentHashMap.newKeySet(), "callback" to ConcurrentHashMap.newKeySet())
-                val resumes = List(3) { CaughtUpResume() }
+                val resumes = List(3) { ProbeResume() }
                 val slowFlow = s.client.subscribeEvents(relay, filter(71), resumes[0]).let { if (slowBuffered) it.buffer(Int.MAX_VALUE) else it }
                 val jobs =
                     listOf(
@@ -528,7 +531,7 @@ class LiveSubscriptionFailureProbe {
                     )
                 val dynamic = DynamicSubscription(s.client, { mapOf(relay to filter(74)) }, resumes[2]) { got["callback"]!! += it.id }
                 try {
-                    r.check("EOSE", waitUntil(20_000) { resumes.all { it.caughtUpAt(relay) != null } })
+                    r.check("EOSE", waitUntil(20_000) { resumes.all { it.eoses(relay) > 0 } })
                     val notes = List(2_000) { note() }
                     val accepted = AtomicInteger()
                     val began = System.currentTimeMillis()

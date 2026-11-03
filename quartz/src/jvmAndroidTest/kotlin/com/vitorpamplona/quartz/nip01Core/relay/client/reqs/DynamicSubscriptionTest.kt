@@ -95,79 +95,111 @@ class DynamicSubscriptionTest {
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
+    /** A stored note on the relay, created [secondsAgo] before now. */
+    private suspend fun stored(secondsAgo: Long): Event =
+        NostrSignerSync().sign<Event>(TimeUtils.now() - secondsAgo, 1, emptyArray(), "stored $secondsAgo").also {
+            hub.getOrCreate(relay).preload(it)
+        }
+
     @Test
-    fun aReconnectSendsWhatTheLambdaReturnsNow() =
+    fun aReconnectSendsWhatTheLastRefreshSentWithoutCallingTheLambda() =
         runBlocking<Unit> {
+            val calls = AtomicInteger(0)
             var since = 500L
-            val sub = DynamicSubscription(client, { mapOf(relay to listOf(Filter(kinds = listOf(1), since = since))) }, resume = null)
+            val sub =
+                DynamicSubscription(client, {
+                    calls.incrementAndGet()
+                    mapOf(relay to listOf(Filter(kinds = listOf(1), since = since)))
+                }, resume = null)
             awaitReqs(1)
             assertEquals(500L, reqs[0].filters.single().since)
+            val callsBefore = calls.get()
 
-            since = 900L // no refresh: the pool reads it when it writes the REQ again
+            since = 900L // no refresh
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(900L, reqs[1].filters.single().since)
+            assertEquals(500L, reqs[1].filters.single().since, "what the last refresh sent")
+            assertEquals(callsBefore, calls.get(), "the lambda runs only on refresh, on the caller's thread")
             sub.close()
         }
 
     @Test
-    fun aRelayTheLambdaNoLongerNamesKeepsItsFiltersUntilARefresh() =
+    fun aRelayTheLambdaNoLongerNamesKeepsItsFiltersAndResumes() =
         runBlocking<Unit> {
+            val note = stored(100)
+            val resume = CaughtUpResume()
             var relays = setOf(relay)
-            val sub = DynamicSubscription(client, { relays.associateWith { listOf(Filter(kinds = listOf(1), since = 500)) } }, resume = null)
+            val sub = DynamicSubscription(client, { relays.associateWith { listOf(Filter(kinds = listOf(1), since = 500)) } }, resume)
             awaitReqs(1)
+            awaitEose(resume)
 
             relays = emptySet() // no refresh: still open there, with the filters it was given
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(500L, reqs[1].filters.single().since)
+            assertEquals(note.createdAt, reqs[1].filters.single().since, "resumed, not its whole history again")
             sub.close()
         }
 
-    /** Waits for the subscription's first EOSE to have been seen. */
+    /** Waits for the subscription's first EOSE, with something delivered, to have been seen. */
     private suspend fun awaitEose(resume: CaughtUpResume) = withTimeout(10_000) { while (resume.caughtUpAt(relay) == null) delay(20) }
 
     @Test
     fun aCallbackSubscriptionResumesAfterAReconnect() =
         runBlocking<Unit> {
+            val note = stored(100)
             val resume = CaughtUpResume()
             val sub = DynamicSubscription(client, { mapOf(relay to listOf(Filter(kinds = listOf(1)))) }, resume)
             awaitReqs(1)
             assertNull(reqs[0].filters.single().since, "the first REQ as given")
             awaitEose(resume)
-            val point = resume.caughtUpAt(relay)!!
+            assertEquals(note.createdAt, resume.caughtUpAt(relay), "the newest event delivered, not the time it arrived")
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(point, reqs[1].filters.single().since, "from when it was caught up, not the whole history")
+            assertEquals(note.createdAt, reqs[1].filters.single().since, "from the newest event delivered, not the whole history")
             sub.close()
         }
 
     @Test
     fun theFixedFilterOverloadResumesToo() =
         runBlocking<Unit> {
+            val note = stored(100)
             val sub = client.subscribe(relay, Filter(kinds = listOf(1))) { }
             awaitReqs(1)
             delay(300) // EOSE seen
-            val before = TimeUtils.now()
             builder.dropAll()
             awaitReqs(2)
-            val since = reqs[1].filters.single().since
-            assertTrue(since != null && since in (before - 5)..before, "resumed from the EOSE; was $since")
+            assertEquals(note.createdAt, reqs[1].filters.single().since)
             sub.close()
         }
 
     @Test
-    fun filtersThatChangedSinceTheEoseAreSentAsGiven() =
+    fun theDeprecatedStaticSubscriptionResumesToo() =
         runBlocking<Unit> {
+            val note = stored(100)
+
+            @Suppress("DEPRECATION")
+            val sub = StaticSubscription(client, mapOf(relay to listOf(Filter(kinds = listOf(1)))))
+            awaitReqs(1)
+            delay(300) // EOSE seen
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(note.createdAt, reqs[1].filters.single().since)
+            sub.close()
+        }
+
+    @Test
+    fun filtersChangedByARefreshAreSentAsGiven() =
+        runBlocking<Unit> {
+            stored(100)
             val resume = CaughtUpResume()
             var authors = listOf("a".repeat(64))
             val sub = DynamicSubscription(client, { mapOf(relay to listOf(Filter(kinds = listOf(1), authors = authors, since = 500))) }, resume)
             awaitReqs(1)
-            awaitEose(resume)
+            delay(300) // EOSE seen
 
-            authors = authors + "b".repeat(64) // a new author, without a refresh: its history must still be asked for
-            builder.dropAll()
+            authors = authors + "b".repeat(64) // a new author: its history must still be asked for
+            sub.refresh()
             awaitReqs(2)
             assertEquals(500L, reqs[1].filters.single().since)
             assertEquals(

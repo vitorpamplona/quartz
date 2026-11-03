@@ -76,10 +76,10 @@ fun INostrClient.subscribeEvents(
  *   stops (cancelled, or the flow ended) never disturbs the connection: its pending events are dropped.
  * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ, and each time it
  *   does (a reconnect, or the replay after an AUTH) it asks the subscription for the filters to
- *   write ([SubscriptionListener.filtersForSync]). [resume] answers, per relay: it hears when the
- *   subscription is caught up (at EOSE, and at each live event) and names the `since` to resume
- *   from. A healthy connection costs nothing per event. The default, [CaughtUpResume], resumes from
- *   the last caught-up moment (two days earlier for gift wraps), and says what that can't see.
+ *   write ([SubscriptionListener.filtersForSync]). [resume] answers, per relay: it hears each event handed
+ *   over and each EOSE, and names the `since` to resume from. The default, [CaughtUpResume],
+ *   resumes from the newest event delivered (two days earlier for gift wraps), and says what that
+ *   can't see.
  * - **A CLOSED ends the flow.** The client doesn't send a CLOSED REQ again on the same connection,
  *   only on the next reconnect or AUTH, and not even then once the relay has refused the same
  *   filters three times running. On a healthy connection that can be never, and a live tail that
@@ -87,8 +87,9 @@ fun INostrClient.subscribeEvents(
  *   with [SubscriptionClosedException], naming the relay, and the caller decides: collect again,
  *   back off, or stop. One relay's CLOSED ends the whole flow; to keep relays independent, collect
  *   one flow per relay. Three kinds of CLOSED the client recovers from itself don't end it:
- *   - one followed within 3 s by the connection dropping: a relay going away (a restart, a deploy)
- *     CLOSEs its subscriptions first, and the client sends the REQ again on the next connection.
+ *   - an `error:` or unprefixed one followed within 3 s by the connection dropping: a relay going
+ *     away (a restart, a deploy) CLOSEs its subscriptions first, and the client sends the REQ again
+ *     on the next connection.
  *     Three of those in a row with no EOSE between them do end it;
  *   - a `rate-limited:` one that states a back-off, which the client retries once it passes;
  *   - an `auth-required:` one, while the client's NIP-42 responder can still get in. It waits on
@@ -180,7 +181,7 @@ fun INostrClient.subscribeEvents(
                             }
                         if (!delivered) return
                     }
-                    if (isLive) resume?.onCaughtUp(relay, forFilters)
+                    resume?.onEvent(relay, event, isLive)
                 }
 
                 override fun onEose(
@@ -190,7 +191,7 @@ fun INostrClient.subscribeEvents(
                     val mark = authMarks[relay] ?: return
                     mark.store(authSuccessMark(relay))
                     goingAwayInARow[relay]?.store(0)
-                    resume?.onCaughtUp(relay, forFilters)
+                    resume?.onEose(relay, forFilters)
                 }
 
                 override fun onClosed(
@@ -208,17 +209,26 @@ fun INostrClient.subscribeEvents(
                     val mark = authMarks[relay] ?: return
                     // Retried by the client once the relay's stated back-off passes.
                     if (RetryAfter.parse(message, params) != null) return
-                    if (MachineReadablePrefix.parse(message) != MachineReadablePrefix.AUTH_REQUIRED) {
-                        // A relay going away (a restart, a deploy) CLOSEs its subscriptions and then
-                        // drops the socket; the client sends the REQ again on the next connection, so
-                        // that CLOSED doesn't end the flow. Three in a row without an EOSE do: the
-                        // client stops re-sending a REQ refused that often, and the flow would go silent.
-                        val dropsAtClose = drops[relay]?.value ?: 0
-                        launch {
-                            val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
-                            if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
+                    when (MachineReadablePrefix.parse(message)) {
+                        MachineReadablePrefix.AUTH_REQUIRED -> {}
+                        // A relay going away (a restart, a deploy) CLOSEs its subscriptions with an
+                        // `error:` (or no prefix) and then drops the socket; the client sends the REQ
+                        // again on the next connection, so that CLOSED doesn't end the flow. Three in a
+                        // row without an EOSE do: the client stops re-sending a REQ refused that often,
+                        // and the flow would go silent.
+                        MachineReadablePrefix.ERROR, null -> {
+                            val dropsAtClose = drops[relay]?.value ?: 0
+                            launch {
+                                val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
+                                if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
+                            }
+                            return
                         }
-                        return
+                        // `blocked:`, `restricted:`, `invalid:`, …: a refusal, not a shutdown.
+                        else -> {
+                            end(relay, message)
+                            return
+                        }
                     }
                     val since = mark.load()
                     launch {

@@ -20,7 +20,6 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.reqs
 
-import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -37,28 +36,35 @@ class StaticSubscription(
     val onEvent: (event: Event) -> Unit = {},
 ) : SubscriptionListener,
     SubscriptionHandle {
-    val subId = RandomInstance.randomChars(10)
+    /** What this is now: the subscription the client holds, which resumes after a reconnect. */
+    private val delegate = DynamicSubscription(client, { filter }, onEvent = onEvent)
+
+    val subId get() = delegate.subId
 
     override suspend fun onEvent(
         event: Event,
         isLive: Boolean,
         relay: NormalizedRelayUrl,
         forFilters: List<Filter>?,
-    ) {
-        onEvent(event)
-    }
+    ) = delegate.onEvent(event, isLive, relay, forFilters)
+
+    override fun onEose(
+        relay: NormalizedRelayUrl,
+        forFilters: List<Filter>?,
+    ) = delegate.onEose(relay, forFilters)
+
+    override fun filtersForSync(
+        relay: NormalizedRelayUrl,
+        filters: List<Filter>,
+    ) = delegate.filtersForSync(relay, filters)
 
     /**
      * Creates or Updates the filter with relays. This method should be called
      * everytime the filter changes.
      */
-    override fun refresh() = client.subscribe(subId, filter, this)
+    override fun refresh() = delegate.refresh()
 
-    override fun close() = client.unsubscribe(subId)
-
-    init {
-        refresh()
-    }
+    override fun close() = delegate.close()
 }
 
 fun INostrClient.subscribe(

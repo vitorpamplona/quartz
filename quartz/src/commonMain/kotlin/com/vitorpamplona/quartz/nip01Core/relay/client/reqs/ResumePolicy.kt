@@ -20,12 +20,18 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.reqs
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.pool.FiltersChanged
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * Where a live subscription resumes, per relay, when the client writes its REQ again (a reconnect,
@@ -34,16 +40,26 @@ import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
  * `subscribeEvents`, `DynamicSubscription` (`subscribe(relay, filters) { }`,
  * `subscribe(filters = { … })`) and `subscribeAsFlow` all use one.
  *
- * Both calls come from the client's own threads: [onCaughtUp] from the connection's delivery
- * coroutine, which every subscription on that relay shares, and [resumeFrom] from the one writing
- * the REQ. Keep both cheap and non-blocking; save state elsewhere, on your own schedule.
+ * [onEvent] and [onEose] come from the connection's delivery coroutine, which every subscription on
+ * that relay shares, [onEvent] once per event; [resumeFrom] from the one writing the REQ. Keep all
+ * three cheap and non-blocking; save state elsewhere, on your own schedule.
  */
 interface ResumePolicy {
     /**
-     * At EOSE and at each live event: the subscription is caught up with [relay] as of now, for
-     * [filters], the ones that REQ carried (null when the client can't say).
+     * The subscription handed [event] from [relay] to its subscriber: a stored one, before EOSE
+     * ([isLive] false), or a live one after it.
      */
-    fun onCaughtUp(
+    fun onEvent(
+        relay: NormalizedRelayUrl,
+        event: Event,
+        isLive: Boolean,
+    )
+
+    /**
+     * EOSE from [relay] for the REQ that carried [filters] (null when the client can't say): every
+     * stored match it had has been handed over.
+     */
+    fun onEose(
         relay: NormalizedRelayUrl,
         filters: List<Filter>?,
     )
@@ -66,6 +82,9 @@ interface ResumePolicy {
  * A filter that asks for gift wraps ([GiftWrapEvent.KIND] in its `kinds`) resumes two days earlier:
  * NIP-59 backdates a wrap's `created_at` by up to two days, so one sent during the outage can carry
  * a `created_at` from before it. A filter without `kinds` gets no such window.
+ *
+ * A filter whose `until` is before the resume point is sent as given: moving its `since` past its
+ * `until` would ask for nothing, and some relays refuse such a filter outright.
  */
 fun ResumePolicy.resume(
     relay: NormalizedRelayUrl,
@@ -74,48 +93,92 @@ fun ResumePolicy.resume(
     val from = resumeFrom(relay, filters) ?: return null
     return filters.map { f ->
         val at = if (f.kinds?.contains(GiftWrapEvent.KIND) == true) from - TimeUtils.twoDays() else from
-        // A filter that already starts later than the resume point keeps its own `since`.
-        f.since?.takeIf { it >= at }?.let { f } ?: f.copy(since = at)
+        val until = f.until
+        when {
+            until != null && until < at -> f
+            // A filter that already starts later than the resume point keeps its own `since`.
+            f.since?.let { it >= at } == true -> f
+            else -> f.copy(since = at)
+        }
     }
 }
 
 /**
- * The default [ResumePolicy]: per relay, the last moment the subscription was caught up. A
- * connection that drops for an hour asks again from when it dropped. Gift wraps get NIP-59's
- * two-day window on top ([resume]).
+ * The default [ResumePolicy]: per relay, the newest `created_at` the subscriber was handed, capped
+ * at this device's clock. A connection that drops for an hour asks again from the last event it
+ * delivered. Gift wraps get NIP-59's two-day window on top ([resume]).
+ *
+ * The point is a `created_at`, not the time the event was processed, because `since` filters on
+ * `created_at`: messages the relay sent that were still queued when the client dropped the
+ * connection, and a device clock running ahead of the relay's, can't move it past an event the
+ * subscriber never saw. Stored events count only at EOSE: the relay sends them newest first, so a
+ * connection cut halfway through leaves older ones undelivered. Until the subscription has been
+ * handed an event there is nothing to resume from, and its filters go as given.
  *
  * The point holds only for the filters that were caught up. Filters that changed since (an author
  * added, a kind dropped; a moved `since` doesn't count) are sent as given, so a newly wanted
  * author's history is still asked for in full.
  *
- * `since` filters on `created_at`, so an event the relay stores while the connection is down but
- * created before the resume point (a relay mirroring others does this all the time) is not sent
- * again, nor is anything past the relay's cap on stored results for one REQ. If every event
- * matters, reconcile the gap too (`negentropySync`).
+ * An event the relay receives after the point but created before it (a relay mirroring others
+ * does this all the time, and so does a publisher whose clock runs behind) is not sent again, nor
+ * is anything past the relay's cap on stored results for one REQ. If every event matters,
+ * reconcile the gap too (`negentropySync`).
  *
  * To resume after a restart, read [resumeFrom] on your own schedule, persist it, and set it as the
  * filters' `since` next time. It covers what was handed to the subscriber, so it can run ahead of
  * what a lagging consumer has processed by up to its buffer.
  */
+@OptIn(ExperimentalAtomicApi::class)
 class CaughtUpResume(
     private val nowInSeconds: () -> Long = TimeUtils::now,
 ) : ResumePolicy {
-    private class CaughtUp(
-        val at: Long,
-        val filters: List<Filter>?,
-    )
+    private class Point {
+        /** The newest `created_at` the subscription is caught up with; [NEVER] before the first. */
+        val at = AtomicLong(NEVER)
 
-    private val caughtUp = ConcurrentHashCache<NormalizedRelayUrl, CaughtUp>()
+        /** The newest `created_at` among the stored events of the REQ in flight, counted at its EOSE. */
+        val pending = AtomicLong(NEVER)
 
-    /** Epoch seconds the subscription was last caught up with [relay], or null if never. */
-    fun caughtUpAt(relay: NormalizedRelayUrl): Long? = caughtUp.get(relay)?.at
+        /** The filters of the REQ that last reached EOSE. */
+        @Volatile var filters: List<Filter>? = null
+    }
 
-    override fun onCaughtUp(
+    private val points = ConcurrentHashCache<NormalizedRelayUrl, Point>()
+    private val creating = PlatformLock()
+
+    private fun point(relay: NormalizedRelayUrl): Point =
+        points.get(relay) ?: creating.withLock {
+            points.get(relay) ?: Point().also { points.put(relay, it) }
+        }
+
+    /** The `created_at` the subscription would resume [relay] from, or null if it has none yet. */
+    fun caughtUpAt(relay: NormalizedRelayUrl): Long? =
+        points
+            .get(relay)
+            ?.at
+            ?.load()
+            ?.takeIf { it != NEVER }
+
+    override fun onEvent(
+        relay: NormalizedRelayUrl,
+        event: Event,
+        isLive: Boolean,
+    ) {
+        val point = point(relay)
+        val cell = if (isLive) point.at else point.pending
+        // Most events don't move it: no clock read, no write.
+        if (event.createdAt <= cell.load()) return
+        raise(cell, minOf(event.createdAt, nowInSeconds()))
+    }
+
+    override fun onEose(
         relay: NormalizedRelayUrl,
         filters: List<Filter>?,
     ) {
-        // A live event names no filters; it is still caught up with the ones it last had.
-        caughtUp.put(relay, CaughtUp(nowInSeconds(), filters ?: caughtUp.get(relay)?.filters))
+        val point = point(relay)
+        val stored = point.pending.exchange(NEVER)
+        if (stored != NEVER) raise(point.at, stored)
+        if (filters != null) point.filters = filters
     }
 
     /** The caught-up REQ may itself have been resumed: only `since` is allowed to differ. */
@@ -134,9 +197,25 @@ class CaughtUpResume(
         relay: NormalizedRelayUrl,
         filters: List<Filter>,
     ): Long? {
-        val last = caughtUp.get(relay) ?: return null
-        val forFilters = last.filters ?: return null
+        val point = points.get(relay) ?: return null
+        val at = point.at.load()
+        if (at == NEVER) return null
+        val forFilters = point.filters ?: return null
         if (!sameIgnoringSince(forFilters, filters)) return null
-        return last.at
+        return at
+    }
+
+    private companion object {
+        const val NEVER = Long.MIN_VALUE
+
+        fun raise(
+            cell: AtomicLong,
+            to: Long,
+        ) {
+            while (true) {
+                val current = cell.load()
+                if (to <= current || cell.compareAndSet(current, to)) return
+            }
+        }
     }
 }

@@ -20,15 +20,21 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 // Shared by the opt-in probes that run the client against real relays
 // (LiveSubscriptionInteropProbe, LiveSubscriptionFailureProbe).
@@ -109,6 +115,35 @@ internal class ProbeRecorder(
 
     /** The REQs of the subscription marked by [limit] on one of its filters. */
     fun reqsOf(limit: Int) = reqs.filter { req -> req.filters.any { it.limit == limit } }
+}
+
+/**
+ * [CaughtUpResume], counting each relay's EOSEs: a subscription that has been handed nothing yet
+ * has no resume point, so [CaughtUpResume.caughtUpAt] can't say whether an EOSE came.
+ */
+internal class ProbeResume(
+    private val inner: CaughtUpResume = CaughtUpResume(),
+) : ResumePolicy by inner {
+    private val eoses = ConcurrentHashMap<NormalizedRelayUrl, AtomicInteger>()
+
+    override fun onEose(
+        relay: NormalizedRelayUrl,
+        filters: List<Filter>?,
+    ) {
+        inner.onEose(relay, filters)
+        eoses.computeIfAbsent(relay) { AtomicInteger() }.incrementAndGet()
+    }
+
+    override fun onEvent(
+        relay: NormalizedRelayUrl,
+        event: Event,
+        isLive: Boolean,
+    ) = inner.onEvent(relay, event, isLive)
+
+    /** How many EOSEs [relay] has sent this subscription. */
+    fun eoses(relay: NormalizedRelayUrl) = eoses[relay]?.get() ?: 0
+
+    fun caughtUpAt(relay: NormalizedRelayUrl) = inner.caughtUpAt(relay)
 }
 
 /** PASS/FAIL/SKIP lines and notes for one relay or scenario. */

@@ -24,7 +24,6 @@ import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
-import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.DynamicSubscription
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.subscribeAsFlow
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -95,7 +94,7 @@ class LiveSubscriptionInteropProbe {
         val wraps = Filter(kinds = listOf(1059), tags = mapOf("p" to listOf(RandomInstance.bytes(32).toHexKey())), search = lens)
 
         try {
-            val eResume = CaughtUpResume()
+            val eResume = ProbeResume()
             val eEvents = ConcurrentLinkedQueue<Event>()
             val eEnd = AtomicReference<Throwable?>(null)
             val eJob =
@@ -106,13 +105,13 @@ class LiveSubscriptionInteropProbe {
                         eEnd.set(e)
                     }
                 }
-            val dResume = CaughtUpResume()
+            val dResume = ProbeResume()
             val dEvents = ConcurrentLinkedQueue<Event>()
             val dynamic = DynamicSubscription(client, { mapOf(relay to listOf(notes(52))) }, dResume) { dEvents += it }
             val fList = AtomicReference<List<Event>>(emptyList())
             val fJob = scope.launch { client.subscribeAsFlow(relay, notes(53)).collect { fList.set(it) } }
 
-            val eosed = waitUntil(30_000) { eResume.caughtUpAt(relay) != null && dResume.caughtUpAt(relay) != null }
+            val eosed = waitUntil(30_000) { eResume.eoses(relay) > 0 && dResume.eoses(relay) > 0 }
             report.check("EOSE for subscribeEvents and DynamicSubscription", eosed)
             if (!eosed) {
                 report.notes += "subscribeEvents ended: ${eEnd.get()?.message}; REQs ${recorder.reqs.size}"
@@ -133,9 +132,11 @@ class LiveSubscriptionInteropProbe {
                 report.notes += "live kind-1 in 20 s before the drop: ${eEvents.size - before}"
             }
 
-            val eAt = eResume.caughtUpAt(relay)!!
-            val dAt = dResume.caughtUpAt(relay)!!
-            val dropAt = TimeUtils.now()
+            // The newest event each one was handed; with none, the filters go as given.
+            val eAt = eResume.caughtUpAt(relay) ?: (start - 120)
+            val dAt = dResume.caughtUpAt(relay) ?: (start - 120)
+            val fAt = fList.get().maxOfOrNull { minOf(it.createdAt, TimeUtils.now()) } ?: (start - 120)
+            val eosesBefore = eResume.eoses(relay) to dResume.eoses(relay)
             recorder.dropAll()
             val resent = waitUntil(60_000) { recorder.reqsOf(51).size >= 2 && recorder.reqsOf(52).size >= 2 && recorder.reqsOf(53).size >= 2 }
             report.check("each subscription's REQ re-sent after the drop", resent)
@@ -143,24 +144,24 @@ class LiveSubscriptionInteropProbe {
                 val e = recorder.reqsOf(51)[1].filters
                 val eNotes = e.first { it.kinds == listOf(1) }.since
                 val eWraps = e.firstOrNull { it.kinds == listOf(1059) }?.since
-                report.check("subscribeEvents resumes at the caught-up moment ($eNotes vs $eAt)", eNotes != null && eNotes in eAt..TimeUtils.now())
-                report.check("its gift-wrap filter resumes two days earlier", if (relay in noWraps) null else eNotes != null && eWraps == eNotes - TimeUtils.twoDays())
+                report.check("subscribeEvents resumes from the newest event delivered ($eNotes vs $eAt)", eNotes == eAt)
+                report.check("its gift-wrap filter resumes two days earlier", if (relay in noWraps || eResume.caughtUpAt(relay) == null) null else eNotes != null && eWraps == eNotes - TimeUtils.twoDays())
                 val d =
                     recorder
                         .reqsOf(52)[1]
                         .filters
                         .single()
                         .since
-                report.check("DynamicSubscription resumes at the caught-up moment ($d vs $dAt)", d != null && d in dAt..TimeUtils.now())
+                report.check("DynamicSubscription resumes from the newest event delivered ($d vs $dAt)", d == dAt)
                 val f =
                     recorder
                         .reqsOf(53)[1]
                         .filters
                         .single()
                         .since
-                report.check("subscribeAsFlow resumes ($f)", f != null && f >= dropAt - 60 && f <= TimeUtils.now())
+                report.check("subscribeAsFlow resumes from the newest event delivered ($f vs $fAt)", f == fAt)
 
-                val reEosed = waitUntil(30_000) { (eResume.caughtUpAt(relay) ?: 0) >= dropAt && (dResume.caughtUpAt(relay) ?: 0) >= dropAt }
+                val reEosed = waitUntil(30_000) { eResume.eoses(relay) > eosesBefore.first && dResume.eoses(relay) > eosesBefore.second }
                 report.check("EOSE of the resumed REQs", reEosed)
                 delay(5_000)
                 val counts = listOf(51, 52, 53).map { recorder.reqsOf(it).size }
@@ -214,7 +215,7 @@ class LiveSubscriptionInteropProbe {
             val client = NostrClient(recorder, scope)
             val signer = NostrSignerSync()
             val start = TimeUtils.now()
-            val resume = CaughtUpResume()
+            val resume = ProbeResume()
             val events = ConcurrentLinkedQueue<Event>()
             val end = AtomicReference<Throwable?>(null)
             val job =
@@ -226,7 +227,7 @@ class LiveSubscriptionInteropProbe {
                     }
                 }
             try {
-                assertTrue(waitUntil(30_000) { writable.all { resume.caughtUpAt(it) != null } }, "EOSE from every relay; ended: ${end.get()?.message}")
+                assertTrue(waitUntil(30_000) { writable.all { resume.eoses(it) > 0 } }, "EOSE from every relay; ended: ${end.get()?.message}")
                 val before = writable.associateWith { signer.sign<Event>(TimeUtils.now(), 1, emptyArray(), "one flow ${it.url}") }
                 before.forEach { (relay, note) -> client.publishAndConfirm(note, setOf(relay)) }
                 assertTrue(waitUntil(10_000) { before.values.all { n -> events.any { it.id == n.id } } }, "a note from every relay")
