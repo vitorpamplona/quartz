@@ -135,7 +135,9 @@ class LiveSubscriptionInteropProbe {
             // The newest event each one was handed; with none, the filters go as given.
             val eAt = eResume.caughtUpAt(relay) ?: (start - 120)
             val dAt = dResume.caughtUpAt(relay) ?: (start - 120)
-            val fAt = fList.get().maxOfOrNull { minOf(it.createdAt, TimeUtils.now()) } ?: (start - 120)
+            // Future-dated events (relays hold plenty) were capped at the clock when handed over:
+            // they raise the point to at most then, so only the others bound it from below.
+            val fAt = fList.get().filter { it.createdAt <= TimeUtils.now() }.maxOfOrNull { it.createdAt } ?: (start - 120)
             val eosesBefore = eResume.eoses(relay) to dResume.eoses(relay)
             recorder.dropAll()
             val resent = waitUntil(60_000) { recorder.reqsOf(51).size >= 2 && recorder.reqsOf(52).size >= 2 && recorder.reqsOf(53).size >= 2 }
@@ -144,7 +146,7 @@ class LiveSubscriptionInteropProbe {
                 val e = recorder.reqsOf(51)[1].filters
                 val eNotes = e.first { it.kinds == listOf(1) }.since
                 val eWraps = e.firstOrNull { it.kinds == listOf(1059) }?.since
-                report.check("subscribeEvents resumes from the newest event delivered ($eNotes vs $eAt)", eNotes == eAt)
+                report.check("subscribeEvents resumes from the newest event delivered ($eNotes vs $eAt)", resumedFromDelivered(eNotes, eAt, eEvents, start - 120))
                 report.check("its gift-wrap filter resumes two days earlier", if (relay in noWraps || eResume.caughtUpAt(relay) == null) null else eNotes != null && eWraps == eNotes - TimeUtils.twoDays())
                 val d =
                     recorder
@@ -152,14 +154,14 @@ class LiveSubscriptionInteropProbe {
                         .filters
                         .single()
                         .since
-                report.check("DynamicSubscription resumes from the newest event delivered ($d vs $dAt)", d == dAt)
+                report.check("DynamicSubscription resumes from the newest event delivered ($d vs $dAt)", resumedFromDelivered(d, dAt, dEvents, start - 120))
                 val f =
                     recorder
                         .reqsOf(53)[1]
                         .filters
                         .single()
                         .since
-                report.check("subscribeAsFlow resumes from the newest event delivered ($f vs $fAt)", f == fAt)
+                report.check("subscribeAsFlow resumes from the newest event delivered ($f vs $fAt)", resumedFromDelivered(f, fAt, fList.get(), start - 120))
 
                 val reEosed = waitUntil(30_000) { eResume.eoses(relay) > eosesBefore.first && dResume.eoses(relay) > eosesBefore.second }
                 report.check("EOSE of the resumed REQs", reEosed)
@@ -192,6 +194,24 @@ class LiveSubscriptionInteropProbe {
             scope.cancel()
         }
         return report
+    }
+
+    /**
+     * The re-sent `since` is no earlier than the point read before the drop ([atDrop]; a live event
+     * can land between that read and the re-send), and is the `created_at` of an event the
+     * subscription was actually handed (capped at the clock), or the filter's own [given] `since`
+     * when it was handed none.
+     */
+    private fun resumedFromDelivered(
+        since: Long?,
+        atDrop: Long,
+        delivered: Collection<Event>,
+        given: Long,
+    ): Boolean {
+        if (since == null || since < atDrop || since > TimeUtils.now()) return false
+        if (since == given || delivered.any { it.createdAt == since }) return true
+        // A future-dated event, capped at the clock when it was handed over.
+        return delivered.any { it.createdAt > since } && since > TimeUtils.now() - 120
     }
 
     @Test
