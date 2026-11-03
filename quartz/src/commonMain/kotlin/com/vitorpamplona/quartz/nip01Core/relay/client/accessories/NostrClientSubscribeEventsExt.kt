@@ -33,9 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadabl
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -43,7 +41,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -60,23 +57,13 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *   behind holds up the subscription instead of losing events. That also holds up every other
  *   subscription on [relay]'s connection; add a `buffer()` to decouple them. A collector that
  *   stops (cancelled, or the flow ended) never disturbs the connection: its pending events are dropped.
- * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ. The moment this
- *   subscription was last known to be caught up (at EOSE, and at each live event) is kept in
- *   memory, and the stored filters are rewritten from it, minus [overlapSeconds], once per
- *   disconnect: the client tells its connection listeners before it schedules the reconnect, so the
- *   re-sent REQ carries it. A connection that drops for an hour asks again from just before the
- *   drop, not from an hour later, and a healthy one costs nothing per event. Expect the overlap's
- *   events again. (A REQ the client re-sends on a live connection, after an AUTH, keeps the older
- *   `since`: it re-reads more than it needs, and misses nothing.)
- * - **What a resume can't see.** `since` filters on `created_at`. An event the relay stores while
- *   the connection is down, but created before the resume point (a relay mirroring others does
- *   this all the time), is not sent again; nor is anything past the relay's own cap on stored
- *   results for one REQ. If every event matters, reconcile the gap too (`negentropySync`).
- * - **Restarts resume.** A crash fires no disconnect, so [onResumePoint] hears the resume point at
- *   EOSE and then at most every [resumePointIntervalMs] while it moves. Persist it and, after a
- *   restart, set it as the filters' `since`. It covers what was handed to this flow, so it can run
- *   ahead of what a lagging collector has processed by up to its buffer; the overlap covers a lag
- *   shorter than [overlapSeconds].
+ * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ. [resume] hears
+ *   when the subscription is caught up (at EOSE, and at each live event) and, once per disconnect,
+ *   names the `since` to resume from; the stored filters are rewritten with it before the client
+ *   re-sends them (it tells its connection listeners before it schedules the reconnect). A healthy
+ *   connection costs nothing per event. The default, [CaughtUpResume], resumes from the last
+ *   caught-up moment minus an overlap, and says what that can't see. A REQ the client re-sends on
+ *   a live connection, after an AUTH, keeps the older `since`: it re-reads, and misses nothing.
  * - **A closed subscription ends the flow.** After a CLOSED the client does not send the REQ
  *   again on its own, so the subscription would stay silent until something reconnected the
  *   relay. Instead the flow completes with [SubscriptionClosedException], and the caller decides:
@@ -89,25 +76,20 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *     approving a NIP-46/NIP-55 prompt) ends it then.
  *
  * The first REQ asks for [filters] as given: each filter's own `since` is where it starts (none:
- * the relay's whole matching history). Once the subscription is caught up, each filter's `since`
- * moves to the shared resume point, but never earlier than its own: one REQ gets one EOSE, so
- * "caught up" holds for every filter at once.
+ * the relay's whole matching history). A resume moves every filter to the same point, but never
+ * earlier than its own `since`: one REQ gets one EOSE, so "caught up" holds for all of them at once.
+ * A null [resume] never rewrites them.
  */
 @OptIn(ExperimentalAtomicApi::class)
 fun INostrClient.subscribeEvents(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
-    overlapSeconds: Long = 60,
-    resumePointIntervalMs: Long = 60_000,
+    resume: ResumePolicy? = CaughtUpResume(),
     authSettleMs: Long = 120_000,
-    onResumePoint: (since: Long) -> Unit = {},
-    nowInSeconds: () -> Long = TimeUtils::now,
 ): Flow<Event> =
     callbackFlow {
         val target = relay
         val subId = "live-" + RandomInstance.randomChars(10)
-        // When this subscription was last known to be caught up with the relay; 0 = not yet.
-        val caughtUpAt = AtomicLong(0L)
         // AUTHs accepted on the relay as of the last time it served us: an `auth-required:` refusal
         // waits for one newer than this, which is when the client re-sends the REQ.
         val authMark = AtomicInt(authSuccessMark(target))
@@ -116,7 +98,6 @@ fun INostrClient.subscribeEvents(
         // Completed when the flow ends, before the unsubscribe: a send waiting for room gives up on
         // it, and a `since` update racing the unsubscribe undoes its own subscribe.
         val stopped = CompletableDeferred<Unit>()
-        val caughtUp = Channel<Unit>(Channel.CONFLATED)
 
         // A filter that already starts later than the resume point keeps its own `since`.
         fun filtersFrom(from: Long) = filters.map { f -> f.since?.takeIf { it >= from }?.let { f } ?: f.copy(since = from) }
@@ -155,7 +136,7 @@ fun INostrClient.subscribeEvents(
                             }
                         if (!delivered) return
                     }
-                    if (isLive) caughtUpAt.store(nowInSeconds())
+                    if (isLive) resume?.onCaughtUp()
                 }
 
                 override fun onEose(
@@ -164,8 +145,7 @@ fun INostrClient.subscribeEvents(
                 ) {
                     if (relay != target) return
                     authMark.store(authSuccessMark(target))
-                    caughtUpAt.store(nowInSeconds())
-                    caughtUp.trySend(Unit)
+                    resume?.onCaughtUp()
                 }
 
                 override fun onClosed(
@@ -199,16 +179,14 @@ fun INostrClient.subscribeEvents(
                 }
             }
 
-        // Rewrites the stored filters from the caught-up moment, once per disconnect, before the
-        // client re-sends them. Runs synchronously in the client's disconnect callback: a coroutine
-        // could lose the race with the reconnect.
+        // Rewrites the stored filters from the policy's resume point, once per disconnect, before
+        // the client re-sends them. Runs synchronously in the client's disconnect callback: a
+        // coroutine could lose the race with the reconnect.
         val connection =
             object : RelayConnectionListener {
                 override fun onDisconnected(relay: IRelayClient) {
                     if (relay.url != target || stopped.isCompleted) return
-                    val at = caughtUpAt.load()
-                    if (at == 0L) return
-                    val from = at - overlapSeconds
+                    val from = resume?.resumeFrom() ?: return
                     // Only forward: a stale callback never moves `since` back.
                     while (true) {
                         val current = storedFrom.load()
@@ -221,22 +199,7 @@ fun INostrClient.subscribeEvents(
                 }
             }
 
-        // Reports the resume point for restarts. Costs the client nothing: it only reads memory.
-        launch {
-            var reported = 0L
-            while (true) {
-                withTimeoutOrNull(resumePointIntervalMs) { caughtUp.receive() }
-                val at = caughtUpAt.load()
-                if (at == 0L) continue
-                val from = at - overlapSeconds
-                if (from > reported) {
-                    reported = from
-                    onResumePoint(from)
-                }
-            }
-        }
-
-        addConnectionListener(connection)
+        if (resume != null) addConnectionListener(connection)
         subscribe(subId, mapOf(target to filters), listener)
         awaitClose {
             stopped.complete(Unit)

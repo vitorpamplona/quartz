@@ -95,7 +95,9 @@ class NostrClientSubscribeEventsTest {
     private val relay = InProcessRelays.DEFAULT_URL
     private val signer = NostrSignerSync()
     private var clock = 1_000_000L
-    private val resumePoints = CopyOnWriteArrayList<Long>()
+
+    /** The resume policy every stream here uses unless a test passes its own, on the test's clock. */
+    private val resume = CaughtUpResume(overlapSeconds = 60, nowInSeconds = { clock })
 
     @AfterTest
     fun tearDown() {
@@ -123,19 +125,19 @@ class NostrClientSubscribeEventsTest {
             }
         }
 
-    private fun live(filters: List<Filter>) =
-        counting.subscribeEvents(
-            relay = relay,
-            filters = filters,
-            overlapSeconds = 60,
-            resumePointIntervalMs = 100,
-            onResumePoint = { resumePoints += it },
-            nowInSeconds = { clock },
-        )
+    private fun live(
+        filters: List<Filter>,
+        resume: ResumePolicy? = this.resume,
+    ) = counting.subscribeEvents(
+        relay = relay,
+        filters = filters,
+        resume = resume,
+    )
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
-    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (point !in resumePoints) delay(20) }
+    /** Waits until the stream has reported being caught up at [point] + the overlap. */
+    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (resume.resumeFrom() != point) delay(20) }
 
     @Test
     fun storedEventsThenLiveOnes() =
@@ -207,6 +209,42 @@ class NostrClientSubscribeEventsTest {
             awaitReqs(2)
             assertEquals(2, counting.subscribes.get(), "one rewrite for the disconnect")
             assertEquals(clock - 60, reqs[1].filters.single().since)
+            job.cancel()
+        }
+
+    @Test
+    fun aNullPolicyNeverRewritesTheFilters() =
+        runBlocking<Unit> {
+            val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500)), resume = null).collect { } }
+            awaitReqs(1)
+            delay(300) // EOSE seen
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(500L, reqs[1].filters.single().since, "the filters re-sent as given")
+            assertEquals(1, counting.subscribes.get())
+            job.cancel()
+        }
+
+    @Test
+    fun aDisconnectAsksThePolicyOnceAndResendsItsAnswer() =
+        runBlocking<Unit> {
+            val asked = AtomicInteger(0)
+            val fixed =
+                object : ResumePolicy {
+                    override fun onCaughtUp() {}
+
+                    override fun resumeFrom(): Long {
+                        asked.incrementAndGet()
+                        return 123_456
+                    }
+                }
+            val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500)), resume = fixed).collect { } }
+            awaitReqs(1)
+            assertEquals(0, asked.get(), "nothing asks before a disconnect")
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(1, asked.get())
+            assertEquals(123_456L, reqs[1].filters.single().since)
             job.cancel()
         }
 
