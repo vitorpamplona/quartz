@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.reqs
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.relay.client.pool.FiltersChanged
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
@@ -146,6 +145,14 @@ class CaughtUpResume(
     private val points = ConcurrentHashCache<NormalizedRelayUrl, Point>()
     private val creating = PlatformLock()
 
+    /**
+     * The device clock as last read. A `created_at` at or below it is already in the past, so most
+     * events need no clock read: a live tail's events arrive newer than the last one, and reading
+     * the clock for each was most of what this policy cost per event. If the clock is stepped
+     * back, events dated up to the earlier reading go uncapped until one is newer than it.
+     */
+    @Volatile private var clockRead = Long.MIN_VALUE
+
     private fun point(relay: NormalizedRelayUrl): Point =
         points.get(relay) ?: creating.withLock {
             points.get(relay) ?: Point().also { points.put(relay, it) }
@@ -166,9 +173,10 @@ class CaughtUpResume(
     ) {
         val point = point(relay)
         val cell = if (isLive) point.at else point.pending
-        // Most events don't move it: no clock read, no write.
-        if (event.createdAt <= cell.load()) return
-        raise(cell, minOf(event.createdAt, nowInSeconds()))
+        val createdAt = event.createdAt
+        // An event that doesn't move the point costs a lookup and a compare.
+        if (createdAt <= cell.load()) return
+        raise(cell, if (createdAt <= clockRead) createdAt else minOf(createdAt, readClock()))
     }
 
     override fun onEose(
@@ -181,14 +189,26 @@ class CaughtUpResume(
         if (filters != null) point.filters = filters
     }
 
-    /** The caught-up REQ may itself have been resumed: only `since` is allowed to differ. */
+    private fun readClock(): Long = nowInSeconds().also { clockRead = it }
+
+    /**
+     * The caught-up REQ may itself have been resumed: only `since` is allowed to differ. Compared
+     * field by field rather than through copies without `since`: a [Filter] checks every author
+     * when it is built, and a REQ for a few hundred follows is written on every reconnect.
+     */
     private fun sameIgnoringSince(
         caughtUp: List<Filter>,
         filters: List<Filter>,
     ): Boolean {
         if (caughtUp.size != filters.size) return false
         for (i in caughtUp.indices) {
-            if (FiltersChanged.needsToResendRequest(caughtUp[i].copy(since = null), filters[i].copy(since = null))) return false
+            val a = caughtUp[i]
+            val b = filters[i]
+            if (a.ids != b.ids || a.authors != b.authors || a.kinds != b.kinds || a.tags != b.tags || a.tagsAll != b.tagsAll ||
+                a.until != b.until || a.limit != b.limit || a.search != b.search
+            ) {
+                return false
+            }
         }
         return true
     }
