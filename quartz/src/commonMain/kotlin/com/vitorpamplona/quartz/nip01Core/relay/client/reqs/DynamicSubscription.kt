@@ -26,6 +26,16 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 
+/**
+ * A subscription whose filters come from [filter]. [refresh] re-reads it and sends what changed;
+ * the pool also re-reads it each time it writes this subscription's REQ on a connection (the first
+ * one, a reconnect, the replay after an AUTH), so a re-sent REQ carries what [filter] returns now,
+ * a moved `since` for instance, not what it returned at the last [refresh].
+ *
+ * Which relays the subscription is open on changes only on [refresh]: a relay [filter] no longer
+ * names keeps the filters it was last given. [filter] runs on the connection's thread then, so keep
+ * it cheap.
+ */
 class DynamicSubscription(
     val client: INostrClient,
     val filter: () -> Map<NormalizedRelayUrl, List<Filter>>,
@@ -42,6 +52,12 @@ class DynamicSubscription(
     ) {
         onEvent(event)
     }
+
+    /** What [filter] returns for [relay] now, so a re-sent REQ is current. */
+    override fun filtersForSync(
+        relay: NormalizedRelayUrl,
+        filters: List<Filter>,
+    ): List<Filter>? = filter()[relay]
 
     /**
      * Creates or Updates the filter with relays. This method should be called

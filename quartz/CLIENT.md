@@ -253,6 +253,9 @@ A listener can also override `filtersForSync(relay, filters)`. The pool calls it
 writes the subscription's REQ on a connection (the first connection, a reconnect, the replay after
 an AUTH) and sends what it returns instead, for that REQ only: that is how a long-lived
 subscription resumes from where it got to. Derive the answer with `Filter.copy`.
+`client.subscribe(filters = { … }) { event -> … }` (`DynamicSubscription`) answers it by calling
+its lambda again, so a re-sent REQ carries what the lambda returns now; which relays it is open on
+still changes only on `refresh()`.
 
 A service that tails a relay for as long as it runs (an indexer, a mirror) should use
 `client.subscribeEvents(relay, filters)` (`…client.accessories`) instead. It is a `Flow<Event>`
