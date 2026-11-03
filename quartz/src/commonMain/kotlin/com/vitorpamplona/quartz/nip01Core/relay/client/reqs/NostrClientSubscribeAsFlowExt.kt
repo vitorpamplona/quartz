@@ -37,11 +37,12 @@ import kotlinx.coroutines.flow.conflate
  * 2. Stores the incoming events in a list, where:
  *    - Before EOSE, events are added to the end of the list
  *    - After EOSE, events are added to the beginning of the list
- * 3. If the client disconnects and reconnects, the client
- * will resend the req with the same filter, which will download
- * the same events again, where:
- *    - They will be ignored if they are already in the list.
- *    - They will be added to the beginning of the list if they are new.
+ * 3. If the client disconnects and reconnects, the client re-sends the req from the newest
+ *    event it delivered ([CaughtUpResume]; two days earlier for gift wraps), not from the start:
+ *    - Events it sends again are ignored if they are already in the list.
+ *    - New ones are added to the beginning of the list.
+ * 4. A CLOSED doesn't end the flow: the client sends the req again on the next reconnect or AUTH,
+ *    unless the relay keeps refusing the same filters.
  */
 fun INostrClient.subscribeAsFlow(
     relay: String,
@@ -67,6 +68,7 @@ fun INostrClient.subscribeAsFlow(
         var hasBeenLive = false
         val eventIds = mutableSetOf<HexKey>()
         val currentEvents = EventListAccumulator()
+        val resume = CaughtUpResume()
 
         val listener =
             object : SubscriptionListener {
@@ -80,6 +82,7 @@ fun INostrClient.subscribeAsFlow(
                         if (hasBeenLive) currentEvents.prepend(event) else currentEvents.append(event)
                         trySend(currentEvents.snapshot())
                     }
+                    resume.onEvent(relay, event, isLive)
                 }
 
                 override fun onEose(
@@ -87,7 +90,13 @@ fun INostrClient.subscribeAsFlow(
                     forFilters: List<Filter>?,
                 ) {
                     hasBeenLive = true
+                    resume.onEose(relay, forFilters)
                 }
+
+                override fun filtersForSync(
+                    relay: NormalizedRelayUrl,
+                    filters: List<Filter>,
+                ): List<Filter>? = resume.resume(relay, filters)
             }
 
         subscribe(subId, mapOf(relay to filters), listener)

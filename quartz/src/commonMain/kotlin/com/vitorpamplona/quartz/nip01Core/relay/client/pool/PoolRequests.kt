@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.LargeCache
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -365,7 +366,7 @@ class PoolRequests(
                         state.withLock(relay.url) {
                             state.onClosed(relay.url)
                             forFilters = state.lastKnownFilterStates(relay.url)
-                            recordRefusalIfStructural(state, relay.url, msg.message, forFilters)
+                            recordRefusalIfStructural(state, relay.url, msg.message, state.ownFilters(relay.url, forFilters))
                             if (backingOff) null else decideCommandLocked(state, msg.subId, relay.url)
                         }
                     }
@@ -463,7 +464,8 @@ class PoolRequests(
             // Identity, not equality: the decision that queued this REQ recorded this very list,
             // and a newer one (a NOTICE narrowing, a resubscribe) records a list of its own.
             if (state.currentFilters(relay) !== held.filters) return@withLock null
-            val filters = if (desired.isNullOrEmpty() || !FiltersChanged.needsToResendRequest(held.filters, desired)) held.filters else desired
+            val heldFor = state.ownFilters(relay, held.filters) ?: held.filters
+            val filters = if (desired.isNullOrEmpty() || !FiltersChanged.needsToResendRequest(heldFor, desired)) held.filters else desired
             state.onWriting(relay, filters)
             if (filters === held.filters) held else ReqCmd(held.subId, filters)
         }
@@ -498,22 +500,45 @@ class PoolRequests(
         // this brand-new socket to dedupe against. The one exception is a filter
         // this relay has structurally refused too many times — replaying it on
         // every reconnect is the doomed-REQ loop this guard exists to stop.
+        //
+        // Each subscription's listener may name the filters to write instead
+        // ([SubscriptionListener.filtersForSync]), so a long-lived one resumes from where it got
+        // to rather than from where it started. It is shown the filters as this relay is sent them
+        // (narrowed), the same ones its EOSE will report. Asked before any lock is taken.
         desiredSubs.forEach { subId, perRelayFilters ->
-            val filters = perRelayFilters[relay]?.let { relayRefusals.narrow(relay, it) }
-            if (!filters.isNullOrEmpty()) {
+            val desired = perRelayFilters[relay]
+            val own = desired?.let { relayRefusals.narrow(relay, it) }
+            if (!own.isNullOrEmpty()) {
+                val written = filtersForSync(subId, relay, own)
+                val filters = if (written === own) own else relayRefusals.narrow(relay, written)
                 val send =
                     subState(subId).let { state ->
                         state.withLock(relay) {
-                            if (isStructurallyRefused(state, relay, filters)) {
+                            if (isStructurallyRefused(state, relay, own)) {
                                 false
                             } else {
-                                state.onOpenReq(relay, filters)
+                                state.onOpenReq(relay, filters, standsFor = own.takeIf { filters !== own })
                                 true
                             }
                         }
                     }
                 if (send) sync(ReqCmd(subId, filters))
             }
+        }
+    }
+
+    /** [own], or what [subId]'s listener would write instead; never lets a listener break the sync. */
+    private fun filtersForSync(
+        subId: String,
+        relay: NormalizedRelayUrl,
+        own: List<Filter>,
+    ): List<Filter> {
+        val listener = desiredSubListeners.get(subId) ?: return own
+        return try {
+            listener.filtersForSync(relay, own)?.takeIf { it.isNotEmpty() } ?: own
+        } catch (e: Exception) {
+            Log.w("PoolRequests", "filtersForSync failed for $subId on ${relay.url}; sending its filters as given", e)
+            own
         }
     }
 
@@ -603,7 +628,8 @@ class PoolRequests(
         subId: String,
         relay: NormalizedRelayUrl,
     ): Command? {
-        val oldFilters = state.currentFilters(relay)
+        // The subscription's own filters behind the REQ in flight, not a listener's rewrite of them.
+        val oldFilters = state.ownFilters(relay, state.currentFilters(relay))
         // As the relay will serve them: kinds it refused by name are stripped.
         val newFilters = desiredSubs.get(subId)?.get(relay)?.let { relayRefusals.narrow(relay, it) }
 

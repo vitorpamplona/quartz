@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -86,13 +87,18 @@ class AuthGatedRelayHarness(
             policyBuilder = { FullAuthPolicy(URL) },
         )
 
+    private val sockets = CopyOnWriteArrayList<WebSocket>()
+
     private val builder =
         object : WebsocketBuilder {
             override fun build(
                 url: NormalizedRelayUrl,
                 out: WebSocketListener,
-            ): WebSocket = InProcessWebSocket(server, out)
+            ): WebSocket = InProcessWebSocket(server, out).also { sockets += it }
         }
+
+    /** Drops every connection under the client, which reconnects on its own and must AUTH again. */
+    fun dropConnections() = sockets.forEach { it.disconnect() }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -126,7 +132,10 @@ class AuthGatedRelayHarness(
         }
 
     /** Stores [count] kind-1 events the relay will only serve to an authenticated caller. */
-    suspend fun preload(count: Int) {
+    suspend fun preload(
+        count: Int,
+        newestAt: Long = TimeUtils.now(),
+    ) {
         val author = NostrSignerInternal(KeyPair())
         repeat(count) { i ->
             store.insert(
@@ -134,7 +143,7 @@ class AuthGatedRelayHarness(
                     Event.build(
                         kind = 1,
                         content = "gated-$i",
-                        createdAt = TimeUtils.now() - i,
+                        createdAt = newestAt - i,
                     ) {
                         // A tag, so the event is not degenerate for the store's indexes.
                         add(ETag.assemble("0".repeat(64), null, null))
