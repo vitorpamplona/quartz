@@ -104,11 +104,12 @@ class NostrClientSubscribeEventsTest {
 
     private fun note(createdAt: Long): Event = signer.sign(createdAt, 1, emptyArray(), "note $createdAt")
 
-    private fun live(since: Long? = null) =
+    private fun live(since: Long? = null) = live(listOf(Filter(kinds = listOf(1), since = since)))
+
+    private fun live(filters: List<Filter>) =
         client.subscribeEvents(
             relay = relay,
-            filters = listOf(Filter(kinds = listOf(1))),
-            since = since,
+            filters = filters,
             overlapSeconds = 60,
             sinceUpdateIntervalMs = 100,
             onResumePoint = { resumePoints += it },
@@ -168,6 +169,21 @@ class NostrClientSubscribeEventsTest {
             builder.dropAll()
             awaitReqs(2)
             assertEquals(clock - 60, reqs[1].filters.single().since)
+            job.cancel()
+        }
+
+    @Test
+    fun eachFilterStartsFromItsOwnSinceAndNeverResumesEarlier() =
+        runBlocking<Unit> {
+            val later = 2_000_000L // past the resume point the reconnect will use
+            val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500), Filter(kinds = listOf(7), since = later))).collect { } }
+            awaitReqs(1)
+            assertEquals(listOf(500L, later), reqs[0].filters.map { it.since }, "the first REQ asks for the filters as given")
+            awaitResumePoint(999_940)
+
+            builder.dropAll()
+            awaitReqs(2)
+            assertEquals(listOf(999_940L, later), reqs[1].filters.map { it.since }, "each moves to the resume point, never earlier than its own")
             job.cancel()
         }
 

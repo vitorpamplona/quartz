@@ -68,7 +68,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *   this all the time), is not sent again; nor is anything past the relay's own cap on stored
  *   results for one REQ. If every event matters, reconcile the gap too (`negentropySync`).
  * - **Restarts resume.** [onResumePoint] hears each `since` the subscription would resume from.
- *   Persist it and pass it back as [since] after a restart. It covers what was handed to this flow,
+ *   Persist it and, after a restart, set it as the filters' `since`. It covers what was handed to this flow,
  *   so it can run ahead of what a lagging collector has processed by up to its buffer; the
  *   overlap covers a lag shorter than [overlapSeconds].
  * - **A closed subscription ends the flow.** After a CLOSED the client does not send the REQ
@@ -82,14 +82,15 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *     an AUTH the relay refuses, or a signer still unfinished after [authSettleMs] (a person
  *     approving a NIP-46/NIP-55 prompt) ends it then.
  *
- * [since] is where the first REQ starts (null: the relay's whole matching history); any `since`
- * in [filters] is replaced.
+ * The first REQ asks for [filters] as given: each filter's own `since` is where it starts (none:
+ * the relay's whole matching history). Once the subscription is caught up, each filter's `since`
+ * moves to the shared resume point, but never earlier than its own: one REQ gets one EOSE, so
+ * "caught up" holds for every filter at once.
  */
 @OptIn(ExperimentalAtomicApi::class)
 fun INostrClient.subscribeEvents(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
-    since: Long? = null,
     overlapSeconds: Long = 60,
     sinceUpdateIntervalMs: Long = 300_000,
     authSettleMs: Long = 120_000,
@@ -109,7 +110,8 @@ fun INostrClient.subscribeEvents(
         val stopped = CompletableDeferred<Unit>()
         val sinceUpdates = Channel<Unit>(Channel.CONFLATED)
 
-        fun filtersFrom(from: Long?) = if (from == null) filters else filters.map { it.copy(since = from) }
+        // A filter that already starts later than the resume point keeps its own `since`.
+        fun filtersFrom(from: Long) = filters.map { f -> f.since?.takeIf { it >= from }?.let { f } ?: f.copy(since = from) }
 
         fun end(message: String) = close(SubscriptionClosedException(target, message))
 
@@ -191,7 +193,7 @@ fun INostrClient.subscribeEvents(
 
         // Only this coroutine moves `since`, so the stored filters never go backwards.
         launch {
-            var stored = since
+            var stored: Long? = null
             while (true) {
                 withTimeoutOrNull(sinceUpdateIntervalMs) { sinceUpdates.receive() }
                 val at = caughtUpAt.load()
@@ -211,7 +213,7 @@ fun INostrClient.subscribeEvents(
             }
         }
 
-        subscribe(subId, mapOf(target to filtersFrom(since)), listener)
+        subscribe(subId, mapOf(target to filters), listener)
         awaitClose {
             stopped.complete(Unit)
             unsubscribe(subId)
