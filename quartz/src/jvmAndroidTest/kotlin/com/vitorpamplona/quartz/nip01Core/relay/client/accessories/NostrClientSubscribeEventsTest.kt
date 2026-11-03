@@ -46,15 +46,14 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.measureTimedValue
 
 class NostrClientSubscribeEventsTest {
     /** Every REQ the relay accepted, across connections. */
@@ -105,21 +104,16 @@ class NostrClientSubscribeEventsTest {
 
     private fun note(createdAt: Long): Event = signer.sign(createdAt, 1, emptyArray(), "note $createdAt")
 
-    private fun live(
-        since: Long? = null,
-        endsOnClosed: (String) -> Boolean = { !it.startsWith("auth-required:") },
-        replayTimeoutMs: Long = 30_000,
-    ) = client.subscribeEvents(
-        relay = relay,
-        filters = listOf(Filter(kinds = listOf(1))),
-        since = since,
-        overlapSeconds = 60,
-        sinceUpdateIntervalMs = 100,
-        endsOnClosed = endsOnClosed,
-        replayTimeoutMs = replayTimeoutMs,
-        onResumePoint = { resumePoints += it },
-        nowInSeconds = { clock },
-    )
+    private fun live(since: Long? = null) =
+        client.subscribeEvents(
+            relay = relay,
+            filters = listOf(Filter(kinds = listOf(1))),
+            since = since,
+            overlapSeconds = 60,
+            sinceUpdateIntervalMs = 100,
+            onResumePoint = { resumePoints += it },
+            nowInSeconds = { clock },
+        )
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
@@ -226,17 +220,14 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
-    fun anAuthChallengeWaitsForAReplayThenEnds() =
+    fun anAuthChallengeWithNobodyToAnswerItEndsAtOnce() =
         runBlocking<Unit> {
+            // No NIP-42 responder on this client: nothing will ever sign, so nothing will replay the REQ.
             refuseWith = "auth-required: sign in"
-            val waiting = scope.async { runCatching { live().collect { } } }
-            assertNull(withTimeoutOrNull(1_000) { waiting.await() }, "the client may still authenticate and replay the REQ")
-            waiting.cancel()
-
-            // Nothing here authenticates, so nothing replays it: the flow ends once the wait runs out.
-            val outcome = withTimeout(5_000) { runCatching { live(replayTimeoutMs = 300).collect { } }.exceptionOrNull() }
+            val (outcome, elapsed) = measureTimedValue { withTimeout(5_000) { runCatching { live().collect { } }.exceptionOrNull() } }
             assertIs<SubscriptionClosedException>(outcome)
             assertEquals("auth-required: sign in", outcome.reason)
+            assertTrue(elapsed.inWholeMilliseconds < 2_000, "no wait when nobody can answer; was $elapsed")
         }
 
     @Test

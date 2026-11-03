@@ -23,6 +23,9 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
+import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
+import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadablePrefix
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
@@ -33,16 +36,15 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.concurrent.atomics.incrementAndFetch
 
 /**
  * The live tail of [relay] for [filters], as a [Flow] of its events, for as long as it is
@@ -70,12 +72,15 @@ import kotlin.concurrent.atomics.incrementAndFetch
  *   so it can run ahead of what a lagging collector has processed by up to its buffer; the
  *   overlap covers a lag shorter than [overlapSeconds].
  * - **A closed subscription ends the flow.** After a CLOSED the client does not send the REQ
- *   again on its own (except a `rate-limited:` one that states a back-off, which it retries), so
- *   the subscription would stay silent until something reconnected the relay. A CLOSED for which
- *   [endsOnClosed] is true completes the flow with [SubscriptionClosedException] at once, and the
- *   caller decides: collect again, back off, or stop. One it lets through (by default
- *   `auth-required:`, which a client with a signer answers and replays) still ends the flow if no
- *   EOSE or event follows within [replayTimeoutMs]: a client that can't authenticate never replays it.
+ *   again on its own, so the subscription would stay silent until something reconnected the
+ *   relay. Instead the flow completes with [SubscriptionClosedException], and the caller decides:
+ *   collect again, back off, or stop. Two CLOSEDs the client recovers from itself don't end it:
+ *   - a `rate-limited:` one that states a back-off, which the client retries once it passes;
+ *   - an `auth-required:` one, while the client's NIP-42 responder can still get in. It waits on
+ *     the AUTH's own verdict ([awaitAuthOutcome]): on success the client has re-sent the REQ and
+ *     the flow carries on; with no responder attached it ends at once; a responder that declines,
+ *     an AUTH the relay refuses, or a signer still unfinished after [authSettleMs] (a person
+ *     approving a NIP-46/NIP-55 prompt) ends it then.
  *
  * [since] is where the first REQ starts (null: the relay's whole matching history); any `since`
  * in [filters] is replaced.
@@ -87,8 +92,7 @@ fun INostrClient.subscribeEvents(
     since: Long? = null,
     overlapSeconds: Long = 60,
     sinceUpdateIntervalMs: Long = 300_000,
-    endsOnClosed: (message: String) -> Boolean = { MachineReadablePrefix.parse(it) != MachineReadablePrefix.AUTH_REQUIRED },
-    replayTimeoutMs: Long = 30_000,
+    authSettleMs: Long = 120_000,
     onResumePoint: (since: Long) -> Unit = {},
     nowInSeconds: () -> Long = TimeUtils::now,
 ): Flow<Event> =
@@ -97,8 +101,9 @@ fun INostrClient.subscribeEvents(
         val subId = "live-" + RandomInstance.randomChars(10)
         // When this subscription was last known to be caught up with the relay; 0 = not yet.
         val caughtUpAt = AtomicLong(0L)
-        // Moves on every EOSE and event: shows whether a REQ came back after a CLOSED.
-        val progress = AtomicLong(0L)
+        // AUTHs accepted on the relay as of the last time it served us: an `auth-required:` refusal
+        // waits for one newer than this, which is when the client re-sends the REQ.
+        val authMark = AtomicInt(authSuccessMark(target))
         // Completed when the flow ends, before the unsubscribe: a send waiting for room gives up on
         // it, and a `since` update racing the unsubscribe undoes its own subscribe.
         val stopped = CompletableDeferred<Unit>()
@@ -140,7 +145,6 @@ fun INostrClient.subscribeEvents(
                             }
                         if (!delivered) return
                     }
-                    progress.incrementAndFetch()
                     if (isLive) caughtUpAt.store(nowInSeconds())
                 }
 
@@ -149,7 +153,7 @@ fun INostrClient.subscribeEvents(
                     forFilters: List<Filter>?,
                 ) {
                     if (relay != target) return
-                    progress.incrementAndFetch()
+                    authMark.store(authSuccessMark(target))
                     caughtUpAt.store(nowInSeconds())
                     sinceUpdates.trySend(Unit)
                 }
@@ -169,15 +173,18 @@ fun INostrClient.subscribeEvents(
                     if (relay != target) return
                     // Retried by the client once the relay's stated back-off passes.
                     if (RetryAfter.parse(message, params) != null) return
-                    if (endsOnClosed(message)) {
+                    if (MachineReadablePrefix.parse(message) != MachineReadablePrefix.AUTH_REQUIRED) {
                         end(message)
                         return
                     }
-                    // Left open for something to replay the REQ (an AUTH). If nothing comes back, nothing will.
-                    val before = progress.load()
+                    val since = authMark.load()
                     launch {
-                        delay(replayTimeoutMs)
-                        if (progress.load() == before) end(message)
+                        if (awaitAuthOutcome(target, since, settleMs = authSettleMs) == AuthOutcome.AUTHENTICATED) {
+                            // The client re-sent the REQ on the AUTH's OK. A later refusal needs a newer AUTH.
+                            authMark.store(authSuccessMark(target))
+                        } else {
+                            end(message)
+                        }
                     }
                 }
             }
