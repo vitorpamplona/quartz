@@ -192,7 +192,7 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
-    fun aHealthyConnectionNeverRewritesTheFiltersOnlyADisconnectDoes() =
+    fun nothingResubscribesTheResumePointRidesTheResend() =
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
@@ -207,7 +207,7 @@ class NostrClientSubscribeEventsTest {
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(2, counting.subscribes.get(), "one rewrite for the disconnect")
+            assertEquals(1, counting.subscribes.get(), "the pool asks for the filters as it re-sends; nothing resubscribes")
             assertEquals(clock - 60, reqs[1].filters.single().since)
             job.cancel()
         }
@@ -226,24 +226,28 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
-    fun aDisconnectAsksThePolicyOnceAndResendsItsAnswer() =
+    fun aReconnectAsksThePolicyAndSendsItsAnswer() =
         runBlocking<Unit> {
             val asked = AtomicInteger(0)
+            var answer: Long? = null
             val fixed =
                 object : ResumePolicy {
                     override fun onCaughtUp() {}
 
-                    override fun resumeFrom(): Long {
+                    override fun resumeFrom(): Long? {
                         asked.incrementAndGet()
-                        return 123_456
+                        return answer
                     }
                 }
             val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500)), resume = fixed).collect { } }
             awaitReqs(1)
-            assertEquals(0, asked.get(), "nothing asks before a disconnect")
+            assertEquals(500L, reqs[0].filters.single().since, "no answer yet: the filters as given")
+
+            answer = 123_456
+            val before = asked.get()
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(1, asked.get())
+            assertEquals(before + 1, asked.get(), "asked once, for the re-sent REQ")
             assertEquals(123_456L, reqs[1].filters.single().since)
             job.cancel()
         }

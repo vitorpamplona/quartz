@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.LargeCache
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -498,8 +499,12 @@ class PoolRequests(
         // this brand-new socket to dedupe against. The one exception is a filter
         // this relay has structurally refused too many times — replaying it on
         // every reconnect is the doomed-REQ loop this guard exists to stop.
+        //
+        // Each subscription's listener may name the filters to write instead
+        // ([SubscriptionListener.filtersForSync]), so a long-lived one resumes from where it got
+        // to rather than from where it started. Asked before any lock is taken.
         desiredSubs.forEach { subId, perRelayFilters ->
-            val filters = perRelayFilters[relay]?.let { relayRefusals.narrow(relay, it) }
+            val filters = perRelayFilters[relay]?.let { relayRefusals.narrow(relay, filtersForSync(subId, relay, it)) }
             if (!filters.isNullOrEmpty()) {
                 val send =
                     subState(subId).let { state ->
@@ -514,6 +519,21 @@ class PoolRequests(
                     }
                 if (send) sync(ReqCmd(subId, filters))
             }
+        }
+    }
+
+    /** [desired], or what [subId]'s listener would write instead; never lets a listener break the sync. */
+    private fun filtersForSync(
+        subId: String,
+        relay: NormalizedRelayUrl,
+        desired: List<Filter>,
+    ): List<Filter> {
+        val listener = desiredSubListeners.get(subId) ?: return desired
+        return try {
+            listener.filtersForSync(relay, desired)?.takeIf { it.isNotEmpty() } ?: desired
+        } catch (e: Exception) {
+            Log.w("PoolRequests", "filtersForSync failed for $subId on ${relay.url}; sending its filters as given", e)
+            desired
         }
     }
 

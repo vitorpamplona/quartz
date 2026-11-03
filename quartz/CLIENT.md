@@ -249,6 +249,11 @@ fun main() = runBlocking {
 }
 ```
 
+A listener can also override `filtersForSync(relay, filters)`. The pool calls it each time it
+writes the subscription's REQ on a connection (the first connection, a reconnect, the replay after
+an AUTH) and sends what it returns instead, for that REQ only: that is how a long-lived
+subscription resumes from where it got to. Derive the answer with `Filter.copy`.
+
 A service that tails a relay for as long as it runs (an indexer, a mirror) should use
 `client.subscribeEvents(relay, filters)` (`…client.accessories`) instead. It is a `Flow<Event>`
 with backpressure. Each filter starts from its own `since`. After a reconnect it asks again from

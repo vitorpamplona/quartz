@@ -25,6 +25,30 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 
 interface SubscriptionListener {
+    /**
+     * The pool is writing this subscription's REQ to [relay] on a connection: when the connection
+     * opens (the first one, or any reconnect) and when it replays every REQ after a successful AUTH.
+     * Return the filters to send instead of [filters] (the ones you subscribed with), or null to
+     * send those.
+     *
+     * This is how a long-lived subscription keeps a REQ the client re-sends on its own current, a
+     * moving `since` for one: the pool asks at the moment the REQ goes out, so nothing has to keep
+     * the stored filters up to date in between. The answer applies to that REQ only; the filters
+     * the subscription was given stay as they are. A change you make yourself, with
+     * `INostrClient.subscribe`, is sent as you made it, without asking.
+     *
+     * Derive the answer from [filters] with [Filter.copy]: a filter subclass (an app's own, carrying
+     * what the filter is for) keeps what it carries that way, and what the pool sends is what it
+     * reports as in flight.
+     *
+     * Called on the connection's own thread, before the REQ is written and outside any lock: keep it
+     * cheap and non-blocking. If it throws, the pool sends [filters].
+     */
+    fun filtersForSync(
+        relay: NormalizedRelayUrl,
+        filters: List<Filter>,
+    ): List<Filter>? = null
+
     fun onEose(
         relay: NormalizedRelayUrl,
         forFilters: List<Filter>?,

@@ -28,17 +28,17 @@ import kotlin.concurrent.Volatile
  * only reports and asks; the policy decides.
  *
  * Both calls come from the client's own threads: [onCaughtUp] from the connection's delivery
- * coroutine, which every subscription on that relay shares, and [resumeFrom] from its disconnect
- * callback. Keep both cheap and non-blocking; save state elsewhere, on your own schedule.
+ * coroutine, which every subscription on that relay shares, and [resumeFrom] from the one writing
+ * the REQ. Keep both cheap and non-blocking; save state elsewhere, on your own schedule.
  */
 interface ResumePolicy {
     /** At EOSE and at each live event: the subscription is caught up with the relay as of now. */
     fun onCaughtUp()
 
     /**
-     * On a disconnect, before the client re-sends the REQ: the `since` to ask from, or null to keep
-     * the filters as they are. A filter is never moved earlier than its own `since`, nor earlier
-     * than a point already applied.
+     * Each time the client writes the REQ on a connection (a reconnect, the replay after an AUTH,
+     * or the first connection if the relay wasn't connected yet): the `since` to ask from, or null
+     * to send the filters as given. A filter is never moved earlier than its own `since`.
      */
     fun resumeFrom(): Long?
 }
