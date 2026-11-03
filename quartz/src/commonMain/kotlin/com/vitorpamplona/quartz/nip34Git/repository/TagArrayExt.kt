@@ -20,9 +20,23 @@
  */
 package com.vitorpamplona.quartz.nip34Git.repository
 
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
 /** The repository's earliest unique commit, as patches and pull requests carry it: the first non-empty `r`. */
 fun TagArray.earliestUniqueCommit() = fastFirstNotNullOfOrNull(CommitReferenceTag::parse)
+
+/**
+ * Every repository announcement coordinate in the `a` tags, in tag order. Items carry one `a` per
+ * maintainer; an `a` marked `mention` (older clients' way to cite a repository) is not one of them.
+ */
+fun TagArray.repositoryAddresses(): List<Address> =
+    mapNotNull { tag ->
+        if (tag.getOrNull(3) == MENTION_MARKER) return@mapNotNull null
+        ATag.parseAddress(tag)?.takeIf { it.kind == GitRepositoryEvent.KIND }
+    }.distinct()
+
+private const val MENTION_MARKER = "mention"

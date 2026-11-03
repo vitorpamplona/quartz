@@ -38,6 +38,9 @@ import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.MaintainersTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.NameTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RelaysTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRole
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleRecord
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.WebTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -117,6 +120,98 @@ class GitRepositoryEvent(
     fun maintainers(): List<HexKey> = tags.flatMap { MaintainersTag.parse(it) ?: emptyList() }.distinct()
 
     fun hashtags(): List<String> = tags.hashtags()
+
+    /**
+     * The well-formed `M`/`m`/`o` role records. A malformed record grants nothing and is left out,
+     * and so is a self-authored record that ends in `defer` (an author cannot defer their own end).
+     */
+    fun roleRecords(): List<RepositoryRoleRecord> =
+        tags.mapNotNull { tag ->
+            RepositoryRoleTag.parse(tag)?.takeUnless { it.subject == pubKey && it.endsInDefer }
+        }
+
+    /** True when any `M`/`m`/`o` tag is present: then those roles, not `maintainers`, are authoritative. */
+    fun hasIndexedRoles(): Boolean = tags.any(RepositoryRoleTag::isTagged)
+
+    /** True when an `M` or `m` tag is present. */
+    fun hasIndexedMaintainerRoles(): Boolean = tags.any { RepositoryRoleTag.isTagged(it) && it[0] != RepositoryRole.MODERATOR.code }
+
+    /** True when the deprecated `maintainers` tag is present. */
+    fun hasLegacyMaintainersTag(): Boolean = tags.any { it.isNotEmpty() && it[0] == MaintainersTag.TAG_NAME }
+
+    /** The subjects of active `M` records: who this announcement forwards the lead to. */
+    fun activeLeads(): List<HexKey> = roleRecords().filter { it.isActive && it.role == RepositoryRole.LEAD }.map { it.subject }.distinct()
+
+    /**
+     * The maintainers this announcement assigns or acknowledges, author included when they count.
+     *
+     * With indexed roles: every active `M`/`m` subject, plus the author when no role tag names them
+     * (an author with no self-record is an implicit maintainer). Without them: the author and the
+     * legacy `maintainers` list.
+     */
+    fun activeMaintainerAssignments(): List<HexKey> {
+        val result = LinkedHashSet<HexKey>()
+        if (hasIndexedRoles()) {
+            if (tags.none { RepositoryRoleTag.isTagged(it) && it.getOrNull(1) == pubKey }) result.add(pubKey)
+            roleRecords().forEach { if (it.isActive && it.role.isMaintainer) result.add(it.subject) }
+        } else {
+            result.add(pubKey)
+            maintainers().forEach { if (Hex.isHex64(it)) result.add(it) }
+        }
+        return result.toList()
+    }
+
+    /** The active `o` subjects: moderators this announcement assigns or acknowledges. */
+    fun activeModeratorAssignments(): List<HexKey> = roleRecords().filter { it.isActive && it.role == RepositoryRole.MODERATOR }.map { it.subject }.distinct()
+
+    /**
+     * True when the author has role records about themselves but none of them is an active `M`/`m`,
+     * or one of them is an unrepaired self-`defer`: they declined or left maintainership.
+     */
+    fun authorCannotMaintain(): Boolean {
+        val authorHasRoleEntry = tags.any { RepositoryRoleTag.isTagged(it) && it.getOrNull(1) == pubKey }
+        if (!authorHasRoleEntry) return false
+        return roleRecords().none { it.subject == pubKey && it.isActive && it.role.isMaintainer } || hasUnrepairedSelfDefer()
+    }
+
+    /** Like [authorCannotMaintain], for the moderator role. */
+    fun authorCannotModerate(): Boolean {
+        val authorHasModeratorEntry = tags.any { it.size > 1 && it[0] == RepositoryRole.MODERATOR.code && it[1] == pubKey }
+        if (!authorHasModeratorEntry) return false
+        return roleRecords().none { it.subject == pubKey && it.isActive && it.role == RepositoryRole.MODERATOR } || hasUnrepairedSelfDefer()
+    }
+
+    /** True when the author has self maintainer records and none is active: they left maintainership. */
+    fun authorDeclinesMaintainership(): Boolean {
+        val selfRecords = roleRecords().filter { it.subject == pubKey }
+        if (selfRecords.any { it.isActive && it.role.isMaintainer }) return false
+        val hasSelfMaintainerRecord = selfRecords.any { it.role.isMaintainer }
+        val hasInvalidSelfMaintainerDefer =
+            tags.any { tag ->
+                RepositoryRoleTag.parse(tag)?.let { it.subject == pubKey && it.endsInDefer && it.role.isMaintainer } == true
+            }
+        return hasSelfMaintainerRecord || (selfRecords.isNotEmpty() && !hasInvalidSelfMaintainerDefer)
+    }
+
+    /** True when the author has self moderator records and none is active: they left moderation. */
+    fun authorDeclinesModeratorship(): Boolean {
+        val selfModerator = roleRecords().filter { it.subject == pubKey && it.role == RepositoryRole.MODERATOR }
+        return selfModerator.isNotEmpty() && selfModerator.none { it.isActive }
+    }
+
+    /**
+     * A self-authored record ending in `defer` is invalid. It stays a problem until a later active
+     * self-record (one that starts after the deferred interval did) supersedes it.
+     */
+    private fun hasUnrepairedSelfDefer(): Boolean {
+        val valid = roleRecords()
+        return tags.any { tag ->
+            val record = RepositoryRoleTag.parse(tag) ?: return@any false
+            if (record.subject != pubKey || !record.endsInDefer) return@any false
+            val lastStart = record.boundaries.getOrNull(record.boundaries.size - 2) ?: return@any true
+            valid.none { it.subject == pubKey && it.isActive && (it.activeSince ?: 0) > lastStart }
+        }
+    }
 
     /** Earliest-unique-commit ID (NIP-34 `["r", <commit>, "euc"]`). */
     fun earliestUniqueCommit(): String? = tags.firstNotNullOfOrNull(EucTag::parse)

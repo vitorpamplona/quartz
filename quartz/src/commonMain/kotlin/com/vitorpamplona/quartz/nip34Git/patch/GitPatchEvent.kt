@@ -43,6 +43,8 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitterTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
+import com.vitorpamplona.quartz.nip34Git.repository.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -95,6 +97,9 @@ class GitPatchEvent(
     fun repositoryAddress() = innerRepository()?.let(ATag::parseAddress)
 
     fun repository() = innerRepository()?.let(ATag::parse)
+
+    /** Every repository coordinate this event is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
 
     /**
      * The previous patch in the series: the `e` marked `reply` that [reply] writes (NIP-34 patch
@@ -149,6 +154,32 @@ class GitPatchEvent(
         return PATCH_PREFIX.replace(builder.toString().trim(), "").trim().ifBlank { null }
     }
 
+    /** The `description` tag some clients add: the commit message, its first line the title. */
+    fun description(): String? = tags.firstNotNullOfOrNull(DescriptionTag::parse)?.takeIf { it.isNotBlank() }
+
+    /**
+     * The patch's title: the first line of [description] when present, else [subject] from the
+     * format-patch headers, with any `[PATCH …]` prefix removed either way.
+     */
+    fun title(): String? =
+        description()
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.let { PATCH_PREFIX.replace(it.trim(), "").trim() }
+            ?.ifBlank { null }
+            ?: subject()
+
+    /** `true` for a series cover letter (`[PATCH 0/n]`), which carries a message but no diff. */
+    fun isCoverLetter(): Boolean {
+        val firstLine =
+            description()?.lineSequence()?.firstOrNull() ?: content
+                .lineSequence()
+                .firstOrNull { it.startsWith(SUBJECT_HEADER) }
+                ?.removePrefix(SUBJECT_HEADER)
+                ?.trim()
+        return firstLine != null && COVER_LETTER.containsMatchIn(firstLine)
+    }
+
     companion object {
         const val KIND = 1617
         const val ROOT = "root"
@@ -156,6 +187,7 @@ class GitPatchEvent(
 
         private const val SUBJECT_HEADER = "Subject:"
         private val PATCH_PREFIX = Regex("^\\[PATCH[^]]*]\\s*")
+        private val COVER_LETTER = Regex("^\\[PATCH[^]]*?\\s+0/\\d+]")
 
         /**
          * Build a NIP-34 kind-1617 patch event with all required tags.

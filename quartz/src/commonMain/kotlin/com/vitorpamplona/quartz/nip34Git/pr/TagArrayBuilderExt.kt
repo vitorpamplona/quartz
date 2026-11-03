@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip34Git.pr.tags.BranchNameTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
+import com.vitorpamplona.quartz.nip34Git.pr.tags.TargetBranchTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
@@ -52,6 +53,8 @@ fun TagArrayBuilder<GitPullRequestEvent>.cloneUrls(urls: List<String>) = addUniq
 fun TagArrayBuilder<GitPullRequestEvent>.subject(subject: String) = addUnique(SubjectTag.assemble(subject))
 
 fun TagArrayBuilder<GitPullRequestEvent>.branchName(name: String) = addUnique(BranchNameTag.assemble(name))
+
+fun TagArrayBuilder<GitPullRequestEvent>.targetBranch(branch: String) = addUnique(TargetBranchTag.assemble(branch))
 
 fun TagArrayBuilder<GitPullRequestEvent>.mergeBase(commit: String) = addUnique(MergeBaseTag.assemble(commit))
 
