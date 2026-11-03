@@ -10,13 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // kmp-negentropy is published on JitPack only.
-        maven {
-            url = uri("https://jitpack.io")
-            content {
-                includeGroup("com.vitorpamplona.negentropy")
-            }
-        }
     }
 }
 
