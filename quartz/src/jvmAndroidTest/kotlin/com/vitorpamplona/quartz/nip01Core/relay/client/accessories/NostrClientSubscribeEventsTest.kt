@@ -101,7 +101,7 @@ class NostrClientSubscribeEventsTest {
     private var clock = 1_000_000L
 
     /** The resume policy every stream here uses unless a test passes its own, on the test's clock. */
-    private val resume = CaughtUpResume(overlapSeconds = 60, nowInSeconds = { clock })
+    private val resume = CaughtUpResume(nowInSeconds = { clock })
 
     @AfterTest
     fun tearDown() {
@@ -140,8 +140,8 @@ class NostrClientSubscribeEventsTest {
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
-    /** Waits until the stream has reported being caught up at [point] + the overlap. */
-    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (resume.caughtUpAt(relay)?.minus(resume.overlapSeconds) != point) delay(20) }
+    /** Waits until the stream has reported being caught up at [point]. */
+    private suspend fun awaitResumePoint(point: Long) = withTimeout(10_000) { while (resume.caughtUpAt(relay) != point) delay(20) }
 
     @Test
     fun storedEventsThenLiveOnes() =
@@ -152,7 +152,7 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live().collect { received.send(it) } }
 
             assertEquals(stored.id, withTimeout(5_000) { received.receive() }.id)
-            awaitResumePoint(clock - 60) // EOSE seen: the subscription is live
+            awaitResumePoint(clock) // EOSE seen: the subscription is live
             val fresh = note(200)
             hub.getOrCreate(relay).publish(fresh)
             assertEquals(fresh.id, withTimeout(5_000) { received.receive() }.id)
@@ -165,14 +165,14 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live(since = 500).collect { } }
             awaitReqs(1)
             assertEquals(500L, reqs[0].filters.single().since)
-            awaitResumePoint(999_940) // EOSE at clock 1_000_000, minus the overlap: stored without a REQ
+            awaitResumePoint(1_000_000) // EOSE at clock 1_000_000: stored without a REQ
 
             clock += 3_600 // an hour with nothing arriving: still caught up only at 1_000_000
             delay(400) // several since-update ticks, none of which may move it
             builder.dropAll()
 
             awaitReqs(2)
-            assertEquals(999_940L, reqs[1].filters.single().since, "resume from the last time it was caught up, minus the overlap")
+            assertEquals(1_000_000L, reqs[1].filters.single().since, "resume from the last time it was caught up")
             job.cancel()
         }
 
@@ -181,17 +181,17 @@ class NostrClientSubscribeEventsTest {
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
-            awaitResumePoint(999_940)
+            awaitResumePoint(1_000_000)
 
             clock += 1_000
             hub.getOrCreate(relay).publish(note(clock))
             withTimeout(5_000) { received.receive() }
-            awaitResumePoint(clock - 60)
+            awaitResumePoint(clock)
             assertEquals(1, reqs.size, "a since-only change is stored, not sent")
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(clock - 60, reqs[1].filters.single().since)
+            assertEquals(clock, reqs[1].filters.single().since)
             job.cancel()
         }
 
@@ -200,19 +200,19 @@ class NostrClientSubscribeEventsTest {
         runBlocking<Unit> {
             val received = Channel<Event>(Channel.UNLIMITED)
             val job = scope.launch { live(since = 500).collect { received.send(it) } }
-            awaitResumePoint(999_940)
+            awaitResumePoint(1_000_000)
             repeat(5) {
                 clock += 100
                 hub.getOrCreate(relay).publish(note(clock))
                 withTimeout(5_000) { received.receive() }
             }
-            awaitResumePoint(clock - 60)
+            awaitResumePoint(clock)
             assertEquals(1, counting.subscribes.get(), "live events move the resume point in memory only")
 
             builder.dropAll()
             awaitReqs(2)
             assertEquals(1, counting.subscribes.get(), "the pool asks for the filters as it re-sends; nothing resubscribes")
-            assertEquals(clock - 60, reqs[1].filters.single().since)
+            assertEquals(clock, reqs[1].filters.single().since)
             job.cancel()
         }
 
@@ -269,11 +269,11 @@ class NostrClientSubscribeEventsTest {
             val job = scope.launch { live(listOf(Filter(kinds = listOf(1), since = 500), Filter(kinds = listOf(7), since = later))).collect { } }
             awaitReqs(1)
             assertEquals(listOf(500L, later), reqs[0].filters.map { it.since }, "the first REQ asks for the filters as given")
-            awaitResumePoint(999_940)
+            awaitResumePoint(1_000_000)
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(listOf(999_940L, later), reqs[1].filters.map { it.since }, "each moves to the resume point, never earlier than its own")
+            assertEquals(listOf(1_000_000L, later), reqs[1].filters.map { it.since }, "each moves to the resume point, never earlier than its own")
             job.cancel()
         }
 
@@ -320,19 +320,19 @@ class NostrClientSubscribeEventsTest {
     fun aResumedReqIsNotUndoneAtItsEoseAndTheNextReconnectResumesAgain() =
         runBlocking<Unit> {
             val job = scope.launch { live(since = 500).collect { } }
-            awaitResumePoint(999_940)
+            awaitResumePoint(1_000_000)
 
             clock += 1_000
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(999_940L, reqs[1].filters.single().since)
-            awaitResumePoint(clock - 60) // the resumed REQ's EOSE
+            assertEquals(1_000_000L, reqs[1].filters.single().since)
+            awaitResumePoint(clock) // the resumed REQ's EOSE
             delay(300)
             assertEquals(2, reqs.size, "the resumed REQ's EOSE sends nothing: the pool knows it stands for since = 500")
 
             builder.dropAll()
             awaitReqs(3)
-            assertEquals(clock - 60, reqs[2].filters.single().since, "resumed again from the new point")
+            assertEquals(clock, reqs[2].filters.single().since, "resumed again from the new point")
             delay(300)
             assertEquals(3, reqs.size)
             job.cancel()
@@ -360,7 +360,7 @@ class NostrClientSubscribeEventsTest {
 
             builder.dropAll()
             awaitReqs(4)
-            assertEquals(setOf(999_940L, clock - 60), reqs.drop(2).map { it.filters.single().since }.toSet())
+            assertEquals(setOf(1_000_000L, clock), reqs.drop(2).map { it.filters.single().since }.toSet())
             job.cancel()
         }
 

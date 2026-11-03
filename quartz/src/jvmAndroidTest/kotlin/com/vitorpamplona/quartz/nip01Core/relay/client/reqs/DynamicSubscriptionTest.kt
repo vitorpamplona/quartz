@@ -135,11 +135,11 @@ class DynamicSubscriptionTest {
             awaitReqs(1)
             assertNull(reqs[0].filters.single().since, "the first REQ as given")
             awaitEose(resume)
-            val point = resume.caughtUpAt(relay)!! - resume.overlapSeconds
+            val point = resume.caughtUpAt(relay)!!
 
             builder.dropAll()
             awaitReqs(2)
-            assertEquals(point, reqs[1].filters.single().since, "from just before it was caught up, not the whole history")
+            assertEquals(point, reqs[1].filters.single().since, "from when it was caught up, not the whole history")
             sub.close()
         }
 
@@ -153,7 +153,7 @@ class DynamicSubscriptionTest {
             builder.dropAll()
             awaitReqs(2)
             val since = reqs[1].filters.single().since
-            assertTrue(since != null && since in (before - 120)..before, "resumed from about a minute before the EOSE; was $since")
+            assertTrue(since != null && since in (before - 5)..before, "resumed from the EOSE; was $since")
             sub.close()
         }
 

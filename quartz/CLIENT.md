@@ -255,7 +255,8 @@ an AUTH) and sends what it returns instead, for that REQ only: that is how a lon
 subscription resumes from where it got to. Derive the answer with `Filter.copy`.
 `client.subscribe(relay, filters) { event -> … }` and `client.subscribe(filters = { … }) { … }`
 return a `DynamicSubscription`, which answers it for you: it re-reads its filter lambda and, after a
-reconnect, moves `since` to just before it was last caught up (`CaughtUpResume`), so a reconnect
+reconnect, moves `since` to when it was last caught up (`CaughtUpResume`; two days earlier for a
+filter asking for gift wraps, whose `created_at` NIP-59 backdates), so a reconnect
 doesn't download the relay's history again. Which relays it is open on changes only on `refresh()`.
 
 When a relay CLOSEs a subscription, the client doesn't send that REQ again on the same connection.
@@ -268,7 +269,7 @@ A service that tails relays for as long as it runs (an indexer, a mirror) should
 `client.subscribeEvents(relay, filters)`, or `subscribeEvents(mapOf(relay to filters, …))` for
 several (`…client.accessories`), instead. It is a `Flow<Event>` with backpressure. Each filter
 starts from its own `since`. After a reconnect it asks again from where its `ResumePolicy` says,
-per relay; the default, `CaughtUpResume`, uses when it was last caught up minus an overlap, and its
+per relay; the default, `CaughtUpResume`, uses when it was last caught up, and its
 `resumeFrom(relay, filters)` is the point to persist and set as the filters' `since` after a
 restart. `since` filters on `created_at`, so an event the relay stores during an outage with an
 older `created_at` is not sent again: reconcile the gap (`negentropySync`) if every event matters.

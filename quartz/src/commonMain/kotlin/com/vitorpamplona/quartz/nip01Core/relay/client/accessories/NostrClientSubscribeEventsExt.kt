@@ -73,7 +73,7 @@ fun INostrClient.subscribeEvents(
  *   write ([SubscriptionListener.filtersForSync]). [resume] answers, per relay: it hears when the
  *   subscription is caught up (at EOSE, and at each live event) and names the `since` to resume
  *   from. A healthy connection costs nothing per event. The default, [CaughtUpResume], resumes from
- *   the last caught-up moment minus an overlap, and says what that can't see.
+ *   the last caught-up moment (two days earlier for gift wraps), and says what that can't see.
  * - **A CLOSED ends the flow.** The client doesn't send a CLOSED REQ again on the same connection,
  *   only on the next reconnect or AUTH, and not even then once the relay has refused the same
  *   filters three times running. On a healthy connection that can be never, and a live tail that

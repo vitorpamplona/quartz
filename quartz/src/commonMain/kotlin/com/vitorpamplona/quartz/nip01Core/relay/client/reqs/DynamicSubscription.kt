@@ -36,7 +36,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
  *   open on changes only on [refresh]: a relay [filter] no longer names keeps the filters it was
  *   last given. [filter] runs on the connection's thread then, so keep it cheap.
  * - **Reconnects resume.** [resume] hears when each relay's REQ is caught up (EOSE, live events)
- *   and moves the re-sent filters' `since` to just before that, so a reconnect doesn't download
+ *   and moves the re-sent filters' `since` to that moment (two days earlier for gift wraps, whose
+ *   `created_at` NIP-59 backdates), so a reconnect doesn't download
  *   the relay's whole history again. Filters that changed since then are sent as given. A null
  *   [resume] re-sends the filters as given.
  * - **A CLOSED doesn't end it.** The client sends the REQ again on the next reconnect or AUTH,

@@ -22,13 +22,15 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.reqs
 
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
+import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class CaughtUpResumeTest {
     private var clock = 1_000L
-    private val resume = CaughtUpResume(overlapSeconds = 60, nowInSeconds = { clock })
+    private val resume = CaughtUpResume(nowInSeconds = { clock })
     private val relayA = RelayUrlNormalizer.normalize("wss://a.example")
     private val relayB = RelayUrlNormalizer.normalize("wss://b.example")
     private val notes = listOf(Filter(kinds = listOf(1), since = 500))
@@ -40,15 +42,15 @@ class CaughtUpResumeTest {
     }
 
     @Test
-    fun resumesFromTheLastCatchUpMinusTheOverlap() {
+    fun resumesFromTheLastCatchUp() {
         resume.onCaughtUp(relayA, notes)
-        assertEquals(940L, resume.resumeFrom(relayA, notes))
+        assertEquals(1_000L, resume.resumeFrom(relayA, notes))
 
-        clock = 5_000 // time passes with nothing caught up: still 940
-        assertEquals(940L, resume.resumeFrom(relayA, notes))
+        clock = 5_000 // time passes with nothing caught up: still 1_000
+        assertEquals(1_000L, resume.resumeFrom(relayA, notes))
 
         resume.onCaughtUp(relayA, null) // a live event: still the same filters
-        assertEquals(4_940L, resume.resumeFrom(relayA, notes))
+        assertEquals(5_000L, resume.resumeFrom(relayA, notes))
     }
 
     @Test
@@ -56,14 +58,14 @@ class CaughtUpResumeTest {
         resume.onCaughtUp(relayA, notes)
         clock = 2_000
         resume.onCaughtUp(relayB, notes)
-        assertEquals(940L, resume.resumeFrom(relayA, notes))
-        assertEquals(1_940L, resume.resumeFrom(relayB, notes))
+        assertEquals(1_000L, resume.resumeFrom(relayA, notes))
+        assertEquals(2_000L, resume.resumeFrom(relayB, notes))
     }
 
     @Test
     fun aMovedSinceStillResumes() {
         resume.onCaughtUp(relayA, notes)
-        assertEquals(940L, resume.resumeFrom(relayA, listOf(Filter(kinds = listOf(1), since = 900))))
+        assertEquals(1_000L, resume.resumeFrom(relayA, listOf(Filter(kinds = listOf(1), since = 900))))
     }
 
     @Test
@@ -86,6 +88,24 @@ class CaughtUpResumeTest {
         val none = Filter(kinds = listOf(3))
         val filters = notes + later + none
         resume.onCaughtUp(relayA, filters)
-        assertEquals(listOf(940L, 2_000L, 940L), resume.resume(relayA, filters)?.map { it.since })
+        assertEquals(listOf(1_000L, 2_000L, 1_000L), resume.resume(relayA, filters)?.map { it.since })
+    }
+
+    @Test
+    fun giftWrapsResumeTwoDaysEarlier() {
+        clock = 1_000_000
+        val wraps = Filter(kinds = listOf(GiftWrapEvent.KIND), tags = mapOf("p" to listOf("a".repeat(64))))
+        val filters = notes + wraps
+        resume.onCaughtUp(relayA, filters)
+        // NIP-59 backdates a wrap's created_at by up to two days; everything else resumes at the moment itself.
+        assertEquals(listOf(1_000_000L, 1_000_000L - TimeUtils.twoDays()), resume.resume(relayA, filters)?.map { it.since })
+    }
+
+    @Test
+    fun aGiftWrapFilterStillNeverResumesEarlierThanItsOwnSince() {
+        clock = 1_000_000
+        val wraps = listOf(Filter(kinds = listOf(GiftWrapEvent.KIND), since = 900_000))
+        resume.onCaughtUp(relayA, wraps)
+        assertEquals(listOf(900_000L), resume.resume(relayA, wraps)?.map { it.since })
     }
 }
