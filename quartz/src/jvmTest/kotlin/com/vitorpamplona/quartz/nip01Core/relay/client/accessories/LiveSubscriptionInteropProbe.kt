@@ -27,14 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.DynamicSubscription
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.subscribeAsFlow
-import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
-import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
-import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
-import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
-import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
-import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -47,10 +41,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
@@ -72,102 +64,14 @@ import kotlin.test.assertTrue
  *   ./gradlew :quartz:jvmTest --tests "*LiveSubscriptionInteropProbe"`
  */
 class LiveSubscriptionInteropProbe {
-    private fun env(name: String) =
-        System
-            .getenv(name)
-            ?.split(',')
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            .orEmpty()
-
-    private val relays = env("RELAY_INTEROP")
-    private val writable = env("RELAY_INTEROP_WRITE").map { RelayUrlNormalizer.normalize(it) }.toSet()
+    private val relays = probeEnv("RELAY_INTEROP")
+    private val writable = probeEnv("RELAY_INTEROP_WRITE").map { RelayUrlNormalizer.normalize(it) }.toSet()
 
     /** Relays that refuse gift-wrap reads without AUTH: probed without the gift-wrap filter. */
-    private val noWraps = env("RELAY_INTEROP_NO_WRAPS").map { RelayUrlNormalizer.normalize(it) }.toSet()
+    private val noWraps = probeEnv("RELAY_INTEROP_NO_WRAPS").map { RelayUrlNormalizer.normalize(it) }.toSet()
 
-    /** Records every REQ the client writes and every CLOSED/NOTICE it reads, and can drop the socket. */
-    private class Recorder(
-        private val delegate: WebsocketBuilder,
-    ) : WebsocketBuilder {
-        val reqs = CopyOnWriteArrayList<ReqCmd>()
-        val notices = CopyOnWriteArrayList<String>()
-        private val sockets = CopyOnWriteArrayList<WebSocket>()
-
-        override fun build(
-            url: NormalizedRelayUrl,
-            out: WebSocketListener,
-        ): WebSocket {
-            val listening =
-                object : WebSocketListener by out {
-                    override suspend fun onMessage(text: String) {
-                        if (System.getenv("RELAY_INTEROP_TRACE") != null) println("IN  ${System.currentTimeMillis() % 100000} ${text.take(110)}")
-                        if (text.startsWith("[\"CLOSED\"") || text.startsWith("[\"NOTICE\"")) notices += text.take(200)
-                        out.onMessage(text)
-                    }
-                }
-            val inner = delegate.build(url, listening)
-            val socket =
-                object : WebSocket by inner {
-                    override fun send(msg: String): Boolean {
-                        if (System.getenv("RELAY_INTEROP_TRACE") != null) println("OUT ${System.currentTimeMillis() % 100000} ${msg.take(160)}")
-                        if (msg.startsWith("[\"REQ\"")) (runCatching { Command.fromJson(msg) }.getOrNull() as? ReqCmd)?.let { reqs += it }
-                        return inner.send(msg)
-                    }
-                }
-            sockets += socket
-            return socket
-        }
-
-        fun dropAll() = sockets.forEach { it.disconnect() }
-
-        /** The REQs of the subscription marked by [limit] on its kind-1 filter. */
-        fun reqsOf(limit: Int) = reqs.filter { req -> req.filters.any { it.limit == limit } }
-    }
-
-    private class Report(
-        val relay: String,
-    ) {
-        val checks = mutableListOf<Pair<String, Boolean?>>()
-        val notes = mutableListOf<String>()
-
-        fun check(
-            name: String,
-            ok: Boolean?,
-        ) {
-            checks += name to ok
-        }
-
-        val failed get() = checks.filter { it.second == false }.map { it.first }
-
-        override fun toString() =
-            buildString {
-                append("RELAY ").append(relay).append('\n')
-                checks.forEach { (name, ok) ->
-                    append("  ")
-                        .append(
-                            if (ok == null) {
-                                "SKIP"
-                            } else if (ok) {
-                                "PASS"
-                            } else {
-                                "FAIL"
-                            },
-                        ).append("  ")
-                        .append(name)
-                        .append('\n')
-                }
-                notes.forEach { append("  note  ").append(it).append('\n') }
-            }
-    }
-
-    private suspend fun until(
-        timeoutMs: Long,
-        condition: () -> Boolean,
-    ): Boolean = withTimeoutOrNull(timeoutMs) { while (!condition()) delay(100) } != null
-
-    private suspend fun probe(url: String): Report {
-        val report = Report(url)
+    private suspend fun probe(url: String): ProbeReport {
+        val report = ProbeReport(url)
         val relay = RelayUrlNormalizer.normalize(url)
         val canWrite = relay in writable
         val http =
@@ -178,7 +82,7 @@ class LiveSubscriptionInteropProbe {
                 .pingInterval(30, TimeUnit.SECONDS)
                 .build()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val recorder = Recorder(BasicOkHttpWebSocket.Builder { http })
+        val recorder = ProbeRecorder(BasicOkHttpWebSocket.Builder { http })
         val client = NostrClient(recorder, scope)
         val signer = NostrSignerSync()
         // vespa-relay refuses unauthenticated reads without a lens token.
@@ -208,7 +112,7 @@ class LiveSubscriptionInteropProbe {
             val fList = AtomicReference<List<Event>>(emptyList())
             val fJob = scope.launch { client.subscribeAsFlow(relay, notes(53)).collect { fList.set(it) } }
 
-            val eosed = until(30_000) { eResume.caughtUpAt(relay) != null && dResume.caughtUpAt(relay) != null }
+            val eosed = waitUntil(30_000) { eResume.caughtUpAt(relay) != null && dResume.caughtUpAt(relay) != null }
             report.check("EOSE for subscribeEvents and DynamicSubscription", eosed)
             if (!eosed) {
                 report.notes += "subscribeEvents ended: ${eEnd.get()?.message}; REQs ${recorder.reqs.size}"
@@ -221,7 +125,7 @@ class LiveSubscriptionInteropProbe {
                 report.check("publish before the drop", client.publishAndConfirm(note, setOf(relay)))
                 report.check(
                     "live event reaches all three",
-                    until(10_000) { eEvents.any { it.id == note.id } && dEvents.any { it.id == note.id } && fList.get().any { it.id == note.id } },
+                    waitUntil(10_000) { eEvents.any { it.id == note.id } && dEvents.any { it.id == note.id } && fList.get().any { it.id == note.id } },
                 )
             } else {
                 val before = eEvents.size
@@ -233,7 +137,7 @@ class LiveSubscriptionInteropProbe {
             val dAt = dResume.caughtUpAt(relay)!!
             val dropAt = TimeUtils.now()
             recorder.dropAll()
-            val resent = until(60_000) { recorder.reqsOf(51).size >= 2 && recorder.reqsOf(52).size >= 2 && recorder.reqsOf(53).size >= 2 }
+            val resent = waitUntil(60_000) { recorder.reqsOf(51).size >= 2 && recorder.reqsOf(52).size >= 2 && recorder.reqsOf(53).size >= 2 }
             report.check("each subscription's REQ re-sent after the drop", resent)
             if (resent) {
                 val e = recorder.reqsOf(51)[1].filters
@@ -256,7 +160,7 @@ class LiveSubscriptionInteropProbe {
                         .since
                 report.check("subscribeAsFlow resumes ($f)", f != null && f >= dropAt - 60 && f <= TimeUtils.now())
 
-                val reEosed = until(30_000) { (eResume.caughtUpAt(relay) ?: 0) >= dropAt && (dResume.caughtUpAt(relay) ?: 0) >= dropAt }
+                val reEosed = waitUntil(30_000) { (eResume.caughtUpAt(relay) ?: 0) >= dropAt && (dResume.caughtUpAt(relay) ?: 0) >= dropAt }
                 report.check("EOSE of the resumed REQs", reEosed)
                 delay(5_000)
                 val counts = listOf(51, 52, 53).map { recorder.reqsOf(it).size }
@@ -266,7 +170,7 @@ class LiveSubscriptionInteropProbe {
             if (canWrite) {
                 val note = signer.sign<Event>(TimeUtils.now(), 1, emptyArray(), "interop probe after")
                 report.check("publish after the reconnect", client.publishAndConfirm(note, setOf(relay)))
-                val got = until(10_000) { eEvents.any { it.id == note.id } && dEvents.any { it.id == note.id } && fList.get().any { it.id == note.id } }
+                val got = waitUntil(10_000) { eEvents.any { it.id == note.id } && dEvents.any { it.id == note.id } && fList.get().any { it.id == note.id } }
                 val who = "subscribeEvents ${eEvents.any { it.id == note.id }}, dynamic ${dEvents.any { it.id == note.id }}, list ${fList.get().any { it.id == note.id }}"
                 report.check("live event after the reconnect reaches all three ($who)", got)
             } else {
@@ -294,7 +198,7 @@ class LiveSubscriptionInteropProbe {
         if (relays.isEmpty()) return
         val reports = runBlocking { relays.map { url -> async(Dispatchers.Default) { probe(url) } }.awaitAll() }
         reports.forEach { println(it) }
-        val failed = reports.filter { it.failed.isNotEmpty() }.map { "${it.relay}: ${it.failed}" }
+        val failed = reports.filter { it.failed.isNotEmpty() }.map { "${it.name}: ${it.failed}" }
         println("SUMMARY ${reports.size - failed.size}/${reports.size} relays passed every check")
         assertTrue(failed.isEmpty(), failed.joinToString("\n"))
     }
@@ -306,7 +210,7 @@ class LiveSubscriptionInteropProbe {
         runBlocking {
             val http = OkHttpClient.Builder().readTimeout(0, TimeUnit.SECONDS).build()
             val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-            val recorder = Recorder(BasicOkHttpWebSocket.Builder { http })
+            val recorder = ProbeRecorder(BasicOkHttpWebSocket.Builder { http })
             val client = NostrClient(recorder, scope)
             val signer = NostrSignerSync()
             val start = TimeUtils.now()
@@ -322,20 +226,20 @@ class LiveSubscriptionInteropProbe {
                     }
                 }
             try {
-                assertTrue(until(30_000) { writable.all { resume.caughtUpAt(it) != null } }, "EOSE from every relay; ended: ${end.get()?.message}")
+                assertTrue(waitUntil(30_000) { writable.all { resume.caughtUpAt(it) != null } }, "EOSE from every relay; ended: ${end.get()?.message}")
                 val before = writable.associateWith { signer.sign<Event>(TimeUtils.now(), 1, emptyArray(), "one flow ${it.url}") }
                 before.forEach { (relay, note) -> client.publishAndConfirm(note, setOf(relay)) }
-                assertTrue(until(10_000) { before.values.all { n -> events.any { it.id == n.id } } }, "a note from every relay")
+                assertTrue(waitUntil(10_000) { before.values.all { n -> events.any { it.id == n.id } } }, "a note from every relay")
 
                 val dropAt = TimeUtils.now()
                 recorder.dropAll()
-                assertTrue(until(60_000) { recorder.reqs.size >= 2 * writable.size }, "every relay's REQ re-sent; got ${recorder.reqs.size}")
+                assertTrue(waitUntil(60_000) { recorder.reqs.size >= 2 * writable.size }, "every relay's REQ re-sent; got ${recorder.reqs.size}")
                 val resumed = recorder.reqs.drop(writable.size).map { it.filters.single().since }
                 assertTrue(resumed.all { it != null && it >= dropAt - 60 }, "every relay resumed: $resumed")
 
                 val after = writable.associateWith { signer.sign<Event>(TimeUtils.now(), 1, emptyArray(), "one flow after ${it.url}") }
                 after.forEach { (relay, note) -> client.publishAndConfirm(note, setOf(relay)) }
-                assertTrue(until(10_000) { after.values.all { n -> events.any { it.id == n.id } } }, "a note from every relay after the reconnect")
+                assertTrue(waitUntil(10_000) { after.values.all { n -> events.any { it.id == n.id } } }, "a note from every relay after the reconnect")
                 delay(3_000)
                 assertTrue(recorder.reqs.size == 2 * writable.size, "no further REQ; got ${recorder.reqs.size}")
                 println("ONE FLOW over ${writable.size} relays: resumed since $resumed, ${events.size} events, still open: ${end.get() == null}")
