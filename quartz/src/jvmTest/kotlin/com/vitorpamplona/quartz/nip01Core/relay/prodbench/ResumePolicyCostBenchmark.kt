@@ -20,12 +20,26 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
+import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.DynamicSubscription
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.resume
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EoseMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.normalizeRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.testing.SyntheticEvents
 import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import java.lang.management.ManagementFactory
 import kotlin.test.Test
 import com.sun.management.ThreadMXBean as SunThreadMXBean
@@ -111,5 +125,93 @@ class ResumePolicyCostBenchmark {
         repeat(11) { cases.forEachIndexed { i, c -> samples[i] += c.second() } }
         println("BENCH CaughtUpResume alone, median of 11")
         cases.forEachIndexed { i, c -> report(c.first, samples[i], c.third) }
+    }
+
+    /** Opens as soon as it is dialled; swallows what is sent. */
+    private class OpeningBuilder : WebsocketBuilder {
+        val listeners = HashMap<NormalizedRelayUrl, WebSocketListener>()
+
+        override fun build(
+            url: NormalizedRelayUrl,
+            out: WebSocketListener,
+        ): WebSocket {
+            listeners[url] = out
+            return object : WebSocket {
+                override fun needsReconnect() = false
+
+                override fun connect() = out.onOpen(0, false)
+
+                override fun disconnect() {}
+
+                override fun send(msg: String) = true
+            }
+        }
+    }
+
+    /** A client with 100 caught-up subscriptions on 60 relays, and a function that runs one reconnect wave. */
+    private fun waveRig(resume: () -> ResumePolicy?): Pair<() -> Unit, () -> Unit> {
+        val builder = OpeningBuilder()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val client = NostrClient(builder, scope)
+        client.connect()
+        val relays = (1..60).map { "wss://bench-relay-$it.local".normalizeRelayUrl() }
+        val now = TimeUtils.now()
+        val follows = (1..300).map { SyntheticEvents.hexId(it) }
+        val filters =
+            listOf(
+                Filter(kinds = listOf(1, 6, 7), authors = follows, since = now - 86_400),
+                Filter(kinds = listOf(0), authors = follows),
+                Filter(kinds = listOf(7, 9735), tags = mapOf("p" to listOf(SyntheticEvents.hexId(9999)))),
+            )
+        val subs = (1..100).map { DynamicSubscription(client, { relays.associateWith { filters } }, resume()) }
+        val relayClients = relays.map { client.getOrCreateRelay(it) }
+        relayClients.forEach { it.connect() }
+        runBlocking {
+            relayClients.forEach { relayClient ->
+                subs.forEachIndexed { i, sub ->
+                    client.onIncomingMessage(relayClient, "", EventMessage(sub.subId, SyntheticEvents.fakeEvent(idSeed = i + 1, createdAt = now - 60)))
+                    client.onIncomingMessage(relayClient, "", EoseMessage(sub.subId))
+                }
+            }
+        }
+        val wave = {
+            relayClients.forEach { relayClient ->
+                builder.listeners.getValue(relayClient.url).onClosed(1000, "bench")
+                relayClient.connect()
+            }
+        }
+        val close = {
+            client.disconnect()
+            scope.cancel()
+        }
+        return wave to close
+    }
+
+    /** The same reconnect wave on the same code, with each subscription's resume off and on. */
+    @Test
+    fun reconnectWaveResumeOffAndOn() {
+        if (!enabled) return
+        val (off, closeOff) = waveRig { null }
+        val (on, closeOn) = waveRig { CaughtUpResume() }
+        try {
+            repeat(5) {
+                off()
+                on()
+            }
+            val samples = listOf(mutableListOf<Pair<Double, Double>>(), mutableListOf())
+            repeat(25) {
+                samples[0] += timeNanos(1) { off() }
+                samples[1] += timeNanos(1) { on() }
+            }
+            println("BENCH reconnect wave, 100 subscriptions x 60 relays, same code, median of 25 alternating")
+            listOf("resume off (REQs re-sent as given)", "resume on (CaughtUpResume)").forEachIndexed { i, name ->
+                val cpu = samples[i].map { it.first }.sorted()[12] / 1e6
+                val kb = samples[i].map { it.second }.sorted()[12] / 1024
+                println("BENCH   %-44s %8.1f ms CPU  %,10.0f KB allocated per wave".format(name, cpu, kb))
+            }
+        } finally {
+            closeOff()
+            closeOn()
+        }
     }
 }
