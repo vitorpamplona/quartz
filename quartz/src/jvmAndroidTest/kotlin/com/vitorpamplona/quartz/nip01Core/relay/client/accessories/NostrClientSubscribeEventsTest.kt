@@ -385,6 +385,25 @@ class NostrClientSubscribeEventsTest {
         }
 
     @Test
+    fun aRelayGoingAwayClosesAndDropsAndTheFlowCarriesOn() =
+        runBlocking<Unit> {
+            // As nostream does on shutdown: every subscription CLOSEd with `error:`, then the socket.
+            refuseWith = "error: relay shutting down"
+            val received = Channel<Event>(Channel.UNLIMITED)
+            val outcome = scope.async { runCatching { live().collect { received.send(it) } } }
+            delay(500) // the CLOSED arrived
+            refuseWith = null
+            builder.dropAll()
+
+            val fresh = note(clock + 10)
+            hub.getOrCreate(relay).preload(fresh)
+            assertEquals(fresh.id, withTimeout(10_000) { received.receive() }.id, "served again on the next connection")
+            delay(3_500) // past the grace
+            assertTrue(outcome.isActive, "a relay going away does not end the flow")
+            outcome.cancel()
+        }
+
+    @Test
     fun aClosedSubscriptionEndsTheFlow() =
         runBlocking<Unit> {
             refuseWith = "restricted: members only"

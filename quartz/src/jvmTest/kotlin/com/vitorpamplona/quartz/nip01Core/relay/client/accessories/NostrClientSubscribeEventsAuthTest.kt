@@ -24,12 +24,14 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
@@ -60,6 +62,27 @@ class NostrClientSubscribeEventsAuthTest {
                 withTimeout(10_000) { repeat(5) { received.receive() } }
                 assertTrue(flow.isActive, "an AUTH that lands must not end the flow")
                 assertTrue(h.signedAuths.get() >= 1)
+                flow.cancel()
+            }
+            scope.cancel()
+        }
+
+    @Test
+    fun aReconnectThatMustAuthenticateAgainKeepsTheFlow() =
+        runBlocking<Unit> {
+            AuthGatedRelayHarness(signer = NostrSignerInternal(KeyPair()), signDelayMs = 300).use { h ->
+                h.preload(3)
+                val received = Channel<Event>(Channel.UNLIMITED)
+                val flow = scope.async { runCatching { h.live().collect { received.send(it) } } }
+                withTimeout(10_000) { repeat(3) { received.receive() } }
+                delay(500) // EOSE seen
+
+                // AUTHs are counted per connection: the new one starts again from zero.
+                h.dropConnections()
+                h.preload(1, newestAt = TimeUtils.now() + 5)
+                withTimeout(15_000) { received.receive() }
+                assertTrue(flow.isActive, "the new connection's AUTH must keep the flow: ${if (flow.isCompleted) flow.await().exceptionOrNull() else ""}")
+                assertTrue(h.signedAuths.get() >= 2, "authenticated on both connections")
                 flow.cancel()
             }
             scope.cancel()

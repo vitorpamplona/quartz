@@ -275,7 +275,9 @@ restart. `since` filters on `created_at`, so an event the relay stores during an
 older `created_at` is not sent again: reconcile the gap (`negentropySync`) if every event matters.
 Unlike the others, it ends on a CLOSED, with `SubscriptionClosedException` naming the relay: on a
 healthy connection the next re-send may never come, and a tail that is silent until the socket
-happens to drop is worse than one that stops.
+happens to drop is worse than one that stops. A CLOSED followed within 3 s by the connection
+dropping is a relay going away (a restart, a deploy) and doesn't end it, unless that happens three
+times running.
 
 ### 5. Publish Events
 

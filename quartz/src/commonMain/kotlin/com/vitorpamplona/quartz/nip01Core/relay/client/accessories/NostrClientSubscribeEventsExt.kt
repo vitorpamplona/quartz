@@ -26,10 +26,12 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
+import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.resume
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadablePrefix
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -39,9 +41,13 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -80,7 +86,10 @@ fun INostrClient.subscribeEvents(
  *   is silent until the socket happens to drop is worse than one that stops. So the flow completes
  *   with [SubscriptionClosedException], naming the relay, and the caller decides: collect again,
  *   back off, or stop. One relay's CLOSED ends the whole flow; to keep relays independent, collect
- *   one flow per relay. Two CLOSEDs the client recovers from itself don't end it:
+ *   one flow per relay. Three kinds of CLOSED the client recovers from itself don't end it:
+ *   - one followed within 3 s by the connection dropping: a relay going away (a restart, a deploy)
+ *     CLOSEs its subscriptions first, and the client sends the REQ again on the next connection.
+ *     Three of those in a row with no EOSE between them do end it;
  *   - a `rate-limited:` one that states a back-off, which the client retries once it passes;
  *   - an `auth-required:` one, while the client's NIP-42 responder can still get in. It waits on
  *     the AUTH's own verdict ([awaitAuthOutcome]): on success the client has re-sent the REQ and
@@ -101,11 +110,23 @@ fun INostrClient.subscribeEvents(
 ): Flow<Event> =
     callbackFlow {
         val subId = "live-" + RandomInstance.randomChars(10)
-        // Per relay, AUTHs accepted as of the last time it served us: an `auth-required:` refusal
-        // waits for one newer than this, which is when the client re-sends the REQ.
+        // Per relay, AUTHs accepted on its current connection as of the last time it served us or
+        // the REQ was written: an `auth-required:` refusal waits for one newer than this, which is
+        // when the client re-sends the REQ. The count starts again on every connection.
         val authMarks = filters.keys.associateWith { AtomicInt(authSuccessMark(it)) }
         // Completed when the flow ends, before the unsubscribe: a send waiting for room gives up on it.
         val stopped = CompletableDeferred<Unit>()
+        // Per relay, how many times its connection dropped, and how many CLOSEDs in a row were
+        // followed by one (a relay going away) since it last reached EOSE.
+        val drops = filters.keys.associateWith { MutableStateFlow(0) }
+        val goingAwayInARow = filters.keys.associateWith { AtomicInt(0) }
+        val connections =
+            object : RelayConnectionListener {
+                override fun onDisconnected(relay: IRelayClient) {
+                    drops[relay.url]?.update { it + 1 }
+                }
+            }
+        addConnectionListener(connections)
 
         fun end(
             relay: NormalizedRelayUrl,
@@ -120,7 +141,12 @@ fun INostrClient.subscribeEvents(
                     relay: NormalizedRelayUrl,
                     filters: List<Filter>,
                 ): List<Filter>? {
-                    if (relay !in authMarks || stopped.isCompleted) return null
+                    val mark = authMarks[relay] ?: return null
+                    if (stopped.isCompleted) return null
+                    // AUTHs are counted per connection, and this REQ is going out on the current
+                    // one: a refusal of it waits for an AUTH newer than what this connection has
+                    // seen, not the last one, which would leave a reconnect waiting forever.
+                    mark.store(authSuccessMark(relay))
                     return resume?.resume(relay, filters)
                 }
 
@@ -163,6 +189,7 @@ fun INostrClient.subscribeEvents(
                 ) {
                     val mark = authMarks[relay] ?: return
                     mark.store(authSuccessMark(relay))
+                    goingAwayInARow[relay]?.store(0)
                     resume?.onCaughtUp(relay, forFilters)
                 }
 
@@ -182,7 +209,15 @@ fun INostrClient.subscribeEvents(
                     // Retried by the client once the relay's stated back-off passes.
                     if (RetryAfter.parse(message, params) != null) return
                     if (MachineReadablePrefix.parse(message) != MachineReadablePrefix.AUTH_REQUIRED) {
-                        end(relay, message)
+                        // A relay going away (a restart, a deploy) CLOSEs its subscriptions and then
+                        // drops the socket; the client sends the REQ again on the next connection, so
+                        // that CLOSED doesn't end the flow. Three in a row without an EOSE do: the
+                        // client stops re-sending a REQ refused that often, and the flow would go silent.
+                        val dropsAtClose = drops[relay]?.value ?: 0
+                        launch {
+                            val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
+                            if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
+                        }
                         return
                     }
                     val since = mark.load()
@@ -200,9 +235,16 @@ fun INostrClient.subscribeEvents(
         subscribe(subId, filters, listener)
         awaitClose {
             stopped.complete(Unit)
+            removeConnectionListener(connections)
             unsubscribe(subId)
         }
     }
+
+/** How long after a CLOSED the connection may drop for the CLOSED to count as the relay going away. */
+private const val GOING_AWAY_GRACE_MS = 3_000L
+
+/** The pool stops re-sending a REQ its relay refused this many times running. */
+private const val MAX_GOING_AWAY_IN_A_ROW = 3
 
 /**
  * A relay ended a [subscribeEvents] subscription with a CLOSED: [reason]. The client would not send
