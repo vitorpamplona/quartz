@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.RateLimitGate
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
@@ -137,7 +138,23 @@ class NostrClient(
     // listener from an IO thread — and a plain read-modify-write loses one of two concurrent
     // writes, leaving a caller deaf to its own OKs (it waits out its timeout) or a removed
     // listener running on every message for good.
-    private val listeners = MutableStateFlow(setOf<RelayConnectionListener>())
+    // Arrays, not a Set: iterating a Set allocates an iterator, and messages are dispatched per
+    // relay message. [ConnectionListeners.forMessages] leaves out the listeners that never read
+    // messages (IgnoresRelayMessages), so a client whose only listeners are those dispatches an
+    // EVENT without touching them.
+    private val listeners = MutableStateFlow(ConnectionListeners.NONE)
+
+    /** Runs [action] on every connection listener, without allocating (an indexed loop over the snapshot). */
+    private inline fun forEachListener(action: (RelayConnectionListener) -> Unit) {
+        val snapshot = listeners.value.all
+        for (i in snapshot.indices) action(snapshot[i])
+    }
+
+    /** As [forEachListener], over the listeners that read relay messages. */
+    private inline fun forEachMessageListener(action: (RelayConnectionListener) -> Unit) {
+        val snapshot = listeners.value.forMessages
+        for (i in snapshot.indices) action(snapshot[i])
+    }
 
     // Same shape: registration happens a handful of times at wiring, while reads happen on
     // every fetch that meets an auth-gated relay.
@@ -497,7 +514,7 @@ class NostrClient(
      */
     override fun onConnecting(relay: IRelayClient) {
         activeRequests.onConnecting(relay.url)
-        listeners.value.forEach { it.onConnecting(relay) }
+        forEachListener { it.onConnecting(relay) }
     }
 
     /**
@@ -510,7 +527,7 @@ class NostrClient(
         compressed: Boolean,
     ) {
         syncFilters(relay)
-        listeners.value.forEach { it.onConnected(relay, pingMillis, compressed) }
+        forEachListener { it.onConnected(relay, pingMillis, compressed) }
     }
 
     override fun onSent(
@@ -523,20 +540,35 @@ class NostrClient(
             activeRequests.onSent(relay.url, cmd)
             activeCounts.onSent(relay.url, cmd)
             eventOutbox.onSent(relay.url, cmd)?.let { gaveUp ->
-                listeners.value.forEach { it.onEventGaveUp(relay, gaveUp) }
+                forEachListener { it.onEventGaveUp(relay, gaveUp) }
             }
         }
-        listeners.value.forEach { it.onSent(relay, cmdStr, cmd, success) }
+        forEachListener { it.onSent(relay, cmdStr, cmd, success) }
     }
 
+    // Per relay message, so the common case allocates nothing of its own: an EVENT with no
+    // connection listener only concerns the subscriptions (counts, the outbox and the CLOSED/OK
+    // handling below ignore it), and a suspend function whose only suspend call is a tail call
+    // gets no continuation. Everything else takes the full path.
     override suspend fun onIncomingMessage(
+        relay: IRelayClient,
+        msgStr: String,
+        msg: Message,
+    ) = if (msg is EventMessage && listeners.value.forMessages.isEmpty()) {
+        activeRequests.onIncomingMessage(relay, msg)
+    } else {
+        onIncomingMessageInFull(relay, msgStr, msg)
+    }
+
+    private suspend fun onIncomingMessageInFull(
         relay: IRelayClient,
         msgStr: String,
         msg: Message,
     ) {
         activeRequests.onIncomingMessage(relay, msg)
         activeCounts.onIncomingMessage(relay, msg)
-        eventOutbox.onIncomingMessage(relay.url, msg) { authMayLand(relay.url) }
+        // Only an OK concerns the outbox: don't build the auth lambda for every EVENT.
+        if (msg is OkMessage) eventOutbox.onIncomingMessage(relay.url, msg) { authMayLand(relay.url) }
 
         // NIP-01: a `rate-limited:` refusal may say how long to back off. Hand the refused REQ
         // or EVENT straight back to the relay, whose [RateLimitGate] holds it until the back-off
@@ -559,7 +591,7 @@ class NostrClient(
             else -> {}
         }
 
-        listeners.value.forEach { it.onIncomingMessage(relay, msgStr, msg) }
+        forEachMessageListener { it.onIncomingMessage(relay, msgStr, msg) }
     }
 
     /**
@@ -567,7 +599,7 @@ class NostrClient(
      */
     override fun onDisconnected(relay: IRelayClient) {
         activeRequests.onDisconnected(relay.url)
-        listeners.value.forEach { it.onDisconnected(relay) }
+        forEachListener { it.onDisconnected(relay) }
 
         // If the client is still active and the relay is still in the
         // desired set (i.e. there are subscriptions, counts or pending
@@ -616,9 +648,9 @@ class NostrClient(
         activeRequests.onCannotConnect(relay.url, errorMessage)
         activeCounts.onCannotConnect(relay.url, errorMessage)
         // Kept pending to be re-sent on reconnect; only what this failure gave up on is reported.
-        eventOutbox.onCannotConnect(relay.url).forEach { gaveUp -> listeners.value.forEach { it.onEventGaveUp(relay, gaveUp) } }
+        eventOutbox.onCannotConnect(relay.url).forEach { gaveUp -> forEachListener { it.onEventGaveUp(relay, gaveUp) } }
 
-        listeners.value.forEach { it.onCannotConnect(relay, errorMessage) }
+        forEachListener { it.onCannotConnect(relay, errorMessage) }
     }
 
     override fun getOrCreateRelay(url: NormalizedRelayUrl): IRelayClient = relayPool.getOrCreateRelay(url)
@@ -640,13 +672,13 @@ class NostrClient(
     }
 
     override fun addConnectionListener(listener: RelayConnectionListener) {
-        listeners.update { it + listener }
+        listeners.update { it.plus(listener) }
     }
 
-    fun hasConnectionListener(listener: RelayConnectionListener): Boolean = listener in listeners.value
+    fun hasConnectionListener(listener: RelayConnectionListener): Boolean = listener in listeners.value.all
 
     override fun removeConnectionListener(listener: RelayConnectionListener) {
-        listeners.update { it - listener }
+        listeners.update { it.minus(listener) }
     }
 
     override fun activeRequests(url: NormalizedRelayUrl): Map<String, List<Filter>> = activeRequests.activeFiltersFor(url)
@@ -675,10 +707,49 @@ class NostrClient(
 
     override fun close() {
         disconnect()
-        listeners.value = emptySet()
+        listeners.value = ConnectionListeners.NONE
         activeCounts.destroy()
         activeRequests.destroy()
         eventOutbox.destroy()
         scope.cancel()
     }
 }
+
+/**
+ * The client's connection listeners, swapped whole: [all] of them, and the ones that read relay
+ * messages, [forMessages], kept apart so the per-message path skips the others.
+ */
+private class ConnectionListeners(
+    val all: Array<RelayConnectionListener>,
+    val forMessages: Array<RelayConnectionListener>,
+) {
+    fun plus(listener: RelayConnectionListener): ConnectionListeners =
+        if (listener in all) {
+            this
+        } else {
+            ConnectionListeners(
+                all + listener,
+                if (listener is IgnoresRelayMessages) forMessages else forMessages + listener,
+            )
+        }
+
+    fun minus(listener: RelayConnectionListener): ConnectionListeners =
+        if (listener !in all) {
+            this
+        } else {
+            ConnectionListeners(
+                all.filter { it != listener }.toTypedArray(),
+                forMessages.filter { it != listener }.toTypedArray(),
+            )
+        }
+
+    companion object {
+        val NONE = ConnectionListeners(emptyArray(), emptyArray())
+    }
+}
+
+/**
+ * Marks a connection listener whose [RelayConnectionListener.onIncomingMessage] is the default
+ * no-op: the client then leaves it out of the per-message dispatch.
+ */
+internal interface IgnoresRelayMessages

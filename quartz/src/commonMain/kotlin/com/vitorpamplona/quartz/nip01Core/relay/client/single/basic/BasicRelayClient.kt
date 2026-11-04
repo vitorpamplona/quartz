@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.single.basic
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient.Companion.DELAY_TO_RECONNECT_IN_SECS
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -201,19 +202,27 @@ open class BasicRelayClient(
             }
         }
 
+        // The listener call is the last thing this does, outside any try: a suspend function whose
+        // suspend calls are all tail calls gets no continuation of its own, and this runs once per
+        // relay message. What the listener throws reaches the socket's delivery loop, which logs it
+        // and goes on (see WebSocketListener.onMessage).
         override suspend fun onMessage(text: String) {
             if (!isCurrent()) return
+            val msg = decodeOrNull(text) ?: return
+            // Before the listener: a refusal's back-off must hold what the listener re-sends.
+            rateLimits?.onIncoming(msg)
+            return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+        }
+
+        private fun decodeOrNull(text: String): Message? =
             try {
-                val msg = decoder.decode(text)
-                // Before the listener: a refusal's back-off must hold what the listener re-sends.
-                rateLimits?.onIncoming(msg)
-                listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+                decoder.decode(text)
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 // doesn't expose parsing errors to lib users as errors
                 Log.e("BasicRelayClient", "Failure to parse message from ${url.url}: $text", e)
+                null
             }
-        }
 
         override fun onClosed(
             code: Int,

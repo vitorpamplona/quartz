@@ -30,6 +30,11 @@ interface WebSocketListener {
         compression: Boolean,
     )
 
+    /**
+     * One message from the relay, in order of receipt. It may throw (a relay client passes on what
+     * its own listeners throw): the socket logs it and keeps delivering, as `BasicOkHttpWebSocket`
+     * does, so one bad message or listener never ends the session's delivery.
+     */
     suspend fun onMessage(text: String)
 
     fun onClosed(

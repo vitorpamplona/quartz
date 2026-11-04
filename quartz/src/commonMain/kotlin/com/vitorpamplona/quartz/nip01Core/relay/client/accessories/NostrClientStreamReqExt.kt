@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.IgnoresRelayMessages
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
@@ -101,8 +102,9 @@ internal fun INostrClient.startReq(
     // another), and how many have yet to.
     val reachedEose = filters.keys.associateWith { AtomicInt(0) }
     val stillServing = AtomicInt(filters.size)
+    // Only counts drops: IgnoresRelayMessages keeps it out of the client's per-message dispatch.
     val connections =
-        object : RelayConnectionListener {
+        object : RelayConnectionListener, IgnoresRelayMessages {
             override fun onDisconnected(relay: IRelayClient) {
                 drops[relay.url]?.update { it + 1 }
             }
