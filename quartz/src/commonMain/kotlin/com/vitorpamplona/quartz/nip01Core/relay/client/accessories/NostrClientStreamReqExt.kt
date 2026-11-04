@@ -27,7 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
-import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.resume
@@ -36,11 +35,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadabl
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
