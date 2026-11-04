@@ -204,4 +204,31 @@ class CaughtUpResumeTest {
         assertNull(resume.resume(relayA, wraps), "nothing moves, so the filters go as given")
         assertEquals(listOf(900_000L), (resume.resume(relayA, wraps) ?: wraps).map { it.since }, "the REQ sent")
     }
+
+    @Test
+    fun caughtUpAtFlowFollowsThePointAndNeverGoesBack() {
+        val flow = resume.caughtUpAtFlow(relayA)
+        assertNull(flow.value, "nothing before the first EOSE")
+        served(relayA, notes, 900)
+        assertEquals(900L, flow.value)
+        resume.onEvent(relayA, note(950), isLive = true)
+        assertEquals(950L, flow.value)
+        served(relayA, notes)
+        assertEquals(950L, flow.value, "a later empty EOSE doesn't move it back")
+        assertNull(resume.caughtUpAtFlow(relayB).value, "each relay its own")
+    }
+
+    @Test
+    fun caughtUpAtFlowAskedLateStartsAtThePoint() {
+        served(relayA, notes, 900)
+        assertEquals(900L, resume.caughtUpAtFlow(relayA).value)
+        assertEquals(resume.caughtUpAtFlow(relayA).value, resume.caughtUpAt(relayA))
+    }
+
+    @Test
+    fun anEmptyEoseIsAPointForTheFlowToo() {
+        val flow = resume.caughtUpAtFlow(relayA)
+        served(relayA, notes)
+        assertEquals(500L, flow.value)
+    }
 }

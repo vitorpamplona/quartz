@@ -28,6 +28,10 @@ import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import com.vitorpamplona.quartz.utils.concurrent.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -151,6 +155,9 @@ class CaughtUpResume(
 
         /** The filters of the REQ that last reached EOSE. */
         @Volatile var filters: List<Filter>? = null
+
+        /** [at] as a flow, made the first time [caughtUpAtFlow] asks: an unwatched point costs nothing. */
+        @Volatile var watched: MutableStateFlow<Long?>? = null
     }
 
     private val points = ConcurrentHashCache<NormalizedRelayUrl, Point>()
@@ -177,6 +184,38 @@ class CaughtUpResume(
             ?.load()
             ?.takeIf { it != NEVER }
 
+    /**
+     * [caughtUpAt] for [relay] as it moves: null until the first EOSE, then each new point, never
+     * an earlier one. For a service that saves the point on its own schedule:
+     * `caughtUpAtFlow(relay).filterNotNull().sample(interval).collect(::save)`.
+     */
+    fun caughtUpAtFlow(relay: NormalizedRelayUrl): StateFlow<Long?> {
+        val point = point(relay)
+        point.watched?.let { return it.asStateFlow() }
+        val flow =
+            creating.withLock {
+                point.watched ?: MutableStateFlow<Long?>(null).also { point.watched = it }
+            }
+        // A point raised while the flow was being made published to nothing: publish it now.
+        publish(point)
+        return flow.asStateFlow()
+    }
+
+    /** Raises [point]'s caught-up `created_at` to [to], and tells its flow if anyone watches it. */
+    private fun raiseAt(
+        point: Point,
+        to: Long,
+    ) {
+        raise(point.at, to)
+        if (point.watched != null) publish(point)
+    }
+
+    private fun publish(point: Point) {
+        val flow = point.watched ?: return
+        val at = point.at.load().takeIf { it != NEVER } ?: return
+        flow.update { current -> if (current == null || at > current) at else current }
+    }
+
     override fun onEvent(
         relay: NormalizedRelayUrl,
         event: Event,
@@ -187,7 +226,8 @@ class CaughtUpResume(
         val createdAt = event.createdAt
         // An event that doesn't move the point costs a lookup and a compare.
         if (createdAt <= cell.load()) return
-        raise(cell, if (createdAt <= clockRead) createdAt else minOf(createdAt, readClock()))
+        val to = if (createdAt <= clockRead) createdAt else minOf(createdAt, readClock())
+        if (isLive) raiseAt(point, to) else raise(cell, to)
     }
 
     override fun onEose(
@@ -197,11 +237,11 @@ class CaughtUpResume(
         val point = point(relay)
         val stored = point.pending.exchange(NEVER)
         if (stored != NEVER) {
-            raise(point.at, stored)
+            raiseAt(point, stored)
         } else if (filters != null && point.at.load() == NEVER) {
             // Caught up with nothing: the REQ's own start is a point it can resume from.
             val since = earliestSince(filters)
-            if (since != null) raise(point.at, if (since <= clockRead) since else minOf(since, readClock()))
+            if (since != null) raiseAt(point, if (since <= clockRead) since else minOf(since, readClock()))
         }
         if (filters != null) point.filters = filters
     }
