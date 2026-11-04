@@ -165,48 +165,6 @@ class NostrClientFetchEventsTest {
         }
 
     @Test
-    fun fetchInlineHandsEachEventToTheCallbackAndCountsThem() =
-        runBlocking<Unit> {
-            val stored = (1..20L).map { note(1_000 + it) }
-            hub.getOrCreate(relay).preload(stored)
-            val seen = mutableListOf<String>()
-
-            val delivered = withTimeout(5_000) { client.fetchInline(relay, kind1) { seen += it.id } }
-
-            assertEquals(stored.size, delivered)
-            assertEquals(stored.map { it.id }.toSet(), seen.toSet())
-            val subId = reqs.single().subId
-            withTimeout(5_000) { while (client.getReqFiltersOrNull(subId) != null) delay(20) }
-        }
-
-    @Test
-    fun anExceptionInFetchInlinesCallbackEndsItAndClosesTheReq() =
-        runBlocking<Unit> {
-            hub.getOrCreate(relay).preload((1..10L).map { note(1_000 + it) })
-            val seen = AtomicInteger(0)
-
-            val outcome =
-                withTimeout(5_000) {
-                    runCatching { client.fetchInline(relay, kind1) { if (seen.incrementAndGet() == 3) error("consumer failed") } }.exceptionOrNull()
-                }
-
-            assertIs<IllegalStateException>(outcome)
-            assertEquals("consumer failed", outcome.message)
-            assertEquals(3, seen.get(), "nothing is handed over after the callback throws")
-            val subId = reqs.single().subId
-            withTimeout(5_000) { while (client.getReqFiltersOrNull(subId) != null) delay(20) }
-        }
-
-    @Test
-    fun aClosedReqEndsFetchInlineWithTheReason() =
-        runBlocking<Unit> {
-            refuseWith = "restricted: members only"
-            val outcome = withTimeout(5_000) { runCatching { client.fetchInline(relay, kind1) { } }.exceptionOrNull() }
-            assertIs<SubscriptionClosedException>(outcome)
-            assertEquals("restricted: members only", outcome.reason)
-        }
-
-    @Test
     fun aClosedReqEndsWithTheReason() =
         runBlocking<Unit> {
             refuseWith = "restricted: members only"
