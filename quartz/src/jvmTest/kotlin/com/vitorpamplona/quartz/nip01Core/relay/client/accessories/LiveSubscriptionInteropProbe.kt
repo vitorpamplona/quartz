@@ -147,7 +147,9 @@ class LiveSubscriptionInteropProbe {
                 val eNotes = e.first { it.kinds == listOf(1) }.since
                 val eWraps = e.firstOrNull { it.kinds == listOf(1059) }?.since
                 report.check("subscribeEvents resumes from the newest event delivered ($eNotes vs $eAt)", resumedFromDelivered(eNotes, eAt, eEvents, start - 120))
-                report.check("its gift-wrap filter resumes two days earlier", if (relay in noWraps || eResume.caughtUpAt(relay) == null) null else eNotes != null && eWraps == eNotes - TimeUtils.twoDays())
+                // Only a delivered event moves the point past the filters' own since; with none,
+                // nothing moves and the wrap filter keeps its own.
+                report.check("its gift-wrap filter resumes two days earlier", if (relay in noWraps || eEvents.isEmpty()) null else eNotes != null && eWraps == eNotes - TimeUtils.twoDays())
                 val d =
                     recorder
                         .reqsOf(52)[1]

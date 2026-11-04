@@ -76,9 +76,10 @@ class CaughtUpResumeTest {
 
     @Test
     fun anEoseWithNothingDeliveredTakesTheEarliestSince() {
-        val two = listOf(Filter(kinds = listOf(1), since = 700), Filter(kinds = listOf(7), since = 600))
-        served(relayA, two)
-        assertEquals(600L, resume.caughtUpAt(relayA))
+        // The earliest is neither first nor last.
+        val three = listOf(Filter(kinds = listOf(1), since = 700), Filter(kinds = listOf(7), since = 500), Filter(kinds = listOf(6), since = 600))
+        served(relayA, three)
+        assertEquals(500L, resume.caughtUpAt(relayA))
     }
 
     @Test
@@ -200,6 +201,7 @@ class CaughtUpResumeTest {
         val wraps = listOf(Filter(kinds = listOf(GiftWrapEvent.KIND), since = 900_000))
         clock = 1_000_000
         served(relayA, wraps, 1_000_000)
-        assertEquals(listOf(900_000L), resume.resume(relayA, wraps)?.map { it.since })
+        assertNull(resume.resume(relayA, wraps), "nothing moves, so the filters go as given")
+        assertEquals(listOf(900_000L), (resume.resume(relayA, wraps) ?: wraps).map { it.since }, "the REQ sent")
     }
 }

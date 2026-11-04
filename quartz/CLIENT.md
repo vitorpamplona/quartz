@@ -270,7 +270,8 @@ A service that tails relays for as long as it runs (an indexer, a mirror) should
 several (`…client.accessories`), instead. It is a `Flow<Event>` with backpressure. Each filter
 starts from its own `since`. After a reconnect it asks again from where its `ResumePolicy` says,
 per relay; the default, `CaughtUpResume`, uses the newest event it delivered, and its
-`caughtUpAt(relay)` is the point to persist and set as the filters' `since` after a restart. Caught
+`resumeFrom(relay, filters)` is the point to persist and set as the filters' `since` after a
+restart (`caughtUpAt(relay)` is the same point, whatever the filters). Caught
 up with nothing (an EOSE that delivered no event), the point is the REQ's `since`, so a restart
 after a quiet start doesn't skip what arrived while the service was down. `since` filters on `created_at`, so an event the relay stores during an outage with an
 older `created_at` is not sent again: reconcile the gap (`negentropySync`) if every event matters.

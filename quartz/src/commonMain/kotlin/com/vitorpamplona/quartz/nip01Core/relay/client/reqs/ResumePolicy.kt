@@ -121,7 +121,7 @@ fun ResumePolicy.resume(
  * connection cut halfway through leaves older ones undelivered. An EOSE that delivered nothing
  * puts the point at the REQ's `since` (the earliest of its filters', and only when every filter
  * has one): nothing before it was asked for and nothing after it existed, so a caller that saves
- * [caughtUpAt] after a quiet start resumes from there, not from wherever it next looks. Until the
+ * the point after a quiet start resumes from there, not from wherever it next looks. Until the
  * first EOSE, or after one for filters without `since`, there is nothing to resume from, and the
  * filters go as given.
  *
