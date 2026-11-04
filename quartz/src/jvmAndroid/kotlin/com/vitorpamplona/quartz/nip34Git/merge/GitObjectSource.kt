@@ -127,6 +127,15 @@ class GitObjectSource(
         return obj.data
     }
 
+    /** The commits [tip] has that [base] doesn't, oldest first, from the loaded history. */
+    fun commitsBetween(
+        base: String,
+        tip: String,
+    ): List<GitCommit> {
+        val known = ancestors(base)
+        return ancestors(tip).filter { it !in known }.mapNotNull { commits[it] }.sortedWith(compareBy<GitCommit> { it.authorTimeSec }.thenBy { it.oid })
+    }
+
     /** Every ancestor of [tip] in the loaded history, [tip] included. */
     fun ancestors(tip: String): Set<String> {
         val seen = HashSet<String>()

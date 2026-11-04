@@ -84,6 +84,9 @@ class GitMergePlannerGitTest {
             assertEquals("h", git.git(bare, "show", "main:dir/h.txt"))
             assertEquals("$main $pr", git.git(bare, "log", "-1", "--format=%P", "main"))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
+            // The PR's own commit is what the branch gains, so its message can close issues.
+            assertEquals(listOf(pr), ready.newCommits.map { it.oid })
+            assertEquals("pr change", ready.newCommits.single().summary)
         }
 
     private fun treeOf(ready: GitMergePlan.Ready): String =

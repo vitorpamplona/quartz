@@ -20,8 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip34Git.merge
 
+import com.vitorpamplona.quartz.nip34Git.git.GitCommit
 import com.vitorpamplona.quartz.nip34Git.git.GitObject
 import com.vitorpamplona.quartz.nip34Git.git.GitObjectParser
+import com.vitorpamplona.quartz.nip34Git.git.GitObjectType
 import com.vitorpamplona.quartz.nip34Git.git.GitObjectWriter
 import com.vitorpamplona.quartz.nip34Git.git.GitPerson
 import com.vitorpamplona.quartz.nip34Git.git.GitTreeEntry
@@ -78,6 +80,8 @@ sealed interface GitMergePlan {
         val appliedCommits: List<String>,
         /** A pull request's own commits, which a server that lacks its tip also needs. */
         val branch: GitBranchObjects? = null,
+        /** The commits the branch gains, oldest first, the merge commit aside: whose messages may close issues. */
+        val newCommits: List<GitCommit> = emptyList(),
     ) : GitMergePlan
 
     /** The item's commits are already in the target branch. */
@@ -143,6 +147,7 @@ class GitMergePlanner(
                 mergeCommit = merge.oid,
                 appliedCommits = emptyList(),
                 branch = GitBranchObjects(prTip, base, prSource),
+                newCommits = source.commitsBetween(targetHead, prTip),
             )
         }
 
@@ -170,7 +175,11 @@ class GitMergePlanner(
                 val tree = if (base == targetHead) theirs else builder.mergeTrees(source.commit(base).treeOid, ours, theirs)
                 if (builder.conflicts.isEmpty()) {
                     val merge = builder.keep(GitObjectWriter.commit(tree, listOf(targetHead, tip), committer, committer, message))
-                    return@guard GitMergePlan.Ready(GitMergeStrategy.MERGE_COMMIT, merge.oid, builder.created.values.toList(), merge.oid, emptyList())
+                    val rebuilt =
+                        builder.created.values
+                            .filter { it.type == GitObjectType.COMMIT && it.oid != merge.oid }
+                            .map { GitObjectParser.parseCommit(it.oid, it.data) }
+                    return@guard GitMergePlan.Ready(GitMergeStrategy.MERGE_COMMIT, merge.oid, builder.created.values.toList(), merge.oid, emptyList(), newCommits = rebuilt)
                 }
             }
             applyToTip(targetHead, patches, committer)
@@ -205,15 +214,17 @@ class GitMergePlanner(
         var parent = targetHead
         var tree = source.commit(targetHead).treeOid
         val applied = ArrayList<String>()
+        val commits = ArrayList<GitCommit>()
         patches.forEach { patch ->
             val result = applyPatch(builder, tree, patch)
             tree = result.tree ?: return GitMergePlan.Conflicts(listOfNotNull(result.failedPath))
             val author = patch.author()?.let(::personOf) ?: committer
             val commit = builder.keep(GitObjectWriter.commit(tree, listOf(parent), author, committer, commitMessage(patch)))
             applied.add(commit.oid)
+            commits.add(GitObjectParser.parseCommit(commit.oid, commit.data))
             parent = commit.oid
         }
-        return GitMergePlan.Ready(GitMergeStrategy.APPLY_TO_TIP, parent, builder.created.values.toList(), parent, applied)
+        return GitMergePlan.Ready(GitMergeStrategy.APPLY_TO_TIP, parent, builder.created.values.toList(), parent, applied, newCommits = commits)
     }
 
     /** A patch applied to a tree: the new tree, or the path that would not apply. */
