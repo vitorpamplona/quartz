@@ -25,10 +25,13 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
+import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.atomics.incrementAndFetch
 
@@ -114,9 +117,13 @@ interface NegentropyLocalIndex {
  * all of it. With this, a window that is over the target on either side is split.
  *
  * One `COUNT` per window the engine counts, which it does only with a `targetWindow`, sent while
- * this side counts. A relay that doesn't answer one (no NIP-45, a refusal, [idleTimeoutMs] of
- * silence) leaves this side's count for that window, and after two in a row it is not asked
- * again. An approximate count serves as well: it only decides a split.
+ * this side counts. A `COUNT` left unanswered (no NIP-45, a refusal, [idleTimeoutMs] of silence, a
+ * connection still coming back) is asked again once after two seconds, and failing that the
+ * window keeps this side's count. After two windows in a row like that, the relay isn't asked for
+ * a minute, then again (the pause doubles up to ten minutes, and any answer resets it): a relay
+ * without NIP-45 costs a few refusals, and a hiccup at the start of a first sync, when this side
+ * counts nothing, doesn't leave the rest of it unsplit. An approximate count serves as well: it
+ * only decides a split.
  *
  * The relay's number is the relay's word. The engine trusts a count to halve with the range and
  * doesn't bound the windows it splits on one, so a relay that answers every `COUNT` with a large
@@ -134,28 +141,38 @@ fun NegentropyLocalIndex.withRelayCount(
 /** [withRelayCount] over any source of the other side's count: null is "no answer". */
 internal fun NegentropyLocalIndex.withRemoteCount(
     maxRemoteCounts: Int,
+    nowMs: () -> Long = { TimeUtils.nowMillis() },
     remoteCount: suspend (Filter) -> Int?,
-): NegentropyLocalIndex = RemoteCountedIndex(this, maxRemoteCounts, remoteCount)
+): NegentropyLocalIndex = RemoteCountedIndex(this, maxRemoteCounts, remoteCount, nowMs)
 
-/** Unanswered counts in a row after which the other side is not asked again. */
+/** Windows in a row the other side left unanswered (each asked twice) before asking pauses. */
 private const val MAX_UNANSWERED_IN_A_ROW = 2
+
+/** How long after an unanswered count it is asked again, once, for the same window. */
+private const val RETRY_DELAY_MS = 2_000L
+
+/** The first pause in asking, doubled each time it pauses again, up to [MAX_PAUSE_MS]; an answer resets it. */
+private const val FIRST_PAUSE_MS = 60_000L
+private const val MAX_PAUSE_MS = 600_000L
 
 @OptIn(ExperimentalAtomicApi::class)
 private class RemoteCountedIndex(
     private val local: NegentropyLocalIndex,
     private val maxRemoteCounts: Int,
     private val remoteCount: suspend (Filter) -> Int?,
+    private val nowMs: () -> Long,
 ) : NegentropyLocalIndex {
     private val asked = AtomicInt(0)
     private val unansweredInARow = AtomicInt(0)
+    private val pausedUntilMs = AtomicLong(0)
+    private val nextPauseMs = AtomicLong(FIRST_PAUSE_MS)
 
     override suspend fun count(window: Filter): Int? {
-        if (unansweredInARow.load() >= MAX_UNANSWERED_IN_A_ROW || asked.fetchAndAdd(1) >= maxRemoteCounts) return local.count(window)
+        if (nowMs() < pausedUntilMs.load()) return local.count(window)
         return coroutineScope {
-            val theirs = async { remoteCount(window) }
+            val theirs = async { askWithRetry(window) }
             val mine = local.count(window)
             val answer = theirs.await()
-            if (answer == null) unansweredInARow.incrementAndFetch() else unansweredInARow.store(0)
             when {
                 mine == null -> answer
                 answer == null -> mine
@@ -163,6 +180,30 @@ private class RemoteCountedIndex(
             }
         }
     }
+
+    /** The other side's count, asked again once after [RETRY_DELAY_MS]; null if neither came. */
+    private suspend fun askWithRetry(window: Filter): Int? {
+        var answer = ask(window)
+        if (answer == null && asked.load() < maxRemoteCounts) {
+            delay(RETRY_DELAY_MS)
+            answer = ask(window)
+        }
+        if (answer != null) {
+            unansweredInARow.store(0)
+            nextPauseMs.store(FIRST_PAUSE_MS)
+        } else if (unansweredInARow.incrementAndFetch() >= MAX_UNANSWERED_IN_A_ROW) {
+            // A relay without NIP-45, or one out of reach for now: stop asking for a while, then
+            // ask again. A pause, not an end: a hiccup at the start of a first sync must not send
+            // the rest of it as windows our empty side never splits.
+            unansweredInARow.store(0)
+            val pause = nextPauseMs.load()
+            pausedUntilMs.store(nowMs() + pause)
+            nextPauseMs.store(minOf(pause * 2, MAX_PAUSE_MS))
+        }
+        return answer
+    }
+
+    private suspend fun ask(window: Filter): Int? = if (asked.fetchAndAdd(1) >= maxRemoteCounts) null else remoteCount(window)
 
     override suspend fun entriesFor(window: Filter): List<IdAndTime> = local.entriesFor(window)
 }
