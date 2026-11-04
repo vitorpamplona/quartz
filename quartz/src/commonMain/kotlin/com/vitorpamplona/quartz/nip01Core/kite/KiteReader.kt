@@ -906,6 +906,9 @@ internal class KiteReader {
 
         private val ONE_CHAR_STRINGS = Array(128) { it.toChar().toString() }
 
+        /** The shared instance for a one-character ASCII string [c]. */
+        internal fun sharedOneChar(c: Char): String = ONE_CHAR_STRINGS[c.code]
+
         private fun acquire(): KiteReader {
             val local = threadKiteReader()
             return if (local == null || local.inUse) KiteReader() else local

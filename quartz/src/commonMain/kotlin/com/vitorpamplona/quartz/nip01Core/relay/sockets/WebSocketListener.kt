@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.sockets
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 
 /**
  * Interface to abstract the socket implementation.
@@ -53,3 +54,9 @@ interface WebSocketListener {
  * stays guarded.
  */
 internal suspend fun WebSocketListener.deliverMessage(text: String) = if (this is BasicRelayClient.MyWebsocketListener) onMessageUnguarded(text) else onMessage(text)
+
+/** Whether this listener takes messages a socket decoded from bytes ([deliverDecoded]). */
+internal fun WebSocketListener.acceptsDecoded(): Boolean = this is BasicRelayClient.MyWebsocketListener && acceptsDecoded()
+
+/** Delivers a message decoded from bytes; only when [acceptsDecoded]. */
+internal suspend fun WebSocketListener.deliverDecoded(msg: Message) = (this as BasicRelayClient.MyWebsocketListener).onDecodedUnguarded(msg)

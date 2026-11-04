@@ -231,6 +231,19 @@ open class BasicRelayClient(
             return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
         }
 
+        /** True when frames may come pre-decoded ([onDecodedUnguarded]): only the default decoder reads them so. */
+        internal fun acceptsDecoded(): Boolean = decoder === MessageDecoder.Default
+
+        /**
+         * A message the socket decoded straight from the frame's bytes, never a String. Unguarded,
+         * like [onMessageUnguarded]. EXPERIMENT: listeners get no text (msgStr is empty).
+         */
+        internal suspend fun onDecodedUnguarded(msg: Message) {
+            if (!isCurrent()) return
+            rateLimits?.onIncoming(msg)
+            return listener.onIncomingMessage(this@BasicRelayClient, "", msg)
+        }
+
         private fun decodeOrNull(text: String): Message? =
             try {
                 decoder.decode(text)
