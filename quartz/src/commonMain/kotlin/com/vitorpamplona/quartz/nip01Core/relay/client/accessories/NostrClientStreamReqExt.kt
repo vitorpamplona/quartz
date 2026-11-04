@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadabl
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DisposableHandle
@@ -82,7 +83,7 @@ internal fun INostrClient.startReq(
     resume: ResumePolicy?,
     authSettleMs: Long,
     untilEose: Boolean,
-    onEvent: ReqEventHandler,
+    onEvent: ReqEvents,
     onEnd: (Throwable?) -> Unit,
 ): DisposableHandle {
     val subId = (if (untilEose) "fetch-" else "live-") + RandomInstance.randomChars(10)
@@ -119,112 +120,143 @@ internal fun INostrClient.startReq(
         message: String,
     ) = finish(SubscriptionClosedException(relay, message))
 
-    val listener =
-        object : SubscriptionListener {
-            // The pool asks this each time it writes the REQ on a connection: that is where a
-            // reconnect, or the replay after an AUTH, picks up the resume point.
-            override fun filtersForSync(
-                relay: NormalizedRelayUrl,
-                filters: List<Filter>,
-            ): List<Filter>? {
-                val mark = authMarks[relay] ?: return null
-                if (over.load() != 0) return null
-                // AUTHs are counted per connection, and this REQ is going out on the current
-                // one: a refusal of it waits for an AUTH newer than what this connection has
-                // seen, not the last one, which would leave a reconnect waiting forever.
-                mark.store(authSuccessMark(relay))
-                return resume?.resume(relay, filters)
-            }
+    // Everything but onEvent, shared by the two kinds of handler below.
+    abstract class ReqListener : SubscriptionListener {
+        // The pool asks this each time it writes the REQ on a connection: that is where a
+        // reconnect, or the replay after an AUTH, picks up the resume point.
+        override fun filtersForSync(
+            relay: NormalizedRelayUrl,
+            filters: List<Filter>,
+        ): List<Filter>? {
+            val mark = authMarks[relay] ?: return null
+            if (over.load() != 0) return null
+            // AUTHs are counted per connection, and this REQ is going out on the current
+            // one: a refusal of it waits for an AUTH newer than what this connection has
+            // seen, not the last one, which would leave a reconnect waiting forever.
+            mark.store(authSuccessMark(relay))
+            return resume?.resume(relay, filters)
+        }
 
-            override suspend fun onEvent(
-                event: Event,
-                isLive: Boolean,
-                relay: NormalizedRelayUrl,
-                forFilters: List<Filter>?,
-            ) {
-                if (relay !in authMarks || over.load() != 0) return
-                val taken =
-                    try {
-                        onEvent.take(event)
-                    } catch (e: Throwable) {
-                        // The connection's own cancellation must still reach it; the consumer's
-                        // failure ends this read, not the connection.
-                        currentCoroutineContext().ensureActive()
-                        finish(e)
-                        return
+        override fun onEose(
+            relay: NormalizedRelayUrl,
+            forFilters: List<Filter>?,
+        ) {
+            val mark = authMarks[relay] ?: return
+            mark.store(authSuccessMark(relay))
+            goingAwayInARow[relay]?.store(0)
+            resume?.onEose(relay, forFilters)
+            // EOSE comes on the delivery coroutine after this relay's stored events were
+            // handed to onEvent, so the read can end here without losing one.
+            if (untilEose && reachedEose[relay]?.compareAndSet(0, 1) == true && stillServing.decrementAndFetch() == 0) {
+                finish(null)
+            }
+        }
+
+        override fun onCannotConnect(
+            relay: NormalizedRelayUrl,
+            message: String,
+            forFilters: List<Filter>?,
+        ) {
+            if (untilEose && relay in authMarks) finish(RelayUnreachableException(relay, message))
+        }
+
+        override fun onClosed(
+            message: String,
+            relay: NormalizedRelayUrl,
+            forFilters: List<Filter>?,
+        ) = onClosed(message, relay, forFilters, null)
+
+        override fun onClosed(
+            message: String,
+            relay: NormalizedRelayUrl,
+            forFilters: List<Filter>?,
+            params: String?,
+        ) {
+            val mark = authMarks[relay] ?: return
+            // Retried by the client once the relay's stated back-off passes.
+            if (RetryAfter.parse(message, params) != null) return
+            when (MachineReadablePrefix.parse(message)) {
+                MachineReadablePrefix.AUTH_REQUIRED -> {}
+                // A relay going away (a restart, a deploy) CLOSEs its subscriptions with an
+                // `error:` (or no prefix) and then drops the socket; the client sends the REQ
+                // again on the next connection, so that CLOSED doesn't end the read. Three in a
+                // row without an EOSE do: the client stops re-sending a REQ refused that often,
+                // and the read would go silent.
+                MachineReadablePrefix.ERROR, null -> {
+                    val dropsAtClose = drops[relay]?.value ?: 0
+                    scope.launch(waits) {
+                        val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
+                        if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
                     }
-                if (taken) resume?.onEvent(relay, event, isLive)
-            }
-
-            override fun onEose(
-                relay: NormalizedRelayUrl,
-                forFilters: List<Filter>?,
-            ) {
-                val mark = authMarks[relay] ?: return
-                mark.store(authSuccessMark(relay))
-                goingAwayInARow[relay]?.store(0)
-                resume?.onEose(relay, forFilters)
-                // EOSE comes on the delivery coroutine after this relay's stored events were
-                // handed to onEvent, so the read can end here without losing one.
-                if (untilEose && reachedEose[relay]?.compareAndSet(0, 1) == true && stillServing.decrementAndFetch() == 0) {
-                    finish(null)
+                    return
+                }
+                // `blocked:`, `restricted:`, `invalid:`, …: a refusal, not a shutdown.
+                else -> {
+                    end(relay, message)
+                    return
                 }
             }
-
-            override fun onCannotConnect(
-                relay: NormalizedRelayUrl,
-                message: String,
-                forFilters: List<Filter>?,
-            ) {
-                if (untilEose && relay in authMarks) finish(RelayUnreachableException(relay, message))
-            }
-
-            override fun onClosed(
-                message: String,
-                relay: NormalizedRelayUrl,
-                forFilters: List<Filter>?,
-            ) = onClosed(message, relay, forFilters, null)
-
-            override fun onClosed(
-                message: String,
-                relay: NormalizedRelayUrl,
-                forFilters: List<Filter>?,
-                params: String?,
-            ) {
-                val mark = authMarks[relay] ?: return
-                // Retried by the client once the relay's stated back-off passes.
-                if (RetryAfter.parse(message, params) != null) return
-                when (MachineReadablePrefix.parse(message)) {
-                    MachineReadablePrefix.AUTH_REQUIRED -> {}
-                    // A relay going away (a restart, a deploy) CLOSEs its subscriptions with an
-                    // `error:` (or no prefix) and then drops the socket; the client sends the REQ
-                    // again on the next connection, so that CLOSED doesn't end the read. Three in a
-                    // row without an EOSE do: the client stops re-sending a REQ refused that often,
-                    // and the read would go silent.
-                    MachineReadablePrefix.ERROR, null -> {
-                        val dropsAtClose = drops[relay]?.value ?: 0
-                        scope.launch(waits) {
-                            val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
-                            if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
-                        }
-                        return
-                    }
-                    // `blocked:`, `restricted:`, `invalid:`, …: a refusal, not a shutdown.
-                    else -> {
-                        end(relay, message)
-                        return
-                    }
-                }
-                val since = mark.load()
-                scope.launch(waits) {
-                    if (awaitAuthOutcome(relay, since, settleMs = authSettleMs) == AuthOutcome.AUTHENTICATED) {
-                        // The client re-sent the REQ on the AUTH's OK. A later refusal needs a newer AUTH.
-                        mark.store(authSuccessMark(relay))
-                    } else {
-                        end(relay, message)
-                    }
+            val since = mark.load()
+            scope.launch(waits) {
+                if (awaitAuthOutcome(relay, since, settleMs = authSettleMs) == AuthOutcome.AUTHENTICATED) {
+                    // The client re-sent the REQ on the AUTH's OK. A later refusal needs a newer AUTH.
+                    mark.store(authSuccessMark(relay))
+                } else {
+                    end(relay, message)
                 }
             }
+        }
+    }
+
+    // Two listeners, one per kind of handler: a suspend function gets a continuation, allocated on
+    // every call, as soon as any of its branches suspends, so the inline one must not share an
+    // onEvent with the suspending one.
+    val listener: SubscriptionListener =
+        when (onEvent) {
+            is ReqEvents.Inline ->
+                object : ReqListener() {
+                    // No suspend call: no continuation, so nothing allocated per event here.
+                    override suspend fun onEvent(
+                        event: Event,
+                        isLive: Boolean,
+                        relay: NormalizedRelayUrl,
+                        forFilters: List<Filter>?,
+                    ) {
+                        if (relay !in authMarks || over.load() != 0) return
+                        val taken =
+                            try {
+                                onEvent.take(event)
+                            } catch (e: Throwable) {
+                                if (e is CancellationException) throw e
+                                // The consumer's failure ends this read, not the connection.
+                                finish(e)
+                                return
+                            }
+                        if (taken) resume?.onEvent(relay, event, isLive)
+                    }
+                }
+            is ReqEvents.Suspending ->
+                object : ReqListener() {
+                    override suspend fun onEvent(
+                        event: Event,
+                        isLive: Boolean,
+                        relay: NormalizedRelayUrl,
+                        forFilters: List<Filter>?,
+                    ) {
+                        if (relay !in authMarks || over.load() != 0) return
+                        val taken =
+                            try {
+                                onEvent.take(event)
+                            } catch (e: Throwable) {
+                                // The connection's own cancellation must still reach it; the consumer's
+                                // failure ends this read, not the connection.
+                                currentCoroutineContext().ensureActive()
+                                finish(e)
+                                return
+                            }
+                        if (taken) resume?.onEvent(relay, event, isLive)
+                    }
+                }
         }
 
     addConnectionListener(connections)
@@ -261,7 +293,7 @@ internal fun INostrClient.streamReqAsFlow(
                 authSettleMs = authSettleMs,
                 untilEose = untilEose,
                 onEvent =
-                    ReqEventHandler { event ->
+                    ReqEvents.Suspending { event ->
                         val offered = trySend(event)
                         when {
                             offered.isSuccess -> true
@@ -292,13 +324,19 @@ internal fun INostrClient.streamReqAsFlow(
     }
 
 /**
- * How [startReq] hands each event over: it may suspend (the read waits on it, the backpressure),
- * and returns whether it took the event (one it didn't take, from a consumer on its way out, is
- * not counted by the resume policy). A fun interface rather than a suspend lambda type: calling a
- * suspend lambda allocates a new instance of it on every call, and this runs once per event.
+ * How [startReq] hands each event over, and whether it took it (one it didn't take, from a
+ * consumer on its way out, is not counted by the resume policy).
  */
-internal fun interface ReqEventHandler {
-    suspend fun take(event: Event): Boolean
+internal sealed interface ReqEvents {
+    /** May suspend: the read waits, which is the backpressure. Costs a continuation per event. */
+    fun interface Suspending : ReqEvents {
+        suspend fun take(event: Event): Boolean
+    }
+
+    /** Can't suspend, so nothing is allocated per event on the way to it. */
+    fun interface Inline : ReqEvents {
+        fun take(event: Event): Boolean
+    }
 }
 
 /** How long after a CLOSED the connection may drop for the CLOSED to count as the relay going away. */
