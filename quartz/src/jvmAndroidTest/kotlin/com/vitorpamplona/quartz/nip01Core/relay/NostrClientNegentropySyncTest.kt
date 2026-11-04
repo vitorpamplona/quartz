@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.fetchAllPages
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySync
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySyncEvents
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySyncOrFetch
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.withRelayCount
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
@@ -590,6 +591,39 @@ class NostrClientNegentropySyncTest : RelayClientTest() {
             assertTrue(result.windows > 1, "the local count alone must have split the filter")
             assertTrue(asked.isNotEmpty(), "windows must be counted before they are asked for")
             assertNull(result.peerCap, "nothing was refused, so there is no cap to report")
+        }
+
+    /**
+     * An empty side counts nothing, so the local count never splits: the relay gets its whole
+     * matched set as one window. [withRelayCount] splits on the relay's NIP-45 COUNT as well.
+     */
+    @Test
+    fun anEmptySideSplitsOnTheRelaysCountWithRelayCount() =
+        runBlocking {
+            val all = (0 until 40).map { SyntheticEvents.fakeEvent(idSeed = it + 1, kind = 1, createdAt = 1000L + it) }
+            defaultRelay.preload(all)
+
+            val plain = mutableListOf<Event>()
+            val alone =
+                withTimeout(60_000) {
+                    client.negentropySync(relay = defaultRelayUrl, filter = Filter(kinds = listOf(1)), localIndex = NegentropyLocalIndex.Empty, targetWindow = 5) { plain.add(it) }
+                }
+            assertEquals(1, alone.windows, "our side alone never splits an empty index")
+            assertEquals(40, plain.size)
+
+            val got = mutableListOf<Event>()
+            val both =
+                withTimeout(60_000) {
+                    client.negentropySync(
+                        relay = defaultRelayUrl,
+                        filter = Filter(kinds = listOf(1)),
+                        localIndex = NegentropyLocalIndex.Empty.withRelayCount(client, defaultRelayUrl),
+                        targetWindow = 5,
+                    ) { got.add(it) }
+                }
+            assertTrue(both.windows >= 8, "40 events at a target of 5: split on the relay's side (${both.windows} windows)")
+            assertEquals(all.map { it.id }.toSet(), got.map { it.id }.toSet())
+            assertEquals(40, got.size, "each once")
         }
 
     /** Passing no target keeps the old shape: one window until the relay objects. */

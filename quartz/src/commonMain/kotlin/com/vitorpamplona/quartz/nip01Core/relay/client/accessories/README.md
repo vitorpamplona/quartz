@@ -171,6 +171,12 @@ by a store passes a `NegentropyLocalIndex` instead: `NegentropyLocalIndex.of(sto
 each window from the `IEventStore` (`count` + `snapshotIdsForNegentropy`), so memory is one
 window's ids; `NegentropyLocalIndex.of(entries)` is the in-memory form. Wrap either for metering.
 
+With a `targetWindow`, the engine splits a window before asking for it when the index counts more
+than the target in it, but the count is our side's alone: an empty or small side (a first sync, a
+mirror rebuilt from nothing) sends the relay its whole matched set as one `NEG-OPEN`. Wrap the
+index in `.withRelayCount(client, relay)` to split on the relay's NIP-45 `COUNT` as well, for one
+`COUNT` per window counted.
+
 To keep a store in sync with relays (both directions, deletions, page fallback), use
 `NegentropyStoreSync(client, store, Config(...)).sync(filtersByRelay)` or `.syncGroup(relay,
 filter)` instead of composing the above. For pushing a store upstream: `shareSnapshots` takes
