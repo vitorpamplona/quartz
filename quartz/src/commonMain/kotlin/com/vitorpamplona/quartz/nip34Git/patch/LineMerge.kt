@@ -127,7 +127,14 @@ object LineMerge {
             }
             if (!placed) return null
         }
-        return lines.joinToString("\n") + if (endsWithNewline && lines.isNotEmpty()) "\n" else ""
+        // The patch says how its new text ends; a patch that touched neither end keeps the text's.
+        val endsWithNewlineNow =
+            when {
+                file.newMissingNewline -> false
+                file.oldMissingNewline -> true
+                else -> endsWithNewline
+            }
+        return lines.joinToString("\n") + if (endsWithNewlineNow && lines.isNotEmpty()) "\n" else ""
     }
 
     /** How many leading and trailing context lines a hunk drops at [fuzz]: never more than it has. */

@@ -169,4 +169,158 @@ class GitMergePlannerGitTest {
             // Rebuilt exactly as sent: the commit the patch names is among what gets pushed.
             assertTrue(ready.objects.any { it.oid == commit }, "the rebuilt commit should hash to $commit")
         }
+
+    /** The patch event for [work]'s HEAD commit on [base], as ngit publishes it. */
+    private fun patchOf(
+        git: GitHttpBackendFixture,
+        work: File,
+        base: String,
+        id: Char = '0',
+    ): GitPatchEvent {
+        val commit = git.git(work, "rev-parse", "HEAD")
+        return GitPatchEvent(
+            id.toString().repeat(64),
+            "1".repeat(64),
+            1700000000,
+            arrayOf(
+                arrayOf("commit", commit),
+                arrayOf("parent-commit", base),
+                arrayOf("author", "Ann", "ann@x.org", git.git(work, "log", "-1", "--format=%at"), "0"),
+                arrayOf("committer", "Ann", "ann@x.org", git.git(work, "log", "-1", "--format=%ct"), "0"),
+                arrayOf("t", "root"),
+            ),
+            git.git(work, "format-patch", "-1", "--stdout", "HEAD"),
+            "0".repeat(128),
+        )
+    }
+
+    @Test
+    fun aPatchKeepsModesAndAMissingFinalNewline() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            write(work, "f.txt", "1\n2\n3\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "base")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val base = git.git(work, "rev-parse", "HEAD")
+
+            // The last line loses its newline, and a new executable script.
+            write(work, "f.txt", "1\n2\n3")
+            write(work, "run.sh", "echo hi\n")
+            File(work, "run.sh").setExecutable(true)
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "No newline, and a script")
+            val commit = git.git(work, "rev-parse", "HEAD")
+            val patch = patchOf(git, work, base)
+
+            val transport = GitSmartHttpTransport { git.client }
+            val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPatches(base, listOf(patch), maintainer, "m") }
+            (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
+            val ready = assertIs<GitMergePlan.Ready>(plan)
+            // Only an exact rebuild (content, mode and all) hashes to the commit the patch names.
+            assertEquals(GitMergeStrategy.MERGE_COMMIT, ready.strategy)
+            assertTrue(ready.objects.any { it.oid == commit }, "the rebuilt commit should hash to $commit")
+        }
+
+    @Test
+    fun aPatchAddingAFileThatExistsDoesNotApply() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            write(work, "f.txt", "1\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "base")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val base = git.git(work, "rev-parse", "HEAD")
+            write(work, "new.txt", "theirs\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "add new.txt")
+            val patch = patchOf(git, work, base)
+
+            // Meanwhile main added its own new.txt.
+            git.git(work, "reset", "-q", "--hard", base)
+            write(work, "new.txt", "ours\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "main adds new.txt")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val main = git.git(work, "rev-parse", "HEAD")
+
+            val transport = GitSmartHttpTransport { git.client }
+            val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPatches(main, listOf(patch), maintainer, "m") }
+            (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
+            assertEquals(listOf("new.txt"), assertIs<GitMergePlan.Conflicts>(plan).paths)
+        }
+
+    @Test
+    fun aFileThatIsNotUtf8MergesByteForByte() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            val latin1 = { text: String -> text.toByteArray(Charsets.ISO_8859_1) }
+            File(work, "l.txt").writeBytes(latin1("caf\u00e9\n2\n3\n4\n5\nna\u00efve\n"))
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "base")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            git.git(work, "checkout", "-q", "-b", "pr")
+            File(work, "l.txt").writeBytes(latin1("caf\u00e9\n2\n3\n4\n5\nna\u00efve \u00e0 la fin\n"))
+            git.git(work, "commit", "-q", "-am", "pr")
+            git.git(work, "push", "-q", "origin", "HEAD:refs/nostr/pr")
+            git.git(work, "checkout", "-q", "main")
+            File(work, "l.txt").writeBytes(latin1("caf\u00e9 cr\u00e8me\n2\n3\n4\n5\nna\u00efve\n"))
+            git.git(work, "commit", "-q", "-am", "main")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val main = git.git(work, "rev-parse", "main")
+            val pr = git.git(work, "rev-parse", "pr")
+
+            val transport = GitSmartHttpTransport { git.client }
+            val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPullRequest(main, pr, GitObjectSource(transport, listOf(url)), maintainer, "m") }
+            (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
+            val ready = assertIs<GitMergePlan.Ready>(plan)
+            assertEquals(git.git(work, "merge-tree", "--write-tree", main, pr), treeOf(ready))
+        }
+
+    @Test
+    fun aPullRequestFromAForkPushesItsCommitsToServersThatLackThem() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val (forkBare, forkUrl) = git.bare("fork")
+            val work = git.work(bare, "work")
+            write(work, "f.txt", "1\n2\n3\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "base")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            // The PR lives only on the fork, which never saw main's later commit.
+            git.git(work, "checkout", "-q", "-b", "pr")
+            write(work, "f.txt", "1\n2\nTHREE\n")
+            git.git(work, "commit", "-q", "-am", "pr")
+            git.git(work, "push", "-q", forkBare.path, "HEAD:refs/heads/pr")
+            git.git(work, "checkout", "-q", "main")
+            write(work, "f.txt", "ONE\n2\n3\n")
+            git.git(work, "commit", "-q", "-am", "main")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val main = git.git(work, "rev-parse", "main")
+            val pr = git.git(work, "rev-parse", "pr")
+
+            val transport = GitSmartHttpTransport { git.client }
+            val plan =
+                runBlocking {
+                    GitMergePlanner(GitObjectSource(transport, listOf(url, forkUrl)))
+                        .planPullRequest(main, pr, GitObjectSource(transport, listOf(forkUrl, url)), maintainer, "m")
+                }
+            (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
+            val ready = assertIs<GitMergePlan.Ready>(plan)
+            val branch = ready.branch!!
+            val objects = runBlocking { ready.objects + branch.objects() }
+            // Only the PR's own commit, tree and blob come from the fork, not its whole history.
+            assertTrue(runBlocking { branch.objects() }.size <= 3, "fetched ${runBlocking { branch.objects() }.size} objects")
+            val report = runBlocking { GitPushClient({ git.client }).push(url, listOf(GitRefUpdate("refs/heads/main", main, ready.newTip)), objects) }
+            assertTrue(report.isSuccess, report.describe())
+            assertEquals("ONE\n2\nTHREE", git.git(bare, "show", "main:f.txt"))
+            assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
+        }
 }

@@ -76,9 +76,13 @@ class GitObjectSource(
     }
 
     /** The history of [tips] as commits only (`tree:0`), parsed. */
-    suspend fun loadHistory(tips: List<String>) {
+    suspend fun loadHistory(
+        tips: List<String>,
+        haves: List<String> = emptyList(),
+    ) {
         val missing = tips.filter { it !in commits && it !in objects }
-        if (missing.isNotEmpty()) fetch(missing, filter = "tree:0")
+        // [haves]: commits whose history is already here, which a server that knows them skips.
+        if (missing.isNotEmpty()) fetch(missing, haves = haves.filter { it in objects }, filter = "tree:0")
         objects.values.forEach { obj ->
             if (obj.type == GitObjectType.COMMIT && obj.oid !in commits) commits[obj.oid] = GitObjectParser.parseCommit(obj.oid, obj.data)
         }
@@ -95,6 +99,27 @@ class GitObjectSource(
         val obj = objects[oid] ?: fetch(listOf(oid), filter = "blob:none")[oid] ?: objects[oid] ?: throw GitHttpException("tree $oid not found")
         require(obj.type == GitObjectType.TREE) { "$oid is not a tree" }
         return GitObjectParser.parseTree(obj.data)
+    }
+
+    /**
+     * Fetches whichever of [oids] are not here yet, in one request when one server has them all,
+     * else one by one (a PR's blob may be only on its fork, the branch's only on the repository).
+     */
+    suspend fun prefetch(oids: Collection<String>) {
+        val missing = oids.filter { it !in objects }.distinct()
+        if (missing.size < 2) return
+        try {
+            fetch(missing)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Each is fetched on its own when it is read.
+        }
+    }
+
+    /** Takes every object [other] has fetched, so its history and trees need no second download. */
+    fun adopt(other: GitObjectSource) {
+        other.objects.values.forEach { if (it.oid !in objects) objects[it.oid] = it }
     }
 
     suspend fun blob(oid: String): ByteArray {

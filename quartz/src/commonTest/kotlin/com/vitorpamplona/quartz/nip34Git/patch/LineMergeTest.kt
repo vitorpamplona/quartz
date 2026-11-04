@@ -88,4 +88,33 @@ class LineMergeTest {
         val file = UnifiedDiffParser.parse(diff).files.single()
         assertNull(LineMerge.apply("completely\ndifferent\n", file))
     }
+
+    @Test
+    fun aPatchCanDropTheFinalNewline() {
+        val patch = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n\\ No newline at end of file\n"
+        val file = UnifiedDiffParser.parse(patch).files.single()
+        assertEquals(true, file.newMissingNewline)
+        assertEquals("a\nc", LineMerge.apply("a\nb\n", file))
+    }
+
+    @Test
+    fun aPatchCanAddTheFinalNewline() {
+        val patch = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+b\n"
+        val file = UnifiedDiffParser.parse(patch).files.single()
+        assertEquals(true, file.oldMissingNewline)
+        assertEquals(false, file.newMissingNewline)
+        assertEquals("a\nb\n", LineMerge.apply("a\nb", file))
+    }
+
+    @Test
+    fun theParserReadsModes() {
+        val patch =
+            "diff --git a/run.sh b/run.sh\nnew file mode 100755\nindex 0000000..1111111\n--- /dev/null\n+++ b/run.sh\n@@ -0,0 +1 @@\n+echo\n" +
+                "diff --git a/x b/x\nold mode 100644\nnew mode 100755\n" +
+                "diff --git a/y b/y\nindex 1111111..2222222 100644\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-a\n+b\n"
+        val files = UnifiedDiffParser.parse(patch).files
+        assertEquals("100755", files[0].newMode)
+        assertEquals("100644" to "100755", files[1].oldMode to files[1].newMode)
+        assertEquals("100644" to "100644", files[2].oldMode to files[2].newMode)
+    }
 }

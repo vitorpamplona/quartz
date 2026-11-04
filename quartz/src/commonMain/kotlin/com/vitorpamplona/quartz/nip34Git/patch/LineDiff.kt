@@ -59,22 +59,59 @@ object LineDiff {
         return result
     }
 
-    /** Myers O(ND) diff: returns an ordered op list (CONTEXT / DELETE / ADD). */
+    /**
+     * The most snake-search state the diff keeps, in ints (16 MB). Past it the diff stops looking
+     * for the shortest edit and reports the rest as one replacement: still a correct diff, so a
+     * huge rewrite renders as delete-then-add and a three-way merge sees it as one change.
+     */
+    private const val MAX_TRACE_INTS = 4_000_000
+
+    /**
+     * Myers O(ND) diff: an ordered op list (CONTEXT / DELETE / ADD). The common prefix and suffix
+     * are matched first, so a small edit of a large file costs only its changed middle, and each
+     * step keeps only the diagonals it reached ([MAX_TRACE_INTS] in all).
+     */
     private fun computeOps(
         a: List<String>,
         b: List<String>,
     ): List<Op> {
-        val n = a.size
-        val m = b.size
-        if (n == 0 && m == 0) return emptyList()
+        var prefix = 0
+        while (prefix < a.size && prefix < b.size && a[prefix] == b[prefix]) prefix++
+        var suffix = 0
+        while (suffix < a.size - prefix && suffix < b.size - prefix && a[a.size - 1 - suffix] == b[b.size - 1 - suffix]) suffix++
+
+        val ops = ArrayList<Op>(a.size + b.size - prefix - suffix)
+        for (i in 0 until prefix) ops.add(Op(GitDiffLineType.CONTEXT, i, i))
+        middle(a, b, prefix, a.size - suffix, prefix, b.size - suffix, ops)
+        for (i in 0 until suffix) ops.add(Op(GitDiffLineType.CONTEXT, a.size - suffix + i, b.size - suffix + i))
+        return ops
+    }
+
+    /** Myers on `a[aFrom, aTo)` against `b[bFrom, bTo)`, appending its ops (with absolute indices) to [out]. */
+    private fun middle(
+        a: List<String>,
+        b: List<String>,
+        aFrom: Int,
+        aTo: Int,
+        bFrom: Int,
+        bTo: Int,
+        out: MutableList<Op>,
+    ) {
+        val n = aTo - aFrom
+        val m = bTo - bFrom
+        if (n == 0 && m == 0) return
         val max = n + m
         val offset = max
-        val trace = ArrayList<IntArray>()
         val v = IntArray(2 * max + 1)
+        // trace[d] holds v[-d-1 .. d+1] as it stood when step d began: all that backtracking reads.
+        val trace = ArrayList<IntArray>()
+        var kept = 0L
 
         var found = false
         for (d in 0..max) {
-            trace.add(v.copyOf())
+            kept += 2 * d + 3
+            if (kept > MAX_TRACE_INTS) break
+            trace.add(v.copyOfRange((offset - d - 1).coerceAtLeast(0), (offset + d + 2).coerceAtMost(v.size)))
             var k = -d
             while (k <= d) {
                 val idx = k + offset
@@ -85,7 +122,7 @@ object LineDiff {
                         v[idx - 1] + 1
                     }
                 var y = x - k
-                while (x < n && y < m && a[x] == b[y]) {
+                while (x < n && y < m && a[aFrom + x] == b[bFrom + y]) {
                     x++
                     y++
                 }
@@ -99,41 +136,49 @@ object LineDiff {
             if (found) break
         }
 
+        if (!found) {
+            // Too costly to minimise: the whole middle is replaced.
+            for (i in 0 until n) out.add(Op(GitDiffLineType.DELETE, aFrom + i, -1))
+            for (j in 0 until m) out.add(Op(GitDiffLineType.ADD, -1, bFrom + j))
+            return
+        }
+
         // Backtrack to recover the edit script.
         val reversed = ArrayList<Op>()
         var x = n
         var y = m
         for (d in trace.indices.reversed()) {
             val vv = trace[d]
+            val base = (offset - d - 1).coerceAtLeast(0) - offset
+
+            fun at(k: Int) = vv[k - base]
             val k = x - y
-            val idx = k + offset
             val prevK =
-                if (k == -d || (k != d && vv[idx - 1] < vv[idx + 1])) {
+                if (k == -d || (k != d && at(k - 1) < at(k + 1))) {
                     k + 1
                 } else {
                     k - 1
                 }
-            val prevIdx = prevK + offset
-            val prevX = vv[prevIdx]
+            val prevX = at(prevK)
             val prevY = prevX - prevK
 
             while (x > prevX && y > prevY) {
-                reversed.add(Op(GitDiffLineType.CONTEXT, x - 1, y - 1))
+                reversed.add(Op(GitDiffLineType.CONTEXT, aFrom + x - 1, bFrom + y - 1))
                 x--
                 y--
             }
             if (d > 0) {
                 if (x == prevX) {
-                    reversed.add(Op(GitDiffLineType.ADD, -1, y - 1))
+                    reversed.add(Op(GitDiffLineType.ADD, -1, bFrom + y - 1))
                 } else {
-                    reversed.add(Op(GitDiffLineType.DELETE, x - 1, -1))
+                    reversed.add(Op(GitDiffLineType.DELETE, aFrom + x - 1, -1))
                 }
             }
             x = prevX
             y = prevY
         }
         reversed.reverse()
-        return reversed
+        out.addAll(reversed)
     }
 
     private fun groupHunks(

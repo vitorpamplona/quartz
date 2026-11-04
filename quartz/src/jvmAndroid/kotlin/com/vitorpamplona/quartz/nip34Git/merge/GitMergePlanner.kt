@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip34Git.patch.LineMerge
 import com.vitorpamplona.quartz.nip34Git.patch.UnifiedDiffParser
 import com.vitorpamplona.quartz.nip34Git.patch.tags.Committer
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
 
 /** How a merge lands on the target branch. */
@@ -41,10 +43,30 @@ enum class GitMergeStrategy {
     APPLY_TO_TIP,
 }
 
+/**
+ * The objects of a pull request's branch beyond its merge base [base] with the target. A server
+ * that already has [tip] (a GRASP server keeps each PR under `refs/nostr/<id>`) needs none of them;
+ * for one that doesn't, [objects] fetches them once, on first use.
+ */
+class GitBranchObjects(
+    val tip: String,
+    private val base: String,
+    private val source: GitObjectSource,
+) {
+    private val lock = Mutex()
+    private var loaded: Collection<GitObject>? = null
+
+    suspend fun objects(): Collection<GitObject> =
+        lock.withLock {
+            loaded ?: source.fetch(listOf(tip), haves = listOf(base)).values.also { loaded = it }
+        }
+}
+
 /** What merging an item would do, before anything is signed or pushed. */
 sealed interface GitMergePlan {
     /**
-     * Ready to push: the branch moves to [newTip], and [objects] are what a server may lack.
+     * Ready to push: the branch moves to [newTip]; [objects] are the ones the merge made, and
+     * [branch] the pull request's, for a server that doesn't have them.
      * [mergeCommit] is the commit the status names; [appliedCommits] the commits a patch series
      * became.
      */
@@ -54,6 +76,8 @@ sealed interface GitMergePlan {
         val objects: List<GitObject>,
         val mergeCommit: String,
         val appliedCommits: List<String>,
+        /** A pull request's own commits, which a server that lacks its tip also needs. */
+        val branch: GitBranchObjects? = null,
     ) : GitMergePlan
 
     /** The item's commits are already in the target branch. */
@@ -89,15 +113,21 @@ class GitMergePlanner(
         message: String,
     ): GitMergePlan =
         guard {
+            // Commits only, to find the merge base before anything heavier is asked for: a fork's
+            // server may not know the target's head, and asked to send what that lacks would send
+            // its whole history. The merge base it always has.
             prSource.loadHistory(listOf(prTip))
-            // The PR's own objects, beyond what the target branch has: the merge needs them, and
-            // the target's servers may not have them.
-            val branchObjects = prSource.fetch(listOf(prTip), haves = listOf(targetHead)).values
-            branchObjects.forEach(source::add)
-            source.loadHistory(listOf(targetHead, prTip))
+            source.adopt(prSource)
+            source.loadHistory(listOf(targetHead), haves = listOf(prTip))
 
             val base = source.mergeBase(targetHead, prTip) ?: return@guard GitMergePlan.Failed("the pull request shares no history with the branch")
             if (base == prTip) return@guard GitMergePlan.AlreadyMerged
+
+            // The PR's trees, for the tree merge; blobs only for the files both sides changed.
+            if (base != targetHead) {
+                prSource.fetch(listOf(prTip), haves = listOf(base), filter = "blob:none")
+                source.adopt(prSource)
+            }
 
             val builder = GitTreeBuilder(source)
             val ours = source.commit(targetHead).treeOid
@@ -109,9 +139,10 @@ class GitMergePlanner(
             GitMergePlan.Ready(
                 strategy = GitMergeStrategy.MERGE_COMMIT,
                 newTip = merge.oid,
-                objects = (branchObjects + builder.created.values).distinctBy { it.oid },
+                objects = builder.created.values.toList(),
                 mergeCommit = merge.oid,
                 appliedCommits = emptyList(),
+                branch = GitBranchObjects(prTip, base, prSource),
             )
         }
 
@@ -156,7 +187,7 @@ class GitMergePlanner(
             val claimed = patch.commit() ?: return null
             val author = patch.author()?.let(::personOf) ?: return null
             val committer = patch.committer().firstOrNull()?.let(::personOf) ?: author
-            tree = applyPatch(builder, tree, patch) ?: return null
+            tree = applyPatch(builder, tree, patch).tree ?: return null
             val commit = GitObjectWriter.commit(tree, listOf(parent), author, committer, commitMessage(patch))
             if (commit.oid != claimed) return null
             builder.keep(commit)
@@ -174,8 +205,9 @@ class GitMergePlanner(
         var parent = targetHead
         var tree = source.commit(targetHead).treeOid
         val applied = ArrayList<String>()
-        patches.forEachIndexed { index, patch ->
-            tree = applyPatch(builder, tree, patch) ?: return GitMergePlan.Conflicts(listOf("patch ${index + 1}"))
+        patches.forEach { patch ->
+            val result = applyPatch(builder, tree, patch)
+            tree = result.tree ?: return GitMergePlan.Conflicts(listOfNotNull(result.failedPath))
             val author = patch.author()?.let(::personOf) ?: committer
             val commit = builder.keep(GitObjectWriter.commit(tree, listOf(parent), author, committer, commitMessage(patch)))
             applied.add(commit.oid)
@@ -184,36 +216,74 @@ class GitMergePlanner(
         return GitMergePlan.Ready(GitMergeStrategy.APPLY_TO_TIP, parent, builder.created.values.toList(), parent, applied)
     }
 
-    /** [patch]'s diff applied to [treeOid]: the new tree, or null when a hunk finds no place. */
+    /** A patch applied to a tree: the new tree, or the path that would not apply. */
+    private class Applied(
+        val tree: String?,
+        val failedPath: String?,
+    )
+
+    /**
+     * [patch]'s diff applied to [treeOid], as `git apply` would: a file it adds must not exist, a
+     * file it changes or deletes must, modes it states are kept, and a text that is not UTF-8
+     * (the patch's own encoding) does not apply.
+     */
     private suspend fun applyPatch(
         builder: GitTreeBuilder,
         treeOid: String,
         patch: GitPatchEvent,
-    ): String? {
-        val parsed = UnifiedDiffParser.parse(patch.content)
+    ): Applied {
+        val files = UnifiedDiffParser.parse(patch.content).files
+        // The current entry of every file the patch reads, and all their blobs in one request.
+        val current = files.map { file -> (file.oldPath ?: file.newPath)?.split('/')?.let { builder.entryAt(treeOid, it) } }
+        source.prefetch(files.indices.filter { files[it].change == GitFileChange.MODIFY || files[it].change == GitFileChange.RENAME }.mapNotNull { current[it]?.oid })
+
         val changes = LinkedHashMap<List<String>, GitTreeEntry?>()
-        for (file in parsed.files) {
-            if (file.isBinary) return null
+        files.forEachIndexed { index, file ->
+            val failed = Applied(null, file.displayPath)
+            if (file.isBinary) return failed
             val oldPath = file.oldPath?.split('/')
             val newPath = file.newPath?.split('/')
+            val entry = current[index]
             when (file.change) {
-                GitFileChange.DELETE -> changes[oldPath ?: return null] = null
+                GitFileChange.DELETE -> {
+                    if (oldPath == null || entry == null) return failed
+                    changes[oldPath] = null
+                }
                 GitFileChange.ADD -> {
-                    val text = LineMerge.apply("", file) ?: return null
-                    changes[newPath ?: return null] = GitTreeEntry("100644", newPath.last(), builder.keep(GitObjectWriter.blob(text.encodeToByteArray())).oid)
+                    if (newPath == null || builder.entryAt(treeOid, newPath) != null) return failed
+                    val text = LineMerge.apply("", file) ?: return failed
+                    val blob = builder.keep(GitObjectWriter.blob(text.encodeToByteArray()))
+                    changes[newPath] = GitTreeEntry(file.newMode ?: "100644", newPath.last(), blob.oid)
                 }
                 GitFileChange.MODIFY, GitFileChange.RENAME -> {
-                    val from = oldPath ?: newPath ?: return null
+                    val from = oldPath ?: newPath ?: return failed
                     val to = newPath ?: from
-                    val entry = builder.entryAt(treeOid, from) ?: return null
-                    val text = LineMerge.apply(source.blob(entry.oid).decodeToString(), file) ?: return null
+                    if (entry == null || entry.isDirectory) return failed
+                    if (to != from && builder.entryAt(treeOid, to) != null) return failed
+                    val bytes = source.blob(entry.oid)
+                    val oid =
+                        if (file.hunks.isEmpty()) {
+                            // A rename or mode change only: the content stays byte for byte.
+                            entry.oid
+                        } else {
+                            val text = utf8(bytes) ?: return failed
+                            val applied = LineMerge.apply(text, file) ?: return failed
+                            builder.keep(GitObjectWriter.blob(applied.encodeToByteArray())).oid
+                        }
                     if (to != from) changes[from] = null
-                    changes[to] = GitTreeEntry(entry.mode, to.last(), builder.keep(GitObjectWriter.blob(text.encodeToByteArray())).oid)
+                    changes[to] = GitTreeEntry(file.newMode ?: entry.mode, to.last(), oid)
                 }
             }
         }
-        return builder.rewrite(treeOid, changes)
+        return Applied(builder.rewrite(treeOid, changes), null)
     }
+
+    private fun utf8(bytes: ByteArray): String? =
+        try {
+            bytes.decodeToString(throwOnInvalidSequence = true)
+        } catch (e: CharacterCodingException) {
+            null
+        }
 
     private inline fun guard(block: () -> GitMergePlan): GitMergePlan =
         try {

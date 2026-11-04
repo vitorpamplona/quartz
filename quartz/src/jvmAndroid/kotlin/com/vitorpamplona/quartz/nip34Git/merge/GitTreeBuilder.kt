@@ -148,13 +148,16 @@ class GitTreeBuilder(
         ours: String,
         theirs: String,
     ): String? {
+        source.prefetch(listOf(base, ours, theirs))
         val b = source.blob(base)
         val o = source.blob(ours)
         val t = source.blob(theirs)
         // Binary content has no lines to merge.
         if (listOf(b, o, t).any { it.contains(0) }) return null
-        return when (val result = LineMerge.merge3(b.decodeToString(), o.decodeToString(), t.decodeToString())) {
-            is LineMerge.Result.Merged -> keep(GitObjectWriter.blob(result.text.encodeToByteArray())).oid
+        // ISO-8859-1 maps each byte to one char and back, so a file in any encoding merges byte
+        // for byte; UTF-8 decoding would turn every invalid byte into U+FFFD.
+        return when (val result = LineMerge.merge3(b.toString(Charsets.ISO_8859_1), o.toString(Charsets.ISO_8859_1), t.toString(Charsets.ISO_8859_1))) {
+            is LineMerge.Result.Merged -> keep(GitObjectWriter.blob(result.text.toByteArray(Charsets.ISO_8859_1))).oid
             LineMerge.Result.Conflict -> null
         }
     }

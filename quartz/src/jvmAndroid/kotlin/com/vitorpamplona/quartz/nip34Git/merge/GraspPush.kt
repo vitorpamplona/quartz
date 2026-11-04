@@ -101,6 +101,7 @@ class GraspPusher(
         branch: String,
         newTip: String,
         objects: Collection<GitObject>,
+        branchObjects: GitBranchObjects? = null,
     ): GraspPushResult {
         require(targets.isNotEmpty()) { "no GRASP server to push to" }
         val acks = client.publishAndCollectResults(state, targets.mapTo(LinkedHashSet()) { it.relay })
@@ -114,7 +115,7 @@ class GraspPusher(
                             if (ack?.accepted != true) {
                                 GraspServerOutcome(target, false, false, "its relay refused the state: ${ack?.message ?: "no answer"}")
                             } else {
-                                pushOne(target, ref, newTip, objects)
+                                pushOne(target, ref, newTip, objects, branchObjects)
                             }
                         }
                     }.awaitAll(),
@@ -127,6 +128,7 @@ class GraspPusher(
         ref: String,
         newTip: String,
         objects: Collection<GitObject>,
+        branchObjects: GitBranchObjects?,
     ): GraspServerOutcome {
         var error: String? = null
         repeat(attempts) { attempt ->
@@ -137,7 +139,9 @@ class GraspPusher(
                 val advertisement = git.advertisement(target.cloneUrl)
                 val current = advertisement.refs[ref]
                 if (current == newTip) return GraspServerOutcome(target, true, true, null)
-                val report = git.push(target.cloneUrl, listOf(GitRefUpdate(ref, current ?: GIT_ZERO_OID, newTip)), objects, advertisement)
+                // A server that holds the PR's tip (under refs/nostr/<id>) has all its commits.
+                val toSend = if (branchObjects == null || branchObjects.tip in advertisement.refs.values) objects else objects + branchObjects.objects()
+                val report = git.push(target.cloneUrl, listOf(GitRefUpdate(ref, current ?: GIT_ZERO_OID, newTip)), toSend, advertisement)
                 if (report.isSuccess) {
                     // Trust the refs, not the report: a server can say ok and keep the old tip.
                     val after = git.advertisement(target.cloneUrl).refs[ref]
