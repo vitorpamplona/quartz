@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -98,15 +100,31 @@ suspend fun INostrClient.fetch(
     filters: List<Filter>,
     authSettleMs: Long = 120_000,
     onEvent: suspend (Event) -> Unit,
-): Int {
-    var delivered = 0
-    streamReq(mapOf(relay to filters), resume = null, authSettleMs = authSettleMs, untilEose = true) { event ->
-        onEvent(event)
-        delivered++
-        true
+): Int =
+    coroutineScope {
+        var delivered = 0
+        val done = CompletableDeferred<Unit>()
+        val req =
+            startReq(
+                scope = this,
+                filters = mapOf(relay to filters),
+                resume = null,
+                authSettleMs = authSettleMs,
+                untilEose = true,
+                onEvent = { event ->
+                    onEvent(event)
+                    delivered++
+                    true
+                },
+                onEnd = { cause -> if (cause == null) done.complete(Unit) else done.completeExceptionally(cause) },
+            )
+        try {
+            done.await()
+        } finally {
+            req.dispose()
+        }
+        delivered
     }
-    return delivered
-}
 
 /** [fetch] for one [filter]. */
 suspend fun INostrClient.fetch(
