@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip22Comments.CommentEvent
 import com.vitorpamplona.quartz.nip34Git.issue.GitIssueEvent
 import com.vitorpamplona.quartz.nip34Git.issue.repository
+import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestEvent
 import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestUpdateEvent
 import com.vitorpamplona.quartz.nip34Git.reply.GitReplyEvent
@@ -36,7 +37,9 @@ import com.vitorpamplona.quartz.nip34Git.status.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.status.repository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** What gitworkshop reads from the events Amethyst writes, and how it finds them. */
 class GitInteropTagsTest {
@@ -108,5 +111,14 @@ class GitInteropTagsTest {
         assertEquals(issueId, update.gitThreadRootId())
         assertEquals(issueId, status.gitThreadRootId())
         assertNull(comment.gitThreadRootId())
+    }
+
+    @Test
+    fun bothRevisionSpellingsMarkARevision() {
+        fun patch(vararg t: String) = GitPatchEvent("8".repeat(64), alice, 1, t.map { arrayOf("t", it) }.toTypedArray(), "", sig)
+
+        assertFalse(patch("root").isRootRevision())
+        assertTrue(patch("root", "root-revision").isRootRevision())
+        assertTrue(patch("root", "revision-root").isRootRevision())
     }
 }

@@ -124,8 +124,11 @@ class GitPatchEvent(
     /** `true` if this event is tagged `["t", "root"]` (root of a patch series). */
     fun isRoot(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT) }
 
-    /** `true` if this event is tagged `["t", "root-revision"]` (root of a revision series). */
-    fun isRootRevision(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT_REVISION) }
+    /**
+     * `true` if this event is tagged `["t", "root-revision"]` (root of a revision series), or with
+     * the `revision-root` spelling some ngit versions wrote, which gitworkshop also accepts.
+     */
+    fun isRootRevision(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT_REVISION) || HashtagTag.isTagged(it, REVISION_ROOT) }
 
     /**
      * Human-readable patch title. NIP-34 patches carry the raw `git format-patch`
@@ -184,6 +187,9 @@ class GitPatchEvent(
         const val KIND = 1617
         const val ROOT = "root"
         const val ROOT_REVISION = "root-revision"
+
+        /** The `revision-root` spelling of [ROOT_REVISION] older ngit versions wrote. Read, never written. */
+        const val REVISION_ROOT = "revision-root"
 
         private const val SUBJECT_HEADER = "Subject:"
         private val PATCH_PREFIX = Regex("^\\[PATCH[^]]*]\\s*")
