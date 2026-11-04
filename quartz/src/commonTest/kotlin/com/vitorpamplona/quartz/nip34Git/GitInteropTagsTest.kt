@@ -121,4 +121,18 @@ class GitInteropTagsTest {
         assertTrue(patch("root", "root-revision").isRootRevision())
         assertTrue(patch("root", "revision-root").isRootRevision())
     }
+
+    @Test
+    fun anUnmarkedTargetIsReadPositionally() {
+        // Older ngit statuses carry a bare `["e", <id>]`; gitworkshop reads it as NIP-10's root.
+        val bare = GitStatusOpenEvent("9".repeat(64), bob, 2, arrayOf(arrayOf("e", issueId), arrayOf("p", alice)), "", sig)
+        assertEquals(issueId, bare.rootEventId())
+        assertEquals(issueId, bare.gitThreadRootId())
+
+        val marked = GitStatusOpenEvent("9".repeat(64), bob, 2, arrayOf(arrayOf("e", "f".repeat(64), "", "mention"), arrayOf("e", issueId, "", "root")), "", sig)
+        assertEquals(issueId, marked.rootEventId())
+
+        val legacyReply = GitReplyEvent("4".repeat(64), bob, 2, arrayOf(arrayOf("e", issueId)), "", sig)
+        assertEquals(issueId, legacyReply.rootIssueOrPatch())
+    }
 }

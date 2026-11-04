@@ -82,8 +82,14 @@ abstract class GitStatusEvent(
      */
     fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
-    /** The target event ID (patch / PR / issue) this status refers to. */
-    fun rootEventId(): HexKey? = tags.firstNotNullOfOrNull(MarkedETag::parseRootId)
+    /**
+     * The target event ID (patch / PR / issue) this status refers to: the `e` marked `root`, else,
+     * by NIP-10's positional rule, the first unmarked `e`. Older ngit versions wrote statuses with
+     * a bare `["e", <id>]`; gitworkshop reads those positionally, so they count here too.
+     */
+    fun rootEventId(): HexKey? =
+        tags.firstNotNullOfOrNull(MarkedETag::parseRootId)
+            ?: tags.firstNotNullOfOrNull(MarkedETag::parseUnmarkedRoot)?.eventId
 
     /** The accepted revision root ID when the status applies to a revision. */
     fun replyEventId(): HexKey? = tags.firstNotNullOfOrNull(MarkedETag::parseReply)?.eventId
