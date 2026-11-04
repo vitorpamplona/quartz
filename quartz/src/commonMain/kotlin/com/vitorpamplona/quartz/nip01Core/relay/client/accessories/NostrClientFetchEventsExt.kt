@@ -57,7 +57,7 @@ fun INostrClient.fetchEvents(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
     authSettleMs: Long = 120_000,
-): Flow<Event> = relayEvents(mapOf(relay to filters), resume = null, authSettleMs = authSettleMs, endAtEose = true)
+): Flow<Event> = streamReqAsFlow(mapOf(relay to filters), resume = null, authSettleMs = authSettleMs, untilEose = true)
 
 /** [fetchEvents] for one [filter]. */
 fun INostrClient.fetchEvents(
@@ -81,11 +81,17 @@ fun INostrClient.fetchEvents(
 ): Flow<Event> = fetchEvents(RelayUrlNormalizer.normalize(relay), listOf(filter), authSettleMs)
 
 /**
- * Sends one REQ with [filters] to [relay], hands each event to [onEvent] as it arrives, one at a
- * time (the next waits for [onEvent] to return), and returns at the relay's EOSE with how many it
- * handed over. The callback form of [fetchEvents], which says what it does and does not do (no
- * verify, no dedup) and how it ends (it throws [SubscriptionClosedException] or
- * [RelayUnreachableException] when the relay refuses or can't be reached).
+ * Sends one REQ with [filters] to [relay], hands each event to [onEvent] as it arrives, and returns
+ * at the relay's EOSE with how many it handed over. What it does and does not do (no verify, no
+ * dedup) and how it ends are as in [fetchEvents]: it throws [SubscriptionClosedException] or
+ * [RelayUnreachableException] when the relay refuses or can't be reached, and rethrows what
+ * [onEvent] throws.
+ *
+ * Unlike [fetchEvents], there is no flow in between: [onEvent] is called directly on the relay's
+ * delivery coroutine, as a [com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener]
+ * is, one event at a time. That coroutine serves every subscription on the connection, so keep
+ * [onEvent] short, and switch context yourself if it must run elsewhere (on a UI thread, say).
+ * Cancelling the caller stops the fetch once the current [onEvent] returns.
  */
 suspend fun INostrClient.fetch(
     relay: NormalizedRelayUrl,
@@ -94,9 +100,10 @@ suspend fun INostrClient.fetch(
     onEvent: suspend (Event) -> Unit,
 ): Int {
     var delivered = 0
-    fetchEvents(relay, filters, authSettleMs).collect {
-        onEvent(it)
+    streamReq(mapOf(relay to filters), resume = null, authSettleMs = authSettleMs, untilEose = true) { event ->
+        onEvent(event)
         delivered++
+        true
     }
     return delivered
 }

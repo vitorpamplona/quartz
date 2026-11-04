@@ -147,6 +147,24 @@ class NostrClientFetchEventsTest {
         }
 
     @Test
+    fun anExceptionInFetchsCallbackEndsTheFetchAndClosesTheReq() =
+        runBlocking<Unit> {
+            hub.getOrCreate(relay).preload((1..10L).map { note(1_000 + it) })
+            val seen = AtomicInteger(0)
+
+            val outcome =
+                withTimeout(5_000) {
+                    runCatching { client.fetch(relay, kind1) { if (seen.incrementAndGet() == 3) error("consumer failed") } }.exceptionOrNull()
+                }
+
+            assertIs<IllegalStateException>(outcome)
+            assertEquals("consumer failed", outcome.message)
+            assertEquals(3, seen.get(), "nothing is handed over after the callback throws")
+            val subId = reqs.single().subId
+            withTimeout(5_000) { while (client.getReqFiltersOrNull(subId) != null) delay(20) }
+        }
+
+    @Test
     fun aClosedReqEndsWithTheReason() =
         runBlocking<Unit> {
             refuseWith = "restricted: members only"
