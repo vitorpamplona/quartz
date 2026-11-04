@@ -21,10 +21,13 @@
 package com.vitorpamplona.quartz.nip34Git.repository
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -42,6 +45,7 @@ import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRole
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleRecord
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.WebTag
+import com.vitorpamplona.quartz.nip34Git.state.GitRepositoryStateEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Hex
@@ -59,7 +63,8 @@ class GitRepositoryEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
-    PubKeyHintProvider {
+    PubKeyHintProvider,
+    AddressHintProvider {
     // The `t` hashtags are appended after the body, as CommentEvent does.
     override fun indexableContent() = (listOfNotNull(name(), description(), content) + hashtags()).joinToString("\n")
 
@@ -78,6 +83,33 @@ class GitRepositoryEvent(
 
     // The `maintainers` tag lists bare pubkeys, without relay hints.
     override fun pubKeyHints(): List<PubKeyHint> = emptyList()
+
+    /**
+     * NIP-34 keeps a repository's events on the relays its announcement names, not on each
+     * maintainer's outbox: the co-maintainers' announcements and the signed state (30618) are found
+     * there, so every coordinate this announcement names gets those relays as hints.
+     */
+    override fun addressHints(): List<AddressHint> {
+        val relays = relaysNorm()
+        if (relays.isEmpty()) return emptyList()
+        val addressIds = linkedAddressIds()
+        return relays.flatMap { relay -> addressIds.map { AddressHint(it, relay) } }
+    }
+
+    /**
+     * The coordinates of the repository this announcement names, as kind 30617 (announcements) and
+     * 30618 (state), for its author and everyone in `maintainers` or a role record, ended ones
+     * included: judging an older event needs the announcement of whoever held a role then.
+     */
+    override fun linkedAddressIds(): List<String> {
+        val identifier = dTag()
+        return namedPubKeys().flatMap { pubKey ->
+            listOf(Address.assemble(KIND, pubKey, identifier), Address.assemble(GitRepositoryStateEvent.KIND, pubKey, identifier))
+        }
+    }
+
+    /** The author and everyone this announcement names in `maintainers` or a role record. */
+    fun namedPubKeys(): List<HexKey> = (listOf(pubKey) + maintainers() + roleRecords().map { it.subject }).filter { Hex.isHex64(it) }.distinct()
 
     // Hex.isHex64 only reads the first 64 chars, so the length is checked too.
     override fun linkedPubKeys(): List<HexKey> = maintainers().filter { it.length == 64 && Hex.isHex64(it) }

@@ -59,6 +59,32 @@ class GitRepositoryHintProviderTest {
     }
 
     @Test
+    fun repositoryRelaysAreHintsForEveryNamedCoordinate() {
+        val withRelays =
+            GitRepositoryEvent(
+                id,
+                pk,
+                1L,
+                arrayOf(
+                    arrayOf("d", "quartz"),
+                    arrayOf("relays", "wss://git.example", "wss://relay.example"),
+                    arrayOf("maintainers", other),
+                    arrayOf("m", third, "10", "20"),
+                ),
+                "",
+                sig,
+            )
+
+        val named = listOf(pk, other, third).flatMap { listOf("30617:$it:quartz", "30618:$it:quartz") }
+        assertEquals(named, withRelays.linkedAddressIds())
+        assertEquals(named.size * 2, withRelays.addressHints().size)
+        assertEquals(setOf("wss://git.example/", "wss://relay.example/"), withRelays.addressHints().map { it.relay.url }.toSet())
+
+        // Without `relays` there is nothing to hint.
+        assertTrue(repo.addressHints().isEmpty())
+    }
+
+    @Test
     fun hashtagsAreSearchable() {
         assertEquals("quartz\nNostr library\nreadme\nkotlin", repo.indexableContent())
         assertEquals(repo.indexableContent(), repo.rejoined())
