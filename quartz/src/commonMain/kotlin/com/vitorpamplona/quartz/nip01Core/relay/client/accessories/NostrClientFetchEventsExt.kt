@@ -111,11 +111,12 @@ suspend fun INostrClient.fetch(
                 resume = null,
                 authSettleMs = authSettleMs,
                 untilEose = true,
-                onEvent = { event ->
-                    onEvent(event)
-                    delivered++
-                    true
-                },
+                onEvent =
+                    ReqEvents.Suspending { event ->
+                        onEvent(event)
+                        delivered++
+                        true
+                    },
                 onEnd = { cause -> if (cause == null) done.complete(Unit) else done.completeExceptionally(cause) },
             )
         try {
@@ -149,6 +150,71 @@ suspend fun INostrClient.fetch(
     authSettleMs: Long = 120_000,
     onEvent: suspend (Event) -> Unit,
 ): Int = fetch(RelayUrlNormalizer.normalize(relay), listOf(filter), authSettleMs, onEvent)
+
+/**
+ * [fetch] for a callback that never suspends: it runs on the relay's delivery coroutine like
+ * [fetch]'s, but as a plain function, so nothing is allocated per event on the way to it. Use it
+ * when handling an event is quick and doesn't wait on anything (verify, update a counter or an
+ * in-memory cache); [fetch]'s suspending callback is the one that can hold the read up instead.
+ * Everything else is as in [fetch]: one REQ, events as the relay sent them (not verified,
+ * deduped or sorted), returns at EOSE with how many it handed over, and throws
+ * [SubscriptionClosedException], [RelayUnreachableException], or what [onEvent] throws.
+ */
+suspend fun INostrClient.fetchInline(
+    relay: NormalizedRelayUrl,
+    filters: List<Filter>,
+    authSettleMs: Long = 120_000,
+    onEvent: (Event) -> Unit,
+): Int =
+    coroutineScope {
+        var delivered = 0
+        val done = CompletableDeferred<Unit>()
+        val req =
+            startReq(
+                scope = this,
+                filters = mapOf(relay to filters),
+                resume = null,
+                authSettleMs = authSettleMs,
+                untilEose = true,
+                onEvent =
+                    ReqEvents.Inline { event ->
+                        onEvent(event)
+                        delivered++
+                        true
+                    },
+                onEnd = { cause -> if (cause == null) done.complete(Unit) else done.completeExceptionally(cause) },
+            )
+        try {
+            done.await()
+        } finally {
+            req.dispose()
+        }
+        delivered
+    }
+
+/** [fetchInline] for one [filter]. */
+suspend fun INostrClient.fetchInline(
+    relay: NormalizedRelayUrl,
+    filter: Filter,
+    authSettleMs: Long = 120_000,
+    onEvent: (Event) -> Unit,
+): Int = fetchInline(relay, listOf(filter), authSettleMs, onEvent)
+
+/** [fetchInline] for a relay url that is normalized first. */
+suspend fun INostrClient.fetchInline(
+    relay: String,
+    filters: List<Filter>,
+    authSettleMs: Long = 120_000,
+    onEvent: (Event) -> Unit,
+): Int = fetchInline(RelayUrlNormalizer.normalize(relay), filters, authSettleMs, onEvent)
+
+/** [fetchInline] for a relay url that is normalized first, and one [filter]. */
+suspend fun INostrClient.fetchInline(
+    relay: String,
+    filter: Filter,
+    authSettleMs: Long = 120_000,
+    onEvent: (Event) -> Unit,
+): Int = fetchInline(RelayUrlNormalizer.normalize(relay), listOf(filter), authSettleMs, onEvent)
 
 /** [fetchEvents] or [fetch] could not reach [relay]: [reason] is the client's connection error. */
 class RelayUnreachableException(
