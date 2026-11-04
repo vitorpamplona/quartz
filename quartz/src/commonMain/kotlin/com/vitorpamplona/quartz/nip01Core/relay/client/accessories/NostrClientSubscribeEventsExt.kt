@@ -50,6 +50,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.decrementAndFetch
 
 /**
  * The live tail of [relay] for [filters], as a [Flow] of its events. See the multi-relay form.
