@@ -103,14 +103,27 @@ fun INostrClient.subscribeEvents(
  * gets one EOSE, so "caught up" holds for all of them at once. A null [resume] always sends the
  * filters as given.
  */
-@OptIn(ExperimentalAtomicApi::class)
 fun INostrClient.subscribeEvents(
     filters: Map<NormalizedRelayUrl, List<Filter>>,
     resume: ResumePolicy? = CaughtUpResume(),
     authSettleMs: Long = 120_000,
+): Flow<Event> = relayEvents(filters, resume, authSettleMs, endAtEose = false)
+
+/**
+ * The flow behind [subscribeEvents] and [fetchEvents]: the same hand-over, backpressure and
+ * CLOSED/AUTH handling, either for as long as it is collected or, with [endAtEose], until every
+ * relay in [filters] has sent its EOSE. A fetch also ends with [RelayUnreachableException] when a
+ * relay can't be reached; a live tail keeps waiting for the client to reconnect.
+ */
+@OptIn(ExperimentalAtomicApi::class)
+internal fun INostrClient.relayEvents(
+    filters: Map<NormalizedRelayUrl, List<Filter>>,
+    resume: ResumePolicy?,
+    authSettleMs: Long,
+    endAtEose: Boolean,
 ): Flow<Event> =
     callbackFlow {
-        val subId = "live-" + RandomInstance.randomChars(10)
+        val subId = (if (endAtEose) "fetch-" else "live-") + RandomInstance.randomChars(10)
         // Per relay, AUTHs accepted on its current connection as of the last time it served us or
         // the REQ was written: an `auth-required:` refusal waits for one newer than this, which is
         // when the client re-sends the REQ. The count starts again on every connection.
@@ -121,6 +134,10 @@ fun INostrClient.subscribeEvents(
         // followed by one (a relay going away) since it last reached EOSE.
         val drops = filters.keys.associateWith { MutableStateFlow(0) }
         val goingAwayInARow = filters.keys.associateWith { AtomicInt(0) }
+        // A fetch: which relays sent their EOSE (counted once each, a re-sent REQ sends another),
+        // and how many have yet to.
+        val reachedEose = filters.keys.associateWith { AtomicInt(0) }
+        val stillServing = AtomicInt(filters.size)
         val connections =
             object : RelayConnectionListener {
                 override fun onDisconnected(relay: IRelayClient) {
@@ -192,6 +209,19 @@ fun INostrClient.subscribeEvents(
                     mark.store(authSuccessMark(relay))
                     goingAwayInARow[relay]?.store(0)
                     resume?.onEose(relay, forFilters)
+                    // EOSE comes on the delivery coroutine after this relay's stored events were
+                    // handed over, so closing here still lets the collector receive every one.
+                    if (endAtEose && reachedEose[relay]?.compareAndSet(0, 1) == true && stillServing.decrementAndFetch() == 0) {
+                        close()
+                    }
+                }
+
+                override fun onCannotConnect(
+                    relay: NormalizedRelayUrl,
+                    message: String,
+                    forFilters: List<Filter>?,
+                ) {
+                    if (endAtEose && relay in authMarks) close(RelayUnreachableException(relay, message))
                 }
 
                 override fun onClosed(
@@ -257,10 +287,10 @@ private const val GOING_AWAY_GRACE_MS = 3_000L
 private const val MAX_GOING_AWAY_IN_A_ROW = 3
 
 /**
- * A relay ended a [subscribeEvents] subscription with a CLOSED: [reason]. The client would not send
- * the REQ again on this connection.
+ * A relay ended a [subscribeEvents] or [fetchEvents] subscription with a CLOSED: [reason]. The
+ * client would not send the REQ again on this connection.
  */
 class SubscriptionClosedException(
     val relay: NormalizedRelayUrl,
     val reason: String,
-) : Exception("${relay.url} closed the live subscription: $reason")
+) : Exception("${relay.url} closed the subscription: $reason")

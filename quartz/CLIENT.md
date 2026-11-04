@@ -265,6 +265,15 @@ times running (`blocked:`, `restricted:`, `invalid:`, `unsupported:`, a non-time
 `rate-limited:` CLOSED with a stated back-off is retried once it passes. The callback subscriptions
 and `subscribeAsFlow` stay open through a CLOSED and come back with the next re-send.
 
+To read what one relay holds for a filter, once, use `client.fetchEvents(relay, filters)`, a
+`Flow<Event>` that completes at the relay's EOSE, or `client.fetch(relay, filters) { event -> … }`,
+which returns how many it handed over (`…client.accessories`). No subscription id, listener or
+`unsubscribe`. Events come as the relay sent them, in order and with backpressure: not verified,
+deduped or sorted (call `event.verify()` if it matters; an event sent twice arrives twice). A CLOSED
+throws `SubscriptionClosedException` and an unreachable relay `RelayUnreachableException`, so an
+empty, completed fetch means the relay had nothing. It is the same flow as `subscribeEvents`
+below, ended at EOSE.
+
 A service that tails relays for as long as it runs (an indexer, a mirror) should use
 `client.subscribeEvents(relay, filters)`, or `subscribeEvents(mapOf(relay to filters, …))` for
 several (`…client.accessories`), instead. It is a `Flow<Event>` with backpressure. Each filter
