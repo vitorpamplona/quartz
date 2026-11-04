@@ -22,15 +22,16 @@ package com.vitorpamplona.quartz.nip01Core.crypto
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.utils.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * [verify] checks the id and the signature with buffers it reuses across events: it must give
- * the answer `verifyId() && verifySignature()` gives, valid or not, and nothing may carry over
- * from one event to the next.
+ * [verify] and [verifySignature] check with buffers they reuse across events: they must give the
+ * answers the allocating code gave, valid or not, and nothing may carry over from one event to
+ * the next. Large events go through the streamed id hash (16 KB chunks on the JVM).
  */
 class EventVerifierTest {
     private val signer = NostrSignerSync()
@@ -44,10 +45,24 @@ class EventVerifierTest {
         sig: String = this.sig,
     ) = Event(id, pubKey, createdAt, kind, tags, content, sig)
 
-    /** The answer before the reused buffers, exceptions counted as false (as verify() does). */
+    /** verifySignature() before the reused buffers. */
+    private fun Event.referenceSignature(): Boolean {
+        if (id.length != 64 || pubKey.length != 64 || sig.length != 128) return false
+        return Nip01Crypto.verify(Hex.decode(sig), Hex.decode(id), Hex.decode(pubKey))
+    }
+
+    /** The answer, or the exception's class: a throw must stay the same throw. */
+    private inline fun outcome(check: () -> Boolean): Any =
+        try {
+            check()
+        } catch (e: Exception) {
+            e::class
+        }
+
+    /** What verify() answered before the reused buffers, exceptions counted as false (as it does). */
     private fun Event.reference(): Boolean =
         try {
-            verifyId() && verifySignature()
+            verifyId() && referenceSignature()
         } catch (_: Exception) {
             false
         }
@@ -58,6 +73,7 @@ class EventVerifierTest {
     ) {
         assertEquals(expected, event.reference(), "reference")
         assertEquals(expected, event.verify(), "verify()")
+        assertEquals(outcome { event.referenceSignature() }, outcome { event.verifySignature() }, "verifySignature()")
     }
 
     @Test
@@ -108,5 +124,50 @@ class EventVerifierTest {
         assertTrue(b.verify())
         assertFalse(a.copy(content = "a!").verify())
         assertTrue(a.verify())
+    }
+
+    @Test
+    fun verifySignatureChecksTheSignatureOverTheIdAsGiven() {
+        val e = note("hello")
+        assertTrue(e.verifySignature())
+        // The signature is over the id, not the content: a changed content still passes here.
+        assertTrue(e.copy(content = "forged").verifySignature())
+        assertFalse(e.copy(sig = note("other").sig).verifySignature())
+    }
+
+    @Test
+    fun aLargeEventVerifies() {
+        // Past the hash's 16 KB chunks many times over, so the id is hashed streamed on the JVM.
+        val e = note("x".repeat(200_000))
+        assertSameAnswer(e, true)
+        assertSameAnswer(e.copy(content = "x".repeat(199_999) + "y"), false)
+    }
+
+    @Test
+    fun aLargeEventWithMultiByteCharactersAndEscapesVerifies() {
+        // Two- and four-byte UTF-8 and escaped characters, so chunk ends fall inside them.
+        val e = note("\u00e9\uD83D\uDE00\"\\\n\u0001".repeat(20_000))
+        assertSameAnswer(e, true)
+        assertSameAnswer(e.copy(content = e.content.dropLast(1)), false)
+    }
+
+    @Test
+    fun anEventWithManyTagsVerifies() {
+        val other = note("p")
+        val tags = Array(5_000) { arrayOf("p", other.pubKey, "wss://relay$it.example.com/", "mention") }
+        val e = signer.sign<Event>(1_700_000_000L, 3, tags, "")
+        assertSameAnswer(e, true)
+        val dropped = Event(e.id, e.pubKey, e.createdAt, e.kind, tags.copyOf(tags.size - 1).requireNoNulls(), e.content, e.sig)
+        assertSameAnswer(dropped, false)
+    }
+
+    @Test
+    fun aLargeEventDoesNotSpoilTheNextSmallOne() {
+        val big = note("x".repeat(100_000))
+        val small = note("small")
+        assertTrue(big.verify())
+        assertTrue(small.verify())
+        assertFalse(big.copy(content = "x").verify())
+        assertTrue(small.verify())
     }
 }

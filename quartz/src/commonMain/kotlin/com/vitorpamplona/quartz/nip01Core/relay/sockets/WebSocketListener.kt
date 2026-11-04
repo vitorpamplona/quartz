@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.sockets
 
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient
+
 /**
  * Interface to abstract the socket implementation.
  * Make sure onMessage appears in order of the receipt.
@@ -30,11 +32,6 @@ interface WebSocketListener {
         compression: Boolean,
     )
 
-    /**
-     * One message from the relay, in order of receipt. It may throw (a relay client passes on what
-     * its own listeners throw): the socket logs it and keeps delivering, as `BasicOkHttpWebSocket`
-     * does, so one bad message or listener never ends the session's delivery.
-     */
     suspend fun onMessage(text: String)
 
     fun onClosed(
@@ -48,3 +45,11 @@ interface WebSocketListener {
         response: String?,
     )
 }
+
+/**
+ * How Quartz's own sockets deliver a message: they catch and log what this throws and keep
+ * delivering, so a [BasicRelayClient]'s listener can skip its own guard and the continuation
+ * that guard costs per message. Any other socket calls [WebSocketListener.onMessage], which
+ * stays guarded.
+ */
+internal suspend fun WebSocketListener.deliverMessage(text: String) = if (this is BasicRelayClient.MyWebsocketListener) onMessageUnguarded(text) else onMessage(text)

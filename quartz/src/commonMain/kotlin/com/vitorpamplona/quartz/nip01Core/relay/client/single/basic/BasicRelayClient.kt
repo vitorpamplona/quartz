@@ -30,6 +30,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -202,11 +203,27 @@ open class BasicRelayClient(
             }
         }
 
-        // The listener call is the last thing this does, outside any try: a suspend function whose
-        // suspend calls are all tail calls gets no continuation of its own, and this runs once per
-        // relay message. What the listener throws reaches the socket's delivery loop, which logs it
-        // and goes on (see WebSocketListener.onMessage).
+        /**
+         * Guarded: what the listener throws is logged here, so a socket that doesn't catch it
+         * keeps delivering (a custom socket, a Swift one over QuartzKit). Quartz's own sockets
+         * catch it themselves and call [onMessageUnguarded] instead (see [deliverMessage]).
+         */
         override suspend fun onMessage(text: String) {
+            try {
+                onMessageUnguarded(text)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.e("BasicRelayClient", "Listener failed on a message from ${url.url}", e)
+            }
+        }
+
+        /**
+         * [onMessage] without the guard, for sockets that catch and log what it throws. The
+         * listener call is the last thing this does, outside any try: a suspend function whose
+         * suspend calls are all tail calls gets no continuation of its own, and this runs once per
+         * relay message.
+         */
+        internal suspend fun onMessageUnguarded(text: String) {
             if (!isCurrent()) return
             val msg = decodeOrNull(text) ?: return
             // Before the listener: a refusal's back-off must hold what the listener re-sends.

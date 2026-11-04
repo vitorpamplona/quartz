@@ -29,7 +29,8 @@ import com.vitorpamplona.quartz.utils.Hex
  * Checks an event's id and signature with buffers reused across events: the id's SHA-256 is
  * written into [hash] and, once it matches the id, signed over as is (it is the id), and the sig
  * and pubkey are decoded into [sig] and [pubKey]. Each thread keeps one ([threadEventVerifier]):
- * a check never suspends, so it runs start to finish on one thread.
+ * a check never suspends, so it runs start to finish on one thread. [verifySignature] reuses the
+ * same buffers, with the id decoded into [hash].
  */
 internal class EventVerifier {
     private val hash = ByteArray(32)
@@ -59,7 +60,30 @@ internal class EventVerifier {
         }
     }
 
+    /** The caller checked the lengths: [id] and [pubKeyHex] 64 chars, [sigHex] 128. */
+    private fun checkSignature(
+        id: HexKey,
+        pubKeyHex: HexKey,
+        sigHex: HexKey,
+    ): Boolean {
+        inUse = true
+        try {
+            Hex.decodeInto(id, hash)
+            Hex.decodeInto(sigHex, sig)
+            Hex.decodeInto(pubKeyHex, pubKey)
+            return Nip01Crypto.verify(sig, hash, pubKey)
+        } finally {
+            inUse = false
+        }
+    }
+
     companion object {
+        /** This thread's verifier, or a new one when there is none or it is mid-check. */
+        private fun available(): EventVerifier {
+            val local = threadEventVerifier()
+            return if (local == null || local.inUse) EventVerifier() else local
+        }
+
         /**
          * True when [id] is the hash of the other fields and [sigHex] is [pubKeyHex]'s BIP-340
          * signature over it: what `verifyId() && verifySignature()` answers, without allocating.
@@ -74,9 +98,20 @@ internal class EventVerifier {
             sigHex: HexKey,
         ): Boolean {
             if (id.length != 64 || pubKeyHex.length != 64 || sigHex.length != 128) return false
-            val local = threadEventVerifier()
-            val verifier = if (local == null || local.inUse) EventVerifier() else local
-            return verifier.check(id, pubKeyHex, createdAt, kind, tags, content, sigHex)
+            return available().check(id, pubKeyHex, createdAt, kind, tags, content, sigHex)
+        }
+
+        /**
+         * True when [sigHex] is [pubKeyHex]'s BIP-340 signature over [id], without checking that
+         * [id] is the event's hash: what `verifySignature()` answers, without allocating.
+         */
+        fun verifySignature(
+            id: HexKey,
+            pubKeyHex: HexKey,
+            sigHex: HexKey,
+        ): Boolean {
+            if (id.length != 64 || pubKeyHex.length != 64 || sigHex.length != 128) return false
+            return available().checkSignature(id, pubKeyHex, sigHex)
         }
     }
 }
