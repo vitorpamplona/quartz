@@ -125,6 +125,12 @@ interface NegentropyLocalIndex {
  * counts nothing, doesn't leave the rest of it unsplit. An approximate count serves as well: it
  * only decides a split.
  *
+ * A `COUNT` given up while the client is still reconnecting (after a long outage it backs off)
+ * leaves that window to this side's count, and the reconcile, which waits longer, then sends it
+ * whole. A caller that can wait first counts the whole filter with the sync's own patience
+ * (`client.count(relay, filter, idleTimeoutMs)`): once that is answered, the relay is connected
+ * and counting; unanswered, the sync can be put off instead of sent unsplit.
+ *
  * The relay's number is the relay's word. The engine trusts a count to halve with the range and
  * doesn't bound the windows it splits on one, so a relay that answers every `COUNT` with a large
  * number would split the filter toward one-second windows, each a round trip. At most
