@@ -36,6 +36,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
 
+/** The stages of planning a merge, slowest first: each needs a round trip to the servers. */
+enum class GitMergeStage {
+    /** The branch's and the pull request's commit history. */
+    HISTORY,
+
+    /** The pull request's trees. */
+    CHANGES,
+
+    /** The merge itself, and the file contents it opens. */
+    MERGING,
+}
+
 /** How a merge lands on the target branch. */
 enum class GitMergeStrategy {
     /** A two-parent merge commit, as `git merge --no-ff` (gitworkshop's and ngit's PR merge). */
@@ -104,6 +116,8 @@ sealed interface GitMergePlan {
  */
 class GitMergePlanner(
     private val source: GitObjectSource,
+    /** Told as planning moves from one stage to the next, for a progress line. */
+    private val progress: (GitMergeStage) -> Unit = {},
 ) {
     /**
      * A pull request (kind 1618) at [prTip], served by [prSource], merged into [targetHead] with a
@@ -120,6 +134,7 @@ class GitMergePlanner(
             // Commits only, to find the merge base before anything heavier is asked for: a fork's
             // server may not know the target's head, and asked to send what that lacks would send
             // its whole history. The merge base it always has.
+            progress(GitMergeStage.HISTORY)
             prSource.loadHistory(listOf(prTip))
             source.adopt(prSource)
             source.loadHistory(listOf(targetHead), haves = listOf(prTip))
@@ -128,11 +143,13 @@ class GitMergePlanner(
             if (base == prTip) return@guard GitMergePlan.AlreadyMerged
 
             // The PR's trees, for the tree merge; blobs only for the files both sides changed.
+            progress(GitMergeStage.CHANGES)
             if (base != targetHead) {
                 prSource.fetch(listOf(prTip), haves = listOf(base), filter = "blob:none")
                 source.adopt(prSource)
             }
 
+            progress(GitMergeStage.MERGING)
             val builder = GitTreeBuilder(source)
             val ours = source.commit(targetHead).treeOid
             val theirs = source.commit(prTip).treeOid
@@ -164,7 +181,9 @@ class GitMergePlanner(
         message: String,
     ): GitMergePlan =
         guard {
+            progress(GitMergeStage.HISTORY)
             source.loadHistory(listOf(targetHead))
+            progress(GitMergeStage.MERGING)
             val asSent = rebuildAsSent(patches)
             if (asSent != null) {
                 val (tip, builder) = asSent
