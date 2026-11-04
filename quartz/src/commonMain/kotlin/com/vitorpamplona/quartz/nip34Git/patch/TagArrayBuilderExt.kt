@@ -32,9 +32,9 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 
-fun TagArrayBuilder<GitPatchEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
+fun TagArrayBuilder<GitPatchEvent>.repository(rep: ATag) = addUniqueValueIfNew(rep.toATagArray())
 
-fun TagArrayBuilder<GitPatchEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUnique(rep.toATag().toATagArray())
+fun TagArrayBuilder<GitPatchEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUniqueValueIfNew(rep.toATag().toATagArray())
 
 /**
  * Adds the earliest-unique-commit `r` tag used by patches to point at the

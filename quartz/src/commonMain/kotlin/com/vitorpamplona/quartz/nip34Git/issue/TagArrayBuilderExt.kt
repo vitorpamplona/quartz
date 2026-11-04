@@ -29,9 +29,9 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.pTags
 import com.vitorpamplona.quartz.nip14Subject.SubjectTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 
-fun TagArrayBuilder<GitIssueEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
+fun TagArrayBuilder<GitIssueEvent>.repository(rep: ATag) = addUniqueValueIfNew(rep.toATagArray())
 
-fun TagArrayBuilder<GitIssueEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUnique(rep.toATag().toATagArray())
+fun TagArrayBuilder<GitIssueEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUniqueValueIfNew(rep.toATag().toATagArray())
 
 fun TagArrayBuilder<GitIssueEvent>.notify(list: List<PTag>) = pTags(list)
 

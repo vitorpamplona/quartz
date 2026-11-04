@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 
@@ -72,8 +73,8 @@ abstract class GitStatusEvent(
 
     override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
-    // NIP-34: a status names a single repository (`a`).
-    override fun linkedAddressIds() = listOfNotNull(repositoryAddress()?.toValue())
+    // NIP-34: the repository coordinates the status is filed under (`a`), one per maintainer.
+    override fun linkedAddressIds() = repositoryAddresses().map { it.toValue() }
 
     /**
      * The users this status notifies (`p`): the repository owner, the target's author and any
@@ -88,6 +89,9 @@ abstract class GitStatusEvent(
     fun replyEventId(): HexKey? = tags.firstNotNullOfOrNull(MarkedETag::parseReply)?.eventId
 
     fun repositoryAddress() = tags.firstNotNullOfOrNull(ATag::parseAddress)
+
+    /** Every repository coordinate (kind 30617 `a`) the status is filed under. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
 
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 
