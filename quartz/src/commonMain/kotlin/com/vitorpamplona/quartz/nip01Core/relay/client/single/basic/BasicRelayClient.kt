@@ -23,12 +23,14 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.single.basic
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient.Companion.DELAY_TO_RECONNECT_IN_SECS
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -201,19 +203,43 @@ open class BasicRelayClient(
             }
         }
 
+        /**
+         * Guarded: what the listener throws is logged here, so a socket that doesn't catch it
+         * keeps delivering (a custom socket, a Swift one over QuartzKit). Quartz's own sockets
+         * catch it themselves and call [onMessageUnguarded] instead (see [deliverMessage]).
+         */
         override suspend fun onMessage(text: String) {
-            if (!isCurrent()) return
             try {
-                val msg = decoder.decode(text)
-                // Before the listener: a refusal's back-off must hold what the listener re-sends.
-                rateLimits?.onIncoming(msg)
-                listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+                onMessageUnguarded(text)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.e("BasicRelayClient", "Listener failed on a message from ${url.url}", e)
+            }
+        }
+
+        /**
+         * [onMessage] without the guard, for sockets that catch and log what it throws. The
+         * listener call is the last thing this does, outside any try: a suspend function whose
+         * suspend calls are all tail calls gets no continuation of its own, and this runs once per
+         * relay message.
+         */
+        internal suspend fun onMessageUnguarded(text: String) {
+            if (!isCurrent()) return
+            val msg = decodeOrNull(text) ?: return
+            // Before the listener: a refusal's back-off must hold what the listener re-sends.
+            rateLimits?.onIncoming(msg)
+            return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+        }
+
+        private fun decodeOrNull(text: String): Message? =
+            try {
+                decoder.decode(text)
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 // doesn't expose parsing errors to lib users as errors
                 Log.e("BasicRelayClient", "Failure to parse message from ${url.url}: $text", e)
+                null
             }
-        }
 
         override fun onClosed(
             code: Int,

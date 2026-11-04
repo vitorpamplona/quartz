@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.sockets
 
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient
+
 /**
  * Interface to abstract the socket implementation.
  * Make sure onMessage appears in order of the receipt.
@@ -43,3 +45,11 @@ interface WebSocketListener {
         response: String?,
     )
 }
+
+/**
+ * How Quartz's own sockets deliver a message: they catch and log what this throws and keep
+ * delivering, so a [BasicRelayClient]'s listener can skip its own guard and the continuation
+ * that guard costs per message. Any other socket calls [WebSocketListener.onMessage], which
+ * stays guarded.
+ */
+internal suspend fun WebSocketListener.deliverMessage(text: String) = if (this is BasicRelayClient.MyWebsocketListener) onMessageUnguarded(text) else onMessage(text)

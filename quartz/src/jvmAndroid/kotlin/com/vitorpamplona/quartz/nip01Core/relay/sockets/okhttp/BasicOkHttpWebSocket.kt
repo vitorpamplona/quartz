@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.utils.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -162,7 +163,7 @@ class BasicOkHttpWebSocket(
                 // A listener that throws must not end delivery: the session's end is queued behind
                 // this message, and without it the relay client would never learn the session closed.
                 try {
-                    out.onMessage(item as String)
+                    out.deliverMessage(item as String)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {

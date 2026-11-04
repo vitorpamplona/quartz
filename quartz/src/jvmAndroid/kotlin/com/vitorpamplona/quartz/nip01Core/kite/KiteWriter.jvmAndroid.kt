@@ -60,3 +60,14 @@ internal actual fun sha256Of(
     digest.update(data, 0, length)
     return digest.digest()
 }
+
+// digest(out, 0, 32) resets it too, and writes the hash into [out] instead of a new array.
+internal actual fun sha256Into(
+    data: ByteArray,
+    length: Int,
+    out: ByteArray,
+) {
+    val digest = threadLocalSha256.get()!!
+    digest.update(data, 0, length)
+    digest.digest(out, 0, 32)
+}
