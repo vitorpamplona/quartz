@@ -20,10 +20,17 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
+import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 
 /**
  * The caller's own matching set, read one `created_at` window at a time.
@@ -55,6 +62,9 @@ interface NegentropyLocalIndex {
      * bounds what [entriesFor] will have to materialise. Null disables that
      * pre-split for the window; the relay's own refusal is then the only thing
      * that shrinks it, exactly as before this method existed.
+     *
+     * The engine reads it only to decide whether to split, so a decorator may answer more than
+     * [entriesFor] holds: [withRelayCount] answers the larger of this side's and the relay's.
      */
     suspend fun count(window: Filter): Int?
 
@@ -91,6 +101,70 @@ interface NegentropyLocalIndex {
          */
         fun of(entries: List<IdAndTime>): NegentropyLocalIndex = if (entries.isEmpty()) Empty else SortedListIndex(entries.sortedBy { it.createdAt })
     }
+}
+
+/**
+ * This index, with each window's [NegentropyLocalIndex.count] raised to [relay]'s NIP-45 `COUNT`
+ * for the same window when that is larger. [NegentropyLocalIndex.entriesFor] is this index's.
+ *
+ * The engine splits a window before asking the relay for it when the count is over
+ * `targetWindow`, and the count is otherwise this side's alone. A side that is empty or small (a
+ * first sync into a fresh store, a mirror rebuilt from nothing) then sends the relay its whole
+ * matched set as one `NEG-OPEN`, however large, and the relay builds one negentropy state over
+ * all of it. With this, a window that is over the target on either side is split.
+ *
+ * One `COUNT` per window the engine counts, which it does only with a `targetWindow`, sent while
+ * this side counts. A relay that doesn't answer one (no NIP-45, a refusal, [idleTimeoutMs] of
+ * silence) leaves this side's count for that window, and after two in a row it is not asked
+ * again. An approximate count serves as well: it only decides a split.
+ *
+ * The relay's number is the relay's word. The engine trusts a count to halve with the range and
+ * doesn't bound the windows it splits on one, so a relay that answers every `COUNT` with a large
+ * number would split the filter toward one-second windows, each a round trip. At most
+ * [maxRelayCounts] are asked per index; after that this side's count decides alone. The default
+ * splits an honest relay's 500 million events at a target of 50,000.
+ */
+fun NegentropyLocalIndex.withRelayCount(
+    client: INostrClient,
+    relay: NormalizedRelayUrl,
+    idleTimeoutMs: Long = 15_000,
+    maxRelayCounts: Int = 10_000,
+): NegentropyLocalIndex = withRemoteCount(maxRelayCounts) { window -> client.count(relay, window, idleTimeoutMs)?.count }
+
+/** [withRelayCount] over any source of the other side's count: null is "no answer". */
+internal fun NegentropyLocalIndex.withRemoteCount(
+    maxRemoteCounts: Int,
+    remoteCount: suspend (Filter) -> Int?,
+): NegentropyLocalIndex = RemoteCountedIndex(this, maxRemoteCounts, remoteCount)
+
+/** Unanswered counts in a row after which the other side is not asked again. */
+private const val MAX_UNANSWERED_IN_A_ROW = 2
+
+@OptIn(ExperimentalAtomicApi::class)
+private class RemoteCountedIndex(
+    private val local: NegentropyLocalIndex,
+    private val maxRemoteCounts: Int,
+    private val remoteCount: suspend (Filter) -> Int?,
+) : NegentropyLocalIndex {
+    private val asked = AtomicInt(0)
+    private val unansweredInARow = AtomicInt(0)
+
+    override suspend fun count(window: Filter): Int? {
+        if (unansweredInARow.load() >= MAX_UNANSWERED_IN_A_ROW || asked.fetchAndAdd(1) >= maxRemoteCounts) return local.count(window)
+        return coroutineScope {
+            val theirs = async { remoteCount(window) }
+            val mine = local.count(window)
+            val answer = theirs.await()
+            if (answer == null) unansweredInARow.incrementAndFetch() else unansweredInARow.store(0)
+            when {
+                mine == null -> answer
+                answer == null -> mine
+                else -> maxOf(mine, answer)
+            }
+        }
+    }
+
+    override suspend fun entriesFor(window: Filter): List<IdAndTime> = local.entriesFor(window)
 }
 
 private class SortedListIndex(

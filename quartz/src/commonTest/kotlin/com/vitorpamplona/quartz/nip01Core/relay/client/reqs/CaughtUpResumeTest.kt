@@ -57,9 +57,43 @@ class CaughtUpResumeTest {
     }
 
     @Test
-    fun anEoseWithNothingDeliveredHasNothingToResumeFrom() {
+    fun anEoseWithNothingDeliveredResumesFromTheReqsSince() {
         served(relayA, notes)
-        assertNull(resume.resumeFrom(relayA, notes), "nothing was handed over, so the filters go as given")
+        assertEquals(500L, resume.caughtUpAt(relayA), "a restart that saves this misses nothing")
+        assertEquals(500L, resume.resumeFrom(relayA, notes))
+        assertNull(resume.resume(relayA, notes), "no filter moves: they go as given")
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredForFiltersWithoutSinceHasNothingToResumeFrom() {
+        val all = listOf(Filter(kinds = listOf(1)))
+        served(relayA, all)
+        assertNull(resume.caughtUpAt(relayA), "a filter without since asks for all history")
+        assertNull(resume.resumeFrom(relayA, all))
+        served(relayB, notes + Filter(kinds = listOf(7)))
+        assertNull(resume.caughtUpAt(relayB), "one filter without since is enough")
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredTakesTheEarliestSince() {
+        // The earliest is neither first nor last.
+        val three = listOf(Filter(kinds = listOf(1), since = 700), Filter(kinds = listOf(7), since = 500), Filter(kinds = listOf(6), since = 600))
+        served(relayA, three)
+        assertEquals(500L, resume.caughtUpAt(relayA))
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredIsCappedAtTheDeviceClock() {
+        val ahead = listOf(Filter(kinds = listOf(1), since = clock + 3_600))
+        served(relayA, ahead)
+        assertEquals(clock, resume.caughtUpAt(relayA))
+    }
+
+    @Test
+    fun aLaterEmptyEoseNeverMovesThePointBack() {
+        served(relayA, notes, 900)
+        served(relayA, notes)
+        assertEquals(900L, resume.caughtUpAt(relayA))
     }
 
     @Test
@@ -167,6 +201,7 @@ class CaughtUpResumeTest {
         val wraps = listOf(Filter(kinds = listOf(GiftWrapEvent.KIND), since = 900_000))
         clock = 1_000_000
         served(relayA, wraps, 1_000_000)
-        assertEquals(listOf(900_000L), resume.resume(relayA, wraps)?.map { it.since })
+        assertNull(resume.resume(relayA, wraps), "nothing moves, so the filters go as given")
+        assertEquals(listOf(900_000L), (resume.resume(relayA, wraps) ?: wraps).map { it.since }, "the REQ sent")
     }
 }
