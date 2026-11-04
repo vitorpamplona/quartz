@@ -291,6 +291,41 @@ class CommentEvent(
             initializer()
         }
 
+        /**
+         * A comment on [replyingTo] inside the thread of [root]: the scope (`E`/`A`, `K`, `P`)
+         * comes from [root] and the parent (`e`, `k`, `p`) from [replyingTo].
+         *
+         * For an event that is part of another event's thread without being a comment itself,
+         * such as a NIP-34 status, PR update or legacy reply (whose thread is the issue or PR),
+         * the single-argument [replyBuilder] would root the comment at that event, and clients
+         * that read the thread by its root (`#E`) would never see it.
+         */
+        fun replyBuilder(
+            msg: String,
+            root: EventHintBundle<out Event>,
+            replyingTo: EventHintBundle<out Event>,
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<CommentEvent>.() -> Unit = {},
+        ) = eventTemplate(KIND, msg, createdAt) {
+            val rootEvent = root.event
+            if (rootEvent is AddressableEvent) {
+                rootAddress(rootEvent.addressTag(), root.relay)
+            }
+            rootEvent(rootEvent.id, root.relay, rootEvent.pubKey)
+            rootKind(rootEvent.kind)
+            rootAuthor(rootEvent.pubKey, root.authorHomeRelay)
+
+            val parent = replyingTo.event
+            if (parent is AddressableEvent) {
+                replyAddress(parent.addressTag(), replyingTo.relay)
+            }
+            replyEvent(parent.id, replyingTo.relay, parent.pubKey)
+            replyKind(parent.kind)
+            replyAuthor(parent.pubKey, replyingTo.authorHomeRelay)
+
+            initializer()
+        }
+
         fun replyExternalIdentity(
             msg: String,
             extId: ExternalId,

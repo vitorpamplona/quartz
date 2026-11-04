@@ -39,6 +39,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -80,6 +81,9 @@ class GitPullRequestUpdateEvent(
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 
     fun repositoryAddress() = tags.firstNotNullOfOrNull(ATag::parseAddress)
+
+    /** Every repository coordinate this event is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
 
     fun parentPullRequestId(): HexKey? = tags.firstNotNullOfOrNull(RootEventTag::parseKey)
 

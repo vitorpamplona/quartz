@@ -43,6 +43,7 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitterTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -96,6 +97,9 @@ class GitPatchEvent(
 
     fun repository() = innerRepository()?.let(ATag::parse)
 
+    /** Every repository coordinate this event is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
+
     /**
      * The previous patch in the series: the `e` marked `reply` that [reply] writes (NIP-34 patch
      * series thread each patch onto the one before it).
@@ -119,8 +123,11 @@ class GitPatchEvent(
     /** `true` if this event is tagged `["t", "root"]` (root of a patch series). */
     fun isRoot(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT) }
 
-    /** `true` if this event is tagged `["t", "root-revision"]` (root of a revision series). */
-    fun isRootRevision(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT_REVISION) }
+    /**
+     * `true` if this event is tagged `["t", "root-revision"]` (root of a revision series), or with
+     * the `revision-root` spelling some ngit versions wrote, which gitworkshop also accepts.
+     */
+    fun isRootRevision(): Boolean = tags.any { HashtagTag.isTagged(it, ROOT_REVISION) || HashtagTag.isTagged(it, REVISION_ROOT) }
 
     /**
      * Human-readable patch title. NIP-34 patches carry the raw `git format-patch`
@@ -149,13 +156,46 @@ class GitPatchEvent(
         return PATCH_PREFIX.replace(builder.toString().trim(), "").trim().ifBlank { null }
     }
 
+    /** The `description` tag some clients add: the commit message, its first line the title. */
+    fun description(): String? = tags.patchDescription()?.takeIf { it.isNotBlank() }
+
+    /** `ROOT`: the series' first patch, which a later patch of the series continues; null on that first patch. */
+    fun seriesRootId(): HexKey? = tags.seriesRootId()?.takeIf { it != id }
+
+    /**
+     * The patch's title: the first line of [description] when present, else [subject] from the
+     * format-patch headers, with any `[PATCH …]` prefix removed either way.
+     */
+    fun title(): String? =
+        description()
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.let { PATCH_PREFIX.replace(it.trim(), "").trim() }
+            ?.ifBlank { null }
+            ?: subject()
+
+    /** `true` for a series cover letter (`[PATCH 0/n]`), which carries a message but no diff. */
+    fun isCoverLetter(): Boolean {
+        val firstLine =
+            description()?.lineSequence()?.firstOrNull() ?: content
+                .lineSequence()
+                .firstOrNull { it.startsWith(SUBJECT_HEADER) }
+                ?.removePrefix(SUBJECT_HEADER)
+                ?.trim()
+        return firstLine != null && COVER_LETTER.containsMatchIn(firstLine)
+    }
+
     companion object {
         const val KIND = 1617
         const val ROOT = "root"
         const val ROOT_REVISION = "root-revision"
 
+        /** The `revision-root` spelling of [ROOT_REVISION] older ngit versions wrote. Read, never written. */
+        const val REVISION_ROOT = "revision-root"
+
         private const val SUBJECT_HEADER = "Subject:"
         private val PATCH_PREFIX = Regex("^\\[PATCH[^]]*]\\s*")
+        private val COVER_LETTER = Regex("^\\[PATCH[^]]*?\\s+0/\\d+]")
 
         /**
          * Build a NIP-34 kind-1617 patch event with all required tags.

@@ -42,6 +42,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -115,6 +116,12 @@ class GitPullRequestEvent(
 
     fun branchName(): String? = tags.firstNotNullOfOrNull(BranchNameTag::parse)
 
+    /** The branch this PR targets (`b`), or null when it targets the repository's default branch. */
+    fun targetBranch(): String? = tags.targetBranch()
+
+    /** Every repository coordinate the PR is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
+
     fun mergeBase(): String? = tags.firstNotNullOfOrNull(MergeBaseTag::parse)
 
     /** Root patch event ID if this PR is a revision of a prior patch. */
@@ -138,6 +145,7 @@ class GitPullRequestEvent(
          * @param labels optional PR labels (encoded as `t` tags).
          * @param branchName optional recommended local checkout branch name.
          * @param mergeBase optional most recent common ancestor with the target branch.
+         * @param targetBranch optional branch to merge into (`b`); leave null for the default branch.
          * @param rootPatch optional pointer to a prior patch this PR supersedes.
          * @param notify additional recipient pubkeys.
          */
@@ -151,6 +159,7 @@ class GitPullRequestEvent(
             labels: List<String> = emptyList(),
             branchName: String? = null,
             mergeBase: String? = null,
+            targetBranch: String? = null,
             rootPatch: EventHintBundle<com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent>? = null,
             notify: List<PTag> = emptyList(),
             createdAt: Long = TimeUtils.now(),
@@ -166,8 +175,27 @@ class GitPullRequestEvent(
             if (labels.isNotEmpty()) hashtags(labels)
             branchName?.let { branchName(it) }
             mergeBase?.let { mergeBase(it) }
+            targetBranch?.let { targetBranch(it) }
             rootPatch?.let { rootPatch(it) }
             initializer()
         }
+
+        /** The signature before `targetBranch`, kept so already-compiled callers still link. */
+        @Deprecated("Use the overload with targetBranch.", level = DeprecationLevel.HIDDEN)
+        fun build(
+            description: String,
+            repository: EventHintBundle<GitRepositoryEvent>,
+            earliestUniqueCommit: String,
+            currentCommit: String,
+            cloneUrls: List<String>,
+            subject: String? = null,
+            labels: List<String> = emptyList(),
+            branchName: String? = null,
+            mergeBase: String? = null,
+            rootPatch: EventHintBundle<com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent>? = null,
+            notify: List<PTag> = emptyList(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<GitPullRequestEvent>.() -> Unit = {},
+        ) = build(description, repository, earliestUniqueCommit, currentCommit, cloneUrls, subject, labels, branchName, mergeBase, null, rootPatch, notify, createdAt, initializer)
     }
 }

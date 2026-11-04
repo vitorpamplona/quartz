@@ -28,6 +28,8 @@ import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.MaintainersTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.NameTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RelaysTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleRecord
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.WebTag
 
 fun TagArrayBuilder<GitRepositoryEvent>.name(name: String) = addUnique(NameTag.assemble(name))
@@ -49,3 +51,8 @@ fun TagArrayBuilder<GitRepositoryEvent>.relays(relays: List<String>) = addUnique
 fun TagArrayBuilder<GitRepositoryEvent>.maintainers(maintainers: List<HexKey>) = addUnique(MaintainersTag.assemble(maintainers))
 
 fun TagArrayBuilder<GitRepositoryEvent>.euc(commit: String) = addUnique(EucTag.assemble(commit))
+
+/** One `M`/`m`/`o` role record. A subject may carry one record per role, so each is its own tag. */
+fun TagArrayBuilder<GitRepositoryEvent>.role(record: RepositoryRoleRecord) = add(RepositoryRoleTag.assemble(record))
+
+fun TagArrayBuilder<GitRepositoryEvent>.roles(records: List<RepositoryRoleRecord>) = records.forEach { role(it) }

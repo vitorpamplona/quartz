@@ -33,10 +33,10 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 
 @Suppress("DEPRECATION")
-fun TagArrayBuilder<GitReplyEvent>.repository(rep: ATag) = addUnique(rep.toATagArray())
+fun TagArrayBuilder<GitReplyEvent>.repository(rep: ATag) = addUniqueValueIfNew(rep.toATagArray())
 
 @Suppress("DEPRECATION")
-fun TagArrayBuilder<GitReplyEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUnique(rep.toATag().toATagArray())
+fun TagArrayBuilder<GitReplyEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUniqueValueIfNew(rep.toATag().toATagArray())
 
 @Suppress("DEPRECATION")
 fun TagArrayBuilder<GitReplyEvent>.patch(rep: EventHintBundle<GitPatchEvent>) = addUnique(rep.toMarkedETag(MarkedETag.MARKER.ROOT).toTagArray())

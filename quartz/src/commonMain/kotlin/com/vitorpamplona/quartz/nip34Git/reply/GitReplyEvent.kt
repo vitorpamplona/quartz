@@ -126,7 +126,8 @@ class GitReplyEvent(
 
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 
-    fun rootIssueOrPatch() = tags.lastNotNullOfOrNull(MarkedETag::parseRootId)
+    /** The issue or patch this reply is in: the `e` marked `root`, else NIP-10's first unmarked `e`. */
+    fun rootIssueOrPatch(): HexKey? = tags.lastNotNullOfOrNull(MarkedETag::parseRootId) ?: unmarkedRoot()?.eventId
 
     @Suppress("DEPRECATION")
     companion object {

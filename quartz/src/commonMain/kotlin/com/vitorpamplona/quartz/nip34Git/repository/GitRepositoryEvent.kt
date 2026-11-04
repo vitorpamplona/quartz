@@ -21,10 +21,13 @@
 package com.vitorpamplona.quartz.nip34Git.repository
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -35,10 +38,12 @@ import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip34Git.repository.tags.CloneTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.EucTag
-import com.vitorpamplona.quartz.nip34Git.repository.tags.MaintainersTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.NameTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RelaysTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRole
+import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleRecord
 import com.vitorpamplona.quartz.nip34Git.repository.tags.WebTag
+import com.vitorpamplona.quartz.nip34Git.state.GitRepositoryStateEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.Hex
@@ -56,7 +61,8 @@ class GitRepositoryEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent,
-    PubKeyHintProvider {
+    PubKeyHintProvider,
+    AddressHintProvider {
     // The `t` hashtags are appended after the body, as CommentEvent does.
     override fun indexableContent() = (listOfNotNull(name(), description(), content) + hashtags()).joinToString("\n")
 
@@ -76,8 +82,41 @@ class GitRepositoryEvent(
     // The `maintainers` tag lists bare pubkeys, without relay hints.
     override fun pubKeyHints(): List<PubKeyHint> = emptyList()
 
-    // Hex.isHex64 only reads the first 64 chars, so the length is checked too.
-    override fun linkedPubKeys(): List<HexKey> = maintainers().filter { it.length == 64 && Hex.isHex64(it) }
+    /**
+     * NIP-34 keeps a repository's events on the relays its announcement names, not on each
+     * maintainer's outbox: the members' announcements and their signed state (30618) are found
+     * there, so every coordinate the repository has ([repositoryCoordinates]) gets those relays.
+     */
+    override fun addressHints(): List<AddressHint> {
+        val relays = relaysNorm()
+        if (relays.isEmpty()) return emptyList()
+        val addressIds = repositoryCoordinates()
+        return relays.flatMap { relay -> addressIds.map { AddressHint(it, relay) } }
+    }
+
+    /**
+     * An announcement carries no `a`: the coordinates it names are derived from the pubkeys in its
+     * `maintainers` and role tags, its own among them, so they are hints ([addressHints]), not links.
+     */
+    override fun linkedAddressIds(): List<String> = emptyList()
+
+    /**
+     * The repository's coordinates as kind 30617 (announcements) and 30618 (state), for its author
+     * and everyone in `maintainers` or a role record, ended ones included: judging an older event
+     * needs the announcement of whoever held a role then.
+     */
+    fun repositoryCoordinates(): List<String> {
+        val identifier = dTag()
+        return namedPubKeys().flatMap { pubKey ->
+            listOf(Address.assemble(KIND, pubKey, identifier), Address.assemble(GitRepositoryStateEvent.KIND, pubKey, identifier))
+        }
+    }
+
+    /** The author and everyone this announcement names in `maintainers` or a role record. */
+    fun namedPubKeys(): List<HexKey> = (listOf(pubKey) + maintainers() + roleRecords().map { it.subject }).distinct()
+
+    /** `MAINTAINER`: everyone in `maintainers` or a role record (`M`, `m`, `o`), the author excluded. */
+    override fun linkedPubKeys(): List<HexKey> = namedPubKeys().filter { it != pubKey }
 
     fun name() = tags.firstNotNullOfOrNull(NameTag::parse)
 
@@ -112,11 +151,108 @@ class GitRepositoryEvent(
 
     /**
      * Accepted maintainer pubkeys. The event author is an implicit maintainer
-     * and is not required to appear in this list.
+     * and is not required to appear in this list. The tag's parser checks the length, and
+     * [Hex.isHex64] the characters.
      */
-    fun maintainers(): List<HexKey> = tags.flatMap { MaintainersTag.parse(it) ?: emptyList() }.distinct()
+    fun maintainers(): List<HexKey> = tags.maintainers().filter(Hex::isHex64)
 
     fun hashtags(): List<String> = tags.hashtags()
+
+    // Role records are read many times while a membership resolves (every assignment, every
+    // fixed-point round), and an event never changes: parse them once.
+    @kotlinx.serialization.Transient
+    @kotlin.jvm.Transient
+    private var parsedRoleRecords: List<RepositoryRoleRecord>? = null
+
+    @kotlinx.serialization.Transient
+    @kotlin.jvm.Transient
+    private var validRoleRecords: List<RepositoryRoleRecord>? = null
+
+    /** Every well-formed role record, an invalid self-`defer` included. */
+    private fun parsedRoleRecords(): List<RepositoryRoleRecord> = parsedRoleRecords ?: tags.roleRecords().also { parsedRoleRecords = it }
+
+    /**
+     * The well-formed `M`/`m`/`o` role records. A malformed record grants nothing and is left out,
+     * and so is a self-authored record that ends in `defer` (an author cannot defer their own end).
+     */
+    fun roleRecords(): List<RepositoryRoleRecord> = validRoleRecords ?: parsedRoleRecords().filterNot { it.subject == pubKey && it.endsInDefer }.also { validRoleRecords = it }
+
+    /** True when any `M`/`m`/`o` tag is present: then those roles, not `maintainers`, are authoritative. */
+    fun hasIndexedRoles(): Boolean = tags.hasRoleTags()
+
+    /** True when an `M` or `m` tag is present. */
+    fun hasIndexedMaintainerRoles(): Boolean = tags.hasMaintainerRoleTags()
+
+    /** True when the deprecated `maintainers` tag is present. */
+    fun hasLegacyMaintainersTag(): Boolean = tags.hasMaintainersTag()
+
+    /** The subjects of active `M` records: who this announcement forwards the lead to. */
+    fun activeLeads(): List<HexKey> = roleRecords().filter { it.isActive && it.role == RepositoryRole.LEAD }.map { it.subject }.distinct()
+
+    /**
+     * The maintainers this announcement assigns or acknowledges, author included when they count.
+     *
+     * With indexed roles: every active `M`/`m` subject, plus the author when no role tag names them
+     * (an author with no self-record is an implicit maintainer). Without them: the author and the
+     * legacy `maintainers` list.
+     */
+    fun activeMaintainerAssignments(): List<HexKey> {
+        val result = LinkedHashSet<HexKey>()
+        if (hasIndexedRoles()) {
+            if (!tags.hasRoleTagFor(pubKey)) result.add(pubKey)
+            roleRecords().forEach { if (it.isActive && it.role.isMaintainer) result.add(it.subject) }
+        } else {
+            result.add(pubKey)
+            result.addAll(maintainers())
+        }
+        return result.toList()
+    }
+
+    /** The active `o` subjects: moderators this announcement assigns or acknowledges. */
+    fun activeModeratorAssignments(): List<HexKey> = roleRecords().filter { it.isActive && it.role == RepositoryRole.MODERATOR }.map { it.subject }.distinct()
+
+    /**
+     * True when the author has role records about themselves but none of them is an active `M`/`m`,
+     * or one of them is an unrepaired self-`defer`: they declined or left maintainership.
+     */
+    fun authorCannotMaintain(): Boolean {
+        if (!tags.hasRoleTagFor(pubKey)) return false
+        return roleRecords().none { it.subject == pubKey && it.isActive && it.role.isMaintainer } || hasUnrepairedSelfDefer()
+    }
+
+    /** Like [authorCannotMaintain], for the moderator role. */
+    fun authorCannotModerate(): Boolean {
+        if (!tags.hasRoleTagFor(pubKey, MODERATOR_ROLE)) return false
+        return roleRecords().none { it.subject == pubKey && it.isActive && it.role == RepositoryRole.MODERATOR } || hasUnrepairedSelfDefer()
+    }
+
+    /** True when the author has self maintainer records and none is active: they left maintainership. */
+    fun authorDeclinesMaintainership(): Boolean {
+        val selfRecords = roleRecords().filter { it.subject == pubKey }
+        if (selfRecords.any { it.isActive && it.role.isMaintainer }) return false
+        val hasSelfMaintainerRecord = selfRecords.any { it.role.isMaintainer }
+        val hasInvalidSelfMaintainerDefer = parsedRoleRecords().any { it.subject == pubKey && it.endsInDefer && it.role.isMaintainer }
+        return hasSelfMaintainerRecord || (selfRecords.isNotEmpty() && !hasInvalidSelfMaintainerDefer)
+    }
+
+    /** True when the author has self moderator records and none is active: they left moderation. */
+    fun authorDeclinesModeratorship(): Boolean {
+        val selfModerator = roleRecords().filter { it.subject == pubKey && it.role == RepositoryRole.MODERATOR }
+        return selfModerator.isNotEmpty() && selfModerator.none { it.isActive }
+    }
+
+    /**
+     * A self-authored record ending in `defer` is invalid. It stays a problem until a later active
+     * self-record (one that starts after the deferred interval did) supersedes it.
+     */
+    private fun hasUnrepairedSelfDefer(): Boolean {
+        val valid = roleRecords()
+        return parsedRoleRecords().any { record ->
+            if (record.subject != pubKey || !record.endsInDefer) return@any false
+            val lastStart = record.boundaries.getOrNull(record.boundaries.size - 2) ?: return@any true
+            valid.none { it.subject == pubKey && it.isActive && (it.activeSince ?: 0) > lastStart }
+        }
+    }
 
     /** Earliest-unique-commit ID (NIP-34 `["r", <commit>, "euc"]`). */
     fun earliestUniqueCommit(): String? = tags.firstNotNullOfOrNull(EucTag::parse)
@@ -137,6 +273,8 @@ class GitRepositoryEvent(
 
     companion object {
         const val KIND = 30617
+
+        private val MODERATOR_ROLE = listOf(RepositoryRole.MODERATOR)
         const val PERSONAL_FORK = "personal-fork"
 
         /** NIP-31 description, in the same words ngit uses. */

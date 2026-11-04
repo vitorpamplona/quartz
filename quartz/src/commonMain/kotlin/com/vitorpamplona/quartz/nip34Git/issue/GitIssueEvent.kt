@@ -46,6 +46,7 @@ import com.vitorpamplona.quartz.nip19Bech32.eventIds
 import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -129,6 +130,9 @@ class GitIssueEvent(
     fun repositoryAddress() = tags.firstNotNullOfOrNull(ATag::parseAddress)
 
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
+
+    /** Every repository coordinate this event is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
+    fun repositoryAddresses() = tags.repositoryAddresses()
 
     fun topics() = hashtags()
 

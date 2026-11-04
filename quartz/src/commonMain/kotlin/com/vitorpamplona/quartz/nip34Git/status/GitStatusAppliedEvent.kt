@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
+import com.vitorpamplona.quartz.nip34Git.repository.tags.CommitReferenceTag
 import com.vitorpamplona.quartz.nip34Git.status.tags.AppliedAsCommitsTag
 import com.vitorpamplona.quartz.nip34Git.status.tags.MergeCommitTag
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -90,9 +91,14 @@ class GitStatusAppliedEvent(
                     ),
                 )
             }
-            mergeCommit?.let { add(MergeCommitTag.assemble(it)) }
+            // NIP-34 also lists each commit as an `r`, for clients that filter by `#r`.
+            mergeCommit?.let {
+                add(MergeCommitTag.assemble(it))
+                add(CommitReferenceTag.assemble(it))
+            }
             if (appliedAsCommits.isNotEmpty()) {
                 add(AppliedAsCommitsTag.assemble(appliedAsCommits))
+                appliedAsCommits.forEach { add(CommitReferenceTag.assemble(it)) }
             }
             initializer()
         }

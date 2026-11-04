@@ -106,6 +106,12 @@ class LabelEvent(
             .map { it.label.lowercase() }
             .distinct()
 
+    /**
+     * The new title this event gives its targets, via the `#subject` namespace NIP-34 clients use for
+     * after-the-fact issue, patch and PR renames (`["L", "#subject"]` + `["l", "<title>", "#subject"]`).
+     */
+    fun subjectEdit(): String? = labelsByNamespace(SUBJECT_NAMESPACE).firstOrNull()?.label?.takeIf { it.isNotBlank() }
+
     /** Referenced event IDs (label targets). */
     fun labeledEvents() = tags.mapNotNull(ETag::parseId)
 
@@ -130,6 +136,9 @@ class LabelEvent(
          * with the hashtag `<hashtag>` under the standard `t` tag.
          */
         const val HASHTAG_NAMESPACE = "#t"
+
+        /** Namespace whose label value is a replacement title for the labeled event (NIP-34 renames). */
+        const val SUBJECT_NAMESPACE = "#subject"
 
         /**
          * Build a label event that tags an existing event with a hashtag, using the
