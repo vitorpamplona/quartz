@@ -44,7 +44,6 @@ import com.vitorpamplona.quartz.nip34Git.patch.tags.ParentCommitTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
-import com.vitorpamplona.quartz.nip34Git.repository.tags.DescriptionTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -158,7 +157,10 @@ class GitPatchEvent(
     }
 
     /** The `description` tag some clients add: the commit message, its first line the title. */
-    fun description(): String? = tags.firstNotNullOfOrNull(DescriptionTag::parse)?.takeIf { it.isNotBlank() }
+    fun description(): String? = tags.patchDescription()?.takeIf { it.isNotBlank() }
+
+    /** `ROOT`: the series' first patch, which a later patch of the series continues; null on that first patch. */
+    fun seriesRootId(): HexKey? = tags.seriesRootId()?.takeIf { it != id }
 
     /**
      * The patch's title: the first line of [description] when present, else [subject] from the

@@ -40,7 +40,6 @@ import com.vitorpamplona.quartz.nip14Subject.SubjectTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.BranchNameTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.CurrentCommitTag
 import com.vitorpamplona.quartz.nip34Git.pr.tags.MergeBaseTag
-import com.vitorpamplona.quartz.nip34Git.pr.tags.TargetBranchTag
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
 import com.vitorpamplona.quartz.nip34Git.repository.earliestUniqueCommit
 import com.vitorpamplona.quartz.nip34Git.repository.repositoryAddresses
@@ -118,7 +117,7 @@ class GitPullRequestEvent(
     fun branchName(): String? = tags.firstNotNullOfOrNull(BranchNameTag::parse)
 
     /** The branch this PR targets (`b`), or null when it targets the repository's default branch. */
-    fun targetBranch(): String? = tags.firstNotNullOfOrNull(TargetBranchTag::parse)
+    fun targetBranch(): String? = tags.targetBranch()
 
     /** Every repository coordinate the PR is filed against: one `a` per maintainer, legacy `mention` markers excluded. */
     fun repositoryAddresses() = tags.repositoryAddresses()
@@ -180,5 +179,23 @@ class GitPullRequestEvent(
             rootPatch?.let { rootPatch(it) }
             initializer()
         }
+
+        /** The signature before `targetBranch`, kept so already-compiled callers still link. */
+        @Deprecated("Use the overload with targetBranch.", level = DeprecationLevel.HIDDEN)
+        fun build(
+            description: String,
+            repository: EventHintBundle<GitRepositoryEvent>,
+            earliestUniqueCommit: String,
+            currentCommit: String,
+            cloneUrls: List<String>,
+            subject: String? = null,
+            labels: List<String> = emptyList(),
+            branchName: String? = null,
+            mergeBase: String? = null,
+            rootPatch: EventHintBundle<com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent>? = null,
+            notify: List<PTag> = emptyList(),
+            createdAt: Long = TimeUtils.now(),
+            initializer: TagArrayBuilder<GitPullRequestEvent>.() -> Unit = {},
+        ) = build(description, repository, earliestUniqueCommit, currentCommit, cloneUrls, subject, labels, branchName, mergeBase, null, rootPatch, notify, createdAt, initializer)
     }
 }

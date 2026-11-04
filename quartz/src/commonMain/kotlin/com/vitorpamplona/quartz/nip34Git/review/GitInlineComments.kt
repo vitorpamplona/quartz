@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip34Git.review
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip22Comments.CommentEvent
 
 /**
@@ -41,31 +40,12 @@ data class GitCodeLocation(
     val removedSide: Boolean,
 )
 
-/** Codecs for gitworkshop's inline code-review comments and thread resolutions on NIP-22 comments. */
-object GitInlineComments {
-    const val FILE_TAG = "f"
-    const val COMMIT_TAG = "c"
-    const val LINE_TAG = "line"
-    const val REMOVED_SIDE = "del"
-    const val LABEL_TAG = "l"
-    const val RESOLVED = "resolved"
-
-    fun location(tags: TagArray): GitCodeLocation? {
-        val path = tags.firstOrNull { it.size > 1 && it[0] == FILE_TAG && it[1].isNotBlank() }?.get(1) ?: return null
-        val commit = tags.firstOrNull { it.size > 1 && it[0] == COMMIT_TAG && it[1].isNotBlank() }?.get(1)
-        val line = tags.firstOrNull { it.size > 1 && it[0] == LINE_TAG }
-        val range = line?.get(1)?.split('-')?.mapNotNull { it.trim().toIntOrNull() }
-        val start = range?.firstOrNull()
-        val end = range?.getOrNull(1) ?: start
-        return GitCodeLocation(path, commit, start, end, line?.getOrNull(2) == REMOVED_SIDE)
-    }
-
-    /** A reply carrying `["l", "resolved"]` resolves the sub-thread it replies to. */
-    fun isResolution(tags: TagArray): Boolean = tags.any { it.size > 1 && it[0] == LABEL_TAG && it[1] == RESOLVED }
+/** The file and lines this comment reviews, or null when it is an ordinary comment. */
+fun CommentEvent.gitCodeLocation(): GitCodeLocation? {
+    val path = tags.reviewedFile() ?: return null
+    val lines = tags.reviewedLines()
+    return GitCodeLocation(path, tags.reviewedCommit(), lines?.start, lines?.end, lines?.removedSide == true)
 }
 
-/** The file and lines this comment reviews, or null when it is an ordinary comment. */
-fun CommentEvent.gitCodeLocation(): GitCodeLocation? = GitInlineComments.location(tags)
-
 /** True when this comment marks the thread it replies to as resolved. */
-fun CommentEvent.isGitThreadResolution(): Boolean = GitInlineComments.isResolution(tags)
+fun CommentEvent.isGitThreadResolution(): Boolean = tags.isThreadResolution()

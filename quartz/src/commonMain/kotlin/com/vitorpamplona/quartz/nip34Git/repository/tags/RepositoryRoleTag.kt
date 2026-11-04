@@ -80,6 +80,28 @@ class RepositoryRoleTag {
 
         fun isTagged(tag: Array<String>): Boolean = tag.isNotEmpty() && RepositoryRole.of(tag[0]) != null
 
+        /** An `M` or `m` tag, well-formed or not. */
+        fun isMaintainerTagged(tag: Array<String>): Boolean = tag.isNotEmpty() && RepositoryRole.of(tag[0])?.isMaintainer == true
+
+        /** A role tag of any of [roles] about [subject], well-formed or not: it still says the author spoke about them. */
+        fun isTaggedFor(
+            tag: Array<String>,
+            subject: HexKey,
+            roles: Collection<RepositoryRole> = RepositoryRole.entries,
+        ): Boolean = tag.size > 1 && tag[1] == subject && RepositoryRole.of(tag[0])?.let { it in roles } == true
+
+        /**
+         * The `role:subject` a tag speaks about (`m:<pubkey>`), even when its boundaries are malformed:
+         * a malformed or repeated record still disputes that role. Null without a role or a valid pubkey.
+         */
+        fun parseKey(tag: Array<String>): String? {
+            if (tag.size < 2) return null
+            val role = RepositoryRole.of(tag[0]) ?: return null
+            val subject = tag[1]
+            if (subject.length != 64 || !Hex.isHex64(subject)) return null
+            return role.code + ":" + subject
+        }
+
         /** The record, or null when the role, the pubkey or any boundary is malformed. */
         fun parse(tag: Array<String>): RepositoryRoleRecord? {
             if (tag.size < 2) return null

@@ -36,6 +36,8 @@ class MaintainersTag {
     companion object {
         const val TAG_NAME = "maintainers"
 
+        fun isTag(tag: Array<String>): Boolean = tag.isNotEmpty() && tag[0] == TAG_NAME
+
         fun parse(tag: Array<String>): List<HexKey>? {
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }

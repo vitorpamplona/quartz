@@ -39,7 +39,9 @@ import com.vitorpamplona.quartz.nip34Git.status.GitStatusEvent
  */
 fun Event.gitThreadRootId(): HexKey? =
     when (this) {
-        is GitIssueEvent, is GitPullRequestEvent, is GitPatchEvent -> id
+        is GitIssueEvent, is GitPullRequestEvent -> id
+        // A later patch of a series is discussed in the series' thread, rooted at its first patch.
+        is GitPatchEvent -> if (isRoot()) id else seriesRootId() ?: id
         is GitReplyEvent -> rootIssueOrPatch()
         is GitPullRequestUpdateEvent -> parentPullRequestId()
         is GitCoverNoteEvent -> rootEventId()

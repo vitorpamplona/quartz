@@ -76,7 +76,9 @@ class GitRepositoryHintProviderTest {
             )
 
         val named = listOf(pk, other, third).flatMap { listOf("30617:$it:quartz", "30618:$it:quartz") }
-        assertEquals(named, withRelays.linkedAddressIds())
+        assertEquals(named, withRelays.repositoryCoordinates())
+        // Derived coordinates are hints, not links: an announcement carries no `a`.
+        assertTrue(withRelays.linkedAddressIds().isEmpty())
         assertEquals(named.size * 2, withRelays.addressHints().size)
         assertEquals(setOf("wss://git.example/", "wss://relay.example/"), withRelays.addressHints().map { it.relay.url }.toSet())
 

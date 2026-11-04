@@ -152,16 +152,17 @@ class GitRepositoryMembership(
             if (selectedMaintainer !in latestByAuthor) return null
 
             val parsed = LinkedHashMap<HexKey, GitRepositoryEvent>()
-            val discovery = ArrayList<HexKey>()
+            val discovery = LinkedHashSet<HexKey>()
             val queue = ArrayDeque(listOf(selectedMaintainer))
             val maintainerCandidates = LinkedHashSet<HexKey>()
             val maintainerEdges = ArrayList<Edge>()
             val moderatorEdges = ArrayList<Edge>()
+            val maintainerEdgeKeys = HashSet<Pair<HexKey, HexKey>>()
+            val moderatorEdgeKeys = HashSet<Pair<HexKey, HexKey>>()
 
             while (queue.isNotEmpty()) {
                 val pubKey = queue.removeFirst()
-                if (pubKey in discovery) continue
-                discovery.add(pubKey)
+                if (!discovery.add(pubKey)) continue
                 val event = latestByAuthor[pubKey] ?: continue
                 parsed[pubKey] = event
 
@@ -169,13 +170,13 @@ class GitRepositoryMembership(
                 for (assigned in event.activeMaintainerAssignments()) {
                     maintainerCandidates.add(assigned)
                     if (assigned !in discovery) queue.add(assigned)
-                    if (assigned == pubKey || maintainerEdges.any { it.from == pubKey && it.to == assigned }) continue
+                    if (assigned == pubKey || !maintainerEdgeKeys.add(pubKey to assigned)) continue
                     val record = records.firstOrNull { it.subject == assigned && it.isActive && it.role.isMaintainer }
                     maintainerEdges.add(Edge(pubKey, assigned, record?.requiresFreshAcceptance == true))
                 }
                 for (moderator in event.activeModeratorAssignments()) {
                     if (moderator !in discovery) queue.add(moderator)
-                    if (moderatorEdges.any { it.from == pubKey && it.to == moderator }) continue
+                    if (!moderatorEdgeKeys.add(pubKey to moderator)) continue
                     val record = records.firstOrNull { it.subject == moderator && it.isActive && it.role == RepositoryRole.MODERATOR }
                     moderatorEdges.add(Edge(pubKey, moderator, record?.requiresFreshAcceptance == true))
                 }
@@ -192,8 +193,8 @@ class GitRepositoryMembership(
                 changed = false
                 for (candidate in maintainerCandidates) {
                     if (candidate in confirmed || candidate in ineligibleMaintainers) continue
-                    val announcement = parsed[candidate]
-                    val listedByMember = maintainerEdges.any { it.to == candidate && it.from in confirmed && acceptsMaintainership(announcement) }
+                    if (!acceptsMaintainership(parsed[candidate])) continue
+                    val listedByMember = maintainerEdges.any { it.to == candidate && it.from in confirmed }
                     val acknowledgesMember = maintainerEdges.any { it.from == candidate && it.to in confirmed }
                     if (listedByMember && acknowledgesMember) {
                         confirmed.add(candidate)
@@ -268,7 +269,7 @@ class GitRepositoryMembership(
                 invitedMaintainers = invitedMaintainers,
                 invitedModerators = invitedModerators,
                 confirmedAnnouncements = confirmedMembers.mapNotNull { latestByAuthor[it] },
-                discoveryPubKeys = discovery,
+                discoveryPubKeys = discovery.toList(),
                 history = history,
             )
         }

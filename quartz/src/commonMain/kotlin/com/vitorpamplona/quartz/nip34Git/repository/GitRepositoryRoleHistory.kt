@@ -22,11 +22,9 @@ package com.vitorpamplona.quartz.nip34Git.repository
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip34Git.repository.tags.MaintainersTag
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRole
 import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleRecord
-import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRoleTag
-import com.vitorpamplona.quartz.utils.Hex
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 
 /** Whether a role was held at a moment: `UNKNOWN` when its history defers that answer. */
 enum class RoleState { ACTIVE, INACTIVE, UNKNOWN }
@@ -54,10 +52,44 @@ class GitRepositoryRoleHistory(
         val author: HexKey,
         val records: List<RepositoryRoleRecord>,
         val disputedKeys: Set<String>,
-    )
+    ) {
+        /** The records that grant something: those whose `role:subject` is not disputed. */
+        val undisputed: List<RepositoryRoleRecord> = if (disputedKeys.isEmpty()) records else records.filter { key(it) !in disputedKeys }
+    }
+
+    // Every role boundary the history knows. Between two consecutive ones no record changes state,
+    // so neither do the members: the answers below are cached per interval. Callers judge every
+    // status, label and PR update of a repository, and most fall in a handful of intervals.
+    private val boundaries: LongArray =
+        (resolvedRecords.asSequence() + authors.values.asSequence().flatMap { it.records.asSequence() })
+            .flatMap { it.boundaries.asSequence() }
+            .filterNotNull()
+            .distinct()
+            .sorted()
+            .toList()
+            .toLongArray()
+
+    private val maintainersByInterval = ConcurrentMap<Int, Set<HexKey>>()
+    private val membersByInterval = ConcurrentMap<Int, Set<HexKey>>()
+
+    /** Which interval between [boundaries] [createdAt] falls in: the number of boundaries at or before it. */
+    private fun intervalOf(createdAt: Long): Int {
+        var low = 0
+        var high = boundaries.size
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            if (boundaries[mid] <= createdAt) low = mid + 1 else high = mid
+        }
+        return low
+    }
 
     /** The confirmed maintainers at [createdAt]; empty when the history is ambiguous then. */
-    fun maintainersAt(createdAt: Long): Set<HexKey> {
+    fun maintainersAt(createdAt: Long): Set<HexKey> = maintainersByInterval.getOrPut(intervalOf(createdAt)) { computeMaintainersAt(createdAt) }
+
+    /** The confirmed members (maintainers and moderators) at [createdAt]. */
+    fun membersAt(createdAt: Long): Set<HexKey> = membersByInterval.getOrPut(intervalOf(createdAt)) { computeMembersAt(createdAt) }
+
+    private fun computeMaintainersAt(createdAt: Long): Set<HexKey> {
         val components = LinkedHashMap<String, Set<HexKey>>()
         for (root in (listOf(selectedMaintainer) + currentConfirmedMaintainers).distinct()) {
             val component = maintainersFromRoot(createdAt, root)
@@ -67,8 +99,7 @@ class GitRepositoryRoleHistory(
         return if (components.size == 1) components.values.first() else emptySet()
     }
 
-    /** The confirmed members (maintainers and moderators) at [createdAt]. */
-    fun membersAt(createdAt: Long): Set<HexKey> {
+    private fun computeMembersAt(createdAt: Long): Set<HexKey> {
         val maintainers = maintainersAt(createdAt)
         val members = maintainers.toMutableSet()
         val moderatorCandidates = resolvedRecords.filter { it.role == RepositoryRole.MODERATOR && stateAt(it, createdAt) == RoleState.ACTIVE }.map { it.subject }.toSet()
@@ -135,8 +166,8 @@ class GitRepositoryRoleHistory(
         roles: Set<RepositoryRole>,
     ): List<HexKey> =
         history
-            ?.records
-            ?.filter { it.role in roles && key(it) !in history.disputedKeys && stateAt(it, createdAt) == RoleState.ACTIVE }
+            ?.undisputed
+            ?.filter { it.role in roles && stateAt(it, createdAt) == RoleState.ACTIVE }
             ?.map { it.subject }
             ?.distinct()
             .orEmpty()
@@ -145,7 +176,7 @@ class GitRepositoryRoleHistory(
         history: AuthorHistory?,
         createdAt: Long,
         roles: Set<RepositoryRole>,
-    ): Boolean = history != null && history.records.any { it.subject == history.author && it.role in roles && key(it) !in history.disputedKeys && stateAt(it, createdAt) == RoleState.ACTIVE }
+    ): Boolean = history != null && history.undisputed.any { it.subject == history.author && it.role in roles && stateAt(it, createdAt) == RoleState.ACTIVE }
 
     companion object {
         private val MAINTAINER_ROLES = setOf(RepositoryRole.LEAD, RepositoryRole.MAINTAINER)
@@ -181,29 +212,20 @@ class GitRepositoryRoleHistory(
          * record about themselves is an implicit maintainer.
          */
         fun authorHistory(event: GitRepositoryEvent): AuthorHistory {
-            val roleTags = event.tags.filter(RepositoryRoleTag::isTagged)
-            if (roleTags.isEmpty()) {
-                val subjects = LinkedHashSet<HexKey>()
-                subjects.add(event.pubKey)
-                event.tags.forEach { tag ->
-                    if (tag.isNotEmpty() && tag[0] == MaintainersTag.TAG_NAME) tag.drop(1).forEach { if (Hex.isHex64(it)) subjects.add(it) }
-                }
+            if (!event.hasIndexedRoles()) {
+                val subjects = (listOf(event.pubKey) + event.maintainers()).distinct()
                 return AuthorHistory(event.pubKey, subjects.map { RepositoryRoleRecord(RepositoryRole.MAINTAINER, it, emptyList()) }, emptySet())
             }
 
-            val records = ArrayList<RepositoryRoleRecord>()
-            val counts = HashMap<String, Int>()
+            val records = ArrayList(event.roleRecords())
+            // A `role:subject` written twice, or written once but malformed (or a self-`defer`), is
+            // disputed: its tags name a valid subject, yet no single well-formed record stands for it.
             val disputed = HashSet<String>()
-            for (tag in roleTags) {
-                val subject = tag.getOrNull(1) ?: continue
-                if (!Hex.isHex64(subject)) continue
-                val key = tag[0] + ":" + subject
-                counts[key] = (counts[key] ?: 0) + 1
-                val record = RepositoryRoleTag.parse(tag)?.takeUnless { it.subject == event.pubKey && it.endsInDefer }
-                if (record != null) records.add(record) else disputed.add(key)
-            }
-            counts.forEach { (key, count) -> if (count > 1) disputed.add(key) }
-            if (roleTags.none { it.getOrNull(1) == event.pubKey }) {
+            val tagged = event.tags.roleTagKeys()
+            tagged.groupingBy { it }.eachCount().forEach { (key, count) -> if (count > 1) disputed.add(key) }
+            val parsed = records.mapTo(HashSet()) { key(it) }
+            tagged.forEach { if (it !in parsed) disputed.add(it) }
+            if (!event.tags.hasRoleTagFor(event.pubKey)) {
                 records.add(RepositoryRoleRecord(RepositoryRole.MAINTAINER, event.pubKey, emptyList()))
             }
             return AuthorHistory(event.pubKey, records, disputed)
@@ -228,7 +250,7 @@ class GitRepositoryRoleHistory(
                     .distinct()
             val authors = historyPubKeys.mapNotNull { latestByAuthor[it] }.associate { it.pubKey to authorHistory(it) }
 
-            val candidateKeys = sortedSetOf<String>()
+            val candidateKeys = HashSet<String>()
             sourceAuthors.forEach { author ->
                 authors[author]?.let { history ->
                     history.records.forEach { candidateKeys.add(key(it)) }
@@ -237,7 +259,7 @@ class GitRepositoryRoleHistory(
             }
 
             val resolved = ArrayList<RepositoryRoleRecord>()
-            for (roleKey in candidateKeys) {
+            for (roleKey in candidateKeys.sorted()) {
                 val preferred =
                     sourceAuthors
                         .mapNotNull { author ->
