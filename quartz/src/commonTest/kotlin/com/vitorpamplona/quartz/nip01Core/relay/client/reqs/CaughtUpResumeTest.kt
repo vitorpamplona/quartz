@@ -57,9 +57,42 @@ class CaughtUpResumeTest {
     }
 
     @Test
-    fun anEoseWithNothingDeliveredHasNothingToResumeFrom() {
+    fun anEoseWithNothingDeliveredResumesFromTheReqsSince() {
         served(relayA, notes)
-        assertNull(resume.resumeFrom(relayA, notes), "nothing was handed over, so the filters go as given")
+        assertEquals(500L, resume.caughtUpAt(relayA), "a restart that saves this misses nothing")
+        assertEquals(500L, resume.resumeFrom(relayA, notes))
+        assertNull(resume.resume(relayA, notes), "no filter moves: they go as given")
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredForFiltersWithoutSinceHasNothingToResumeFrom() {
+        val all = listOf(Filter(kinds = listOf(1)))
+        served(relayA, all)
+        assertNull(resume.caughtUpAt(relayA), "a filter without since asks for all history")
+        assertNull(resume.resumeFrom(relayA, all))
+        served(relayB, notes + Filter(kinds = listOf(7)))
+        assertNull(resume.caughtUpAt(relayB), "one filter without since is enough")
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredTakesTheEarliestSince() {
+        val two = listOf(Filter(kinds = listOf(1), since = 700), Filter(kinds = listOf(7), since = 600))
+        served(relayA, two)
+        assertEquals(600L, resume.caughtUpAt(relayA))
+    }
+
+    @Test
+    fun anEoseWithNothingDeliveredIsCappedAtTheDeviceClock() {
+        val ahead = listOf(Filter(kinds = listOf(1), since = clock + 3_600))
+        served(relayA, ahead)
+        assertEquals(clock, resume.caughtUpAt(relayA))
+    }
+
+    @Test
+    fun aLaterEmptyEoseNeverMovesThePointBack() {
+        served(relayA, notes, 900)
+        served(relayA, notes)
+        assertEquals(900L, resume.caughtUpAt(relayA))
     }
 
     @Test

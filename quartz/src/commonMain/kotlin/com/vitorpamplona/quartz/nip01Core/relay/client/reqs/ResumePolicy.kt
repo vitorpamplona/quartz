@@ -84,22 +84,29 @@ interface ResumePolicy {
  *
  * A filter whose `until` is before the resume point is sent as given: moving its `since` past its
  * `until` would ask for nothing, and some relays refuse such a filter outright.
+ * Null as well when no filter moves (a point at or before every filter's own `since`).
  */
 fun ResumePolicy.resume(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
 ): List<Filter>? {
     val from = resumeFrom(relay, filters) ?: return null
-    return filters.map { f ->
-        val at = if (f.kinds?.contains(GiftWrapEvent.KIND) == true) from - TimeUtils.twoDays() else from
-        val until = f.until
-        when {
-            until != null && until < at -> f
-            // A filter that already starts later than the resume point keeps its own `since`.
-            f.since?.let { it >= at } == true -> f
-            else -> f.copy(since = at)
+    var moved = false
+    val resumed =
+        filters.map { f ->
+            val at = if (f.kinds?.contains(GiftWrapEvent.KIND) == true) from - TimeUtils.twoDays() else from
+            val until = f.until
+            when {
+                until != null && until < at -> f
+                // A filter that already starts later than the resume point keeps its own `since`.
+                f.since?.let { it >= at } == true -> f
+                else -> {
+                    moved = true
+                    f.copy(since = at)
+                }
+            }
         }
-    }
+    return if (moved) resumed else null
 }
 
 /**
@@ -111,8 +118,12 @@ fun ResumePolicy.resume(
  * `created_at`: messages the relay sent that were still queued when the client dropped the
  * connection, and a device clock running ahead of the relay's, can't move it past an event the
  * subscriber never saw. Stored events count only at EOSE: the relay sends them newest first, so a
- * connection cut halfway through leaves older ones undelivered. Until the subscription has been
- * handed an event there is nothing to resume from, and its filters go as given.
+ * connection cut halfway through leaves older ones undelivered. An EOSE that delivered nothing
+ * puts the point at the REQ's `since` (the earliest of its filters', and only when every filter
+ * has one): nothing before it was asked for and nothing after it existed, so a caller that saves
+ * [caughtUpAt] after a quiet start resumes from there, not from wherever it next looks. Until the
+ * first EOSE, or after one for filters without `since`, there is nothing to resume from, and the
+ * filters go as given.
  *
  * The point holds only for the filters that were caught up. Filters that changed since (an author
  * added, a kind dropped; a moved `since` doesn't count) are sent as given, so a newly wanted
@@ -185,11 +196,25 @@ class CaughtUpResume(
     ) {
         val point = point(relay)
         val stored = point.pending.exchange(NEVER)
-        if (stored != NEVER) raise(point.at, stored)
+        if (stored != NEVER) {
+            raise(point.at, stored)
+        } else if (filters != null && point.at.load() == NEVER) {
+            // Caught up with nothing: the REQ's own start is a point it can resume from.
+            val since = earliestSince(filters)
+            if (since != null) raise(point.at, if (since <= clockRead) since else minOf(since, readClock()))
+        }
         if (filters != null) point.filters = filters
     }
 
     private fun readClock(): Long = nowInSeconds().also { clockRead = it }
+
+    /** The earliest `since` among [filters], or null when one has none (it asks for all history). */
+    private fun earliestSince(filters: List<Filter>): Long? {
+        if (filters.isEmpty()) return null
+        var earliest = Long.MAX_VALUE
+        for (f in filters) earliest = minOf(earliest, f.since ?: return null)
+        return earliest
+    }
 
     /**
      * The caught-up REQ may itself have been resumed: only `since` is allowed to differ. Compared
