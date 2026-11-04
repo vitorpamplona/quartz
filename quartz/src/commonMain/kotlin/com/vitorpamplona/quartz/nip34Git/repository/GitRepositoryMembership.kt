@@ -36,8 +36,9 @@ import com.vitorpamplona.quartz.nip34Git.repository.tags.RepositoryRole
  * repository, and grows the confirmed set from there to a fixed point. Moderators (`o`) are
  * confirmed the same way, from confirmed maintainers' assignments.
  *
- * Mirrors the ngit maintainer protocol as gitworkshop implements it, without per-event role
- * history: [confirmedMembers] is the set as of now, not at an older event's `created_at`.
+ * Mirrors the ngit maintainer protocol as gitworkshop implements it. [confirmedMembers] is the
+ * set as of now; [membersAt] and [maintainersAt] answer for an older event's `created_at` from the
+ * role [history], which is how a status, a PR update or a label should be judged.
  */
 @Immutable
 class GitRepositoryMembership(
@@ -53,6 +54,8 @@ class GitRepositoryMembership(
     val confirmedAnnouncements: List<GitRepositoryEvent>,
     /** Everyone reached while following assignments: whose announcements to fetch, not who to trust. */
     val discoveryPubKeys: List<HexKey>,
+    /** Who held which role when, for judging events by the roles at their own time. */
+    val history: GitRepositoryRoleHistory,
 ) {
     val confirmedMembers: List<HexKey> = (confirmedMaintainers + confirmedModerators).distinct()
 
@@ -64,6 +67,28 @@ class GitRepositoryMembership(
 
     /** May set status, labels, subject edits and cover notes on any issue, patch or PR. */
     fun isMember(pubKey: HexKey): Boolean = pubKey in memberSet
+
+    /**
+     * When the roles as they stand now took effect: the newest of the confirmed members' current
+     * announcements. An event signed since then is judged by today's membership.
+     */
+    val currentSince: Long = confirmedAnnouncements.maxOfOrNull { it.createdAt } ?: Long.MAX_VALUE
+
+    private val currentMembers = confirmedMembers.toSet()
+    private val currentMaintainers = confirmedMaintainers.toSet()
+
+    /**
+     * The members (maintainers and moderators) when an event created at [createdAt] was signed.
+     *
+     * Before [currentSince] this is the role [history], as gitworkshop judges it. From then on it
+     * is today's membership: the announcements that define it were already in force. History alone
+     * can call that moment ambiguous (a co-maintainer's timeless legacy list read as a second
+     * repository) and trust no one, which would lock out every current maintainer.
+     */
+    fun membersAt(createdAt: Long): Set<HexKey> = if (createdAt >= currentSince) currentMembers else history.membersAt(createdAt)
+
+    /** The maintainers when an event created at [createdAt] was signed; see [membersAt]. */
+    fun maintainersAt(createdAt: Long): Set<HexKey> = if (createdAt >= currentSince) currentMaintainers else history.maintainersAt(createdAt)
 
     /** The announcement coordinates of every confirmed member, the selected one first when confirmed. */
     fun confirmedCoordinates(): List<Address> {
@@ -89,6 +114,24 @@ class GitRepositoryMembership(
                 }
             }
             return latest
+        }
+
+        /**
+         * The membership as the repository's lead sees it: resolved from [selectedMaintainer], then
+         * again from the lead its `M` path ends at (the first confirmed maintainer), when that is
+         * someone else whose announcement is known. A component is anchored at its lead, and role
+         * history prefers the lead's records, so a co-maintainer's coordinate and the lead's give
+         * the same answers about the past, as gitworkshop does.
+         */
+        fun resolveFromLead(
+            selectedMaintainer: HexKey,
+            identifier: String,
+            latestByAuthor: Map<HexKey, GitRepositoryEvent>,
+        ): GitRepositoryMembership? {
+            val selected = resolve(selectedMaintainer, identifier, latestByAuthor) ?: return null
+            val lead = selected.confirmedMaintainers.firstOrNull() ?: return selected
+            if (lead == selectedMaintainer || lead !in latestByAuthor) return selected
+            return resolve(lead, identifier, latestByAuthor) ?: selected
         }
 
         private class Edge(
@@ -198,6 +241,25 @@ class GitRepositoryMembership(
                 }
 
             val confirmedMembers = (confirmedMaintainers + confirmedModerators).distinct()
+
+            // Graph distance from the selected announcement over confirmed members' assignments:
+            // the closer an announcement, the more its copy of a role record counts.
+            val memberSet = confirmedMembers.toHashSet()
+            val edges = (maintainerEdges + moderatorEdges).filter { it.from in memberSet && it.to in memberSet }
+            val distances = HashMap<HexKey, Int>().apply { put(selectedMaintainer, 0) }
+            val walk = ArrayDeque(listOf(selectedMaintainer))
+            while (walk.isNotEmpty()) {
+                val author = walk.removeFirst()
+                val next = (distances[author] ?: 0) + 1
+                edges.forEach { edge ->
+                    if (edge.from == author && edge.to !in distances) {
+                        distances[edge.to] = next
+                        walk.add(edge.to)
+                    }
+                }
+            }
+            val history = GitRepositoryRoleHistory.resolve(selectedMaintainer, confirmedMaintainers, confirmedMembers, latestByAuthor, distances)
+
             return GitRepositoryMembership(
                 selectedMaintainer = selectedMaintainer,
                 identifier = identifier,
@@ -207,6 +269,7 @@ class GitRepositoryMembership(
                 invitedModerators = invitedModerators,
                 confirmedAnnouncements = confirmedMembers.mapNotNull { latestByAuthor[it] },
                 discoveryPubKeys = discovery,
+                history = history,
             )
         }
 
