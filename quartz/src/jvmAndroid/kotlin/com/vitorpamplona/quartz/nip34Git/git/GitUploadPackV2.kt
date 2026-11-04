@@ -59,6 +59,30 @@ object GitUploadPackV2 {
             write(PktLineCodec.FLUSH)
         }
 
+    /**
+     * A `fetch` that also says what the client [haves], so the server sends only the objects
+     * reachable from [wants] and not from them: a branch's own commits on top of a known base.
+     */
+    fun fetchRequest(
+        objectFormat: String,
+        wants: List<String>,
+        haves: List<String>,
+        deepen: Int?,
+        filter: String?,
+    ): ByteArray =
+        PktLineCodec.build {
+            write(PktLineCodec.dataLine("command=fetch\n"))
+            write(PktLineCodec.dataLine("object-format=$objectFormat\n"))
+            write(PktLineCodec.DELIM)
+            write(PktLineCodec.dataLine("no-progress\n"))
+            wants.forEach { write(PktLineCodec.dataLine("want $it\n")) }
+            haves.forEach { write(PktLineCodec.dataLine("have $it\n")) }
+            if (deepen != null) write(PktLineCodec.dataLine("deepen $deepen\n"))
+            if (filter != null) write(PktLineCodec.dataLine("filter $filter\n"))
+            write(PktLineCodec.dataLine("done\n"))
+            write(PktLineCodec.FLUSH)
+        }
+
     fun parseCapabilities(lines: List<PktLine>): GitCapabilities {
         var agent: String? = null
         var objectFormat = "sha1"

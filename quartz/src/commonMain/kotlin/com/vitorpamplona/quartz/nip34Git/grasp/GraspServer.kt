@@ -83,6 +83,21 @@ object GraspServer {
         return HOST.matches(host) && ('.' in host || host == "localhost")
     }
 
+    /**
+     * The relay of [relays] (an announcement's) that is the same GRASP server as [cloneUrl], or
+     * null. A GRASP server takes pushes only for repositories that name it both ways, so this pair
+     * is how a client tells a GRASP clone URL from any other git host (gitworkshop's rule), and
+     * the relay is where the server reads the signed state a push must match.
+     */
+    fun pairedRelay(
+        cloneUrl: String,
+        relays: List<String>,
+    ): String? {
+        if ("/npub1" !in cloneUrl) return null
+        val server = normalize(cloneUrl) ?: return null
+        return relays.firstOrNull { normalize(it) == server }
+    }
+
     /** The relay URL a GRASP server answers nostr on: `wss://host`, or `ws://` for plain and `.onion` hosts. */
     fun relayUrl(server: String): String? {
         val normalized = normalize(server) ?: return null

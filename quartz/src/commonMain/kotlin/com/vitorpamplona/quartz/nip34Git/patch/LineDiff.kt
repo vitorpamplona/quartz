@@ -46,6 +46,19 @@ object LineDiff {
         return groupHunks(ops, oldLines, newLines, context)
     }
 
+    /**
+     * For each line of [oldLines], the index of the line of [newLines] the diff keeps it as, or -1
+     * when the diff deletes it: the alignment a three-way merge ([LineMerge]) works from.
+     */
+    fun matches(
+        oldLines: List<String>,
+        newLines: List<String>,
+    ): IntArray {
+        val result = IntArray(oldLines.size) { -1 }
+        computeOps(oldLines, newLines).forEach { if (it.type == GitDiffLineType.CONTEXT) result[it.oldIndex] = it.newIndex }
+        return result
+    }
+
     /** Myers O(ND) diff: returns an ordered op list (CONTEXT / DELETE / ADD). */
     private fun computeOps(
         a: List<String>,

@@ -112,6 +112,31 @@ class GitSmartHttpTransport(
             GitUploadPackV2.extractPack(PktLineCodec.parse(postUploadPack(cloneUrl, body)))
         }
 
+    /**
+     * A `fetch` of [wants] that sends [haves], so the pack holds only what the server's history has
+     * beyond them, and no thin-pack deltas against objects it left out.
+     */
+    suspend fun fetchPack(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        wants: List<String>,
+        haves: List<String>,
+        deepen: Int?,
+        filter: String?,
+    ): ByteArray =
+        withContext(Dispatchers.IO) {
+            require(wants.isNotEmpty()) { "fetch requires at least one want" }
+            val body =
+                GitUploadPackV2.fetchRequest(
+                    objectFormat = caps.objectFormat,
+                    wants = wants,
+                    haves = haves,
+                    deepen = if (caps.supportsShallow) deepen else null,
+                    filter = filter?.takeIf { caps.supportsFilter },
+                )
+            GitUploadPackV2.extractPack(PktLineCodec.parse(postUploadPack(cloneUrl, body)))
+        }
+
     private suspend fun postUploadPack(
         cloneUrl: String,
         body: ByteArray,

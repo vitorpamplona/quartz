@@ -73,5 +73,31 @@ class GitRepositoryStateEvent(
             head?.let { head(it) }
             initializer()
         }
+
+        /**
+         * [previous] with [branch] moved to [commit]: every other ref, tag and HEAD kept as signed,
+         * which is what a maintainer's push publishes (gitworkshop's and ngit's merge). HEAD points
+         * at [branch] when [makeHead] or when [previous] named none. Dated after [previous] so it
+         * replaces it.
+         */
+        fun advance(
+            previous: GitRepositoryStateEvent?,
+            dTag: String,
+            branch: String,
+            commit: String,
+            makeHead: Boolean = false,
+            createdAt: Long = TimeUtils.now(),
+        ) = eventTemplate<GitRepositoryStateEvent>(KIND, "", maxOf(createdAt, (previous?.createdAt ?: 0) + 1)) {
+            dTag(dTag)
+            val target = RefTag.PREFIX_HEADS + branch
+            val pointHead = makeHead || previous?.head() == null
+            previous?.tags?.forEach { tag ->
+                val name = tag.firstOrNull() ?: return@forEach
+                if (name == "d" || name == target || (pointHead && name == HeadTag.TAG_NAME)) return@forEach
+                add(tag)
+            }
+            ref(RefTag.branch(branch, commit))
+            if (pointHead) head(branch)
+        }
     }
 }
