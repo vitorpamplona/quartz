@@ -80,6 +80,7 @@ in `NostrClient` completion — import them by name:
 | Need | Use |
 | --- | --- |
 | All events for a filter | `fetchAll(relay, filter)` |
+| Every event one relay sends for a filter, as it arrives, until EOSE | `fetchEvents(relay, filters)` (a `Flow<Event>`) or `fetch(relay, filters) { event -> }` (returns the count): not verified, deduped or sorted; a CLOSED throws `SubscriptionClosedException`, an unreachable relay `RelayUnreachableException` |
 | First match | `fetchFirst(relay, filter)` |
 | More than a relay's per-REQ cap | `fetchAllPages(relay, filters) { event -> }`; only `PagedFetchResult.End.DRAINED` proves there is nothing more |
 | Verify/store as events arrive, per-relay results | `fetchAllWithHooks` |

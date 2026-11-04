@@ -20,36 +20,15 @@
  */
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
-import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
-import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
-import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
-import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
-import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.CaughtUpResume
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.ResumePolicy
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.resume
-import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
-import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadablePrefix
-import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.RetryAfter
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.concurrent.atomics.AtomicInt
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * The live tail of [relay] for [filters], as a [Flow] of its events. See the multi-relay form.
@@ -103,164 +82,17 @@ fun INostrClient.subscribeEvents(
  * gets one EOSE, so "caught up" holds for all of them at once. A null [resume] always sends the
  * filters as given.
  */
-@OptIn(ExperimentalAtomicApi::class)
 fun INostrClient.subscribeEvents(
     filters: Map<NormalizedRelayUrl, List<Filter>>,
     resume: ResumePolicy? = CaughtUpResume(),
     authSettleMs: Long = 120_000,
-): Flow<Event> =
-    callbackFlow {
-        val subId = "live-" + RandomInstance.randomChars(10)
-        // Per relay, AUTHs accepted on its current connection as of the last time it served us or
-        // the REQ was written: an `auth-required:` refusal waits for one newer than this, which is
-        // when the client re-sends the REQ. The count starts again on every connection.
-        val authMarks = filters.keys.associateWith { AtomicInt(authSuccessMark(it)) }
-        // Completed when the flow ends, before the unsubscribe: a send waiting for room gives up on it.
-        val stopped = CompletableDeferred<Unit>()
-        // Per relay, how many times its connection dropped, and how many CLOSEDs in a row were
-        // followed by one (a relay going away) since it last reached EOSE.
-        val drops = filters.keys.associateWith { MutableStateFlow(0) }
-        val goingAwayInARow = filters.keys.associateWith { AtomicInt(0) }
-        val connections =
-            object : RelayConnectionListener {
-                override fun onDisconnected(relay: IRelayClient) {
-                    drops[relay.url]?.update { it + 1 }
-                }
-            }
-        addConnectionListener(connections)
-
-        fun end(
-            relay: NormalizedRelayUrl,
-            message: String,
-        ) = close(SubscriptionClosedException(relay, message))
-
-        val listener =
-            object : SubscriptionListener {
-                // The pool asks this each time it writes the REQ on a connection: that is where a
-                // reconnect, or the replay after an AUTH, picks up the resume point.
-                override fun filtersForSync(
-                    relay: NormalizedRelayUrl,
-                    filters: List<Filter>,
-                ): List<Filter>? {
-                    val mark = authMarks[relay] ?: return null
-                    if (stopped.isCompleted) return null
-                    // AUTHs are counted per connection, and this REQ is going out on the current
-                    // one: a refusal of it waits for an AUTH newer than what this connection has
-                    // seen, not the last one, which would leave a reconnect waiting forever.
-                    mark.store(authSuccessMark(relay))
-                    return resume?.resume(relay, filters)
-                }
-
-                override suspend fun onEvent(
-                    event: Event,
-                    isLive: Boolean,
-                    relay: NormalizedRelayUrl,
-                    forFilters: List<Filter>?,
-                ) {
-                    if (relay !in authMarks || stopped.isCompleted) return
-                    // This runs on the connection's delivery coroutine, which every other
-                    // subscription on the relay shares. Waiting for room is the backpressure; waiting
-                    // past this flow's end would stall the connection for good (a channel closed by
-                    // its collector leaving never wakes a suspended send), so the wait also ends with
-                    // the flow, and the event is dropped.
-                    val offered = trySend(event)
-                    if (offered.isClosed) return
-                    if (offered.isFailure) {
-                        val delivered =
-                            try {
-                                select<Boolean> {
-                                    onSend(event) { true }
-                                    stopped.onAwait { false }
-                                }
-                            } catch (e: Throwable) {
-                                // The connection's own cancellation must still reach it; this
-                                // flow ending must not.
-                                currentCoroutineContext().ensureActive()
-                                if (stopped.isCompleted || isClosedForSend) return
-                                throw e
-                            }
-                        if (!delivered) return
-                    }
-                    resume?.onEvent(relay, event, isLive)
-                }
-
-                override fun onEose(
-                    relay: NormalizedRelayUrl,
-                    forFilters: List<Filter>?,
-                ) {
-                    val mark = authMarks[relay] ?: return
-                    mark.store(authSuccessMark(relay))
-                    goingAwayInARow[relay]?.store(0)
-                    resume?.onEose(relay, forFilters)
-                }
-
-                override fun onClosed(
-                    message: String,
-                    relay: NormalizedRelayUrl,
-                    forFilters: List<Filter>?,
-                ) = onClosed(message, relay, forFilters, null)
-
-                override fun onClosed(
-                    message: String,
-                    relay: NormalizedRelayUrl,
-                    forFilters: List<Filter>?,
-                    params: String?,
-                ) {
-                    val mark = authMarks[relay] ?: return
-                    // Retried by the client once the relay's stated back-off passes.
-                    if (RetryAfter.parse(message, params) != null) return
-                    when (MachineReadablePrefix.parse(message)) {
-                        MachineReadablePrefix.AUTH_REQUIRED -> {}
-                        // A relay going away (a restart, a deploy) CLOSEs its subscriptions with an
-                        // `error:` (or no prefix) and then drops the socket; the client sends the REQ
-                        // again on the next connection, so that CLOSED doesn't end the flow. Three in a
-                        // row without an EOSE do: the client stops re-sending a REQ refused that often,
-                        // and the flow would go silent.
-                        MachineReadablePrefix.ERROR, null -> {
-                            val dropsAtClose = drops[relay]?.value ?: 0
-                            launch {
-                                val goingAway = withTimeoutOrNull(GOING_AWAY_GRACE_MS) { drops[relay]?.first { it > dropsAtClose } } != null
-                                if (!goingAway || (goingAwayInARow[relay]?.addAndFetch(1) ?: 0) >= MAX_GOING_AWAY_IN_A_ROW) end(relay, message)
-                            }
-                            return
-                        }
-                        // `blocked:`, `restricted:`, `invalid:`, …: a refusal, not a shutdown.
-                        else -> {
-                            end(relay, message)
-                            return
-                        }
-                    }
-                    val since = mark.load()
-                    launch {
-                        if (awaitAuthOutcome(relay, since, settleMs = authSettleMs) == AuthOutcome.AUTHENTICATED) {
-                            // The client re-sent the REQ on the AUTH's OK. A later refusal needs a newer AUTH.
-                            mark.store(authSuccessMark(relay))
-                        } else {
-                            end(relay, message)
-                        }
-                    }
-                }
-            }
-
-        subscribe(subId, filters, listener)
-        awaitClose {
-            stopped.complete(Unit)
-            removeConnectionListener(connections)
-            unsubscribe(subId)
-        }
-    }
-
-/** How long after a CLOSED the connection may drop for the CLOSED to count as the relay going away. */
-private const val GOING_AWAY_GRACE_MS = 3_000L
-
-/** The pool stops re-sending a REQ its relay refused this many times running. */
-private const val MAX_GOING_AWAY_IN_A_ROW = 3
+): Flow<Event> = streamReqAsFlow(filters, resume, authSettleMs, untilEose = false)
 
 /**
- * A relay ended a [subscribeEvents] subscription with a CLOSED: [reason]. The client would not send
- * the REQ again on this connection.
+ * A relay ended a [subscribeEvents] or [fetchEvents] subscription with a CLOSED: [reason]. The
+ * client would not send the REQ again on this connection.
  */
 class SubscriptionClosedException(
     val relay: NormalizedRelayUrl,
     val reason: String,
-) : Exception("${relay.url} closed the live subscription: $reason")
+) : Exception("${relay.url} closed the subscription: $reason")
