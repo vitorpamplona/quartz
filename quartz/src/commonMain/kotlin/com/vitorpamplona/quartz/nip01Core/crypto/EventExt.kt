@@ -48,7 +48,8 @@ fun Event.checkSignature() {
 
 fun Event.verify(): Boolean =
     try {
-        verifyId() && verifySignature()
+        // verifyId() && verifySignature(), with reused buffers: no allocation per event.
+        EventVerifier.verify(id, pubKey, createdAt, kind, tags, content, sig)
     } catch (e: Exception) {
         Log.w("Event", "Event $id does not have a valid signature (pubKey=$pubKey, kind=$kind, createdAt=$createdAt)", e)
         false

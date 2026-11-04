@@ -52,3 +52,11 @@ internal actual fun sha256Of(
     data: ByteArray,
     length: Int,
 ): ByteArray = sha256(data.copyOf(length))
+
+internal actual fun sha256Into(
+    data: ByteArray,
+    length: Int,
+    out: ByteArray,
+) {
+    sha256(data.copyOf(length)).copyInto(out)
+}
