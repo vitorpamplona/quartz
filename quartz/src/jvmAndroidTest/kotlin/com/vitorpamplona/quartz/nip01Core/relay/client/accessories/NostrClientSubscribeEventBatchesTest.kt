@@ -251,14 +251,18 @@ class NostrClientSubscribeEventBatchesTest {
             val stuckJob = scope.launch { batches(maxPending = 2).collect { awaitCancellation() } }
             awaitReqs(2)
 
-            val events = (0 until 3).map { note(clock + it) }
+            // Room for two: e0 and e1 wait in the stuck flow, and e2's delivery waits for room,
+            // holding the connection. Each event reaches the two subscriptions in an order of the
+            // relay's choosing, so e2 may reach the other one first; e3 can't.
+            val events = (0 until 4).map { note(clock + it) }
             events.forEach { hub.getOrCreate(relay).publish(it) }
-            assertEquals(events[0].id, withTimeout(5_000) { other.receive() }.id)
-            assertEquals(events[1].id, withTimeout(5_000) { other.receive() }.id)
+            val got = mutableSetOf<String>()
+            withTimeout(5_000) { while (got.size < 2) got += other.receive().id }
             delay(500)
-            assertTrue(other.isEmpty, "two waiting: the third waits for room, and the connection with it")
+            while (true) got += other.tryReceive().getOrNull()?.id ?: break
+            assertTrue(events[3].id !in got, "the fourth waits behind the stuck flow's room: $got")
             stuckJob.cancel()
-            assertEquals(events[2].id, withTimeout(5_000) { other.receive() }.id)
+            withTimeout(5_000) { while (events[3].id !in got) got += other.receive().id }
             otherJob.cancel()
         }
 
