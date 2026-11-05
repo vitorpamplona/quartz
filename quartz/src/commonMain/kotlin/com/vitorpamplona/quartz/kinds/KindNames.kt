@@ -267,6 +267,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestEvent
 import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestUpdateEvent
 import com.vitorpamplona.quartz.nip34Git.reply.GitReplyEvent
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.review.GitReviewEvent
 import com.vitorpamplona.quartz.nip34Git.state.GitRepositoryStateEvent
 import com.vitorpamplona.quartz.nip34Git.status.GitStatusAppliedEvent
 import com.vitorpamplona.quartz.nip34Git.status.GitStatusClosedEvent
@@ -731,6 +732,7 @@ object KindNames {
             CodeSnippetEvent.KIND to KindName("Code Snippet", "C0"),
             GitPullRequestEvent.KIND to KindName("Git Pull Request", "34"),
             GitPullRequestUpdateEvent.KIND to KindName("Git PR Update", "34"),
+            GitReviewEvent.KIND to KindName("Git Review", "34"),
             LabelEvent.KIND to KindName("Label", "32"),
             SoftwareAssetEvent.KIND to KindName("Software Asset", "82"),
             IdentityProofEvent.KIND to KindName("Cryptographic Identity Proof", null),

@@ -18,6 +18,7 @@ _Audited 2026-09-17. 13 plans: 7 shipped (archived), 0 in-progress, 5 queued, 1 
 ## Archived (shipped)
 | Plan | Summary |
 | ---- | ------- |
+| [archive/2026-11-05-git-fetch-costs.md](archive/2026-11-05-git-fetch-costs.md) | NIP-34 history/blame fetch commits plus only the path's trees (11.5 MB to 3.6-4.3 MB; app blame under 6 s, was 30-60 s); content search streams packs and skips binary and oversized files. |
 | [archive/2026-06-03-fix-nip46-bunker-double-resume-plan.md](archive/2026-06-03-fix-nip46-bunker-double-resume-plan.md) | Fix NIP-46 bunker double-resume crash and retry id-reuse races via Channel-per-request + fresh id per attempt. |
 | [archive/2026-06-04-auth-scope-vs-policy.md](archive/2026-06-04-auth-scope-vs-policy.md) | Move relay-server authenticated-identity state from the policy into the engine-owned connection scope. |
 | [archive/2026-06-09-clink.md](archive/2026-06-09-clink.md) | Implement CLINK (Offers/Debits/Manage) Lightning-over-Nostr pointers, events, and client/server in Quartz. |

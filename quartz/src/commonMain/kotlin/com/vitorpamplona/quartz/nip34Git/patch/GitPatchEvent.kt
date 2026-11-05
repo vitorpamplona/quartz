@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.pTags
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
+import com.vitorpamplona.quartz.nip34Git.patch.tags.AuthorTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitPgpSigTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.CommitTag
 import com.vitorpamplona.quartz.nip34Git.patch.tags.Committer
@@ -116,6 +117,9 @@ class GitPatchEvent(
     fun commitPGPSig() = tags.firstNotNullOfOrNull(CommitPgpSigTag::parse)
 
     fun committer() = tags.mapNotNull(CommitterTag::parse)
+
+    /** The commit's author as git recorded it (`author` tag), which a rebuilt commit must reproduce. */
+    fun author(): Committer? = tags.firstNotNullOfOrNull(AuthorTag::parse)
 
     /** Earliest unique commit of the target repository, encoded as `["r", <commit>]`. */
     fun earliestUniqueCommit(): String? = tags.earliestUniqueCommit()

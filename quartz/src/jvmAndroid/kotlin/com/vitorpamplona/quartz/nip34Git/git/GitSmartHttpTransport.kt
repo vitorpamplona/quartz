@@ -27,6 +27,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.coroutines.executeAsync
+import java.io.InputStream
 
 /** A ref returned by `ls-refs`: an oid, its full name, and (for symrefs) its target. */
 class GitRef(
@@ -61,6 +62,13 @@ class GitCapabilities(
 class GitSmartHttpTransport(
     private val okHttpClient: (String) -> OkHttpClient,
 ) {
+    /** The `Authorization` header source for a private repository ([GitHttpAuth]), or null when none needs one. */
+    private var authorization: GitHttpAuth? = null
+
+    constructor(okHttpClient: (String) -> OkHttpClient, authorization: GitHttpAuth?) : this(okHttpClient) {
+        this.authorization = authorization
+    }
+
     suspend fun fetchCapabilities(cloneUrl: String): GitCapabilities =
         withContext(Dispatchers.IO) {
             val url = "${base(cloneUrl)}/info/refs?service=git-upload-pack"
@@ -72,7 +80,7 @@ class GitSmartHttpTransport(
                     .header("Accept", "*/*")
                     .get()
                     .build()
-            GitUploadPackV2.parseCapabilities(PktLineCodec.parse(execute(url, request)))
+            GitUploadPackV2.parseCapabilities(PktLineCodec.parse(execute(cloneUrl, url, request)))
         }
 
     suspend fun lsRefs(
@@ -112,27 +120,89 @@ class GitSmartHttpTransport(
             GitUploadPackV2.extractPack(PktLineCodec.parse(postUploadPack(cloneUrl, body)))
         }
 
+    /**
+     * A `fetch` of [wants] that sends [haves], so the pack holds only what the server's history has
+     * beyond them, and no thin-pack deltas against objects it left out.
+     */
+    suspend fun fetchPack(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        wants: List<String>,
+        haves: List<String>,
+        deepen: Int?,
+        filter: String?,
+    ): ByteArray =
+        withContext(Dispatchers.IO) {
+            require(wants.isNotEmpty()) { "fetch requires at least one want" }
+            val body =
+                GitUploadPackV2.fetchRequest(
+                    objectFormat = caps.objectFormat,
+                    wants = wants,
+                    haves = haves,
+                    deepen = if (caps.supportsShallow) deepen else null,
+                    filter = filter?.takeIf { caps.supportsFilter },
+                )
+            GitUploadPackV2.extractPack(PktLineCodec.parse(postUploadPack(cloneUrl, body)))
+        }
+
+    /**
+     * A `fetch` like [fetchPack] whose pack is handed to [read] as a stream while the response
+     * arrives, instead of as one array: [read] runs on the IO dispatcher with the connection
+     * open, and the response is closed when it returns. Pair it with [PackfileStream] so a pack
+     * is parsed object by object and its largest objects can be passed over without being held.
+     */
+    suspend fun <T> fetchPackStream(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        wants: List<String>,
+        deepen: Int?,
+        filter: String?,
+        read: (InputStream) -> T,
+    ): T =
+        withContext(Dispatchers.IO) {
+            require(wants.isNotEmpty()) { "fetch requires at least one want" }
+            val body =
+                GitUploadPackV2.fetchRequest(
+                    objectFormat = caps.objectFormat,
+                    wants = wants,
+                    deepen = if (caps.supportsShallow) deepen else null,
+                    filter = filter?.takeIf { caps.supportsFilter },
+                )
+            val url = "${base(cloneUrl)}/git-upload-pack"
+            okHttpClient(url).newCall(authorized(cloneUrl, uploadPackRequest(url, body))).executeAsync().use { response ->
+                if (!response.isSuccessful) {
+                    throw GitHttpException("HTTP ${response.code} from $url", httpCode = response.code)
+                }
+                read(GitUploadPackV2.packStream(response.body.byteStream()))
+            }
+        }
+
     private suspend fun postUploadPack(
         cloneUrl: String,
         body: ByteArray,
     ): ByteArray {
         val url = "${base(cloneUrl)}/git-upload-pack"
-        val request =
-            Request
-                .Builder()
-                .url(url)
-                .header("Git-Protocol", "version=2")
-                .header("Accept", "application/x-git-upload-pack-result")
-                .post(body.toRequestBody(GIT_UPLOAD_PACK_REQUEST))
-                .build()
-        return execute(url, request)
+        return execute(cloneUrl, url, uploadPackRequest(url, body))
     }
 
+    private fun uploadPackRequest(
+        url: String,
+        body: ByteArray,
+    ): Request =
+        Request
+            .Builder()
+            .url(url)
+            .header("Git-Protocol", "version=2")
+            .header("Accept", "application/x-git-upload-pack-result")
+            .post(body.toRequestBody(GIT_UPLOAD_PACK_REQUEST))
+            .build()
+
     private suspend fun execute(
+        cloneUrl: String,
         url: String,
         request: Request,
     ): ByteArray =
-        okHttpClient(url).newCall(request).executeAsync().use { response ->
+        okHttpClient(url).newCall(authorized(cloneUrl, request)).executeAsync().use { response ->
             if (!response.isSuccessful) {
                 throw GitHttpException("HTTP ${response.code} from $url", httpCode = response.code)
             }
@@ -140,6 +210,15 @@ class GitSmartHttpTransport(
         }
 
     private fun base(cloneUrl: String): String = cloneUrl.trim().trimEnd('/')
+
+    /** [request] with the repository's `Authorization` ([authorization]), when it needs one. */
+    private suspend fun authorized(
+        cloneUrl: String,
+        request: Request,
+    ): Request {
+        val header = authorization?.header(cloneUrl) ?: return request
+        return request.newBuilder().header("Authorization", header).build()
+    }
 
     companion object {
         private val GIT_UPLOAD_PACK_REQUEST = "application/x-git-upload-pack-request".toMediaType()

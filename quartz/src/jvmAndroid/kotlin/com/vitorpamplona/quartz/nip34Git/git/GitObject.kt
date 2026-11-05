@@ -101,6 +101,40 @@ object GitObjectParser {
     }
 
     /**
+     * The entry called [name] in a tree object payload, or null, read without building the
+     * other entries: walking one path through many trees needs one entry of each.
+     */
+    fun findTreeEntry(
+        data: ByteArray,
+        name: String,
+    ): GitTreeEntry? {
+        val wanted = name.encodeToByteArray()
+        var i = 0
+        while (i < data.size) {
+            val space = indexOf(data, ' '.code.toByte(), i)
+            require(space >= 0) { "malformed tree entry: missing mode separator" }
+            val nul = indexOf(data, 0, space + 1)
+            require(nul >= 0) { "malformed tree entry: missing name terminator" }
+            val oidStart = nul + 1
+            require(oidStart + 20 <= data.size) { "malformed tree entry: truncated oid" }
+            if (nul - space - 1 == wanted.size && regionEquals(data, space + 1, wanted)) {
+                return GitTreeEntry(data.decodeToString(i, space), name, toHex(data, oidStart, 20))
+            }
+            i = oidStart + 20
+        }
+        return null
+    }
+
+    private fun regionEquals(
+        data: ByteArray,
+        offset: Int,
+        other: ByteArray,
+    ): Boolean {
+        for (k in other.indices) if (data[offset + k] != other[k]) return false
+        return true
+    }
+
+    /**
      * Parses a commit object payload into a [GitCommit]. Header lines run until
      * the first blank line; multi-line headers (e.g. `gpgsig`) use leading-space
      * continuations which we skip.

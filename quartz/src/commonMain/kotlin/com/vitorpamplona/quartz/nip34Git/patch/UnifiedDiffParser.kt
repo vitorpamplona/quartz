@@ -55,7 +55,22 @@ class GitDiffFile(
     val change: GitFileChange,
     val isBinary: Boolean,
     val hunks: List<GitDiffHunk>,
+    /** The file's mode before and after (`100644`, `100755`, `120000`), when the diff states it. */
+    val oldMode: String? = null,
+    val newMode: String? = null,
+    /** The old or new text ends without a newline (`\ No newline at end of file` after its last line). */
+    val oldMissingNewline: Boolean = false,
+    val newMissingNewline: Boolean = false,
 ) {
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(
+        oldPath: String?,
+        newPath: String?,
+        change: GitFileChange,
+        isBinary: Boolean,
+        hunks: List<GitDiffHunk>,
+    ) : this(oldPath, newPath, change, isBinary, hunks, null, null, false, false)
+
     val displayPath: String get() = newPath ?: oldPath ?: "?"
     val additions: Int get() = hunks.sumOf { hunk -> hunk.lines.count { it.type == GitDiffLineType.ADD } }
     val deletions: Int get() = hunks.sumOf { hunk -> hunk.lines.count { it.type == GitDiffLineType.DELETE } }
@@ -155,13 +170,31 @@ object UnifiedDiffParser {
 
         var change = GitFileChange.MODIFY
         var isBinary = false
+        var oldMode: String? = null
+        var newMode: String? = null
 
         var i = range.first + 1
         while (i <= range.last && !lines[i].startsWith(HUNK_PREFIX)) {
             val line = lines[i]
             when {
-                line.startsWith("new file mode") -> change = GitFileChange.ADD
-                line.startsWith("deleted file mode") -> change = GitFileChange.DELETE
+                line.startsWith("new file mode") -> {
+                    change = GitFileChange.ADD
+                    newMode = modeOf(line.removePrefix("new file mode"))
+                }
+                line.startsWith("deleted file mode") -> {
+                    change = GitFileChange.DELETE
+                    oldMode = modeOf(line.removePrefix("deleted file mode"))
+                }
+                line.startsWith("old mode ") -> oldMode = modeOf(line.removePrefix("old mode "))
+                line.startsWith("new mode ") -> newMode = modeOf(line.removePrefix("new mode "))
+                // `index abc..def 100644`: the mode of a file whose mode did not change.
+                line.startsWith("index ") -> {
+                    val mode = line.removePrefix("index ").substringAfter(' ', "").let(::modeOf)
+                    if (mode != null) {
+                        if (oldMode == null) oldMode = mode
+                        if (newMode == null) newMode = mode
+                    }
+                }
                 line.startsWith("rename from ") -> {
                     change = GitFileChange.RENAME
                     oldPath = line.removePrefix("rename from ").trim()
@@ -177,16 +210,25 @@ object UnifiedDiffParser {
             i++
         }
 
-        val hunks = if (isBinary) emptyList() else parseHunks(lines, i, range.last)
+        val missing = BooleanArray(2)
+        val hunks = if (isBinary) emptyList() else parseHunks(lines, i, range.last, missing)
         if (oldPath == null && newPath != null && change == GitFileChange.MODIFY) change = GitFileChange.ADD
         if (newPath == null && oldPath != null && change == GitFileChange.MODIFY) change = GitFileChange.DELETE
-        return GitDiffFile(oldPath, newPath, change, isBinary, hunks)
+        return GitDiffFile(oldPath, newPath, change, isBinary, hunks, oldMode, newMode, missing[0], missing[1])
     }
 
+    /** A git file mode (`100644`, `100755`, `120000`, `160000`), or null. */
+    private fun modeOf(raw: String): String? = raw.trim().takeIf { it.length == 6 && it.all(Char::isDigit) }
+
+    /**
+     * The hunks of one file. [missingNewline] gets, for the old and the new text, whether a
+     * `\ No newline at end of file` marker followed its last line.
+     */
     private fun parseHunks(
         lines: List<String>,
         from: Int,
         last: Int,
+        missingNewline: BooleanArray,
     ): List<GitDiffHunk> {
         val hunks = ArrayList<GitDiffHunk>()
         var i = from
@@ -219,7 +261,7 @@ object UnifiedDiffParser {
                         oldNo++
                         remainingOld--
                     }
-                    line.startsWith("\\") -> {} // "\ No newline at end of file"
+                    line.startsWith("\\") -> markMissingNewline(hunkLines, missingNewline)
                     else -> {
                         val text = if (line.startsWith(" ")) line.substring(1) else line
                         hunkLines.add(GitDiffLine(GitDiffLineType.CONTEXT, text, oldNo, newNo))
@@ -231,9 +273,30 @@ object UnifiedDiffParser {
                 }
                 i++
             }
+            // The marker after the hunk's last counted line is outside the counts.
+            if (i <= last && lines[i].startsWith("\\")) {
+                markMissingNewline(hunkLines, missingNewline)
+                i++
+            }
             hunks.add(GitDiffHunk(header, oldStart, newStart, hunkLines))
         }
         return hunks
+    }
+
+    /** A `\ No newline at end of file` marker is about the line before it: old, new, or both for context. */
+    private fun markMissingNewline(
+        hunkLines: List<GitDiffLine>,
+        missingNewline: BooleanArray,
+    ) {
+        when (hunkLines.lastOrNull()?.type) {
+            GitDiffLineType.DELETE -> missingNewline[0] = true
+            GitDiffLineType.ADD -> missingNewline[1] = true
+            GitDiffLineType.CONTEXT -> {
+                missingNewline[0] = true
+                missingNewline[1] = true
+            }
+            null -> {}
+        }
     }
 
     private data class HunkHeader(

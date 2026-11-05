@@ -37,7 +37,9 @@ fun TagArrayBuilder<GitPullRequestUpdateEvent>.repository(rep: ATag) = addUnique
 fun TagArrayBuilder<GitPullRequestUpdateEvent>.repository(rep: EventHintBundle<GitRepositoryEvent>) = addUniqueValueIfNew(rep.toATag().toATagArray())
 
 // Plain `["r", <commit>]` — the `"euc"` marker is only on the 30617 announcement.
-fun TagArrayBuilder<GitPullRequestUpdateEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
+
+/** The repository's earliest unique commit; a repository that has none gets no `r` tag rather than an empty one. */
+fun TagArrayBuilder<GitPullRequestUpdateEvent>.euc(commit: String) = if (commit.isBlank()) this else addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPullRequestUpdateEvent>.currentCommit(commit: String) = addUnique(CurrentCommitTag.assemble(commit))
 

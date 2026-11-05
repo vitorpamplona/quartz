@@ -41,9 +41,10 @@ fun TagArrayBuilder<GitPatchEvent>.repository(rep: EventHintBundle<GitRepository
  * target repository. NIP-34 uses the plain `["r", <commit>]` shape for patches
  * — the `"euc"` marker appears only on the kind-30617 repository announcement
  * (confirmed against the ngit reference implementation). A `#r` filter still
- * matches either shape (both key off the value at index 1).
+ * matches either shape (both key off the value at index 1). A repository that has none gets no
+ * `r` tag rather than an empty one.
  */
-fun TagArrayBuilder<GitPatchEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
+fun TagArrayBuilder<GitPatchEvent>.euc(commit: String) = if (commit.isBlank()) this else addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPatchEvent>.commit(commit: String) = addUnique(CommitTag.assemble(commit))
 

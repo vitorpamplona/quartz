@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip34Git.git
 
 import java.io.ByteArrayOutputStream
+import java.io.EOFException
+import java.io.InputStream
 
 /**
  * git `pkt-line` framing used by the smart-HTTP transport.
@@ -108,6 +110,44 @@ object PktLineCodec {
             }
         }
         return result
+    }
+
+    /**
+     * Reads the next frame from [input] as it arrives, or null at the end of the stream. A frame
+     * cut off by the end of the stream is an [EOFException].
+     */
+    fun read(input: InputStream): PktLine? {
+        val prefix = ByteArray(4)
+        val got = readFully(input, prefix, 0, 4)
+        if (got == 0) return null
+        if (got < 4) throw EOFException("truncated pkt-line length")
+        return when (val len = parseHex4(prefix, 0)) {
+            0 -> PktLine.Flush
+            1 -> PktLine.Delim
+            2 -> PktLine.ResponseEnd
+            else -> {
+                require(len >= 4) { "invalid pkt-line length $len" }
+                val payload = ByteArray(len - 4)
+                if (readFully(input, payload, 0, payload.size) < payload.size) throw EOFException("truncated pkt-line: need ${payload.size} bytes")
+                PktLine.Data(payload)
+            }
+        }
+    }
+
+    /** Reads up to [len] bytes into [dest], stopping early only at the end of [input]; returns how many it read. */
+    private fun readFully(
+        input: InputStream,
+        dest: ByteArray,
+        offset: Int,
+        len: Int,
+    ): Int {
+        var got = 0
+        while (got < len) {
+            val n = input.read(dest, offset + got, len - got)
+            if (n < 0) break
+            got += n
+        }
+        return got
     }
 
     private fun parseHex4(
