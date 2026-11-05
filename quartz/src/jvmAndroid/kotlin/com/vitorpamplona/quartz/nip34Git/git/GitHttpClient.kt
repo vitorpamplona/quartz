@@ -468,8 +468,11 @@ class GitRepoSnapshot(
     /**
      * Searches the text of every file for [query] (case-insensitive), as `git grep -i -F` would,
      * fetching the blobs [batchSize] at a time so a large repository is never held in memory
-     * at once. Binary files (a NUL byte) and files over [maxFileBytes] are skipped. Calls
-     * [onProgress] with the files read so far and the total, and stops at [limit] matches.
+     * at once. Files whose names say they are binary ([GitBinaryFiles]) are not fetched; binary
+     * files (a NUL byte) and files over [maxFileBytes] are skipped. Each batch is read from the
+     * response as it arrives ([PackfileStream]), and a file whose pack entry is over
+     * [maxFileBytes] is passed over without being held, so memory follows one file, not a batch.
+     * Calls [onProgress] with the files read so far and the total, and stops at [limit] matches.
      */
     suspend fun searchContents(
         query: String,
@@ -490,39 +493,76 @@ class GitRepoSnapshot(
                 val path = prefix + entry.name
                 if (entry.isFolder) {
                     walk(entry.oid, path)
-                } else if (!entry.isSubmodule && entry.mode != "120000") {
+                } else if (!entry.isSubmodule && entry.mode != "120000" && !GitBinaryFiles.hasBinaryExtension(entry.name)) {
                     files.add(path to entry.oid)
                 }
             }
         }
         walk(rootTreeOid, emptyList())
 
+        // The matching lines of one file's text, at most [cap]; none for a binary or oversized file.
+        fun scan(
+            data: ByteArray,
+            cap: Int,
+        ): List<Pair<Int, String>> {
+            if (data.size > maxFileBytes || data.contains(0)) return emptyList()
+            val found = ArrayList<Pair<Int, String>>()
+            for ((index, line) in data.decodeToString().lineSequence().withIndex()) {
+                if (found.size >= cap) break
+                if (line.lowercase().contains(needle)) found.add(index + 1 to line.trim().take(300))
+            }
+            return found
+        }
+
         val result = ArrayList<GitContentMatch>()
         var read = 0
         onProgress(0, files.size)
         for (batch in files.chunked(batchSize)) {
+            val cap = limit - result.size
+            val matches = HashMap<String, List<Pair<Int, String>>>()
             // What another reader of this snapshot already cached (read under its lock: blob() writes it).
             val cached = blobMutex.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
+            cached.forEach { (oid, data) -> matches[oid] = scan(data, cap) }
             val missing = batch.map { it.second }.filter { it !in cached }.distinct()
-            val fetched =
-                if (missing.isEmpty()) {
-                    emptyMap()
-                } else {
-                    Packfile.parse(transport.fetchPack(cloneUrl, caps, missing, deepen = null, filter = null)).mapValues { it.value.data }
+            if (missing.isNotEmpty()) {
+                val wanted = missing.toHashSet()
+                // Only the matching lines stay: a search reads the files once and lets them go.
+                val tooLarge = HashSet<String>()
+                streamBlobs(missing, maxFileBytes, wanted, matches, tooLarge) { scan(it, cap) }
+                // A delta whose base the reader had let go: each alone comes whole, with no delta.
+                missing.filter { it !in matches && it !in tooLarge }.forEach { oid ->
+                    streamBlobs(listOf(oid), maxFileBytes, wanted, matches, tooLarge) { scan(it, cap) }
                 }
+            }
             for ((path, oid) in batch) {
-                // Only what was already cached stays: a search reads the files once and lets them go.
-                val data = cached[oid] ?: fetched[oid] ?: continue
-                if (data.size > maxFileBytes || data.contains(0)) continue
-                data.decodeToString().lineSequence().forEachIndexed { index, line ->
-                    if (result.size < limit && line.lowercase().contains(needle)) result.add(GitContentMatch(path, index + 1, line.trim().take(300)))
-                }
+                matches[oid]?.forEach { (line, text) -> if (result.size < limit) result.add(GitContentMatch(path, line, text)) }
                 if (result.size >= limit) return result
             }
             read += batch.size
             onProgress(read, files.size)
         }
         return result
+    }
+
+    /** Fetches [oids] and reads their pack as it arrives, keeping only what [scan] makes of each wanted blob. */
+    private suspend fun streamBlobs(
+        oids: List<String>,
+        maxFileBytes: Int,
+        wanted: Set<String>,
+        matches: MutableMap<String, List<Pair<Int, String>>>,
+        tooLarge: MutableSet<String>,
+        scan: (ByteArray) -> List<Pair<Int, String>>,
+    ) {
+        transport.fetchPackStream(cloneUrl, caps, oids, deepen = null, filter = null) { pack ->
+            PackfileStream.read(
+                pack,
+                maxObjectBytes = maxFileBytes.toLong(),
+                retainBytes = 4L * maxFileBytes,
+                onSkipped = { oid, reason -> if (oid != null && reason == GitPackSkip.TOO_LARGE) tooLarge.add(oid) },
+            ) { obj ->
+                if (obj.type == GitObjectType.BLOB && obj.oid in wanted) matches[obj.oid] = scan(obj.data)
+            }
+        }
     }
 
     fun hasBlob(oid: String): Boolean = blobs.containsKey(oid)

@@ -38,8 +38,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * What [GitFileHistory] downloads, over real git: the path trees only, and a fallback for a
- * server that won't send trees by id.
+ * What [GitFileHistory] and [GitRepoSnapshot.searchContents] download, over real git: the path
+ * trees only, a fallback for a server that won't send trees by id, and the files search leaves out.
  */
 class GitFetchCostsGitTest {
     /** Records each `git-upload-pack` fetch: its request and the objects its pack held. */
@@ -279,4 +279,44 @@ class GitFetchCostsGitTest {
                 assertTrue(counting.fetches.none { isTreeWant(it) })
             }
         }
+
+    @Test
+    fun searchSkipsBinaryNamesAndLargeFilesButFindsTheRest() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            File(work, "a.kt").writeText("val x = \"needle\"\n")
+            File(work, "logo.png").writeText("needle, but a png by name\n")
+            File(work, "big.txt").writeText("needle on the first line\n" + "filler line of a large text file\n".repeat(3000))
+            File(work, "dir").mkdirs()
+            File(work, "dir/c.md").writeText("nothing\nNEEDLE again\n")
+            File(work, "dir/zero.dat").writeBytes(byteArrayOf(1, 0, 2) + "needle".encodeToByteArray())
+            commitAll(work, "files")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val oidOf = { path: String -> git.git(work, "rev-parse", "HEAD:$path") }
+
+            val counting = Counting(git)
+            val snapshot = runBlocking { GitHttpClient { counting.client }.open(url) }
+            counting.reset()
+            var total = -1
+            val matches = runBlocking { snapshot.searchContents("needle", maxFileBytes = 20_000, onProgress = { _, all -> total = all }) }
+            assertEquals(setOf("a.kt:1", "dir/c.md:2"), matches.map { it.path.joinToString("/") + ":" + it.line }.toSet())
+            // The png was never asked for; the large text file was, and was passed over unread.
+            assertTrue(counting.fetches.none { it.contains(oidOf("logo.png")) })
+            assertTrue(counting.fetches.any { it.contains(oidOf("big.txt")) })
+            assertEquals(1, counting.fetches.size)
+            assertEquals(4, total)
+        }
+
+    @Test
+    fun binaryExtensions() {
+        assertTrue(GitBinaryFiles.hasBinaryExtension("release.tar.gz"))
+        assertTrue(GitBinaryFiles.hasBinaryExtension("libsecp256k1.SO"))
+        assertTrue(GitBinaryFiles.hasBinaryExtension("icon.PNG"))
+        assertFalse(GitBinaryFiles.hasBinaryExtension("Main.kt"))
+        assertFalse(GitBinaryFiles.hasBinaryExtension("icon.svg"))
+        assertFalse(GitBinaryFiles.hasBinaryExtension("Makefile"))
+        assertFalse(GitBinaryFiles.hasBinaryExtension("trailing."))
+    }
 }

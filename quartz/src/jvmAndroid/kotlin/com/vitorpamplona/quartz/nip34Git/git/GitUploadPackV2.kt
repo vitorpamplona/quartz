@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip34Git.git
 
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /**
  * Pure (transport-free) encoders and decoders for the git `git-upload-pack`
@@ -165,5 +166,84 @@ object GitUploadPackV2 {
         val bytes = pack.toByteArray()
         if (bytes.size < 4) throw GitHttpException("empty packfile in fetch response")
         return bytes
+    }
+
+    /**
+     * The `packfile` section of a fetch response read from [response] as it arrives: the pack
+     * bytes of sideband channel 1, demuxed frame by frame, so a large pack is never held whole.
+     * The sections before it (acknowledgments, shallow-info) are skipped; an `ERR` line, or a
+     * fatal message on channel 3, is a [GitHttpException] when it is read.
+     */
+    fun packStream(response: InputStream): InputStream = SidebandPackStream(response)
+
+    private class SidebandPackStream(
+        private val response: InputStream,
+    ) : InputStream() {
+        private var started = false
+        private var finished = false
+        private var frame: ByteArray = ByteArray(0)
+        private var pos = 0
+
+        private fun start() {
+            started = true
+            while (true) {
+                when (val line = PktLineCodec.read(response)) {
+                    null, is PktLine.ResponseEnd -> throw GitHttpException("empty packfile in fetch response")
+                    is PktLine.Data -> {
+                        val text = line.text()
+                        if (text == "packfile") return
+                        if (text.startsWith("ERR ")) throw GitHttpException("git server error: ${text.removePrefix("ERR ")}")
+                    }
+                    else -> {} // flush or delim between sections
+                }
+            }
+        }
+
+        /** Moves to the next frame of pack data; false at the end of the pack. */
+        private fun nextFrame(): Boolean {
+            if (!started) start()
+            while (!finished) {
+                when (val line = PktLineCodec.read(response)) {
+                    null, is PktLine.Flush, is PktLine.ResponseEnd -> finished = true
+                    is PktLine.Delim -> {}
+                    is PktLine.Data -> {
+                        val payload = line.payload
+                        if (payload.isEmpty()) continue
+                        when (payload[0].toInt() and 0xFF) {
+                            1 -> {
+                                frame = payload
+                                pos = 1
+                                if (pos < frame.size) return true
+                            }
+                            2 -> {} // progress
+                            3 -> throw GitHttpException("git server error: ${payload.decodeToString(1, payload.size)}")
+                        }
+                    }
+                }
+            }
+            return false
+        }
+
+        override fun read(): Int {
+            if (pos >= frame.size && !nextFrame()) return -1
+            return frame[pos++].toInt() and 0xFF
+        }
+
+        override fun read(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
+            if (len == 0) return 0
+            if (pos >= frame.size && !nextFrame()) return -1
+            val n = minOf(len, frame.size - pos)
+            frame.copyInto(b, off, pos, pos + n)
+            pos += n
+            return n
+        }
+
+        override fun available(): Int = frame.size - pos
+
+        override fun close() = response.close()
     }
 }

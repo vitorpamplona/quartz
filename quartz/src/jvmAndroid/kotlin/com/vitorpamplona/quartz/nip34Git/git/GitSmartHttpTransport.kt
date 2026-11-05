@@ -27,6 +27,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.coroutines.executeAsync
+import java.io.InputStream
 
 /** A ref returned by `ls-refs`: an oid, its full name, and (for symrefs) its target. */
 class GitRef(
@@ -144,21 +145,57 @@ class GitSmartHttpTransport(
             GitUploadPackV2.extractPack(PktLineCodec.parse(postUploadPack(cloneUrl, body)))
         }
 
+    /**
+     * A `fetch` like [fetchPack] whose pack is handed to [read] as a stream while the response
+     * arrives, instead of as one array: [read] runs on the IO dispatcher with the connection
+     * open, and the response is closed when it returns. Pair it with [PackfileStream] so a pack
+     * is parsed object by object and its largest objects can be passed over without being held.
+     */
+    suspend fun <T> fetchPackStream(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        wants: List<String>,
+        deepen: Int?,
+        filter: String?,
+        read: (InputStream) -> T,
+    ): T =
+        withContext(Dispatchers.IO) {
+            require(wants.isNotEmpty()) { "fetch requires at least one want" }
+            val body =
+                GitUploadPackV2.fetchRequest(
+                    objectFormat = caps.objectFormat,
+                    wants = wants,
+                    deepen = if (caps.supportsShallow) deepen else null,
+                    filter = filter?.takeIf { caps.supportsFilter },
+                )
+            val url = "${base(cloneUrl)}/git-upload-pack"
+            okHttpClient(url).newCall(authorized(cloneUrl, uploadPackRequest(url, body))).executeAsync().use { response ->
+                if (!response.isSuccessful) {
+                    throw GitHttpException("HTTP ${response.code} from $url", httpCode = response.code)
+                }
+                read(GitUploadPackV2.packStream(response.body.byteStream()))
+            }
+        }
+
     private suspend fun postUploadPack(
         cloneUrl: String,
         body: ByteArray,
     ): ByteArray {
         val url = "${base(cloneUrl)}/git-upload-pack"
-        val request =
-            Request
-                .Builder()
-                .url(url)
-                .header("Git-Protocol", "version=2")
-                .header("Accept", "application/x-git-upload-pack-result")
-                .post(body.toRequestBody(GIT_UPLOAD_PACK_REQUEST))
-                .build()
-        return execute(cloneUrl, url, request)
+        return execute(cloneUrl, url, uploadPackRequest(url, body))
     }
+
+    private fun uploadPackRequest(
+        url: String,
+        body: ByteArray,
+    ): Request =
+        Request
+            .Builder()
+            .url(url)
+            .header("Git-Protocol", "version=2")
+            .header("Accept", "application/x-git-upload-pack-result")
+            .post(body.toRequestBody(GIT_UPLOAD_PACK_REQUEST))
+            .build()
 
     private suspend fun execute(
         cloneUrl: String,
