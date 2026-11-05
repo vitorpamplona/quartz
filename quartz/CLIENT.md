@@ -280,7 +280,10 @@ several (`…client.accessories`), instead. It is a `Flow<Event>` with backpress
 starts from its own `since`. After a reconnect it asks again from where its `ResumePolicy` says,
 per relay; the default, `CaughtUpResume`, uses the newest event it delivered, and its
 `resumeFrom(relay, filters)` is the point to persist and set as the filters' `since` after a
-restart (`caughtUpAt(relay)` is the same point, whatever the filters). Caught
+restart (`caughtUpAt(relay)` is the same point, whatever the filters; `caughtUpAtFlow(relay)`
+emits it as it moves). A consumer that writes in batches uses `subscribeEventBatches` instead: a
+`Flow<List<Event>>` whose resume point counts an event only once its batch has been processed, so
+a restart doesn't skip what was waiting in the consumer's buffer. Caught
 up with nothing (an EOSE that delivered no event), the point is the REQ's `since`, so a restart
 after a quiet start doesn't skip what arrived while the service was down. `since` filters on `created_at`, so an event the relay stores during an outage with an
 older `created_at` is not sent again: reconcile the gap (`negentropySync`) if every event matters.

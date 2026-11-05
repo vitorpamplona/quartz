@@ -38,9 +38,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -260,29 +262,7 @@ internal fun INostrClient.streamReqAsFlow(
                 resume = resume,
                 authSettleMs = authSettleMs,
                 untilEose = untilEose,
-                onEvent =
-                    ReqEventHandler { event ->
-                        val offered = trySend(event)
-                        when {
-                            offered.isSuccess -> true
-                            offered.isClosed || stopped.isCompleted -> false
-                            // Waiting for room is the backpressure; waiting past this flow's end would
-                            // stall the connection for good (a channel closed by its collector leaving
-                            // never wakes a suspended send), so the wait also ends with the flow.
-                            else ->
-                                try {
-                                    select<Boolean> {
-                                        onSend(event) { true }
-                                        stopped.onAwait { false }
-                                    }
-                                } catch (e: Throwable) {
-                                    // The connection's own cancellation must still reach it; this flow
-                                    // ending must not.
-                                    currentCoroutineContext().ensureActive()
-                                    if (stopped.isCompleted || isClosedForSend) false else throw e
-                                }
-                        }
-                    },
+                onEvent = ReqEventHandler { event -> channel.sendUnlessStopped(event, stopped) },
                 onEnd = { cause -> close(cause) },
             )
         awaitClose {
@@ -300,6 +280,45 @@ internal fun INostrClient.streamReqAsFlow(
 internal fun interface ReqEventHandler {
     suspend fun take(event: Event): Boolean
 }
+
+/**
+ * Sends [value], waiting for room, unless [stopped] completes first: how a [ReqEventHandler] hands
+ * an event to its consumer. Returns whether it was sent. Waiting for room is the backpressure;
+ * waiting past the consumer's end would stall the connection for good (a channel closed by its
+ * collector leaving never wakes a suspended send), so the wait also ends with [stopped].
+ *
+ * Inline so that the common case, room to spare, costs one `trySend` and no suspension: the wait
+ * is a tail call into [awaitRoomUnlessStopped], so the handler calling this needs no state machine
+ * of its own.
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal suspend inline fun <T> SendChannel<T>.sendUnlessStopped(
+    value: T,
+    stopped: Deferred<Unit>,
+): Boolean {
+    val offered = trySend(value)
+    return when {
+        offered.isSuccess -> true
+        offered.isClosed || stopped.isCompleted -> false
+        else -> awaitRoomUnlessStopped(value, stopped)
+    }
+}
+
+/** [sendUnlessStopped]'s slow path: the channel is full. */
+internal suspend fun <T> SendChannel<T>.awaitRoomUnlessStopped(
+    value: T,
+    stopped: Deferred<Unit>,
+): Boolean =
+    try {
+        select {
+            onSend(value) { true }
+            stopped.onAwait { false }
+        }
+    } catch (e: Throwable) {
+        // The connection's own cancellation must still reach it; the consumer ending must not.
+        currentCoroutineContext().ensureActive()
+        if (stopped.isCompleted || isClosedForSend) false else throw e
+    }
 
 /** How long after a CLOSED the connection may drop for the CLOSED to count as the relay going away. */
 private const val GOING_AWAY_GRACE_MS = 3_000L
