@@ -33,14 +33,15 @@ import kotlinx.coroutines.sync.withLock
  * serves every endpoint of the repository and is reused for [reuseSeconds], inside the server's
  * ±60 s window, so a fetch does not ask the signer once per request.
  */
-class GitHttpAuth(
+open class GitHttpAuth(
     private val signer: NostrSigner,
     private val reuseSeconds: Long = 55,
 ) {
     private val lock = Mutex()
     private val cache = HashMap<String, Pair<Long, String>>()
 
-    suspend fun header(cloneUrl: String): String {
+    /** The header for [cloneUrl], or null for a repository that needs none (an override can tell them apart). */
+    open suspend fun header(cloneUrl: String): String? {
         val repository = repositoryUrl(cloneUrl)
         val now = TimeUtils.now()
         lock.withLock {

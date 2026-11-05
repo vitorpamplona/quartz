@@ -60,14 +60,13 @@ class GitCapabilities(
  */
 class GitSmartHttpTransport(
     private val okHttpClient: (String) -> OkHttpClient,
-    /**
-     * The `Authorization` header for a private repository at a clone URL ([GitHttpAuth]), or null
-     * for one that needs none.
-     */
-    private val authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
-    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
-    constructor(okHttpClient: (String) -> OkHttpClient) : this(okHttpClient, null)
+    /** The `Authorization` header source for a private repository ([GitHttpAuth]), or null when none needs one. */
+    private var authorization: GitHttpAuth? = null
+
+    constructor(okHttpClient: (String) -> OkHttpClient, authorization: GitHttpAuth?) : this(okHttpClient) {
+        this.authorization = authorization
+    }
 
     suspend fun fetchCapabilities(cloneUrl: String): GitCapabilities =
         withContext(Dispatchers.IO) {
@@ -180,7 +179,7 @@ class GitSmartHttpTransport(
         cloneUrl: String,
         request: Request,
     ): Request {
-        val header = authorization?.invoke(cloneUrl) ?: return request
+        val header = authorization?.header(cloneUrl) ?: return request
         return request.newBuilder().header("Authorization", header).build()
     }
 

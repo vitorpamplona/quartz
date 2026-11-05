@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip34Git.git
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip98HttpAuth.HTTPAuthorizationEvent
 import kotlinx.coroutines.runBlocking
@@ -63,7 +64,7 @@ class GitHttpAuthTest {
                             },
                         )
                     }.build()
-            runBlocking { GitHttpClient({ wrapped }, auth::header).open(url) }
+            runBlocking { GitHttpClient({ wrapped }, auth).open(url) }
 
             assertTrue(seen.size >= 2)
             assertEquals(1, seen.distinct().size, "one event serves every request")
@@ -72,6 +73,6 @@ class GitHttpAuthTest {
             val event = Event.fromJson(Base64.decode(token.removePrefix("Nostr ")).decodeToString()) as HTTPAuthorizationEvent
             assertEquals("GET", event.method())
             assertEquals(url, event.url())
-            assertTrue(event.verify())
+            assertTrue(event.verifySignature())
         }
 }

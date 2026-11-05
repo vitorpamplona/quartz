@@ -203,9 +203,14 @@ object GitReceivePack {
 class GitPushClient(
     private val okHttpClient: (String) -> OkHttpClient,
     private val agent: String = "quartz",
-    /** The `Authorization` header for a private repository ([GitHttpAuth]), or null when it needs none. */
-    private val authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
+    /** The `Authorization` header source for a private repository ([GitHttpAuth]), or null when none needs one. */
+    private var authorization: GitHttpAuth? = null
+
+    constructor(okHttpClient: (String) -> OkHttpClient, agent: String, authorization: GitHttpAuth?) : this(okHttpClient, agent) {
+        this.authorization = authorization
+    }
+
     suspend fun advertisement(cloneUrl: String): GitReceivePackAdvertisement =
         withContext(Dispatchers.IO) {
             val url = "${base(cloneUrl)}/info/refs?service=git-receive-pack"
@@ -270,7 +275,7 @@ class GitPushClient(
         cloneUrl: String,
         request: Request,
     ): Request {
-        val header = authorization?.invoke(cloneUrl) ?: return request
+        val header = authorization?.header(cloneUrl) ?: return request
         return request.newBuilder().header("Authorization", header).build()
     }
 

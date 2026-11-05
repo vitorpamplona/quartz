@@ -38,16 +38,18 @@ import java.util.PriorityQueue
  */
 class GitHttpClient(
     okHttpClient: (String) -> OkHttpClient,
-    /** The `Authorization` header for a private repository ([GitHttpAuth]), or null when it needs none. */
-    authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
-    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
-    constructor(okHttpClient: (String) -> OkHttpClient) : this(okHttpClient, null)
+    private var transport = GitSmartHttpTransport(okHttpClient)
 
-    private val transport = GitSmartHttpTransport(okHttpClient, authorization)
+    /** A client whose requests to a private repository carry [authorization] (GRASP-08). */
+    constructor(okHttpClient: (String) -> OkHttpClient, authorization: GitHttpAuth?) : this(okHttpClient) {
+        transport = GitSmartHttpTransport(okHttpClient, authorization)
+        files = GitFileHistory(transport)
+    }
 
     /** A file's history and blame ([GitFileHistory]) over the same connections. */
-    val files = GitFileHistory(transport)
+    var files = GitFileHistory(transport)
+        private set
 
     /**
      * Connects to [cloneUrl] and loads the tree of [ref] (default: the server's
