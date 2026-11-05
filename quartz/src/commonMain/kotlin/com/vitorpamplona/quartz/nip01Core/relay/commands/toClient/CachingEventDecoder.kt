@@ -22,7 +22,13 @@ package com.vitorpamplona.quartz.nip01Core.relay.commands.toClient
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
+import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
+import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -65,9 +71,25 @@ import kotlin.concurrent.atomics.incrementAndFetch
  *    two-generation lookup until the next rotation;
  *  - two threads first-seeing the same id simultaneously: both full-parse.
  *
- * Note the trust model is unchanged: events are identified by id here exactly
- * like in the app-level dedup (LocalCache), and signatures are verified
- * downstream regardless of which copy the Event object came from.
+ * Events are identified by id here exactly like in the app-level dedup (LocalCache), and
+ * verified downstream, often lazily, only when the app uses them. So the first copy of an id
+ * wins, unverified: optimistic, because nearly every duplicate is a genuine copy. When a copy
+ * turns out to be forged (its content doesn't hash to its id, or its signature is bad), the
+ * app reports it with [reportForged], and two kinds of scrutiny recover from it:
+ *
+ *  - **The id.** The forged copy stops being handed out, and every later copy of that id is
+ *    parsed and verified here until one passes, which then takes its place: ask the relays
+ *    for the id again and the genuine copy comes through. A copy whose content hashes to the
+ *    id but whose signature failed proves that signature bad for good, so a copy carrying it
+ *    again is skipped without parsing. Each id gets [MAX_FORGED_COPIES] bad copies and
+ *    [SCRUTINY_SECONDS]; then its copies are skipped until the scrutiny expires.
+ *  - **The relay** whose copy was handed out (the first to send it). Its copies are verified
+ *    on arrival from then on, before they can win the dedup, so its next forgery is caught
+ *    before anyone uses it. Copies from other relays still cost nothing. Each forgery found is
+ *    reported to [onForgery] with the relay's count: whether and when to stop using a relay is
+ *    the app's call ([forgive] clears its record).
+ *
+ * Without reports this behaves as before: no copy is verified here.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class CachingEventDecoder(
@@ -89,21 +111,86 @@ class CachingEventDecoder(
     private val capacity: Int = 8192,
     private val fullParser: MessageDecoder = MessageDecoder.Default,
 ) : MessageDecoder {
-    @Volatile private var live = ConcurrentHashCache<HexKey, Event>()
+    @Volatile private var live = ConcurrentHashCache<HexKey, Entry>()
 
-    @Volatile private var previous = ConcurrentHashCache<HexKey, Event>()
+    @Volatile private var previous = ConcurrentHashCache<HexKey, Entry>()
+
+    /**
+     * A cached copy and the relay that sent it first, the one every duplicate was handed. A
+     * null [event] is a revoked id: reported forged, so a lookup must not fall through to an
+     * older generation that may still hold the forged copy.
+     */
+    private class Entry(
+        val event: Event?,
+        val relay: NormalizedRelayUrl?,
+    )
+
+    /** An id reported forged: the signatures proven bad for it, the bad copies seen, and until when. */
+    private class IdScrutiny(
+        val badSigs: Set<String>,
+        val badCopies: Int,
+        val untilSeconds: Long,
+    )
+
+    private val scrutinizedIds = ConcurrentMap<HexKey, IdScrutiny>()
+
+    /** Relays caught sending a forged copy, with how many: their copies are verified on arrival. */
+    private val offenders = ConcurrentMap<NormalizedRelayUrl, Int>()
+
+    // Read on every frame: kept so clean traffic pays one volatile read, not a map lookup. They
+    // only ever turn on (off again only in clearCache): a flag reset racing an add could hide a
+    // live scrutiny, while a stale true costs one map lookup per frame.
+    @Volatile private var anyScrutinizedId = false
+
+    @Volatile private var anyOffender = false
+
+    /**
+     * Called for each forged copy found, from the thread that found it: the relay that sent it,
+     * the event id, whether the id itself was wrong (else only the signature), and the relay's
+     * forgeries so far. Use it to decide when to stop using a relay.
+     */
+    @Volatile var onForgery: ((Forgery) -> Unit)? = null
+
+    /** The clock for scrutiny expiry; tests move it. */
+    internal var nowInSeconds: () -> Long = TimeUtils::now
 
     // Observability + benchmark hooks.
     private val parsed = AtomicLong(0)
     private val reused = AtomicLong(0)
+    private val verifiedHere = AtomicLong(0)
+    private val skipped = AtomicLong(0)
 
     val parsedCount: Long get() = parsed.load()
     val reusedCount: Long get() = reused.load()
 
-    override fun decode(text: String): Message {
+    /** Copies verified here: those from offending relays and those of scrutinized ids. */
+    val verifiedCount: Long get() = verifiedHere.load()
+
+    /** Copies dropped here: forged ones caught, and known-bad ones skipped unparsed. */
+    val skippedCount: Long get() = skipped.load()
+
+    /**
+     * As [decodeFrom] with no relay to attribute the frame to. A frame dropped as a forged copy
+     * fails with [IllegalArgumentException].
+     */
+    override fun decode(text: String): Message = decodeFrom(text, null) ?: throw IllegalArgumentException("A forged copy, dropped")
+
+    /**
+     * Decodes [text], which [relay] sent, or returns null when it is a forged copy to drop: one
+     * of an id under scrutiny that failed verification or carries a signature known bad, or one
+     * an offending relay sent that failed verification.
+     */
+    internal fun decodeFrom(
+        text: String,
+        relay: NormalizedRelayUrl?,
+    ): Message? {
         val scanned = scanEventFrame(text)
         if (scanned != null) {
-            val cached = live.get(scanned.eventId) ?: previous.get(scanned.eventId)
+            if (anyScrutinizedId) {
+                val scrutiny = activeScrutiny(scanned.eventId)
+                if (scrutiny != null) return decodeScrutinized(text, relay, scanned.eventId, scrutiny)
+            }
+            val cached = lookup(scanned.eventId)
             if (cached != null) {
                 reused.incrementAndFetch()
                 return EventMessage(scanned.subId, cached)
@@ -112,15 +199,159 @@ class CachingEventDecoder(
 
         val msg = fullParser.decode(text)
         if (msg is EventMessage) {
-            parsed.incrementAndFetch()
-            if (live.size() >= capacity) {
-                // Benign-race rotation: see class kdoc.
-                previous = live
-                live = ConcurrentHashCache()
+            val event = msg.event
+            if (anyScrutinizedId) {
+                // A frame the scan could not read still answers to its id's scrutiny.
+                val scrutiny = activeScrutiny(event.id)
+                if (scrutiny != null) return checkScrutinized(msg, relay, scrutiny)
             }
-            live.put(msg.event.id, msg.event)
+            parsed.incrementAndFetch()
+            if (relay != null && anyOffender && offenders[relay] != null) {
+                verifiedHere.incrementAndFetch()
+                if (!event.verify()) {
+                    forged(event, relay)
+                    return null
+                }
+            }
+            remember(event, relay)
         }
         return msg
+    }
+
+    /**
+     * The app found [event], handed out here, forged (its [Event.verify] failed). Its id goes
+     * under scrutiny, and the relay that sent the copy is returned and from now on verified on
+     * arrival; null when no relay is known (the copy aged out of the cache, or was decoded
+     * without one) or when [event] verifies after all, which changes nothing.
+     */
+    fun reportForged(event: Event): NormalizedRelayUrl? {
+        val idValid = event.verifyId()
+        if (idValid && event.verifySignature()) return null
+        val entry = live.get(event.id) ?: previous.get(event.id)
+        val relay = entry?.relay?.takeIf { entry.event === event }
+        // Stop handing it out. The revoked entry also hides an older generation's copy.
+        live.put(event.id, Entry(null, null))
+        scrutinize(event.id, if (idValid) event.sig else null)
+        if (relay != null) offended(relay, event.id, !idValid)
+        return relay
+    }
+
+    /** Forgeries found from [relay] so far; 0 for a relay with none (or forgiven). */
+    fun offenses(relay: NormalizedRelayUrl): Int = offenders[relay] ?: 0
+
+    /** Relays whose copies are verified on arrival. */
+    fun offendingRelays(): Set<NormalizedRelayUrl> = offenders.snapshot().keys
+
+    /** Clears [relay]'s record: its copies are trusted again. */
+    fun forgive(relay: NormalizedRelayUrl) {
+        offenders.remove(relay)
+    }
+
+    private fun lookup(id: HexKey): Event? {
+        val entry = live.get(id) ?: previous.get(id) ?: return null
+        return entry.event
+    }
+
+    private fun remember(
+        event: Event,
+        relay: NormalizedRelayUrl?,
+    ) {
+        if (live.size() >= capacity) {
+            // Benign-race rotation: see class kdoc.
+            previous = live
+            live = ConcurrentHashCache()
+        }
+        live.put(event.id, Entry(event, relay))
+    }
+
+    /** [id]'s scrutiny, or null when it has none or it expired (then it is dropped). */
+    private fun activeScrutiny(id: HexKey): IdScrutiny? {
+        val scrutiny = scrutinizedIds[id] ?: return null
+        if (scrutiny.untilSeconds >= nowInSeconds()) return scrutiny
+        scrutinizedIds.remove(id, scrutiny)
+        return null
+    }
+
+    private fun decodeScrutinized(
+        text: String,
+        relay: NormalizedRelayUrl?,
+        id: HexKey,
+        scrutiny: IdScrutiny,
+    ): Message? {
+        if (scrutiny.badCopies >= MAX_FORGED_COPIES || scanSig(text)?.let { it in scrutiny.badSigs } == true) {
+            skipped.incrementAndFetch()
+            return null
+        }
+        val msg = fullParser.decode(text)
+        if (msg !is EventMessage || msg.event.id != id) return msg
+        return checkScrutinized(msg, relay, scrutiny)
+    }
+
+    /** A parsed copy of a scrutinized id: the first that verifies ends the scrutiny and is cached. */
+    private fun checkScrutinized(
+        msg: EventMessage,
+        relay: NormalizedRelayUrl?,
+        scrutiny: IdScrutiny,
+    ): Message? {
+        val event = msg.event
+        if (scrutiny.badCopies >= MAX_FORGED_COPIES || event.sig in scrutiny.badSigs) {
+            skipped.incrementAndFetch()
+            return null
+        }
+        parsed.incrementAndFetch()
+        verifiedHere.incrementAndFetch()
+        if (event.verify()) {
+            scrutinizedIds.remove(event.id)
+            remember(event, relay)
+            return msg
+        }
+        forged(event, relay)
+        return null
+    }
+
+    /** A copy that failed verification here: scrutinize its id, charge its relay, drop it. */
+    private fun forged(
+        event: Event,
+        relay: NormalizedRelayUrl?,
+    ) {
+        skipped.incrementAndFetch()
+        val idValid = event.verifyId()
+        scrutinize(event.id, if (idValid) event.sig else null)
+        if (relay != null) offended(relay, event.id, !idValid)
+    }
+
+    private fun scrutinize(
+        id: HexKey,
+        badSig: String?,
+    ) {
+        val until = nowInSeconds() + SCRUTINY_SECONDS
+        val sigs = if (badSig != null) setOf(badSig) else emptySet()
+        if (scrutinizedIds[id] == null && scrutinizedIds.size() >= MAX_SCRUTINIZED_IDS) {
+            dropExpiredScrutiny()
+            // Still full: a flood of forgeries falls back to plain dedup rather than growing.
+            if (scrutinizedIds.size() >= MAX_SCRUTINIZED_IDS) return
+        }
+        scrutinizedIds.merge(id, IdScrutiny(sigs, 1, until)) { old, new ->
+            IdScrutiny(old.badSigs + new.badSigs, old.badCopies + 1, new.untilSeconds)
+        }
+        anyScrutinizedId = true
+    }
+
+    private fun offended(
+        relay: NormalizedRelayUrl,
+        id: HexKey,
+        badId: Boolean,
+    ) {
+        val count = offenders.merge(relay, 1) { old, new -> old + new }
+        anyOffender = true
+        onForgery?.invoke(Forgery(relay, id, badId, count))
+    }
+
+    private fun dropExpiredScrutiny() {
+        val now = nowInSeconds()
+        for ((id, scrutiny) in scrutinizedIds.snapshot()) {
+            if (scrutiny.untilSeconds < now) scrutinizedIds.remove(id, scrutiny)
+        }
     }
 
     /**
@@ -143,11 +374,14 @@ class CachingEventDecoder(
     override fun ageOutCache() {
         previous = live
         live = ConcurrentHashCache()
+        if (anyScrutinizedId) dropExpiredScrutiny()
     }
 
     override fun clearCache() {
         previous = ConcurrentHashCache()
         live = ConcurrentHashCache()
+        scrutinizedIds.clear()
+        anyScrutinizedId = false
     }
 
     /** Ids currently addressable across both generations. Observability + tests. */
@@ -192,8 +426,43 @@ class CachingEventDecoder(
         return ScannedEvent(subId, text.substring(idStart, idEnd))
     }
 
+    /**
+     * A forged copy found: [relay] sent a copy of [eventId] whose id didn't match its content
+     * ([badId]) or whose signature was bad, and has now sent [offenses] of them.
+     */
+    class Forgery(
+        val relay: NormalizedRelayUrl,
+        val eventId: HexKey,
+        val badId: Boolean,
+        val offenses: Int,
+    )
+
+    /** The frame's `sig` value, found like the id: the literal key and 128 lowercase-hex chars; null when unusual. */
+    private fun scanSig(text: String): String? {
+        val key = text.indexOf(SIG_KEY)
+        if (key < 0) return null
+        val start = key + SIG_KEY.length
+        val end = start + 128
+        if (end >= text.length || text[end] != '"') return null
+        for (j in start until end) {
+            val c = text[j]
+            if (c !in '0'..'9' && c !in 'a'..'f') return null
+        }
+        return text.substring(start, end)
+    }
+
     companion object {
         private const val EVENT_PREFIX = "[\"EVENT\",\""
         private const val ID_KEY = "\"id\":\""
+        private const val SIG_KEY = "\"sig\":\""
+
+        /** Bad copies an id may bring before the rest are skipped until its scrutiny expires. */
+        const val MAX_FORGED_COPIES = 8
+
+        /** How long an id stays under scrutiny after its last bad copy. */
+        const val SCRUTINY_SECONDS = 10 * 60L
+
+        /** Ids under scrutiny at once; past it, new reports fall back to plain dedup. */
+        const val MAX_SCRUTINIZED_IDS = 1024
     }
 }
