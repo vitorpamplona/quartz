@@ -29,11 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.selects.select
 
 /**
  * The live tail of [relay] for [filters], in batches, with its resume point counting only what the
@@ -43,10 +40,10 @@ fun INostrClient.subscribeEventBatches(
     relay: NormalizedRelayUrl,
     filters: List<Filter>,
     resume: ResumePolicy? = CaughtUpResume(),
+    authSettleMs: Long = 120_000,
     maxBatch: Int = 500,
     maxPending: Int = 10_000,
-    authSettleMs: Long = 120_000,
-): Flow<List<Event>> = subscribeEventBatches(mapOf(relay to filters), resume, maxBatch, maxPending, authSettleMs)
+): Flow<List<Event>> = subscribeEventBatches(mapOf(relay to filters), resume, authSettleMs, maxBatch, maxPending)
 
 /**
  * [subscribeEvents], for a consumer that writes in batches and saves where it got to (an indexer,
@@ -74,12 +71,15 @@ fun INostrClient.subscribeEventBatches(
 fun INostrClient.subscribeEventBatches(
     filters: Map<NormalizedRelayUrl, List<Filter>>,
     resume: ResumePolicy? = CaughtUpResume(),
+    authSettleMs: Long = 120_000,
     maxBatch: Int = 500,
     maxPending: Int = 10_000,
-    authSettleMs: Long = 120_000,
 ): Flow<List<Event>> {
     require(maxBatch > 0) { "maxBatch must be positive: $maxBatch" }
     require(maxPending > 0) { "maxPending must be positive: $maxPending" }
+    // A plain flow {}, not the callbackFlow behind subscribeEvents: the resume point may only move
+    // past a batch once the collector has processed it, and only here does emit() return then. A
+    // callbackFlow's send returns once the batch is in its channel, before the collector runs.
     return flow {
         // Events and EOSEs, in the order the relays delivered them. Unbounded only in type:
         // [room] keeps events to maxPending, and EOSEs are one per REQ written.
@@ -97,24 +97,7 @@ fun INostrClient.subscribeEventBatches(
                     resume = deferred,
                     authSettleMs = authSettleMs,
                     untilEose = false,
-                    onEvent =
-                        ReqEventHandler { _ ->
-                            if (room.trySend(Unit).isSuccess) {
-                                true
-                            } else {
-                                try {
-                                    select<Boolean> {
-                                        room.onSend(Unit) { true }
-                                        stopped.onAwait { false }
-                                    }
-                                } catch (e: Throwable) {
-                                    // The connection's own cancellation must still reach it; this
-                                    // flow ending must not.
-                                    currentCoroutineContext().ensureActive()
-                                    if (stopped.isCompleted) false else throw e
-                                }
-                            }
-                        },
+                    onEvent = ReqEventHandler { _ -> room.sendUnlessStopped(Unit, stopped) },
                     onEnd = { cause -> queue.close(cause) },
                 )
             try {

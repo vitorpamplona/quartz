@@ -104,7 +104,7 @@ class NostrClientSubscribeEventBatchesTest {
     private fun batches(
         maxBatch: Int = 500,
         maxPending: Int = 10_000,
-    ) = client.subscribeEventBatches(relay, listOf(Filter(kinds = listOf(1), since = 500)), resume, maxBatch, maxPending)
+    ) = client.subscribeEventBatches(relay, listOf(Filter(kinds = listOf(1), since = 500)), resume, maxBatch = maxBatch, maxPending = maxPending)
 
     private suspend fun awaitReqs(count: Int) = withTimeout(10_000) { while (reqs.size < count) delay(20) }
 
