@@ -118,6 +118,12 @@ class GitMergePlanner(
     private val source: GitObjectSource,
     /** Told as planning moves from one stage to the next, for a progress line. */
     private val progress: (GitMergeStage) -> Unit = {},
+    /**
+     * How many commits of each branch's history to fetch first: the merge base is almost always
+     * among a branch's latest, and a large repository's whole history is megabytes. Past it, the
+     * whole history comes down.
+     */
+    private val historyDepth: Int = DEFAULT_HISTORY_DEPTH,
 ) {
     /**
      * A pull request (kind 1618) at [prTip], served by [prSource], merged into [targetHead] with a
@@ -135,11 +141,18 @@ class GitMergePlanner(
             // server may not know the target's head, and asked to send what that lacks would send
             // its whole history. The merge base it always has.
             progress(GitMergeStage.HISTORY)
-            prSource.loadHistory(listOf(prTip))
+            prSource.loadHistory(listOf(prTip), depth = historyDepth)
             source.adopt(prSource)
-            source.loadHistory(listOf(targetHead), haves = listOf(prTip))
+            source.loadHistory(listOf(targetHead), haves = listOf(prTip), depth = historyDepth)
 
-            val base = source.mergeBase(targetHead, prTip) ?: return@guard GitMergePlan.Failed("the pull request shares no history with the branch")
+            val base =
+                source.mergeBase(targetHead, prTip) ?: run {
+                    // The shared commit is older than the recent history: fetch all of it.
+                    prSource.loadFullHistory(listOf(prTip))
+                    source.adopt(prSource)
+                    source.loadFullHistory(listOf(targetHead))
+                    source.mergeBase(targetHead, prTip)
+                } ?: return@guard GitMergePlan.Failed("the pull request shares no history with the branch")
             if (base == prTip) return@guard GitMergePlan.AlreadyMerged
 
             // The PR's trees, for the tree merge; blobs only for the files both sides changed.
@@ -164,7 +177,7 @@ class GitMergePlanner(
                 mergeCommit = merge.oid,
                 appliedCommits = emptyList(),
                 branch = GitBranchObjects(prTip, base, prSource),
-                newCommits = source.commitsBetween(targetHead, prTip),
+                newCommits = source.commitsBetween(listOf(targetHead, base), prTip),
             )
         }
 
@@ -182,13 +195,15 @@ class GitMergePlanner(
     ): GitMergePlan =
         guard {
             progress(GitMergeStage.HISTORY)
-            source.loadHistory(listOf(targetHead))
+            source.loadHistory(listOf(targetHead), depth = historyDepth)
             progress(GitMergeStage.MERGING)
             val asSent = rebuildAsSent(patches)
             if (asSent != null) {
                 val (tip, builder) = asSent
-                if (tip in source.ancestors(targetHead)) return@guard GitMergePlan.AlreadyMerged
                 val base = patches.first().parentCommit()!!
+                // Applied long ago: the recent history doesn't reach its base, so it can't tell.
+                if (base !in source.ancestors(targetHead)) source.loadFullHistory(listOf(targetHead))
+                if (tip in source.ancestors(targetHead)) return@guard GitMergePlan.AlreadyMerged
                 val ours = source.commit(targetHead).treeOid
                 val theirs = GitObjectParser.parseCommitTree(builder.created.getValue(tip).data)!!
                 val tree = if (base == targetHead) theirs else builder.mergeTrees(source.commit(base).treeOid, ours, theirs)
@@ -208,7 +223,8 @@ class GitMergePlanner(
     private suspend fun rebuildAsSent(patches: List<GitPatchEvent>): Pair<String, GitTreeBuilder>? {
         val first = patches.first().parentCommit() ?: return null
         val builder = GitTreeBuilder(source)
-        source.loadHistory(listOf(first))
+        // Only the parent's own tree is read.
+        source.loadHistory(listOf(first), depth = 1)
         var parent = first
         var tree = source.commit(first).treeOid
         for (patch in patches) {
@@ -325,6 +341,8 @@ class GitMergePlanner(
         }
 
     companion object {
+        const val DEFAULT_HISTORY_DEPTH = 256
+
         /** A patch's commit message: its subject line, then its body, as `git am` writes it. */
         fun commitMessage(patch: GitPatchEvent): String {
             val description = patch.description()

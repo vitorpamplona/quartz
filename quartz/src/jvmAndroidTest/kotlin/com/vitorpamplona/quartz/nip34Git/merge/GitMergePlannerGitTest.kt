@@ -326,4 +326,42 @@ class GitMergePlannerGitTest {
             assertEquals("ONE\n2\nTHREE", git.git(bare, "show", "main:f.txt"))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
         }
+
+    @Test
+    fun aMergeBaseOlderThanTheFirstHistoryWindowIsStillFound() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            write(work, "f.txt", "1\n2\n3\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "base")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            git.git(work, "checkout", "-q", "-b", "pr")
+            write(work, "f.txt", "1\n2\nTHREE\n")
+            git.git(work, "commit", "-q", "-am", "pr change")
+            git.git(work, "push", "-q", "origin", "HEAD:refs/nostr/pr")
+            git.git(work, "checkout", "-q", "main")
+            // Main moves on by more commits than the planner's first window holds.
+            repeat(12) {
+                write(work, "g.txt", "$it\n")
+                git.git(work, "add", ".")
+                git.git(work, "commit", "-q", "-m", "main $it")
+            }
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val main = git.git(work, "rev-parse", "main")
+            val pr = git.git(work, "rev-parse", "pr")
+
+            val transport = GitSmartHttpTransport { git.client }
+            val plan =
+                runBlocking {
+                    GitMergePlanner(GitObjectSource(transport, listOf(url)), historyDepth = 3)
+                        .planPullRequest(main, pr, GitObjectSource(transport, listOf(url)), maintainer, "m")
+                }
+            (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
+            val ready = assertIs<GitMergePlan.Ready>(plan)
+            assertEquals(git.git(work, "merge-tree", "--write-tree", main, pr), treeOf(ready))
+            // Only the PR's commit is new, though the PR's window reached below the merge base.
+            assertEquals(listOf(pr), ready.newCommits.map { it.oid })
+        }
 }

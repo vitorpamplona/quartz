@@ -57,12 +57,13 @@ class GitObjectSource(
         wants: List<String>,
         haves: List<String> = emptyList(),
         filter: String? = null,
+        depth: Int? = null,
     ): Map<String, GitObject> {
         var last: Exception? = null
         for (url in cloneUrls) {
             try {
                 val caps = capabilities.getOrPut(url) { transport.fetchCapabilities(url) }
-                val pack = transport.fetchPack(url, caps, wants, haves, deepen = null, filter = filter)
+                val pack = transport.fetchPack(url, caps, wants, haves, deepen = depth, filter = filter)
                 val fetched = Packfile.parse(pack)
                 objects.putAll(fetched)
                 if (wants.all { it in objects }) return fetched
@@ -79,10 +80,21 @@ class GitObjectSource(
     suspend fun loadHistory(
         tips: List<String>,
         haves: List<String> = emptyList(),
+        depth: Int? = null,
     ) {
         val missing = tips.filter { it !in commits && it !in objects }
         // [haves]: commits whose history is already here, which a server that knows them skips.
-        if (missing.isNotEmpty()) fetch(missing, haves = haves.filter { it in objects }, filter = "tree:0")
+        if (missing.isNotEmpty()) fetch(missing, haves = haves.filter { it in objects }, filter = "tree:0", depth = depth)
+        parseCommits()
+    }
+
+    /** The whole history of [tips], for when a [loadHistory] with a depth stopped short of what is needed. */
+    suspend fun loadFullHistory(tips: List<String>) {
+        fetch(tips, filter = "tree:0")
+        parseCommits()
+    }
+
+    private fun parseCommits() {
         objects.values.forEach { obj ->
             if (obj.type == GitObjectType.COMMIT && obj.oid !in commits) commits[obj.oid] = GitObjectParser.parseCommit(obj.oid, obj.data)
         }
@@ -129,10 +141,12 @@ class GitObjectSource(
 
     /** The commits [tip] has that [base] doesn't, oldest first, from the loaded history. */
     fun commitsBetween(
-        base: String,
+        bases: List<String>,
         tip: String,
     ): List<GitCommit> {
-        val known = ancestors(base)
+        // On a shallow history a branch's ancestors stop early, so every base is listed: the
+        // merge base's own ancestors are never "new", wherever the target's history was cut.
+        val known = bases.flatMapTo(HashSet()) { ancestors(it) }
         return ancestors(tip).filter { it !in known }.mapNotNull { commits[it] }.sortedWith(compareBy<GitCommit> { it.authorTimeSec }.thenBy { it.oid })
     }
 
