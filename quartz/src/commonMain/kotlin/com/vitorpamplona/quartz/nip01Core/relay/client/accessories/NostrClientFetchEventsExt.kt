@@ -111,11 +111,12 @@ suspend fun INostrClient.fetch(
                 resume = null,
                 authSettleMs = authSettleMs,
                 untilEose = true,
-                onEvent = { event ->
-                    onEvent(event)
-                    delivered++
-                    true
-                },
+                onEvent =
+                    ReqEventHandler { event ->
+                        onEvent(event)
+                        delivered++
+                        true
+                    },
                 onEnd = { cause -> if (cause == null) done.complete(Unit) else done.completeExceptionally(cause) },
             )
         try {

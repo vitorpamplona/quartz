@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.nip01Core.relay.prodbench
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.subscribeEventBatches
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.subscribeEvents
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionHandle
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.subscribe
@@ -36,12 +38,16 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.testing.SyntheticEvents
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import com.sun.management.ThreadMXBean as SunThreadMXBean
 
@@ -50,6 +56,8 @@ import com.sun.management.ThreadMXBean as SunThreadMXBean
  * event, and a whole reconnect wave at an app's scale. It uses only APIs that exist before and
  * after resumable subscriptions (`subscribe(relay, filter) { }`, `subscribe(filters = { … }) { }`,
  * `NostrClient.onIncomingMessage`), so the same file runs on both and the two are compared.
+ * `perIncomingEventThroughFlows` adds the `subscribeEvents` and `subscribeEventBatches` flows, which
+ * exist only after, with the callback subscription beside them as the reference.
  *
  * Everything runs on the calling thread: a socket that opens as soon as it is dialled makes
  * `connect()` run the whole sync (the pool's per-connection REQ replay, serialization included),
@@ -67,6 +75,7 @@ class LiveSubscriptionCostBenchmark {
         private val out: WebSocketListener,
         private val sent: AtomicLong,
         private val sentBytes: AtomicLong,
+        private val lastSent: AtomicReference<String?>,
     ) : WebSocket {
         override fun needsReconnect() = false
 
@@ -77,6 +86,7 @@ class LiveSubscriptionCostBenchmark {
         override fun send(msg: String): Boolean {
             sent.incrementAndGet()
             sentBytes.addAndGet(msg.length.toLong())
+            lastSent.set(msg)
             return true
         }
     }
@@ -84,6 +94,7 @@ class LiveSubscriptionCostBenchmark {
     private class OpeningBuilder : WebsocketBuilder {
         val sent = AtomicLong()
         val sentBytes = AtomicLong()
+        val lastSent = AtomicReference<String?>(null)
         val listeners = HashMap<NormalizedRelayUrl, WebSocketListener>()
 
         override fun build(
@@ -91,7 +102,7 @@ class LiveSubscriptionCostBenchmark {
             out: WebSocketListener,
         ): WebSocket {
             listeners[url] = out
-            return OpeningSocket(out, sent, sentBytes)
+            return OpeningSocket(out, sent, sentBytes, lastSent)
         }
     }
 
@@ -200,6 +211,87 @@ class LiveSubscriptionCostBenchmark {
             val samples = samples[i]
             println(
                 "BENCH   %-38s %6d ns/event  %5d B/event".format(
+                    name,
+                    samples.map { it.cpuNanos }.median(),
+                    samples.map { it.allocatedBytes }.median(),
+                ),
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Per incoming event, through the Flow accessories
+    // ------------------------------------------------------------------
+
+    private enum class FlowKind { EVENTS, BATCHES }
+
+    /**
+     * ns and bytes per live event, from the client's dispatch to the collector's block, both on this
+     * thread: the flow is collected in a coroutine of the same `runBlocking`, so a hand-over that
+     * waits for the collector runs the collector here, and its cost is counted too.
+     */
+    private fun perFlowEvent(kind: FlowKind): Sample {
+        val builder = OpeningBuilder()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val client = NostrClient(builder, scope)
+        try {
+            client.connect()
+            val relay = "ws://bench-relay.local".normalizeRelayUrl()
+            val filters = listOf(Filter(kinds = listOf(1)))
+            val received = AtomicLong()
+            return runBlocking {
+                val collector =
+                    launch(start = CoroutineStart.UNDISPATCHED) {
+                        when (kind) {
+                            FlowKind.EVENTS -> client.subscribeEvents(relay = relay, filters = filters).collect { received.incrementAndGet() }
+                            FlowKind.BATCHES -> client.subscribeEventBatches(relay = relay, filters = filters).collect { received.addAndGet(it.size.toLong()) }
+                        }
+                    }
+                yield() // a callbackFlow's producer starts on its first dispatch
+                val relayClient = client.getOrCreateRelay(relay)
+                relayClient.connect()
+                val req = builder.lastSent.get() ?: error("no REQ was written")
+                val subId = req.substringAfter("[\"REQ\",\"").substringBefore('"')
+
+                val now = TimeUtils.now()
+                val messages =
+                    (1..eventCount).map { i ->
+                        EventMessage(subId, SyntheticEvents.fakeEvent(idSeed = i, createdAt = now - eventCount + i))
+                    }
+                client.onIncomingMessage(relayClient, "", EoseMessage(subId))
+                yield()
+                val sample =
+                    measure {
+                        messages.forEach { client.onIncomingMessage(relayClient, "", it) }
+                        while (received.get() < eventCount) yield()
+                    }
+                check(received.get() == eventCount.toLong()) { "delivered ${received.get()} of $eventCount" }
+                collector.cancel()
+                Sample(sample.cpuNanos / eventCount, sample.allocatedBytes / eventCount)
+            }
+        } finally {
+            client.disconnect()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun perIncomingEventThroughFlows() {
+        if (!enabled) return
+        val cases =
+            listOf(
+                "subscribe { }, live, each newer" to { perEvent(Delivery.LIVE_NEWER, callbackSubscription = true) },
+                "subscribeEvents, live, each newer" to { perFlowEvent(FlowKind.EVENTS) },
+                "subscribeEventBatches, live, each newer" to { perFlowEvent(FlowKind.BATCHES) },
+            )
+        repeat(3) { cases.forEach { it.second() } } // warm up
+        val samples = cases.map { mutableListOf<Sample>() }
+        repeat(15) { cases.forEachIndexed { i, case -> samples[i] += case.second() } }
+        println("BENCH per incoming event, through flows (${System.getenv("BENCH_LABEL") ?: "?"}), $eventCount events, median of 15")
+        cases.forEachIndexed { i, (name, _) ->
+            val samples = samples[i]
+            println(
+                "BENCH   %-40s %6d ns/event  %5d B/event".format(
                     name,
                     samples.map { it.cpuNanos }.median(),
                     samples.map { it.allocatedBytes }.median(),

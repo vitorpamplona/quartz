@@ -53,6 +53,9 @@ fun INostrClient.subscribeEvents(
  *   behind holds up the subscription instead of losing events. That also holds up every other
  *   subscription on that relay's connection; add a `buffer()` to decouple them. A collector that
  *   stops (cancelled, or the flow ended) never disturbs the connection: its pending events are dropped.
+ *   A consumer that writes in batches and saves where it got to wants [subscribeEventBatches]
+ *   instead: its resume point counts only what the collector has processed, where a `buffer()`
+ *   here lets [resume] count what is still waiting in it.
  * - **Reconnects resume.** The client reconnects on its own and re-sends the REQ, and each time it
  *   does (a reconnect, or the replay after an AUTH) it asks the subscription for the filters to
  *   write ([SubscriptionListener.filtersForSync]). [resume] answers, per relay: it hears each event handed

@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip01Core.crypto
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.Log
 
 fun Event.generateId(): String = EventHasher.hashId(pubKey, createdAt, kind, tags, content)
@@ -31,10 +30,8 @@ fun Event.verifyId(): Boolean {
     return EventHasher.hashIdCheck(id, pubKey, createdAt, kind, tags, content)
 }
 
-fun Event.verifySignature(): Boolean {
-    if (id.length != 64 || pubKey.length != 64 || sig.length != 128) return false
-    return Nip01Crypto.verify(Hex.decode(sig), Hex.decode(id), Hex.decode(pubKey))
-}
+// Decodes into reused buffers: no allocation per event.
+fun Event.verifySignature(): Boolean = EventVerifier.verifySignature(id, pubKey, sig)
 
 /** Checks if the ID is correct and then if the pubKey's secret key signed the event. */
 fun Event.checkSignature() {
@@ -48,7 +45,8 @@ fun Event.checkSignature() {
 
 fun Event.verify(): Boolean =
     try {
-        verifyId() && verifySignature()
+        // verifyId() && verifySignature(), with reused buffers: no allocation per event.
+        EventVerifier.verify(id, pubKey, createdAt, kind, tags, content, sig)
     } catch (e: Exception) {
         Log.w("Event", "Event $id does not have a valid signature (pubKey=$pubKey, kind=$kind, createdAt=$createdAt)", e)
         false

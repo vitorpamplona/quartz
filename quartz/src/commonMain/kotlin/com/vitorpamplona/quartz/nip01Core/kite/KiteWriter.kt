@@ -636,6 +636,29 @@ class KiteWriter internal constructor() {
                     hashing = false
                 }
             }
+
+        /** [idHash] written into [out] (32 bytes) instead of a new array. */
+        fun idHashInto(
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: TagArray,
+            content: String,
+            out: ByteArray,
+        ): Unit =
+            acquire().writing {
+                hashing = true
+                try {
+                    idPreimage(pubKey, createdAt, kind, tags, content)
+                    sha256Into(buf, pos, out)
+                } catch (e: Throwable) {
+                    // Don't leave a half-fed digest for this thread's next hash.
+                    sha256Abort()
+                    throw e
+                } finally {
+                    hashing = false
+                }
+            }
     }
 }
 
@@ -647,6 +670,13 @@ internal expect fun sha256Of(
     data: ByteArray,
     length: Int,
 ): ByteArray
+
+/** [sha256Of] written into [out] (32 bytes). */
+internal expect fun sha256Into(
+    data: ByteArray,
+    length: Int,
+    out: ByteArray,
+)
 
 /**
  * Feeds the first [length] bytes of [data] to this thread's SHA-256, finished by [sha256Of].

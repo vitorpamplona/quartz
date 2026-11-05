@@ -224,6 +224,21 @@ object Hex {
     }
 
     /**
+     * [decode] into [out] instead of a new array: [hex] must hold exactly `out.size * 2`
+     * characters (the caller checks). Like [decode], a character outside the table throws.
+     */
+    internal fun decodeInto(
+        hex: String,
+        out: ByteArray,
+    ) {
+        val table = hexToByte
+        var c = 0
+        for (i in out.indices) {
+            out[i] = ((table[hex[c++].code] shl 4) or table[hex[c++].code]).toByte()
+        }
+    }
+
+    /**
      * Decodes a 32-byte pubkey/event id, accepting only exactly 64 hex chars
      * (upper or lower case). Throws [IllegalArgumentException] on any other
      * length or on non-hex characters — use [decode64OrNull] for untrusted

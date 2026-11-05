@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.IgnoresRelayMessages
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.AuthOutcome
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.authSuccessMark
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.awaitAuthOutcome
@@ -37,9 +38,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -81,7 +84,7 @@ internal fun INostrClient.startReq(
     resume: ResumePolicy?,
     authSettleMs: Long,
     untilEose: Boolean,
-    onEvent: suspend (Event) -> Boolean,
+    onEvent: ReqEventHandler,
     onEnd: (Throwable?) -> Unit,
 ): DisposableHandle {
     val subId = (if (untilEose) "fetch-" else "live-") + RandomInstance.randomChars(10)
@@ -101,8 +104,9 @@ internal fun INostrClient.startReq(
     // another), and how many have yet to.
     val reachedEose = filters.keys.associateWith { AtomicInt(0) }
     val stillServing = AtomicInt(filters.size)
+    // Only counts drops: IgnoresRelayMessages keeps it out of the client's per-message dispatch.
     val connections =
-        object : RelayConnectionListener {
+        object : RelayConnectionListener, IgnoresRelayMessages {
             override fun onDisconnected(relay: IRelayClient) {
                 drops[relay.url]?.update { it + 1 }
             }
@@ -143,7 +147,7 @@ internal fun INostrClient.startReq(
                 if (relay !in authMarks || over.load() != 0) return
                 val taken =
                     try {
-                        onEvent(event)
+                        onEvent.take(event)
                     } catch (e: Throwable) {
                         // The connection's own cancellation must still reach it; the consumer's
                         // failure ends this read, not the connection.
@@ -258,34 +262,62 @@ internal fun INostrClient.streamReqAsFlow(
                 resume = resume,
                 authSettleMs = authSettleMs,
                 untilEose = untilEose,
-                onEvent = { event ->
-                    val offered = trySend(event)
-                    when {
-                        offered.isSuccess -> true
-                        offered.isClosed || stopped.isCompleted -> false
-                        // Waiting for room is the backpressure; waiting past this flow's end would
-                        // stall the connection for good (a channel closed by its collector leaving
-                        // never wakes a suspended send), so the wait also ends with the flow.
-                        else ->
-                            try {
-                                select<Boolean> {
-                                    onSend(event) { true }
-                                    stopped.onAwait { false }
-                                }
-                            } catch (e: Throwable) {
-                                // The connection's own cancellation must still reach it; this flow
-                                // ending must not.
-                                currentCoroutineContext().ensureActive()
-                                if (stopped.isCompleted || isClosedForSend) false else throw e
-                            }
-                    }
-                },
+                onEvent = ReqEventHandler { event -> channel.sendUnlessStopped(event, stopped) },
                 onEnd = { cause -> close(cause) },
             )
         awaitClose {
             stopped.complete(Unit)
             req.dispose()
         }
+    }
+
+/**
+ * How [startReq] hands each event over: it may suspend (the read waits on it, the backpressure),
+ * and returns whether it took the event (one it didn't take, from a consumer on its way out, is
+ * not counted by the resume policy). A fun interface rather than a suspend lambda type: calling a
+ * suspend lambda allocates a new instance of it on every call, and this runs once per event.
+ */
+internal fun interface ReqEventHandler {
+    suspend fun take(event: Event): Boolean
+}
+
+/**
+ * Sends [value], waiting for room, unless [stopped] completes first: how a [ReqEventHandler] hands
+ * an event to its consumer. Returns whether it was sent. Waiting for room is the backpressure;
+ * waiting past the consumer's end would stall the connection for good (a channel closed by its
+ * collector leaving never wakes a suspended send), so the wait also ends with [stopped].
+ *
+ * Inline so that the common case, room to spare, costs one `trySend` and no suspension: the wait
+ * is a tail call into [awaitRoomUnlessStopped], so the handler calling this needs no state machine
+ * of its own.
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal suspend inline fun <T> SendChannel<T>.sendUnlessStopped(
+    value: T,
+    stopped: Deferred<Unit>,
+): Boolean {
+    val offered = trySend(value)
+    return when {
+        offered.isSuccess -> true
+        offered.isClosed || stopped.isCompleted -> false
+        else -> awaitRoomUnlessStopped(value, stopped)
+    }
+}
+
+/** [sendUnlessStopped]'s slow path: the channel is full. */
+internal suspend fun <T> SendChannel<T>.awaitRoomUnlessStopped(
+    value: T,
+    stopped: Deferred<Unit>,
+): Boolean =
+    try {
+        select {
+            onSend(value) { true }
+            stopped.onAwait { false }
+        }
+    } catch (e: Throwable) {
+        // The connection's own cancellation must still reach it; the consumer ending must not.
+        currentCoroutineContext().ensureActive()
+        if (stopped.isCompleted || isClosedForSend) false else throw e
     }
 
 /** How long after a CLOSED the connection may drop for the CLOSED to count as the relay going away. */

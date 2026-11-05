@@ -129,9 +129,10 @@ class BasicOkHttpWebSocketDrainTest {
         }
     }
 
-    /** Takes [perMessageMs] over each message, as a consumer behind a full buffer does. */
+    /** Takes [perMessageMs] over each message, as a consumer behind a full buffer does, and throws on [failOn]. */
     private class SlowRecorder(
         private val perMessageMs: Long,
+        private val failOn: Set<String> = emptySet(),
     ) : WebSocketListener {
         val events: MutableList<String> = Collections.synchronizedList(mutableListOf())
         val ended = CountDownLatch(1)
@@ -146,7 +147,9 @@ class BasicOkHttpWebSocketDrainTest {
 
         override suspend fun onMessage(text: String) {
             delay(perMessageMs)
-            events.add(text.substringAfter(",\"").substringBefore('"'))
+            val name = text.substringAfter(",\"").substringBefore('"')
+            events.add(name)
+            if (name in failOn) error("listener failed on $name")
         }
 
         override fun onClosed(
@@ -183,6 +186,23 @@ class BasicOkHttpWebSocketDrainTest {
             val expected = (0 until 50).map { "m$it" } + "failure"
             assertEquals("every message, in order, then the end", expected, recorder.events.toList())
             assertTrue("an ended session needs a fresh dial", socket.needsReconnect())
+
+            client.dispatcher.executorService.shutdown()
+        }
+    }
+
+    @Test
+    fun `a listener that throws does not end delivery`() {
+        BurstThenHangUp(count = 10).use { relay ->
+            val recorder = SlowRecorder(perMessageMs = 0, failOn = setOf("m0", "m4", "m9"))
+            val client = OkHttpClient()
+            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+
+            socket.connect()
+            assertTrue("no end reported", recorder.ended.await(10, TimeUnit.SECONDS))
+
+            val expected = (0 until 10).map { "m$it" } + "failure"
+            assertEquals("every message after a throw still arrives, then the end", expected, recorder.events.toList())
 
             client.dispatcher.executorService.shutdown()
         }

@@ -24,6 +24,9 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.NostrServer
 import com.vitorpamplona.quartz.nip01Core.relay.server.RelaySession
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
+import com.vitorpamplona.quartz.utils.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -103,7 +106,14 @@ class InProcessWebSocket(
         deliverJob =
             newScope.launch {
                 for (msg in newOutgoing) {
-                    out.onMessage(msg)
+                    // As BasicOkHttpWebSocket: what the listener throws must not end delivery.
+                    try {
+                        out.deliverMessage(msg)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        Log.e("InProcessWebSocket", "Listener failed on a message", e)
+                    }
                 }
             }
     }
