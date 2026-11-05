@@ -5,6 +5,7 @@ _Audited 2026-09-17. 13 plans: 7 shipped (archived), 0 in-progress, 5 queued, 1 
 ## Queued
 | Plan | Summary |
 | ---- | ------- |
+| [2026-11-05-git-fetch-costs.md](2026-11-05-git-fetch-costs.md) | NIP-34 blame/history download 11.5 MB and 100k trees per file (19-27 s on a deep path); commits plus only the path's trees measured at 4.3 MB / 7.8 s. Content search holds whole 64-blob batches (a 72 MB file included); `blob:limit` is ignored for wanted blobs and no server offers `object-info`, so: skip binary types by name, and a streaming pack reader that drops oversized blobs. |
 | [2026-05-08-local-headers-explorer.md](2026-05-08-local-headers-explorer.md) | Headers-only Bitcoin P2P client to verify NIP-03 OTS attestations without a trusted block explorer. |
 | [2026-06-12-giftwrap-deletion-requests.md](2026-06-12-giftwrap-deletion-requests.md) | Let a recipient-authored kind-5 delete/block a gift wrap (kind 1059) addressed to them. |
 | [2026-07-03-incremental-negentropy-storage.md](2026-07-03-incremental-negentropy-storage.md) | Always-current (created_at, id) index so cold NEG-OPENs stop paying a full scan + seal (~340 ms at 50k vs strfry's ~21 ms). |
