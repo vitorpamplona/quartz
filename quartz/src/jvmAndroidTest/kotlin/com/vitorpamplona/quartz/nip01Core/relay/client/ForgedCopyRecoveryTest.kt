@@ -131,14 +131,16 @@ class ForgedCopyRecoveryTest {
                 val asked = read(honest).single()
                 assertEquals("genuine", asked.content)
                 assertTrue(asked.verify())
+                assertEquals(1, decoder.offenses(rogue), "charged when the genuine copy proved its copy altered")
 
                 val next = note("next")
                 relays.served[rogue] = listOf(next.withContent("forged again"))
                 relays.served[honest] = listOf(next)
                 assertEquals(emptyList(), read(rogue), "dropped on arrival")
+                assertEquals(listOf(1), forgeries.map { it.offenses }, "charged once a valid copy proves it")
+                assertEquals("next", read(honest).single().content)
                 assertEquals(listOf(1, 2), forgeries.map { it.offenses })
                 assertTrue(forgeries.all { it.relay == rogue })
-                assertEquals("next", read(honest).single().content)
             } finally {
                 client.disconnect()
             }
