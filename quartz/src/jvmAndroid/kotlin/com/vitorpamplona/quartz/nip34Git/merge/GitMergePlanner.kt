@@ -58,13 +58,14 @@ enum class GitMergeStrategy {
 }
 
 /**
- * The objects of a pull request's branch beyond its merge base [base] with the target. A server
- * that already has [tip] (a GRASP server keeps each PR under `refs/nostr/<id>`) needs none of them;
- * for one that doesn't, [objects] fetches them once, on first use.
+ * The objects of a pull request's branch beyond its merge base [base] with the target, or its whole
+ * history when no merge base is known (a fork that shares none, or a target that could not be
+ * read). A server that already has [tip] (a GRASP server keeps each PR under `refs/nostr/<id>`)
+ * needs none of them; for one that doesn't, [objects] fetches them once, on first use.
  */
 class GitBranchObjects(
     val tip: String,
-    private val base: String,
+    private val base: String?,
     private val source: GitObjectSource,
 ) {
     private val lock = Mutex()
@@ -72,7 +73,7 @@ class GitBranchObjects(
 
     suspend fun objects(): Collection<GitObject> =
         lock.withLock {
-            loaded ?: source.fetch(listOf(tip), haves = listOf(base)).values.also { loaded = it }
+            loaded ?: source.fetch(listOf(tip), haves = listOfNotNull(base)).values.also { loaded = it }
         }
 }
 

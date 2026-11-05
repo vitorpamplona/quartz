@@ -43,13 +43,14 @@ open class GitHttpAuth(
     /** The header for [cloneUrl], or null for a repository that needs none (an override can tell them apart). */
     open suspend fun header(cloneUrl: String): String? {
         val repository = repositoryUrl(cloneUrl)
-        val now = TimeUtils.now()
-        lock.withLock {
-            cache[repository]?.let { (signedAt, header) -> if (now - signedAt < reuseSeconds) return header }
+        // Signed under the lock, so requests that arrive together (a fetch's several endpoints)
+        // ask the signer once, not once each: a remote signer would prompt for every one.
+        return lock.withLock {
+            val now = TimeUtils.now()
+            cache[repository]?.let { (signedAt, header) -> if (now - signedAt < reuseSeconds) return@withLock header }
+            cache.entries.removeAll { now - it.value.first >= reuseSeconds }
+            signer.sign(HTTPAuthorizationEvent.build(repository, "GET")).toAuthToken().also { cache[repository] = now to it }
         }
-        val header = signer.sign(HTTPAuthorizationEvent.build(repository, "GET")).toAuthToken()
-        lock.withLock { cache[repository] = now to header }
-        return header
     }
 
     companion object {

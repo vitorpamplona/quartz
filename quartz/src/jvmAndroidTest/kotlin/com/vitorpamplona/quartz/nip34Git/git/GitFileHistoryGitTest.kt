@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip34Git.git
 
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -84,5 +85,82 @@ class GitFileHistoryGitTest {
             val matches = runBlocking { snapshot.searchContents("needle", batchSize = 1) }
             assertEquals(setOf("a.kt:2", "dir/b.md:2"), matches.map { it.path.joinToString("/") + ":" + it.line }.toSet())
             assertTrue(matches.any { it.text == "println(\"Needle here\")" })
+        }
+
+    /** Runs git with fixed author and committer dates, so the order of history is known. */
+    private fun dated(
+        work: File,
+        author: Long,
+        committer: Long,
+        vararg args: String,
+    ): String {
+        val process = ProcessBuilder(listOf("git") + args).directory(work).redirectErrorStream(true)
+        process.environment()["GIT_AUTHOR_DATE"] = "@$author +0000"
+        process.environment()["GIT_COMMITTER_DATE"] = "@$committer +0000"
+        val running = process.start()
+        val out = running.inputStream.readBytes().decodeToString()
+        running.waitFor(30, TimeUnit.SECONDS)
+        return out.trim()
+    }
+
+    private fun gitBlame(
+        git: GitHttpBackendFixture,
+        work: File,
+        file: String,
+    ) = git
+        .git(work, "blame", "--line-porcelain", file)
+        .lines()
+        .filter { it.matches(Regex("^[0-9a-f]{40} .*")) }
+        .map { it.substringBefore(' ') }
+
+    @Test
+    fun blameFollowsEachSideOfAMerge() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            File(work, "f.txt").writeText("a\nb\nc\n")
+            dated(work, 1000, 1000, "add", ".")
+            dated(work, 1000, 1000, "commit", "-q", "-m", "base")
+            dated(work, 1000, 1000, "checkout", "-q", "-b", "side")
+            File(work, "f.txt").writeText("A\nb\nc\n")
+            dated(work, 2000, 2000, "commit", "-q", "-am", "side A")
+            dated(work, 2000, 2000, "checkout", "-q", "main")
+            File(work, "f.txt").writeText("a\nb\nC\n")
+            dated(work, 3000, 3000, "commit", "-q", "-am", "main C")
+            dated(work, 4000, 4000, "merge", "-q", "--no-edit", "side")
+            val tip = git.git(work, "rev-parse", "HEAD")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+
+            val files = GitHttpClient { git.client }.files
+            val blame = runBlocking { files.blame(url, tip, listOf("f.txt")) }!!
+            assertEquals(gitBlame(git, work, "f.txt"), blame.lines.map { blame.versions[it].commit.oid })
+            assertFalse(blame.truncated)
+        }
+
+    @Test
+    fun historyIsInCommitterOrderAndSeesModeChanges() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            File(work, "f.txt").writeText("1\n")
+            dated(work, 1000, 1000, "add", ".")
+            dated(work, 1000, 1000, "commit", "-q", "-m", "base")
+            dated(work, 1000, 1000, "checkout", "-q", "-b", "side")
+            File(work, "f.txt").writeText("1\n2\n")
+            // Authored long ago, committed late: a rebased commit.
+            dated(work, 1500, 5000, "commit", "-q", "-am", "side rebased")
+            dated(work, 5000, 5000, "checkout", "-q", "main")
+            File(work, "f.txt").writeText("0\n1\n")
+            dated(work, 3000, 3000, "commit", "-q", "-am", "main edit")
+            dated(work, 6000, 6000, "merge", "-q", "--no-edit", "side")
+            dated(work, 7000, 7000, "update-index", "--chmod=+x", "f.txt")
+            dated(work, 7000, 7000, "commit", "-q", "-m", "make it executable")
+            val tip = git.git(work, "rev-parse", "HEAD")
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+
+            val history = runBlocking { GitHttpClient { git.client }.files.history(url, tip, listOf("f.txt")) }
+            assertEquals(git.git(work, "log", "--format=%H", "--", "f.txt").lines(), history.map { it.commit.oid })
         }
 }

@@ -97,4 +97,34 @@ class GraspProposalsGitTest {
             assertEquals(tip, git.git(bare, "rev-parse", "refs/nostr/$id"))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
         }
+
+    @Test
+    fun aFolderReplacedByAFileIsAValidTreeAndOnlyTheParentIsRead() =
+        GitHttpBackendFixture().use { git ->
+            if (!git.available) return@use
+            val (bare, url) = git.bare("repo")
+            val work = git.work(bare, "work")
+            File(work, "docs").mkdirs()
+            File(work, "docs/x.txt").writeText("x\n")
+            git.git(work, "add", ".")
+            git.git(work, "commit", "-q", "-m", "first")
+            val first = git.git(work, "rev-parse", "HEAD")
+            for (i in 1..3) {
+                File(work, "n.txt").writeText("$i\n")
+                git.git(work, "add", ".")
+                git.git(work, "commit", "-q", "-m", "c$i")
+            }
+            git.git(work, "push", "-q", "origin", "HEAD:main")
+            val main = git.git(work, "rev-parse", "HEAD")
+
+            val source = GitObjectSource(GitSmartHttpTransport { git.client }, listOf(url))
+            val edit = runBlocking { source.commitChanges(main, mapOf(listOf("docs") to "now a file\n".encodeToByteArray()), me, "docs is a file") }
+            // The edit needed the parent alone, not the history behind it.
+            assertNull(source.known(first))
+            val id = "f".repeat(64)
+            val results = runBlocking { GraspProposalPusher(GitPushClient({ git.client })).push(id, listOf(url), edit.commit, edit.objects) }
+            assertNull(results[url])
+            assertEquals("100644", git.git(bare, "ls-tree", "refs/nostr/$id", "docs").substringBefore(' '))
+            assertEquals("", git.git(bare, "fsck", "--no-progress", "--strict"))
+        }
 }

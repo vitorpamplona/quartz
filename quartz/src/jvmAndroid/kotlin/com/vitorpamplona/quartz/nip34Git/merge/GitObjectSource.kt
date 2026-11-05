@@ -88,9 +88,15 @@ class GitObjectSource(
         parseCommits()
     }
 
-    /** The whole history of [tips], for when a [loadHistory] with a depth stopped short of what is needed. */
-    suspend fun loadFullHistory(tips: List<String>) {
-        fetch(tips, filter = "tree:0")
+    /**
+     * The whole history of [tips], for when a [loadHistory] with a depth stopped short of what is
+     * needed; [haves] are commits whose history is already here, which the server then skips.
+     */
+    suspend fun loadFullHistory(
+        tips: List<String>,
+        haves: List<String> = emptyList(),
+    ) {
+        fetch(tips, haves = haves.filter { it in objects }, filter = "tree:0")
         parseCommits()
     }
 

@@ -109,11 +109,14 @@ suspend fun GitObjectSource.commitChanges(
     message: String,
 ): GitNewCommit {
     val builder = GitTreeBuilder(this)
+    // Only the parent itself is needed, not its history.
+    loadHistory(listOf(parent), depth = 1)
     val root = commit(parent).treeOid
     val entries =
         changes.mapValues { (path, bytes) ->
             bytes?.let {
-                val mode = builder.entryAt(root, path)?.mode ?: "100644"
+                // A file keeps its mode (executable, symlink); a folder or submodule replaced by a file becomes a plain file.
+                val mode = builder.entryAt(root, path)?.mode?.takeIf { it in FILE_MODES } ?: "100644"
                 GitTreeEntry(mode, path.last(), builder.keep(GitObjectWriter.blob(it)).oid)
             }
         }
@@ -121,6 +124,8 @@ suspend fun GitObjectSource.commitChanges(
     val commit = builder.keep(GitObjectWriter.commit(tree, listOf(parent), author, author, message))
     return GitNewCommit(commit.oid, builder.created.values.toList())
 }
+
+private val FILE_MODES = setOf("100644", "100755", "120000")
 
 /**
  * The newest commit [tip] (served by [branch]) shares with [targetHead] (served by [target]), read
@@ -140,6 +145,7 @@ suspend fun mergeBaseOf(
     target.mergeBase(targetHead, tip)?.let { return it }
     branch.loadFullHistory(listOf(tip))
     target.adopt(branch)
-    target.loadFullHistory(listOf(targetHead))
+    // What the branch's history already brought need not come down again.
+    target.loadFullHistory(listOf(targetHead), haves = listOf(tip))
     return target.mergeBase(targetHead, tip)
 }

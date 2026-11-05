@@ -474,7 +474,7 @@ class GitRepoSnapshot(
     suspend fun searchContents(
         query: String,
         limit: Int = 200,
-        batchSize: Int = 200,
+        batchSize: Int = 64,
         maxFileBytes: Int = 1_000_000,
         onProgress: (read: Int, total: Int) -> Unit = { _, _ -> },
     ): List<GitContentMatch> {
@@ -501,7 +501,9 @@ class GitRepoSnapshot(
         var read = 0
         onProgress(0, files.size)
         for (batch in files.chunked(batchSize)) {
-            val missing = batch.map { it.second }.filter { it !in blobs }.distinct()
+            // What another reader of this snapshot already cached (read under its lock: blob() writes it).
+            val cached = blobMutex.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
+            val missing = batch.map { it.second }.filter { it !in cached }.distinct()
             val fetched =
                 if (missing.isEmpty()) {
                     emptyMap()
@@ -510,7 +512,7 @@ class GitRepoSnapshot(
                 }
             for ((path, oid) in batch) {
                 // Only what was already cached stays: a search reads the files once and lets them go.
-                val data = blobs[oid] ?: fetched[oid] ?: continue
+                val data = cached[oid] ?: fetched[oid] ?: continue
                 if (data.size > maxFileBytes || data.contains(0)) continue
                 data.decodeToString().lineSequence().forEachIndexed { index, line ->
                     if (result.size < limit && line.lowercase().contains(needle)) result.add(GitContentMatch(path, index + 1, line.trim().take(300)))
