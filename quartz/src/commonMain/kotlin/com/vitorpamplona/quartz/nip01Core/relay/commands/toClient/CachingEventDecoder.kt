@@ -87,11 +87,16 @@ import kotlin.concurrent.atomics.incrementAndFetch
  *    send it), and any whose copy fails here. A bad copy alone doesn't prove a relay altered
  *    it: a client may have published a broken event, which every relay that doesn't verify
  *    what it stores then serves. So a relay is charged only once a valid copy of the same id
- *    arrives, which proves its copy was altered; an id that never gets one expires with no
- *    one charged. A charged relay's copies are verified on arrival from then on, before they
- *    can win the dedup, so its next forgery is caught before anyone uses it. Copies from other
- *    relays still cost nothing. Each charge is reported to [onForgery] with the relay's count:
- *    whether and when to stop using a relay is the app's call ([forgive] clears its record).
+ *    arrives, which proves its copy differs; an id that never gets one expires with no one
+ *    charged. Even then a relay may only be buggy (escaping, Unicode normalization: the id no
+ *    longer matches on events it re-encodes), so charges are counted per relay in an hourly
+ *    window, id failures apart from signature failures (an encoding bug leaves the signature
+ *    alone; a bad signature on matching content is malice). Only past [verifyOnArrival]'s
+ *    threshold (by default 2 bad signatures or 20 bad ids) are the relay's copies verified on
+ *    arrival, before they can win the dedup, so its next forgery is caught before anyone uses
+ *    it; below it, and for every other relay, copies cost nothing. Each charge is reported to
+ *    [onForgery] with the relay's counts: whether and when to stop using a relay is the app's
+ *    call ([forgive] clears its record).
  *
  * Without reports this behaves as before: no copy is verified here.
  */
@@ -143,8 +148,22 @@ class CachingEventDecoder(
 
     private val scrutinizedIds = ConcurrentMap<HexKey, IdScrutiny>()
 
-    /** Relays caught sending a forged copy, with how many: their copies are verified on arrival. */
-    private val offenders = ConcurrentMap<NormalizedRelayUrl, Int>()
+    /** Proven forgeries per relay: the current hour's and the previous hour's. */
+    private class Charges(
+        val badIds: Int,
+        val badSigs: Int,
+    ) {
+        operator fun plus(other: Charges) = Charges(badIds + other.badIds, badSigs + other.badSigs)
+    }
+
+    @Volatile private var chargesNow = ConcurrentMap<NormalizedRelayUrl, Charges>()
+
+    @Volatile private var chargesBefore = ConcurrentMap<NormalizedRelayUrl, Charges>()
+
+    @Volatile private var chargesSince = Long.MIN_VALUE
+
+    /** Relays past [verifyOnArrival]: their copies are verified on arrival. */
+    private val suspects = ConcurrentMap<NormalizedRelayUrl, Boolean>()
 
     /**
      * The (relay, id) pairs charged, so a relay is charged once per event however many forged
@@ -158,14 +177,25 @@ class CachingEventDecoder(
     // live scrutiny, while a stale true costs one map lookup per frame.
     @Volatile private var anyScrutinizedId = false
 
-    @Volatile private var anyOffender = false
+    @Volatile private var anySuspect = false
 
     /**
      * Called each time a relay is charged with a forged copy, from the thread whose valid copy
      * proved it: the relay, the event id, whether its copy's id was wrong (else only the
-     * signature), and the relay's forgeries so far. Use it to decide when to stop using a relay.
+     * signature), and the relay's counts in the window. Use it to decide when to stop using a
+     * relay.
      */
     @Volatile var onForgery: ((Forgery) -> Unit)? = null
+
+    /**
+     * Whether a relay's copies are verified on arrival, given its proven forgeries in the
+     * window. Verifying costs a signature check per new event from that relay, so the default
+     * waits for a pattern: 2 bad signatures (matching content with a bad signature is malice;
+     * one could be a fluke) or 20 bad ids (an id mismatch is usually a relay re-encoding some
+     * events, which the per-id recovery already handles). Re-evaluated on each charge and as
+     * the window rolls.
+     */
+    @Volatile var verifyOnArrival: (RelayRecord) -> Boolean = { it.badSigs >= 2 || it.badIds >= 20 }
 
     /** The clock for scrutiny expiry; tests move it. */
     internal var nowInSeconds: () -> Long = TimeUtils::now
@@ -222,7 +252,7 @@ class CachingEventDecoder(
                 if (scrutiny != null) return checkScrutinized(msg, relay, scrutiny)
             }
             parsed.incrementAndFetch()
-            if (relay != null && anyOffender && offenders[relay] != null) {
+            if (relay != null && anySuspect && suspects[relay] != null) {
                 verifiedHere.incrementAndFetch()
                 if (!event.verify()) {
                     forged(event, relay)
@@ -252,15 +282,24 @@ class CachingEventDecoder(
         return relay
     }
 
-    /** Forgeries found from [relay] so far; 0 for a relay with none (or forgiven). */
-    fun offenses(relay: NormalizedRelayUrl): Int = offenders[relay] ?: 0
+    /** [relay]'s proven forgeries in the window (the current and the previous hour). */
+    fun record(relay: NormalizedRelayUrl): RelayRecord {
+        rollWindow()
+        val c = (chargesNow[relay] ?: NO_CHARGES) + (chargesBefore[relay] ?: NO_CHARGES)
+        return RelayRecord(relay, c.badIds, c.badSigs)
+    }
 
-    /** Relays charged with a forgery: their copies are verified on arrival. */
-    fun offendingRelays(): Set<NormalizedRelayUrl> = offenders.snapshot().keys
+    /** Relays whose copies are verified on arrival ([verifyOnArrival]). */
+    fun suspectRelays(): Set<NormalizedRelayUrl> {
+        rollWindow()
+        return suspects.snapshot().keys
+    }
 
-    /** Clears [relay]'s count: its copies are trusted again (an event it was charged for stays charged). */
+    /** Clears [relay]'s record: its copies are trusted again (an event it was charged for stays charged). */
     fun forgive(relay: NormalizedRelayUrl) {
-        offenders.remove(relay)
+        chargesNow.remove(relay)
+        chargesBefore.remove(relay)
+        suspects.remove(relay)
     }
 
     private fun lookup(id: HexKey): Event? {
@@ -366,9 +405,37 @@ class CachingEventDecoder(
     ) {
         if (charged.size() >= MAX_CHARGES_KEPT) charged.clear()
         if (charged.putIfAbsent(relay.url + " " + id, true) != null) return
-        val count = offenders.merge(relay, 1) { old, new -> old + new }
-        anyOffender = true
-        onForgery?.invoke(Forgery(relay, id, badId, count))
+        rollWindow()
+        chargesNow.merge(relay, if (badId) Charges(1, 0) else Charges(0, 1)) { old, new -> old + new }
+        val record = record(relay)
+        reassess(record)
+        onForgery?.invoke(Forgery(relay, id, badId, record))
+    }
+
+    /** Marks or clears [record]'s relay as a suspect. */
+    private fun reassess(record: RelayRecord) {
+        if (verifyOnArrival(record)) {
+            suspects[record.relay] = true
+            anySuspect = true
+        } else {
+            suspects.remove(record.relay)
+        }
+    }
+
+    /** Starts a new hour of charges when the current one is over, and re-assesses the suspects. */
+    private fun rollWindow() {
+        val now = nowInSeconds()
+        val since = chargesSince
+        if (since != Long.MIN_VALUE && now - since < CHARGES_WINDOW_SECONDS) return
+        chargesSince = now
+        if (since == Long.MIN_VALUE) return
+        // Racy like the cache's rotation: two threads rolling at once drop an hour early.
+        chargesBefore = if (now - since < 2 * CHARGES_WINDOW_SECONDS) chargesNow else ConcurrentMap()
+        chargesNow = ConcurrentMap()
+        for (relay in suspects.snapshot().keys) {
+            val c = (chargesNow[relay] ?: NO_CHARGES) + (chargesBefore[relay] ?: NO_CHARGES)
+            reassess(RelayRecord(relay, c.badIds, c.badSigs))
+        }
     }
 
     private fun dropExpiredScrutiny() {
@@ -399,6 +466,7 @@ class CachingEventDecoder(
         previous = live
         live = ConcurrentHashCache()
         if (anyScrutinizedId) dropExpiredScrutiny()
+        if (anySuspect) rollWindow()
     }
 
     override fun clearCache() {
@@ -451,14 +519,22 @@ class CachingEventDecoder(
     }
 
     /**
-     * A forged copy found: [relay] sent a copy of [eventId] whose id didn't match its content
-     * ([badId]) or whose signature was bad, and has now sent [offenses] of them.
+     * A forged copy proven: [relay] sent a copy of [eventId] whose id didn't match its content
+     * ([badId]) or whose signature was bad, and [record] holds its counts in the window, this
+     * one included.
      */
     class Forgery(
         val relay: NormalizedRelayUrl,
         val eventId: HexKey,
         val badId: Boolean,
-        val offenses: Int,
+        val record: RelayRecord,
+    )
+
+    /** [relay]'s proven forgeries in the window: copies whose id didn't match, and copies whose signature was bad. */
+    class RelayRecord(
+        val relay: NormalizedRelayUrl,
+        val badIds: Int,
+        val badSigs: Int,
     )
 
     /** The frame's `sig` value, found like the id: the literal key and 128 lowercase-hex chars; null when unusual. */
@@ -491,5 +567,10 @@ class CachingEventDecoder(
 
         /** (relay, id) charges remembered to charge each once; forgeries are rare, so a few thousand. */
         private const val MAX_CHARGES_KEPT = 4096
+
+        /** A relay's charges count for this hour and the next, then drop out. */
+        const val CHARGES_WINDOW_SECONDS = 60 * 60L
+
+        private val NO_CHARGES = Charges(0, 0)
     }
 }

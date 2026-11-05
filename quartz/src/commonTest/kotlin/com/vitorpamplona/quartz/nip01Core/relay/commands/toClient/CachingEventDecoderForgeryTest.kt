@@ -70,6 +70,23 @@ class CachingEventDecoderForgeryTest {
 
     private fun decoder() = CachingEventDecoder().also { d -> d.onForgery = { forgeries += it } }
 
+    private fun CachingEventDecoder.charges(relay: NormalizedRelayUrl) = record(relay).let { it.badIds + it.badSigs }
+
+    private fun chargedRelays() = forgeries.map { it.relay }.toSet()
+
+    private val CachingEventDecoder.Forgery.total get() = record.badIds + record.badSigs
+
+    /** A proven forgery by [from]: its forged copy wins, is reported, and the genuine copy arrives. */
+    private fun CachingEventDecoder.provenForgery(
+        content: String,
+        badSig: Boolean,
+        from: NormalizedRelayUrl = rogue,
+    ) {
+        val genuine = note(content)
+        poisonAndReport(genuine, if (badSig) genuine.withSig(randomSig()) else genuine.withContent("forged $content"), from)
+        assertEquals(content, read(genuine, honest)!!.content)
+    }
+
     /** [genuine]'s forged copy handed out by [from], then reported: the usual start. */
     private fun CachingEventDecoder.poisonAndReport(
         genuine: Event,
@@ -98,16 +115,16 @@ class CachingEventDecoderForgeryTest {
         val genuine = note("genuine")
         val forged = genuine.withContent("forged")
         assertEquals(rogue, d.poisonAndReport(genuine, forged), "attributed to the relay whose copy was handed out")
-        assertEquals(0, d.offenses(rogue), "not charged on a report alone")
+        assertEquals(0, d.charges(rogue), "not charged on a report alone")
         assertTrue(forgeries.isEmpty())
 
         val again = d.read(genuine, honest)!!
         assertEquals("genuine", again.content)
         assertTrue(again.verify())
-        assertEquals(1, d.offenses(rogue), "charged once the valid copy proved its copy altered")
-        assertEquals(0, d.offenses(honest))
-        assertEquals(setOf(rogue), d.offendingRelays())
-        assertEquals(listOf(rogue to 1), forgeries.map { it.relay to it.offenses })
+        assertEquals(1, d.charges(rogue), "charged once the valid copy proved its copy altered")
+        assertEquals(0, d.charges(honest))
+        assertEquals(setOf(rogue), chargedRelays())
+        assertEquals(listOf(rogue to 1), forgeries.map { it.relay to it.total })
         assertTrue(forgeries.single().badId)
 
         val verified = d.verifiedCount
@@ -145,29 +162,78 @@ class CachingEventDecoderForgeryTest {
 
         now += CachingEventDecoder.SCRUTINY_SECONDS + 1
         d.ageOutCache()
-        assertTrue(d.offendingRelays().isEmpty())
+        assertTrue(chargedRelays().isEmpty())
         assertTrue(forgeries.isEmpty())
     }
 
     @Test
-    fun aChargedRelaysNextForgeryIsCaughtOnArrival() {
+    fun twoProvenBadSignaturesMakeARelayVerifiedOnArrival() {
         val d = decoder()
-        val first = note("first")
-        d.poisonAndReport(first)
-        d.read(first, honest)
-        assertEquals(1, d.offenses(rogue))
+        d.provenForgery("first", badSig = true)
+        assertEquals(1, d.record(rogue).badSigs)
+        assertTrue(d.suspectRelays().isEmpty(), "one bad signature could be a fluke")
 
-        val second = note("second")
-        assertNull(d.decodeFrom(frame(second.withContent("forged too")), rogue), "caught before it can win the dedup")
-        assertEquals(1, d.offenses(rogue), "charged only when the valid copy arrives")
-        assertEquals("second", d.read(second, honest)!!.content)
-        assertEquals(listOf(1, 2), forgeries.map { it.offenses })
+        d.provenForgery("second", badSig = true)
+        assertEquals(setOf(rogue), d.suspectRelays())
 
-        // The charged relay's valid events still come through, verified; clean relays' are not verified.
+        val third = note("third")
+        assertNull(d.decodeFrom(frame(third.withContent("forged third")), rogue), "caught before it can win the dedup")
+        assertEquals("third", d.read(third, honest)!!.content)
+        assertEquals(1, d.record(rogue).badIds)
+
+        // Its valid events still come through, verified; clean relays' are not verified.
         assertEquals("valid from rogue", d.read(note("valid from rogue"), rogue)!!.content)
         val verified = d.verifiedCount
         d.read(note("clean"), honest)
         assertEquals(verified, d.verifiedCount)
+    }
+
+    @Test
+    fun idFailuresTakeTwentyBeforeARelayIsVerifiedOnArrival() {
+        val d = decoder()
+        repeat(19) { d.provenForgery("bug $it", badSig = false) }
+        assertEquals(19, d.record(rogue).badIds)
+        assertTrue(d.suspectRelays().isEmpty(), "a relay re-encoding some events: the per-id recovery is enough")
+        val verified = d.verifiedCount
+        d.read(note("unverified"), rogue)
+        assertEquals(verified, d.verifiedCount)
+
+        d.provenForgery("bug 19", badSig = false)
+        assertEquals(setOf(rogue), d.suspectRelays())
+        assertEquals(listOf(20), forgeries.takeLast(1).map { it.record.badIds })
+    }
+
+    @Test
+    fun chargesAgeOutOfTheWindow() {
+        val d = decoder()
+        var now = 1_000_000L
+        d.nowInSeconds = { now }
+        d.provenForgery("a", badSig = true)
+        now += CachingEventDecoder.CHARGES_WINDOW_SECONDS / 2
+        d.provenForgery("b", badSig = true)
+        assertEquals(setOf(rogue), d.suspectRelays())
+
+        now += CachingEventDecoder.CHARGES_WINDOW_SECONDS
+        d.ageOutCache()
+        assertEquals(2, d.record(rogue).badSigs, "the previous hour still counts")
+        assertEquals(setOf(rogue), d.suspectRelays())
+
+        now += CachingEventDecoder.CHARGES_WINDOW_SECONDS
+        d.ageOutCache()
+        assertEquals(0, d.record(rogue).badSigs)
+        assertTrue(d.suspectRelays().isEmpty(), "a pattern that stopped stops costing")
+        val verified = d.verifiedCount
+        d.read(note("after"), rogue)
+        assertEquals(verified, d.verifiedCount)
+    }
+
+    @Test
+    fun theThresholdIsTheAppsCall() {
+        val d = decoder()
+        d.verifyOnArrival = { it.badIds >= 1 }
+        d.provenForgery("first", badSig = false)
+        assertEquals(setOf(rogue), d.suspectRelays())
+        assertNull(d.decodeFrom(frame(note("next").withContent("forged next")), rogue))
     }
 
     @Test
@@ -180,8 +246,8 @@ class CachingEventDecoderForgeryTest {
 
         d.read(genuine, honest)
         d.read(genuine, other)
-        assertEquals(1, d.offenses(rogue))
-        assertEquals(1, d.offenses(rogue2), "one charge per relay per id")
+        assertEquals(1, d.charges(rogue))
+        assertEquals(1, d.charges(rogue2), "one charge per relay per id")
         assertEquals(setOf(rogue, rogue2), forgeries.map { it.relay }.toSet())
     }
 
@@ -198,7 +264,7 @@ class CachingEventDecoderForgeryTest {
 
         now += CachingEventDecoder.SCRUTINY_SECONDS + 1
         assertEquals("genuine", d.read(genuine, honest)!!.content)
-        assertTrue(d.offendingRelays().isEmpty(), "expired: no valid copy came while it was open")
+        assertTrue(chargedRelays().isEmpty(), "expired: no valid copy came while it was open")
     }
 
     @Test
@@ -212,7 +278,7 @@ class CachingEventDecoderForgeryTest {
         assertEquals(rogue, d.reportForged(handedOut))
 
         assertEquals("genuine", d.read(genuine, honest)!!.content)
-        assertEquals(1, d.offenses(rogue))
+        assertEquals(1, d.charges(rogue))
     }
 
     @Test
@@ -242,7 +308,7 @@ class CachingEventDecoderForgeryTest {
         assertNull(d.reportForged(handedOut), "no relay left to attribute it to")
 
         assertEquals("genuine", d.read(genuine, honest)!!.content)
-        assertTrue(d.offendingRelays().isEmpty())
+        assertTrue(chargedRelays().isEmpty())
     }
 
     @Test
@@ -255,7 +321,7 @@ class CachingEventDecoderForgeryTest {
         assertNull(forgedAgain)
         val fromLoose = assertNotNull(d.decodeFrom(looseFrame(genuine), honest) as EventMessage?).event
         assertEquals("genuine", fromLoose.content)
-        assertEquals(setOf(rogue, rogue2), d.offendingRelays())
+        assertEquals(setOf(rogue, rogue2), chargedRelays())
     }
 
     @Test
@@ -292,7 +358,7 @@ class CachingEventDecoderForgeryTest {
         d.poisonAndReport(second, from = rogue2)
 
         d.clearCache()
-        assertEquals(1, d.offenses(rogue), "a charged relay stays charged")
+        assertEquals(1, d.charges(rogue), "a charged relay stays charged")
         val forged = second.withContent("forged")
         assertSame(d.read(forged, other), d.read(second, honest), "the pending id is plain dedup again")
     }
@@ -304,18 +370,19 @@ class CachingEventDecoderForgeryTest {
         val first = d.read(e, honest)!!
         assertNull(d.reportForged(first))
         assertSame(first, d.read(e, other))
-        assertTrue(d.offendingRelays().isEmpty())
+        assertTrue(chargedRelays().isEmpty())
     }
 
     @Test
     fun aForgivenRelayIsTrustedAgain() {
         val d = decoder()
-        val e = note("x")
-        d.poisonAndReport(e)
-        d.read(e, honest)
+        d.verifyOnArrival = { it.badIds >= 1 }
+        d.provenForgery("x", badSig = false)
+        assertEquals(setOf(rogue), d.suspectRelays())
         d.forgive(rogue)
+        assertTrue(d.suspectRelays().isEmpty())
 
-        assertEquals(0, d.offenses(rogue))
+        assertEquals(0, d.charges(rogue))
         val verified = d.verifiedCount
         d.read(note("after"), rogue)
         assertEquals(verified, d.verifiedCount)

@@ -108,6 +108,8 @@ class ForgedCopyRecoveryTest {
             val decoder = CachingEventDecoder()
             val forgeries = CopyOnWriteArrayList<CachingEventDecoder.Forgery>()
             decoder.onForgery = { forgeries += it }
+            // The defaults wait for 2 bad signatures or 20 bad ids (see the decoder's tests); here, one bad id.
+            decoder.verifyOnArrival = { it.badIds >= 1 }
             val client = NostrClient(relays, scope, decoder)
             val kind1 = Filter(kinds = listOf(1))
 
@@ -131,15 +133,15 @@ class ForgedCopyRecoveryTest {
                 val asked = read(honest).single()
                 assertEquals("genuine", asked.content)
                 assertTrue(asked.verify())
-                assertEquals(1, decoder.offenses(rogue), "charged when the genuine copy proved its copy altered")
+                assertEquals(1, decoder.record(rogue).badIds, "charged when the genuine copy proved its copy altered")
 
                 val next = note("next")
                 relays.served[rogue] = listOf(next.withContent("forged again"))
                 relays.served[honest] = listOf(next)
                 assertEquals(emptyList(), read(rogue), "dropped on arrival")
-                assertEquals(listOf(1), forgeries.map { it.offenses }, "charged once a valid copy proves it")
+                assertEquals(listOf(1), forgeries.map { it.record.badIds }, "charged once a valid copy proves it")
                 assertEquals("next", read(honest).single().content)
-                assertEquals(listOf(1, 2), forgeries.map { it.offenses })
+                assertEquals(listOf(1, 2), forgeries.map { it.record.badIds })
                 assertTrue(forgeries.all { it.relay == rogue })
             } finally {
                 client.disconnect()
@@ -157,7 +159,7 @@ class ForgedCopyRecoveryTest {
     ) {
         val decoder = CachingEventDecoder()
         // Your policy: each forgery found, with the relay's count so far.
-        decoder.onForgery = { forgery -> if (forgery.offenses >= 10) stopUsing(forgery.relay) }
+        decoder.onForgery = { forgery -> if (forgery.record.badSigs >= 5) stopUsing(forgery.relay) }
         val client = NostrClient(BasicOkHttpWebSocket.Builder { httpClient }, scope, decoder)
 
         // When the UI needs the event:

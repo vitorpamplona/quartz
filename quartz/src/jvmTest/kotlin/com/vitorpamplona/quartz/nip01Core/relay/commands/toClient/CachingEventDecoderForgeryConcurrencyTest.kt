@@ -91,7 +91,7 @@ class CachingEventDecoderForgeryConcurrencyTest {
             assertEquals(1, charges[rogue], "round $round: the reported relay is charged exactly once")
             assertTrue(charges.values.all { it == 1 }, "round $round: a relay charged twice: $charges")
             assertTrue(honestRelays.none { it in charges }, "round $round: an honest relay was charged: $charges")
-            assertEquals(charges.keys, d.offendingRelays())
+            charges.keys.forEach { assertEquals(1, d.record(it).let { r -> r.badIds + r.badSigs }, "round $round: ${it.url}") }
         }
     }
 }
