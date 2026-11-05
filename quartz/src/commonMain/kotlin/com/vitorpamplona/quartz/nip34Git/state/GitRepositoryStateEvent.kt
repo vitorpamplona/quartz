@@ -99,5 +99,24 @@ class GitRepositoryStateEvent(
             ref(RefTag.branch(branch, commit))
             if (pointHead) head(branch)
         }
+
+        /**
+         * [previous] with HEAD pointed at [branch] and every ref kept as signed: a maintainer
+         * changing the default branch, as gitworkshop's settings publish it. Dated after
+         * [previous] so it replaces it.
+         */
+        fun changeHead(
+            previous: GitRepositoryStateEvent,
+            branch: String,
+            createdAt: Long = TimeUtils.now(),
+        ) = eventTemplate<GitRepositoryStateEvent>(KIND, "", maxOf(createdAt, previous.createdAt + 1)) {
+            dTag(previous.dTag())
+            previous.tags.forEach { tag ->
+                val name = tag.firstOrNull() ?: return@forEach
+                if (name == "d" || name == HeadTag.TAG_NAME) return@forEach
+                add(tag)
+            }
+            head(branch)
+        }
     }
 }
