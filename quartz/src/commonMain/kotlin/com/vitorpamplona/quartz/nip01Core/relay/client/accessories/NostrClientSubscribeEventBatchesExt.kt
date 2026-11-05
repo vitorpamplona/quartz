@@ -97,23 +97,24 @@ fun INostrClient.subscribeEventBatches(
                     resume = deferred,
                     authSettleMs = authSettleMs,
                     untilEose = false,
-                    onEvent = { _ ->
-                        if (room.trySend(Unit).isSuccess) {
-                            true
-                        } else {
-                            try {
-                                select<Boolean> {
-                                    room.onSend(Unit) { true }
-                                    stopped.onAwait { false }
+                    onEvent =
+                        ReqEventHandler { _ ->
+                            if (room.trySend(Unit).isSuccess) {
+                                true
+                            } else {
+                                try {
+                                    select<Boolean> {
+                                        room.onSend(Unit) { true }
+                                        stopped.onAwait { false }
+                                    }
+                                } catch (e: Throwable) {
+                                    // The connection's own cancellation must still reach it; this
+                                    // flow ending must not.
+                                    currentCoroutineContext().ensureActive()
+                                    if (stopped.isCompleted) false else throw e
                                 }
-                            } catch (e: Throwable) {
-                                // The connection's own cancellation must still reach it; this
-                                // flow ending must not.
-                                currentCoroutineContext().ensureActive()
-                                if (stopped.isCompleted) false else throw e
                             }
-                        }
-                    },
+                        },
                     onEnd = { cause -> queue.close(cause) },
                 )
             try {
