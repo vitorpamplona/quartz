@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.single.basic
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient.Companion.DELAY_TO_RECONNECT_IN_SECS
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
@@ -231,9 +232,12 @@ open class BasicRelayClient(
             return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
         }
 
+        /** The message, or null to drop the frame: unparseable, or a forged copy the decoder caught. */
         private fun decodeOrNull(text: String): Message? =
             try {
-                decoder.decode(text)
+                val decoder = decoder
+                // The caching decoder learns which relay sent each copy, to attribute forgeries.
+                if (decoder is CachingEventDecoder) decoder.decodeFrom(text, url) else decoder.decode(text)
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 // doesn't expose parsing errors to lib users as errors

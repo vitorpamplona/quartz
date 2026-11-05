@@ -706,6 +706,34 @@ val fleetClient = NostrClient(BasicOkHttpWebSocket.Builder { fleetHttpClient }, 
 On JDK 21 or newer (not Android), `Dispatcher(Executors.newVirtualThreadPerTaskExecutor())` keeps
 each socket's thread from being a platform thread that the dialing caller has to start.
 
+### Duplicates across relays, and forged copies
+
+The same event arrives once per relay and per subscription. `CachingEventDecoder` parses it once
+and hands every later copy the event it already parsed, so duplicates skip the parse. It is
+optimistic: the first copy wins unverified, as nearly every duplicate is genuine. When your lazy
+`event.verify()` fails on an event it handed out, report it. The decoder stops handing that copy
+out and verifies every later copy of the id until one passes: ask the relays for the id again and
+the genuine copy comes through. That valid copy also proves the relays that sent bad copies
+altered them, and they are charged. A relay whose charges in the last hour or two pass
+`verifyOnArrival` (by default 2 bad signatures, or 20 bad ids, which are usually a relay
+re-encoding some events rather than malice) has its new events verified on arrival, before they
+can win the dedup:
+
+```kotlin
+val decoder = CachingEventDecoder()
+// Your policy: each proven forgery, with the relay's counts in the window.
+decoder.onForgery = { forgery -> if (forgery.record.badSigs >= 5) stopUsing(forgery.relay) }
+val client = NostrClient(BasicOkHttpWebSocket.Builder { httpClient }, scope, decoder)
+
+// When the UI needs the event:
+if (!event.verify()) {
+    decoder.reportForged(event) // the relay that sent the forged copy, or null
+    for (relay in relaysThatSentIt) client.fetch(relay, Filter(ids = listOf(event.id))) { show(it) }
+}
+```
+
+`record(relay)`, `suspectRelays()` and `forgive(relay)` read and clear a relay's record.
+
 ## Full Example: Simple Feed Reader
 
 ```kotlin
