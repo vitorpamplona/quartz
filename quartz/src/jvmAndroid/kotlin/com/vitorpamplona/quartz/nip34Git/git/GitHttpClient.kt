@@ -38,8 +38,16 @@ import java.util.PriorityQueue
  */
 class GitHttpClient(
     okHttpClient: (String) -> OkHttpClient,
+    /** The `Authorization` header for a private repository ([GitHttpAuth]), or null when it needs none. */
+    authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
-    private val transport = GitSmartHttpTransport(okHttpClient)
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(okHttpClient: (String) -> OkHttpClient) : this(okHttpClient, null)
+
+    private val transport = GitSmartHttpTransport(okHttpClient, authorization)
+
+    /** A file's history and blame ([GitFileHistory]) over the same connections. */
+    val files = GitFileHistory(transport)
 
     /**
      * Connects to [cloneUrl] and loads the tree of [ref] (default: the server's
@@ -345,6 +353,13 @@ class GitHttpClient(
     }
 }
 
+/** A line of a file that matched a content search: its [path] (segments), 1-based [line] and text. */
+class GitContentMatch(
+    val path: List<String>,
+    val line: Int,
+    val text: String,
+)
+
 /**
  * An offline-navigable snapshot of a repository tree plus lazy blob access.
  * Directory listings are resolved from the in-memory tree map; file contents are
@@ -445,6 +460,64 @@ class GitRepoSnapshot(
             }
         }
         walk(rootTreeOid, emptyList())
+        return result
+    }
+
+    /**
+     * Searches the text of every file for [query] (case-insensitive), as `git grep -i -F` would,
+     * fetching the blobs [batchSize] at a time so a large repository is never held in memory
+     * at once. Binary files (a NUL byte) and files over [maxFileBytes] are skipped. Calls
+     * [onProgress] with the files read so far and the total, and stops at [limit] matches.
+     */
+    suspend fun searchContents(
+        query: String,
+        limit: Int = 200,
+        batchSize: Int = 200,
+        maxFileBytes: Int = 1_000_000,
+        onProgress: (read: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<GitContentMatch> {
+        if (query.isBlank()) return emptyList()
+        val needle = query.lowercase()
+        val files = ArrayList<Pair<List<String>, String>>()
+
+        fun walk(
+            treeOid: String,
+            prefix: List<String>,
+        ) {
+            trees[treeOid]?.forEach { entry ->
+                val path = prefix + entry.name
+                if (entry.isFolder) {
+                    walk(entry.oid, path)
+                } else if (!entry.isSubmodule && entry.mode != "120000") {
+                    files.add(path to entry.oid)
+                }
+            }
+        }
+        walk(rootTreeOid, emptyList())
+
+        val result = ArrayList<GitContentMatch>()
+        var read = 0
+        onProgress(0, files.size)
+        for (batch in files.chunked(batchSize)) {
+            val missing = batch.map { it.second }.filter { it !in blobs }.distinct()
+            val fetched =
+                if (missing.isEmpty()) {
+                    emptyMap()
+                } else {
+                    Packfile.parse(transport.fetchPack(cloneUrl, caps, missing, deepen = null, filter = null)).mapValues { it.value.data }
+                }
+            for ((path, oid) in batch) {
+                // Only what was already cached stays: a search reads the files once and lets them go.
+                val data = blobs[oid] ?: fetched[oid] ?: continue
+                if (data.size > maxFileBytes || data.contains(0)) continue
+                data.decodeToString().lineSequence().forEachIndexed { index, line ->
+                    if (result.size < limit && line.lowercase().contains(needle)) result.add(GitContentMatch(path, index + 1, line.trim().take(300)))
+                }
+                if (result.size >= limit) return result
+            }
+            read += batch.size
+            onProgress(read, files.size)
+        }
         return result
     }
 

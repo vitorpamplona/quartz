@@ -288,6 +288,7 @@ import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestEvent
 import com.vitorpamplona.quartz.nip34Git.pr.GitPullRequestUpdateEvent
 import com.vitorpamplona.quartz.nip34Git.reply.GitReplyEvent
 import com.vitorpamplona.quartz.nip34Git.repository.GitRepositoryEvent
+import com.vitorpamplona.quartz.nip34Git.review.GitReviewEvent
 import com.vitorpamplona.quartz.nip34Git.state.GitRepositoryStateEvent
 import com.vitorpamplona.quartz.nip34Git.status.GitStatusAppliedEvent
 import com.vitorpamplona.quartz.nip34Git.status.GitStatusClosedEvent
@@ -890,6 +891,7 @@ class EventFactory {
                 GitStatusClosedEvent.KIND -> GitStatusClosedEvent(id, pubKey, createdAt, tags, content, sig)
                 GitStatusDraftEvent.KIND -> GitStatusDraftEvent(id, pubKey, createdAt, tags, content, sig)
                 GitCoverNoteEvent.KIND -> GitCoverNoteEvent(id, pubKey, createdAt, tags, content, sig)
+                GitReviewEvent.KIND -> GitReviewEvent(id, pubKey, createdAt, tags, content, sig)
                 CiManualTriggerEvent.KIND -> CiManualTriggerEvent(id, pubKey, createdAt, tags, content, sig)
                 CiJobResultEvent.KIND -> CiJobResultEvent(id, pubKey, createdAt, tags, content, sig)
                 CiWorkflowResultEvent.KIND -> CiWorkflowResultEvent(id, pubKey, createdAt, tags, content, sig)

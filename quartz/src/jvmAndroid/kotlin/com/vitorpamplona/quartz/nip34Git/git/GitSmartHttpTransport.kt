@@ -60,7 +60,15 @@ class GitCapabilities(
  */
 class GitSmartHttpTransport(
     private val okHttpClient: (String) -> OkHttpClient,
+    /**
+     * The `Authorization` header for a private repository at a clone URL ([GitHttpAuth]), or null
+     * for one that needs none.
+     */
+    private val authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(okHttpClient: (String) -> OkHttpClient) : this(okHttpClient, null)
+
     suspend fun fetchCapabilities(cloneUrl: String): GitCapabilities =
         withContext(Dispatchers.IO) {
             val url = "${base(cloneUrl)}/info/refs?service=git-upload-pack"
@@ -72,7 +80,7 @@ class GitSmartHttpTransport(
                     .header("Accept", "*/*")
                     .get()
                     .build()
-            GitUploadPackV2.parseCapabilities(PktLineCodec.parse(execute(url, request)))
+            GitUploadPackV2.parseCapabilities(PktLineCodec.parse(execute(cloneUrl, url, request)))
         }
 
     suspend fun lsRefs(
@@ -150,14 +158,15 @@ class GitSmartHttpTransport(
                 .header("Accept", "application/x-git-upload-pack-result")
                 .post(body.toRequestBody(GIT_UPLOAD_PACK_REQUEST))
                 .build()
-        return execute(url, request)
+        return execute(cloneUrl, url, request)
     }
 
     private suspend fun execute(
+        cloneUrl: String,
         url: String,
         request: Request,
     ): ByteArray =
-        okHttpClient(url).newCall(request).executeAsync().use { response ->
+        okHttpClient(url).newCall(authorized(cloneUrl, request)).executeAsync().use { response ->
             if (!response.isSuccessful) {
                 throw GitHttpException("HTTP ${response.code} from $url", httpCode = response.code)
             }
@@ -165,6 +174,15 @@ class GitSmartHttpTransport(
         }
 
     private fun base(cloneUrl: String): String = cloneUrl.trim().trimEnd('/')
+
+    /** [request] with the repository's `Authorization` ([authorization]), when it needs one. */
+    private suspend fun authorized(
+        cloneUrl: String,
+        request: Request,
+    ): Request {
+        val header = authorization?.invoke(cloneUrl) ?: return request
+        return request.newBuilder().header("Authorization", header).build()
+    }
 
     companion object {
         private val GIT_UPLOAD_PACK_REQUEST = "application/x-git-upload-pack-request".toMediaType()

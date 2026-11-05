@@ -197,12 +197,14 @@ object GitReceivePack {
 
 /**
  * Pushes to a git server over smart HTTP: reads its refs, then sends the ref updates and the
- * objects it lacks in one `git-receive-pack` request. There is no authentication: GRASP servers
- * decide from the repository's signed state event (kind 30618) instead.
+ * objects it lacks in one `git-receive-pack` request. A GRASP server decides from the repository's
+ * signed state event (kind 30618); a private one also wants [authorization] (GRASP-08).
  */
 class GitPushClient(
     private val okHttpClient: (String) -> OkHttpClient,
     private val agent: String = "quartz",
+    /** The `Authorization` header for a private repository ([GitHttpAuth]), or null when it needs none. */
+    private val authorization: (suspend (cloneUrl: String) -> String?)? = null,
 ) {
     suspend fun advertisement(cloneUrl: String): GitReceivePackAdvertisement =
         withContext(Dispatchers.IO) {
@@ -214,7 +216,7 @@ class GitPushClient(
                     .header("Accept", "*/*")
                     .get()
                     .build()
-            GitReceivePack.parseAdvertisement(PktLineCodec.parse(execute(url, request)))
+            GitReceivePack.parseAdvertisement(PktLineCodec.parse(execute(cloneUrl, url, request)))
         }
 
     /**
@@ -240,14 +242,15 @@ class GitPushClient(
                     .header("Accept", "application/x-git-receive-pack-result")
                     .post(body.toRequestBody(RECEIVE_PACK_REQUEST))
                     .build()
-            GitReceivePack.parseReport(execute(url, request), sideband = "side-band-64k" in capabilities)
+            GitReceivePack.parseReport(execute(cloneUrl, url, request), sideband = "side-band-64k" in capabilities)
         }
 
     private suspend fun execute(
+        cloneUrl: String,
         url: String,
         request: Request,
     ): ByteArray =
-        okHttpClient(url).newCall(request).executeAsync().use { response ->
+        okHttpClient(url).newCall(authorized(cloneUrl, request)).executeAsync().use { response ->
             if (!response.isSuccessful) {
                 val reason =
                     runCatching { response.body.string() }
@@ -261,6 +264,15 @@ class GitPushClient(
         }
 
     private fun base(cloneUrl: String): String = cloneUrl.trim().trimEnd('/')
+
+    /** [request] with the repository's `Authorization` ([authorization]), when it needs one. */
+    private suspend fun authorized(
+        cloneUrl: String,
+        request: Request,
+    ): Request {
+        val header = authorization?.invoke(cloneUrl) ?: return request
+        return request.newBuilder().header("Authorization", header).build()
+    }
 
     companion object {
         private val RECEIVE_PACK_REQUEST = "application/x-git-receive-pack-request".toMediaType()
