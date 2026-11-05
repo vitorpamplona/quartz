@@ -258,6 +258,12 @@ class GitRepositoryEvent(
     fun earliestUniqueCommit(): String? = tags.firstNotNullOfOrNull(EucTag::parse)
 
     /**
+     * A private repository (GRASP-08, `["private", "true"]`): its git endpoints want a signed
+     * `Authorization` and its events go only to its own relays.
+     */
+    fun isPrivate(): Boolean = tags.any { it.size > 1 && it[0] == "private" && it[1] == "true" }
+
+    /**
      * `true` if the event carries `["t", "personal-fork"]`, signaling the
      * author does not actively seek patches/feedback for this repository.
      */
