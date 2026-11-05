@@ -21,7 +21,10 @@
 package com.vitorpamplona.quartz.nip34Git.git
 
 import com.vitorpamplona.quartz.nip34Git.patch.LineDiff
+import com.vitorpamplona.quartz.utils.Log
 import java.util.PriorityQueue
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.concurrent.Volatile
 
 /** One version of a file in its history: the [commit] that changed it, and the file's blob then (null once deleted). */
 class GitFileVersion(
@@ -47,17 +50,42 @@ class GitBlame(
 
 /**
  * A file's history and blame over smart HTTP, as `git log -- <path>` and `git blame` read them,
- * from a bounded window of history: commits and trees come down without blobs (`blob:none`), and
- * only the versions of the one file are fetched.
+ * from a bounded window of history. Only what the walk reads comes down: the window's commits
+ * without trees (`tree:0`), then, one request per path segment, the distinct trees along the path
+ * asked for by id (`tree:0` again, so nothing below them), then the versions of the one file. A
+ * server that won't send trees by id gets the older fetch: every tree of the window (`blob:none`).
+ *
+ * The last [MAX_WINDOWS] windows are kept, with the path trees read through them, so the history
+ * and then the blame of a file, or the history of a file next to it, do not fetch them again.
  */
 class GitFileHistory(
     private val transport: GitSmartHttpTransport,
 ) {
+    /** The commits within some generations of a tip, and the trees read so far along paths through them. */
+    private class Window(
+        val commits: Map<String, GitCommit>,
+        val committedAt: Map<String, Long>,
+    ) {
+        /** Raw tree objects by oid: only the trees along the paths read so far. */
+        val trees = ConcurrentHashMap<String, ByteArray>()
+
+        /** False once the server would not send trees by id: other paths take the whole-window fetch. */
+        @Volatile
+        var treesById = true
+    }
+
+    private val windows =
+        object : LinkedHashMap<String, Window>(4, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Window>?) = size > MAX_WINDOWS
+        }
+
     /**
-     * The commits that changed [path] (segments) in the [depth] commits before [tip], newest first
-     * by committer date as `git log` orders them, with git's default history simplification: a
-     * merge that kept one parent's version follows that parent alone. A change of mode alone
-     * (`chmod +x`) is a change, as git counts it.
+     * The commits that changed [path] (segments) within [depth] generations of [tip] (as git's
+     * `deepen` counts them: every commit at most [depth] parent steps away, which on a history
+     * with merges is many more than [depth] commits), newest first by committer date as `git log`
+     * orders them, with git's default history simplification: a merge that kept one parent's
+     * version follows that parent alone. A change of mode alone (`chmod +x`) is a change, as git
+     * counts it.
      */
     suspend fun history(
         cloneUrl: String,
@@ -66,32 +94,17 @@ class GitFileHistory(
         depth: Int = DEFAULT_DEPTH,
     ): List<GitFileVersion> {
         val caps = transport.fetchCapabilities(cloneUrl)
-        val objects = Packfile.parse(transport.fetchPack(cloneUrl, caps, listOf(tip), deepen = depth, filter = "blob:none"))
-        val commits = HashMap<String, GitCommit>()
-        val committedAt = HashMap<String, Long>()
-        val trees = HashMap<String, List<GitTreeEntry>>()
-        objects.values.forEach { obj ->
-            when (obj.type) {
-                GitObjectType.COMMIT -> {
-                    val commit = GitObjectParser.parseCommit(obj.oid, obj.data)
-                    commits[obj.oid] = commit
-                    committedAt[obj.oid] = committerTime(obj.data) ?: commit.authorTimeSec
-                }
-                GitObjectType.TREE -> trees[obj.oid] = GitObjectParser.parseTree(obj.data)
-                else -> {}
-            }
-        }
+        val window = window(cloneUrl, caps, tip, path, depth)
+        val commits = window.commits
+        val committedAt = window.committedAt
+        val trees = window.trees
 
         // The file at a commit as mode and blob, so a mode-only change differs too.
+        val entries = HashMap<String, GitTreeEntry?>()
+
         fun entryAt(commit: GitCommit): GitTreeEntry? {
-            var tree = commit.treeOid
-            path.forEachIndexed { index, name ->
-                val entry = trees[tree]?.firstOrNull { it.name == name } ?: return null
-                if (index == path.lastIndex) return entry.takeIf { !entry.isFolder }
-                if (!entry.isFolder) return null
-                tree = entry.oid
-            }
-            return null
+            if (entries.containsKey(commit.oid)) return entries[commit.oid]
+            return pathEntry(trees, commit.treeOid, path).also { entries[commit.oid] = it }
         }
 
         fun sameFile(
@@ -213,6 +226,165 @@ class GitFileHistory(
         return GitBlame(versions, owner, truncated)
     }
 
+    /** The window of [depth] generations from [tip], holding the trees along [path]: cached, or fetched. */
+    private suspend fun window(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        tip: String,
+        path: List<String>,
+        depth: Int,
+    ): Window {
+        val key = "$cloneUrl\n$tip\n$depth"
+        var window = synchronized(windows) { windows[key] }
+        if (window == null && caps.supportsFilter) {
+            window = windowOf(Packfile.parse(transport.fetchPack(cloneUrl, caps, listOf(tip), deepen = depth, filter = "tree:0")))
+            synchronized(windows) { windows[key] = window }
+        }
+        if (window != null && window.treesById) {
+            if (readPathTrees(cloneUrl, caps, window, path)) return window
+            window.treesById = false
+        }
+        if (window != null && holdsPath(window, path)) return window
+        return fetchWholeWindow(cloneUrl, caps, tip, path, depth, window).also { whole -> synchronized(windows) { windows[key] = whole } }
+    }
+
+    private fun windowOf(objects: Map<String, GitObject>): Window {
+        val commits = HashMap<String, GitCommit>()
+        val committedAt = HashMap<String, Long>()
+        objects.values.forEach { obj ->
+            if (obj.type == GitObjectType.COMMIT) {
+                val commit = GitObjectParser.parseCommit(obj.oid, obj.data)
+                commits[obj.oid] = commit
+                committedAt[obj.oid] = committerTime(obj.data) ?: commit.authorTimeSec
+            }
+        }
+        return Window(commits, committedAt)
+    }
+
+    /**
+     * Fetches the trees along [path] in [window] that it doesn't hold yet, a level at a time: the
+     * commits' root trees, then each one's entry for the next segment. False when the server
+     * refused them or left some out.
+     */
+    private suspend fun readPathTrees(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        window: Window,
+        path: List<String>,
+    ): Boolean {
+        try {
+            var level: Set<String> = window.commits.values.mapTo(HashSet()) { it.treeOid }
+            for (index in path.indices) {
+                if (!fetchTrees(cloneUrl, caps, window, level.filter { !window.trees.containsKey(it) })) return false
+                if (index == path.lastIndex) break
+                val next = HashSet<String>()
+                level.forEach { oid ->
+                    window.trees[oid]
+                        ?.let { GitObjectParser.findTreeEntry(it, path[index]) }
+                        ?.takeIf { it.isFolder }
+                        ?.let { next.add(it.oid) }
+                }
+                if (next.isEmpty()) break
+                level = next
+            }
+            return true
+        } catch (e: GitHttpException) {
+            Log.w(TAG, "$cloneUrl would not send trees by id; fetching every tree of the window", e)
+            return false
+        }
+    }
+
+    /**
+     * Fetches [wants] (trees) with `tree:0`, so nothing below them comes. git leaves out a wanted
+     * tree that is also inside another wanted one, so what is missing is asked for again, a few
+     * rounds at most. False when a round brings none of what is missing.
+     */
+    private suspend fun fetchTrees(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        window: Window,
+        wants: List<String>,
+    ): Boolean {
+        var missing = wants
+        repeat(MAX_TREE_ROUNDS) {
+            if (missing.isEmpty()) return true
+            missing.chunked(MAX_WANTS_PER_REQUEST).forEach { chunk ->
+                val wanted = chunk.toHashSet()
+                Packfile.parse(transport.fetchPack(cloneUrl, caps, chunk, deepen = null, filter = "tree:0")).values.forEach { obj ->
+                    if (obj.type == GitObjectType.TREE && obj.oid in wanted) window.trees[obj.oid] = obj.data
+                }
+            }
+            val left = missing.filter { !window.trees.containsKey(it) }
+            if (left.size == missing.size) {
+                Log.w(TAG) { "$cloneUrl left out ${left.size} wanted trees; fetching every tree of the window" }
+                return false
+            }
+            missing = left
+        }
+        return missing.isEmpty()
+    }
+
+    /**
+     * The window as it was fetched before trees could be asked for by id: every commit and tree
+     * (`blob:none`; everything, from a server that can't filter). Only the trees along [path]
+     * are kept, into [window] when the commits were already read.
+     */
+    private suspend fun fetchWholeWindow(
+        cloneUrl: String,
+        caps: GitCapabilities,
+        tip: String,
+        path: List<String>,
+        depth: Int,
+        window: Window?,
+    ): Window {
+        val objects = Packfile.parse(transport.fetchPack(cloneUrl, caps, listOf(tip), deepen = depth, filter = "blob:none"))
+        val target = window ?: windowOf(objects).also { it.treesById = false }
+        var level: Set<String> = target.commits.values.mapTo(HashSet()) { it.treeOid }
+        for (index in path.indices) {
+            val next = HashSet<String>()
+            level.forEach { oid ->
+                val tree = objects[oid]?.takeIf { it.type == GitObjectType.TREE } ?: return@forEach
+                target.trees[oid] = tree.data
+                if (index < path.lastIndex) GitObjectParser.findTreeEntry(tree.data, path[index])?.takeIf { it.isFolder }?.let { next.add(it.oid) }
+            }
+            level = next
+        }
+        return target
+    }
+
+    /** True when [window] holds every tree along [path] from each of its commits. */
+    private fun holdsPath(
+        window: Window,
+        path: List<String>,
+    ): Boolean {
+        var level: Set<String> = window.commits.values.mapTo(HashSet()) { it.treeOid }
+        for (index in path.indices) {
+            val next = HashSet<String>()
+            level.forEach { oid ->
+                val tree = window.trees[oid] ?: return false
+                if (index < path.lastIndex) GitObjectParser.findTreeEntry(tree, path[index])?.takeIf { it.isFolder }?.let { next.add(it.oid) }
+            }
+            level = next
+        }
+        return true
+    }
+
+    /** The entry at [path] from the tree [root], a file and not a folder, or null where [trees] lacks a step. */
+    private fun pathEntry(
+        trees: Map<String, ByteArray>,
+        root: String,
+        path: List<String>,
+    ): GitTreeEntry? {
+        var tree = root
+        path.forEachIndexed { index, name ->
+            val entry = trees[tree]?.let { GitObjectParser.findTreeEntry(it, name) } ?: return null
+            if (index == path.lastIndex) return entry.takeIf { !entry.isFolder }
+            if (!entry.isFolder) return null
+            tree = entry.oid
+        }
+        return null
+    }
+
     /** The committer's timestamp in a raw commit object (`committer Name <email> <time> <tz>`). */
     private fun committerTime(data: ByteArray): Long? {
         val text = data.decodeToString(0, minOf(data.size, 4096))
@@ -232,6 +404,18 @@ class GitFileHistory(
     }
 
     companion object {
+        private const val TAG = "GitFileHistory"
+
+        /** History windows kept, each with the path trees read through it. */
+        private const val MAX_WINDOWS = 2
+
+        /** Rounds of asking again for trees a server left out, before falling back to every tree. */
+        private const val MAX_TREE_ROUNDS = 3
+
+        /** Wants per request when asking for trees by id, to keep request bodies small. */
+        private const val MAX_WANTS_PER_REQUEST = 4000
+
+        /** Generations of history read by default (git's `deepen`), not commits. */
         const val DEFAULT_DEPTH = 300
         const val DEFAULT_BLAME_VERSIONS = 60
     }

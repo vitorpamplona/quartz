@@ -146,7 +146,9 @@ object GitUploadPackV2 {
                 is PktLine.ResponseEnd -> if (inPack) break
                 is PktLine.Data -> {
                     if (!inPack) {
-                        if (line.text() == "packfile") inPack = true
+                        val text = line.text()
+                        if (text == "packfile") inPack = true
+                        if (text.startsWith("ERR ")) throw GitHttpException("git server error: ${text.removePrefix("ERR ")}")
                         continue
                     }
                     val payload = line.payload
