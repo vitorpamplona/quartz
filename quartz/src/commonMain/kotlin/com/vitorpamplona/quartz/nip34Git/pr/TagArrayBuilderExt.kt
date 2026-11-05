@@ -41,7 +41,9 @@ fun TagArrayBuilder<GitPullRequestEvent>.repository(rep: EventHintBundle<GitRepo
 
 // NIP-34 pull requests use the plain `["r", <commit>]` shape; the `"euc"` marker
 // is only on the kind-30617 announcement (see the patch builder for the rationale).
-fun TagArrayBuilder<GitPullRequestEvent>.euc(commit: String) = addUnique(CommitReferenceTag.assemble(commit))
+
+/** The repository's earliest unique commit; a repository that has none gets no `r` tag rather than an empty one. */
+fun TagArrayBuilder<GitPullRequestEvent>.euc(commit: String) = if (commit.isBlank()) this else addUnique(CommitReferenceTag.assemble(commit))
 
 fun TagArrayBuilder<GitPullRequestEvent>.currentCommit(commit: String) = addUnique(CurrentCommitTag.assemble(commit))
 

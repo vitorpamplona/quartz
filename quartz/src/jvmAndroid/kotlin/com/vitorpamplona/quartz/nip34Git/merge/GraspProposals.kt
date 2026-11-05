@@ -74,8 +74,11 @@ class GraspProposalPusher(
             if (current == tip) {
                 null
             } else {
-                val hasTip = tip in advertisement.refs.values
-                val toSend = if (branchObjects == null || hasTip) objects else objects + branchObjects.objects()
+                // A server that holds the tip, or the branch commit [objects] build on (an edit made
+                // in the app sits on a commit the server may have), needs none of the branch's history.
+                val served = advertisement.refs.values
+                val hasBranch = tip in served || (branchObjects != null && branchObjects.tip in served)
+                val toSend = if (branchObjects == null || hasBranch) objects else objects + branchObjects.objects()
                 val report = git.push(cloneUrl, listOf(GitRefUpdate(ref, current ?: GIT_ZERO_OID, tip)), toSend, advertisement)
                 if (report.isSuccess) null else report.describe()
             }
