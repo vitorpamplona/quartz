@@ -1,7 +1,23 @@
 # NIP-34 git: what blame, file history and content search download
 
-_Status: queued. Measured 2026-11-05 against the amethyst repository on relay.ngit.dev (a GRASP
+_Status: shipped 2026-11-05. Measured against the amethyst repository on relay.ngit.dev (a GRASP
 server, git 2.56) from a desktop JVM._
+
+## Outcome
+
+- History and blame fetch the window's commits (`tree:0`), then the distinct trees on the path one
+  level per request (wants split at 4,000; a tree git leaves out because it sits inside another
+  wanted tree is asked for again, up to 3 rounds), with the `blob:none` fetch as the fallback for a
+  server that refuses. The last 2 windows are kept per (clone URL, tip, depth), so blame after
+  history, or the history of a nearby file, fetches no commits or trees again. On relay.ngit.dev:
+  `.github/dependabot.yml` 3.6 MB in 3 requests (was 11.5 MB), an 11-level path 4.3 MB in 12;
+  blame in the desktop app answered in under 6 s where it took 30 to 60.
+- Content search skips binary file types by name (`GitBinaryFiles`) and reads each batch's pack as
+  it arrives (`PackfileStream`): an object over the size limit is inflated through a 64 KB buffer to
+  find the next entry and never kept, and a delta on a skipped base is reported missing, never
+  rebuilt from the wrong bytes.
+- The blame default depth stayed at 300, so blame reuses the history window. The path-tree cache
+  lives in `GitFileHistory`, not on `GitRepoSnapshot`.
 
 File history, blame and full-text search in a client's code browser are built on
 `GitFileHistory` and `GitRepoSnapshot.searchContents` (`quartz/src/jvmAndroid/kotlin/com/vitorpamplona/quartz/nip34Git/git/`).
