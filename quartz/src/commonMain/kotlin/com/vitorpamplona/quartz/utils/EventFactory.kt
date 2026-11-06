@@ -546,6 +546,22 @@ class EventFactory {
             content: String,
             sig: HexKey,
         ): T =
+            (
+                (if (EXPERIMENTAL_TABLE_FACTORY) EventFactoryTable.create(id, pubKey, createdAt, kind, tags, content, sig) else createWithWhen(id, pubKey, createdAt, kind, tags, content, sig))
+                    ?: factories[kind]?.build(id, pubKey, createdAt, tags, content, sig)
+                    ?: Event(id, pubKey, createdAt, kind, tags, content, sig)
+            ) as T
+
+        /** The compiled-in kinds through the four `when` parts, or null for a kind none owns. */
+        internal fun createWithWhen(
+            id: HexKey,
+            pubKey: HexKey,
+            createdAt: Long,
+            kind: Int,
+            tags: Array<Array<String>>,
+            content: String,
+            sig: HexKey,
+        ): Event? =
             // Split in four: one `when` over every kind compiled to ~15,000 bytes of bytecode, past
             // HotSpot's 8,000-byte limit for JIT compilation (DontCompileHugeMethods), so create ran
             // in the interpreter on every event; the split made parsing 11 to 21% faster. Keep each
@@ -555,9 +571,7 @@ class EventFactory {
                     ?: createPart2(id, pubKey, createdAt, kind, tags, content, sig)
                     ?: createPart3(id, pubKey, createdAt, kind, tags, content, sig)
                     ?: createPart4(id, pubKey, createdAt, kind, tags, content, sig)
-                    ?: factories[kind]?.build(id, pubKey, createdAt, tags, content, sig)
-                    ?: Event(id, pubKey, createdAt, kind, tags, content, sig)
-            ) as T
+            )
 
         /** A quarter of [create]'s kinds, or null for a kind it does not own. */
         private fun createPart1(
