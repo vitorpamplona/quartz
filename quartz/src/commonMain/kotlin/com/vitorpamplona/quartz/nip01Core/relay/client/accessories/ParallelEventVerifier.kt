@@ -151,7 +151,7 @@ class ParallelEventVerifier<C>(
         } else {
             // Up to [parallelism] workers, each taking the next event: fixed per-worker chunks
             // left cores idle behind the slowest chunk (91k/s against 111k/s at batch 256).
-            forEachIndexInParallel(batch.size, parallelism) { i ->
+            forEachIndexInParallel(batch.size, parallelism, Dispatchers.Default) { i ->
                 if (!results[i]) results[i] = batch[i].event.verify()
             }
         }

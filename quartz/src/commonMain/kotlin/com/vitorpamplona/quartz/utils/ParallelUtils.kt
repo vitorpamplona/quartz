@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.utils
 
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
@@ -70,12 +71,16 @@ suspend fun <T> launchAndWaitAll(
 }
 
 /**
- * Runs [work] for every index in `0 until count` on up to [parallelism] [Dispatchers.Default]
- * workers, each taking the next index from a shared counter until none are left.
+ * Runs [work] for every index in `0 until count` on up to [parallelism] coroutines on
+ * [dispatcher], each taking the next index from a shared counter until none are left.
  *
- * For CPU-bound items of uneven cost (signature checks over events of mixed size). One coroutine
- * per item pays a launch per item; fixed chunks per worker leave cores idle behind the slowest
- * chunk. Pulling from a counter does neither. Verifying real events on 4 cores, batch 256:
+ * The caller picks [dispatcher] because only it knows what [work] does: CPU-bound work belongs on
+ * [Dispatchers.Default], whose threads track the core count (few on a phone), so blocking work
+ * there would starve every other Default user; blocking work needs an IO-sized dispatcher.
+ *
+ * For items of uneven cost (signature checks over events of mixed size). One coroutine per item
+ * pays a launch per item; fixed chunks per worker leave threads idle behind the slowest chunk.
+ * Pulling from a counter does neither. Verifying real events on Default with 4 cores, batch 256:
  * ~106-110k/s, against ~84-91k/s with eight fixed chunks and ~86-96k/s with one async per event
  * (batch 64: ~80-100k/s, ~64-76k/s and ~78-84k/s).
  */
@@ -83,13 +88,14 @@ suspend fun <T> launchAndWaitAll(
 internal suspend fun forEachIndexInParallel(
     count: Int,
     parallelism: Int,
+    dispatcher: CoroutineDispatcher,
     work: (index: Int) -> Unit,
 ) {
     if (count <= 0) return
     val next = AtomicInt(0)
     coroutineScope {
         List(minOf(parallelism, count).coerceAtLeast(1)) {
-            async(Dispatchers.Default) {
+            async(dispatcher) {
                 while (true) {
                     val i = next.fetchAndIncrement()
                     if (i >= count) break

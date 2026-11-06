@@ -254,7 +254,8 @@ class IngestQueue(
         }
         val results = BooleanArray(batch.size) { batch[it].skipVerify }
         if (results.all { it }) return results
-        forEachIndexInParallel(batch.size, availableProcessors()) { i ->
+        // The hook is meant to be a signature check (CPU-bound): Default, one worker per core.
+        forEachIndexInParallel(batch.size, availableProcessors(), Dispatchers.Default) { i ->
             if (!results[i]) results[i] = hook(batch[i].event)
         }
         return results
