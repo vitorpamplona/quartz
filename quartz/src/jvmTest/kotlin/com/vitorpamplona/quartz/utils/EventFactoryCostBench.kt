@@ -30,6 +30,9 @@ class EventFactoryCostBench {
     @Test
     fun cost() {
         val path = System.getenv("KITE_CORPUS") ?: return
+        val t = System.nanoTime()
+        val size = EventFactoryTable.size
+        println("FACTORY table init: %.1f ms for %d kinds".format((System.nanoTime() - t) / 1e6, size))
         val events = File(path).readLines().filter { it.isNotBlank() }.map { KiteReader.readEvent(it) }
         val n = events.size
         val kinds = events.map { it.kind }.toSet().size
@@ -43,6 +46,13 @@ class EventFactoryCostBench {
             t0 = System.nanoTime()
             repeat(50) { for (e in events) sink += Event(e.id, e.pubKey, e.createdAt, e.kind, e.tags, e.content, e.sig).kind }
             val plain = (System.nanoTime() - t0) / 50.0 / n
+            t0 = System.nanoTime()
+            repeat(50) { for (e in events) sink += (EventFactory.createWithWhen(e.id, e.pubKey, e.createdAt, e.kind, e.tags, e.content, e.sig)?.kind ?: 0) }
+            val viaWhen = (System.nanoTime() - t0) / 50.0 / n
+            t0 = System.nanoTime()
+            repeat(50) { for (e in events) sink += (EventFactoryTable.create(e.id, e.pubKey, e.createdAt, e.kind, e.tags, e.content, e.sig)?.kind ?: 0) }
+            val viaTable = (System.nanoTime() - t0) / 50.0 / n
+            println("FACTORY pass ${pass + 1}: when parts %.1f ns, table %.1f ns per event".format(viaWhen, viaTable))
             t0 = System.nanoTime()
             repeat(50) { for (e in events) sink += KiteReader.readEvent(e.toJson()).kind }
             val parseWithJson = (System.nanoTime() - t0) / 50.0 / n
