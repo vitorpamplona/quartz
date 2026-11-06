@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.availableProcessors
 import com.vitorpamplona.quartz.utils.forEachIndexInParallel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,7 +95,7 @@ class IngestQueue(
      *
      * The intended use is Schnorr signature verification: an event's
      * `verify()` is CPU-bound and parallelisable, so spreading a
-     * batch's verifies across [Dispatchers.Default] threads is
+     * batch's verifies across [verifyDispatcher] (Default) threads is
      * straight throughput. Hook fires off the WS pump so a single
      * publisher streaming many EVENTs doesn't serialise verify on
      * one connection's read coroutine.
@@ -112,7 +113,26 @@ class IngestQueue(
      * be cheap and non-suspending — it runs on the writer stage.
      */
     private val onBatchCommitted: (() -> Unit)? = null,
+    /**
+     * Where the [verify] hook runs, one coroutine per core pulling the next row. The default
+     * suits a CPU-bound hook such as a signature check. A hook that blocks (a network or disk
+     * lookup) must get an IO-sized dispatcher instead: Default has about one thread per core,
+     * so a few blocked hooks would starve every other Default user.
+     */
+    private val verifyDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : EventIngest {
+    /** The constructor before [verifyDispatcher], kept so dependents compiled against it still link. */
+    @Deprecated("Use the constructor with verifyDispatcher.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        store: IEventStore,
+        parentContext: CoroutineContext,
+        maxBatch: Int = DEFAULT_MAX_BATCH,
+        capacity: Int = DEFAULT_CAPACITY,
+        verify: ((Event) -> Boolean)? = null,
+        verifyRejectionReason: String = "invalid: bad signature or id",
+        onBatchCommitted: (() -> Unit)? = null,
+    ) : this(store, parentContext, maxBatch, capacity, verify, verifyRejectionReason, onBatchCommitted, Dispatchers.Default)
+
     /**
      * One outstanding ingest request: the event to insert plus the
      * callback the writer fires once the row's outcome is known.
@@ -240,7 +260,7 @@ class IngestQueue(
     /**
      * Tier 3: per-row verify. Returns `null` when no [verify] hook is
      * configured (skip the stage entirely). Multi-event batches spread
-     * across one Default worker per core, each taking the next row
+     * across one [verifyDispatcher] worker per core, each taking the next row
      * ([forEachIndexInParallel]); single-event batches short-circuit to a
      * direct call to avoid coroutine-scope overhead. Rows flagged
      * [Submission.skipVerify] (trusted publishers) pass without
@@ -254,8 +274,7 @@ class IngestQueue(
         }
         val results = BooleanArray(batch.size) { batch[it].skipVerify }
         if (results.all { it }) return results
-        // The hook is meant to be a signature check (CPU-bound): Default, one worker per core.
-        forEachIndexInParallel(batch.size, availableProcessors(), Dispatchers.Default) { i ->
+        forEachIndexInParallel(batch.size, availableProcessors(), verifyDispatcher) { i ->
             if (!results[i]) results[i] = hook(batch[i].event)
         }
         return results
