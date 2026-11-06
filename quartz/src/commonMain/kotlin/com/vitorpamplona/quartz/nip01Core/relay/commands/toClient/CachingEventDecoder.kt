@@ -50,14 +50,21 @@ import kotlin.concurrent.atomics.incrementAndFetch
  * happens, and dispatch semantics are IDENTICAL to a full parse. Only the
  * redundant parse is skipped.
  *
- * Safety rules — the scan must never mis-attribute a frame, so it bails to a
- * full parse whenever anything is unusual:
- *  - the frame must start exactly with `["EVENT","`;
+ * Safety rules — the scan bails to a full parse whenever anything is unusual:
+ *  - the frame must be `["EVENT","<subId>",{…}]`, compact or with JSON
+ *    whitespace between its tokens;
  *  - the subscription id must contain no escapes;
- *  - the id must be found as the literal `"id":"` key with a 64-lowercase-hex
- *    value. Valid JSON guarantees this substring cannot occur inside a string
- *    value (inner quotes are escaped as `\"`, e.g. kind-6 reposts embedding
- *    full event JSON in `content`), so a match is the top-level id key.
+ *  - the id must be the value of an `"id"` key (a quote, `id`, a quote,
+ *    preceded by `{` or `,` and followed by `:`), a 64-lowercase-hex string.
+ *    Inside a JSON string every quote is escaped, so that shape can't occur in a
+ *    value (kind-6 reposts embed whole events in `content`), nor at the
+ *    escaped quote of a key ending in `\"id`.
+ *
+ * The scan takes the first such key. In a NIP-01 event that is the event's
+ * own id: its only object is the event itself. A frame that nests an object
+ * with an `"id"` key ahead of the real one can make the scan read the nested
+ * id; only a malformed or hostile frame does that, and it gains its relay
+ * nothing, since a relay can already send any event under any subscription.
  *
  * The id → Event cache is generational: two lock-free concurrent maps
  * ([ConcurrentHashCache]: `ConcurrentHashMap` on JVM/Android), rotated when
@@ -559,9 +566,13 @@ class CachingEventDecoder(
 
     /**
      * Where the string value of the first [key] (with its quotes, e.g. `"id"`) at or after
-     * [from] starts, just past its opening quote, allowing JSON whitespace around the colon; or
-     * -1. A string can't hold [key] unescaped, and a string value is never followed by a colon,
-     * so the first match followed by `:` is a key.
+     * [from] starts, just past its opening quote, allowing JSON whitespace around it; or -1.
+     *
+     * A match counts only where a key can stand: after `{` or `,`, and before `:`. Inside a JSON
+     * string every quote is escaped, so the match can't be in a value. Its first quote could be
+     * the escaped quote that ends a key like `"x\"id"`, preceded by a backslash, which the `{`/`,`
+     * check refuses. A string value equal to [key] is never followed by `:`. See the class
+     * documentation for the nested-object case this does not rule out.
      */
     private fun stringValueOf(
         text: String,
@@ -570,14 +581,29 @@ class CachingEventDecoder(
     ): Int {
         var k = text.indexOf(key, from)
         while (k >= 0) {
-            var j = skipWs(text, k + key.length)
-            if (j < text.length && text[j] == ':') {
-                j = skipWs(text, j + 1)
-                return if (j < text.length && text[j] == '"') j + 1 else -1
+            if (startsAKey(text, k)) {
+                var j = skipWs(text, k + key.length)
+                if (j < text.length && text[j] == ':') {
+                    j = skipWs(text, j + 1)
+                    return if (j < text.length && text[j] == '"') j + 1 else -1
+                }
             }
             k = text.indexOf(key, k + 1)
         }
         return -1
+    }
+
+    /** Whether the quote at [at] is where an object key can start: after `{` or `,`, whitespace aside. */
+    private fun startsAKey(
+        text: String,
+        at: Int,
+    ): Boolean {
+        var p = at - 1
+        while (p >= 0) {
+            val c = text[p]
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') p-- else return c == '{' || c == ','
+        }
+        return false
     }
 
     private fun skipWs(
