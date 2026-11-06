@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.kite
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.KnownEventLookup
 import com.vitorpamplona.quartz.utils.EventFactory
 
 /**
@@ -89,6 +90,7 @@ internal class KiteBytesReader {
         } finally {
             b = EMPTY_BYTES
             inUse = false
+            knownHit = null
             if (!done) {
                 tagsScratch?.fill(null)
                 tagScratch?.fill(null)
@@ -100,21 +102,42 @@ internal class KiteBytesReader {
         }
     }
 
-    /** The EVENT frame in [bytes], or null when the frame is not an EVENT (read it with [KiteReader]). */
+    /**
+     * The EVENT frame in [bytes], or null when the frame is not an EVENT (read it with
+     * [KiteReader]).
+     *
+     * With [known], the event's id is looked up the moment it is read. On a hit, that event is
+     * the frame's, and nothing after the id is read. The fields that come before the id and would
+     * allocate (`content`, `tags`, `pubkey`, `sig`) are only skipped until then, their start
+     * noted, and built from there on a miss. A miss therefore reads the same as a parse without
+     * [known], at the cost of scanning those fields twice. Strfry sorts keys, so only `content`
+     * comes before the id there. A frame with two ids is looked up by its first; it is read, as
+     * always, with its last.
+     */
     fun readEventFrame(
         bytes: ByteArray,
         offset: Int,
         length: Int,
+        known: KnownEventLookup? = null,
     ): EventMessage? =
         parse(bytes, offset, length) {
             if (!openEventFrame()) return@parse null
             val subId = requiredString()
             if (!nextElement()) fail("missing element")
             if (b[i] != LBRACE) fail("expected an object")
-            val msg = EventMessage(subId, readEventObject(2))
+            val event = readEventObject(2, known)
+            // A known event ends the read: the rest of the frame is the copy we did not need.
+            if (event === knownHit) {
+                knownHit = null
+                return@parse EventMessage(subId, event)
+            }
+            val msg = EventMessage(subId, event)
             while (nextElement()) skipValue(1)
             msg
         }
+
+    /** The event [KnownEventLookup] answered for this frame's id, while [readEventFrame] hands it out. */
+    private var knownHit: Event? = null
 
     /** One event object; see [KiteReader.readEventObject]. */
     fun readEvent(
@@ -186,8 +209,15 @@ internal class KiteBytesReader {
 
     // ---- the event
 
-    private fun readEventObject(base: Int): Event {
-        readEventFields(base)
+    private fun readEventObject(
+        base: Int,
+        known: KnownEventLookup? = null,
+    ): Event {
+        readEventFields(base, known)
+        knownHit?.let {
+            clearFields()
+            return it
+        }
         val pubKey = fPubKey
         if (pubKey.isNullOrEmpty()) throw IllegalArgumentException("Event not found")
         val event =
@@ -212,7 +242,17 @@ internal class KiteBytesReader {
         fSig = null
     }
 
-    private fun readEventFields(base: Int) {
+    private fun readEventFields(
+        base: Int,
+        known: KnownEventLookup?,
+    ) {
+        knownHit = null
+        // Until the id is read (and only with [known]): where each deferred field's value starts.
+        var defer = known != null
+        var contentAt = -1
+        var tagsAt = -1
+        var pubKeyAt = -1
+        var sigAt = -1
         fId = null
         fPubKey = null
         fHasCreatedAt = false
@@ -235,9 +275,28 @@ internal class KiteBytesReader {
             expect(':')
             ws()
             if (i >= n) fail("unexpected end of input")
+            // A deferred field is skipped and noted; read later, the last occurrence still wins,
+            // so a field read directly forgets an earlier deferred one.
             when (field) {
-                F_ID -> fId = readString()
-                F_PUBKEY -> fPubKey = readString()
+                F_ID -> {
+                    fId = readString()
+                    if (defer) {
+                        defer = false
+                        val hit = known!!.find(fId!!)
+                        if (hit != null) {
+                            knownHit = hit
+                            return
+                        }
+                    }
+                }
+                F_PUBKEY ->
+                    if (defer) {
+                        pubKeyAt = i
+                        skipValue(base)
+                    } else {
+                        fPubKey = readString()
+                        pubKeyAt = -1
+                    }
                 F_CREATED_AT -> {
                     fCreatedAt = readLong()
                     fHasCreatedAt = true
@@ -246,18 +305,60 @@ internal class KiteBytesReader {
                     fKind = readInt()
                     fHasKind = true
                 }
-                F_TAGS -> fTags = readTags()
-                F_CONTENT -> fContent = stringOrNull()
-                F_SIG -> fSig = readString()
+                F_TAGS ->
+                    if (defer) {
+                        tagsAt = i
+                        skipValue(base)
+                    } else {
+                        fTags = readTags()
+                        tagsAt = -1
+                    }
+                F_CONTENT ->
+                    if (defer) {
+                        contentAt = i
+                        skipValue(base)
+                    } else {
+                        fContent = stringOrNull()
+                        contentAt = -1
+                    }
+                F_SIG ->
+                    if (defer) {
+                        sigAt = i
+                        skipValue(base)
+                    } else {
+                        fSig = readString()
+                        sigAt = -1
+                    }
                 else -> skipValue(base)
             }
             ws()
             if (i >= n) fail("unexpected end of input inside an object")
             val x = b[i++]
             if (x == COMMA) continue
-            if (x == RBRACE) return
+            if (x == RBRACE) break
             fail("expected ',' or '}'")
         }
+        if (contentAt < 0 && tagsAt < 0 && pubKeyAt < 0 && sigAt < 0) return
+        // A miss: build the fields that came before the id, from where they start.
+        val end = i
+        if (contentAt >= 0) fContent = readDeferred(contentAt) { stringOrNull() }
+        if (tagsAt >= 0) fTags = readDeferred(tagsAt) { readTags() }
+        if (pubKeyAt >= 0) fPubKey = readDeferred(pubKeyAt) { readString() }
+        if (sigAt >= 0) fSig = readDeferred(sigAt) { readString() }
+        i = end
+        // [nextEscape] only ever looks forward: let it look again from where reading resumes.
+        nextEscape = -1
+    }
+
+    /** [read] with the cursor at [at], a value skipped earlier. */
+    private inline fun <T> readDeferred(
+        at: Int,
+        read: () -> T,
+    ): T {
+        i = at
+        // The escape found last lies past this value: look again from its start.
+        nextEscape = -1
+        return read()
     }
 
     private fun quoteAfter(from: Int): Int = indexOfByte(b, from, n, QUOTE)

@@ -9,7 +9,7 @@ off OkHttp's `Response.socket` and the relay client parses them with the SWAR by
 - CPU falls 27–53% on compressed or duplicate traffic and 6% on paced plain traffic;
 - CPU rises 20–30% only when a loopback relay floods uncompressed unique frames.
 
-Still a plan: the deferred-field id hook (`KnownEventLookup`) and the device measurements. The
+The id hook with deferred fields is in too (section 2d). Still open: the device measurements. The
 Latin-1 view (`readMessageLatin1View`) stays as a comparison point. The
 measurements and the OkHttp probe are reproducible, and the plan at the end is staged so each
 step can be benchmarked before the next.
@@ -496,6 +496,50 @@ for the 8 KiB socket reads, which both sockets pay.
 Not measured: Android (ART, the plain-loop `indexOfByte`, compact strings only for ASCII) and
 Kotlin/Native (no socket there yet). Measure on a device before Amethyst Android opts in.
 
+## 2d. The id hook, built
+
+`KnownEventLookup.find(id)` is asked by `KiteBytesReader.readEventFrame(…, known)` the moment it
+reads the id.
+
+- **Deferral:** until then, `content`, `tags`, `pubkey` and `sig` are only skipped
+  (`skipValue`), each with its start offset noted. `created_at` and `kind` are read, since they
+  allocate nothing.
+- **Hit:** the known event is the frame's, with the frame's subscription id, and nothing after
+  the id is read. A frame broken after its id is a hit all the same, as with
+  `CachingEventDecoder`'s old scan.
+- **Miss:** the rest is read directly, then each skipped field is read from its offset, with
+  `nextEscape` reset, since it only looks forward.
+- **Duplicate keys:** the last occurrence still wins. A field read directly drops an earlier
+  deferred one. A frame with two ids is looked up by its first and read with its last.
+
+`CachingEventDecoder.decodeFromUtf8` now parses with that lookup when its full parser is Kite's
+(`MessageDecoder.Default`). Its `FrameLookup` checks, in order:
+1. an id under scrutiny gets no answer, so its copy is parsed and checked by `afterFullParse`,
+   exactly as before;
+2. the decoder's own cache;
+3. the new `knownEvents` (`@Volatile var`, no constructor change), the app's events, e.g.
+   Amethyst's in-memory cache, which reaches past the last 2 × 8,192 ids.
+
+A revoked (reported) id is never asked of the app. The text path's scan also falls back to
+`knownEvents`, and `reusedKnownCount` counts the app's answers. What the byte path gains over the
+old scan-then-parse:
+- one pass on a miss;
+- frames with whitespace or escaped keys are caught, where the scan's literal `"id":"` missed
+  20% of relay.snort.social's frames;
+- the app's events count as hits.
+
+**Tests:**
+- Every `KiteReaderUtf8Test` case also runs through the deferred path with a lookup that never
+  answers. New cases cover all four wire key orders, hits with whitespace and escaped keys, a
+  frame broken after its id, last-wins for duplicate keys and two ids, and deferred values that
+  must still fail.
+- `CachingEventDecoderTest`, `…ForgeryTest` (19) and `…TrimTest` now run twice, as text and as
+  bytes, through a `decodeAt` hook. `CachingEventDecoderKnownEventsTest` covers the app lookup
+  on both paths: asked after the cache, and never for a scrutinized id, so a forged copy the
+  app holds is never handed out.
+- `KiteUtf8Benchmark` re-orders all 31,161 corpus events into strfry and nostr-tools key order:
+  every one reads the same through the miss path, and the hit path returns the known event.
+
 ## Expected gain (estimate, not measured end to end)
 
 Per frame, against today's decode cost on the corpus mix, and before any change to Kite's own
@@ -530,7 +574,7 @@ on Android's GC.
    run against both readers, and `nextQuote` as expect/actual (SWAR on JVM, loop or SWAR on
    Android by API level, `memchr` on native). Gate: ASCII unique frames no slower than decode +
    String parse; non-ASCII frames faster.
-5. **Deferred fields + `KnownEventLookup`,** wired into `CachingEventDecoder`, keeping every
+5. **Done: deferred fields + `KnownEventLookup`** (section 2d). Originally: **Deferred fields + `KnownEventLookup`,** wired into `CachingEventDecoder`, keeping every
    forgery rule. Gate: duplicate frames allocate under 200 B; `CachingEventDecoder` tests
    unchanged.
 6. **Done: `OkHttpBytesWebSocket`**, on `Response.socket`, next to `BasicOkHttpWebSocket`,

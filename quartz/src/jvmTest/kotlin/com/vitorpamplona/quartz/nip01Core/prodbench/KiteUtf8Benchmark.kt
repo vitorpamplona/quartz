@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.prodbench
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.KnownEventLookup
 import java.io.File
 import java.lang.management.ManagementFactory
 import java.util.zip.GZIPInputStream
@@ -63,6 +64,50 @@ class KiteUtf8Benchmark {
             }
             out
         }
+
+    /** A JSON object's top-level members, as (key, raw value text). The corpus keys have no escapes. */
+    private fun topLevelMembers(json: String): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var start = 1
+        for (k in json.indices) {
+            val c = json[k]
+            if (inString) {
+                if (escaped) {
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else if (c == '"') {
+                    inString = false
+                }
+                continue
+            }
+            when (c) {
+                '"' -> inString = true
+                '{', '[' -> depth++
+                '}', ']' -> {
+                    depth--
+                    if (depth == 0) out.add(member(json.substring(start, k)))
+                }
+                ',' ->
+                    if (depth == 1) {
+                        out.add(member(json.substring(start, k)))
+                        start = k + 1
+                    }
+            }
+        }
+        return out
+    }
+
+    private fun member(text: String): Pair<String, String> {
+        val key = text.substringAfter('"').substringBefore('"')
+        return key to text.substringAfter(':')
+    }
+
+    private val strfryOrder = listOf("content", "created_at", "id", "kind", "pubkey", "sig", "tags")
+    private val nostrToolsOrder = listOf("kind", "created_at", "tags", "content", "pubkey", "id", "sig")
 
     private fun describe(e: Event) = "${e.id}|${e.pubKey}|${e.createdAt}|${e.kind}|${e.tags.map { it.toList() }}|<${e.content}>|${e.sig}"
 
@@ -110,6 +155,21 @@ class KiteUtf8Benchmark {
             }
             for (msg in listOf(KiteReader.readMessageUtf8(frames[k]), KiteReader.readMessageLatin1View(frames[k]))) {
                 assertEquals(describe(expected), describe((msg as EventMessage).event), "frame $k")
+            }
+        }
+
+        // Deferred fields: every event in the key orders relays send, through a lookup that
+        // never answers (the miss path) and one that always does (the hit path).
+        for (k in events.indices) {
+            val members = topLevelMembers(events[k].decodeToString())
+            for (order in listOf(strfryOrder, nostrToolsOrder)) {
+                val reordered = members.sortedBy { (key, _) -> order.indexOf(key).let { if (it < 0) order.size else it } }
+                val frame = "[\"EVENT\",\"s\",${reordered.joinToString(",", "{", "}") { (key, raw) -> "\"$key\":$raw" }}]".encodeToByteArray()
+                val expected = KiteReader.readEvent(events[k].decodeToString())
+                val missed = KiteReader.readMessageUtf8(frame, 0, frame.size, KnownEventLookup { null }) as EventMessage
+                assertEquals(describe(expected), describe(missed.event), "event $k, $order")
+                val hit = KiteReader.readMessageUtf8(frame, 0, frame.size, KnownEventLookup { expected }) as EventMessage
+                assertTrue(hit.event === expected, "event $k, $order")
             }
         }
 

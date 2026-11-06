@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.commands.toClient
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -40,7 +41,15 @@ import kotlin.test.assertTrue
  *
  * In `commonTest`: `commonMain` logic, no platform surface, no clock.
  */
-class CachingEventDecoderTrimTest {
+open class CachingEventDecoderTrimTest {
+    /** How a frame reaches the decoder; the subclass sends its bytes, as OkHttpBytesWebSocket does. */
+    open fun CachingEventDecoder.decodeAt(
+        text: String,
+        relay: NormalizedRelayUrl?,
+    ): Message? = decodeFrom(text, relay)
+
+    open fun CachingEventDecoder.decodeAt(text: String): Message = decode(text)
+
     private fun hexId(seed: Int) = seed.toString(16).padStart(64, '0')
 
     private fun event(seed: Int) =
@@ -62,12 +71,12 @@ class CachingEventDecoderTrimTest {
     @Test
     fun entriesSurviveExactlyOneAgeOut() {
         val decoder = CachingEventDecoder(capacity = 1_000)
-        decoder.decode(frame(1))
+        decoder.decodeAt(frame(1))
         assertEquals(1, decoder.parsedCount.toInt())
 
         // first tick: retired into `previous`, still addressable
         decoder.ageOutCache()
-        decoder.decode(frame(1))
+        decoder.decodeAt(frame(1))
         assertEquals(1, decoder.parsedCount.toInt(), "one age-out must not drop the id")
         assertEquals(1, decoder.reusedCount.toInt())
     }
@@ -75,14 +84,14 @@ class CachingEventDecoderTrimTest {
     @Test
     fun twoAgeOutsWithNoTrafficEmptyTheCache() {
         val decoder = CachingEventDecoder(capacity = 1_000)
-        (1..50).forEach { decoder.decode(frame(it)) }
+        (1..50).forEach { decoder.decodeAt(frame(it)) }
         assertEquals(50, decoder.cachedCount)
 
         decoder.ageOutCache()
         decoder.ageOutCache()
 
         assertEquals(0, decoder.cachedCount, "nothing survives two ticks without traffic")
-        decoder.decode(frame(1))
+        decoder.decodeAt(frame(1))
         assertEquals(51, decoder.parsedCount.toInt(), "the id is gone, so it re-parses")
         assertEquals(0, decoder.reusedCount.toInt())
     }
@@ -91,17 +100,17 @@ class CachingEventDecoderTrimTest {
     fun trafficBetweenTicksIsKept() {
         // the trickle case: events keep arriving, so the cache must keep serving them
         val decoder = CachingEventDecoder(capacity = 1_000)
-        decoder.decode(frame(1))
+        decoder.decodeAt(frame(1))
         decoder.ageOutCache()
-        decoder.decode(frame(2))
+        decoder.decodeAt(frame(2))
         decoder.ageOutCache()
 
         // 1 was inserted two ticks ago -> gone; 2 was inserted one tick ago -> kept
-        decoder.decode(frame(2))
+        decoder.decodeAt(frame(2))
         assertEquals(2, decoder.parsedCount.toInt())
         assertEquals(1, decoder.reusedCount.toInt(), "the recent event is still cached")
 
-        decoder.decode(frame(1))
+        decoder.decodeAt(frame(1))
         assertEquals(3, decoder.parsedCount.toInt(), "the older event aged out")
     }
 
@@ -110,11 +119,11 @@ class CachingEventDecoderTrimTest {
         // what the device measurement is about: a burst, then a trickle. Without aging
         // the burst's ids stay resident forever.
         val decoder = CachingEventDecoder(capacity = 100_000)
-        (1..5_000).forEach { decoder.decode(frame(it)) }
+        (1..5_000).forEach { decoder.decodeAt(frame(it)) }
         assertEquals(5_000, decoder.cachedCount)
 
         decoder.ageOutCache()
-        (5_001..5_010).forEach { decoder.decode(frame(it)) } // the trickle
+        (5_001..5_010).forEach { decoder.decodeAt(frame(it)) } // the trickle
         decoder.ageOutCache()
 
         assertEquals(10, decoder.cachedCount, "only the trickle survives, not the burst")
@@ -124,7 +133,7 @@ class CachingEventDecoderTrimTest {
     fun clearCacheReleasesEverythingAtOnce() {
         // what NostrClient.disconnect() uses when the host backgrounds the app
         val decoder = CachingEventDecoder(capacity = 1_000)
-        (1..10).forEach { decoder.decode(frame(it)) }
+        (1..10).forEach { decoder.decodeAt(frame(it)) }
         assertTrue(decoder.cachedCount > 0)
 
         decoder.clearCache()
@@ -134,10 +143,10 @@ class CachingEventDecoderTrimTest {
     @Test
     fun agingNeverChangesWhatADecodeReturns() {
         val decoder = CachingEventDecoder(capacity = 1_000)
-        val before = decoder.decode(frame(7, subId = "a")) as EventMessage
+        val before = decoder.decodeAt(frame(7, subId = "a")) as EventMessage
         decoder.ageOutCache()
         decoder.ageOutCache()
-        val after = decoder.decode(frame(7, subId = "a")) as EventMessage
+        val after = decoder.decodeAt(frame(7, subId = "a")) as EventMessage
 
         assertEquals(before.subId, after.subId)
         assertEquals(before.event.id, after.event.id)

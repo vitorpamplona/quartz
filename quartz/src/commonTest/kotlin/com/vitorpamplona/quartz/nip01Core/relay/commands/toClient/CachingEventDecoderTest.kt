@@ -21,13 +21,22 @@
 package com.vitorpamplona.quartz.nip01Core.relay.commands.toClient
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class CachingEventDecoderTest {
+open class CachingEventDecoderTest {
+    /** How a frame reaches the decoder; the subclass sends its bytes, as OkHttpBytesWebSocket does. */
+    open fun CachingEventDecoder.decodeAt(
+        text: String,
+        relay: NormalizedRelayUrl?,
+    ): Message? = decodeFrom(text, relay)
+
+    open fun CachingEventDecoder.decodeAt(text: String): Message = decode(text)
+
     private fun hexId(seed: Int) = seed.toString(16).padStart(64, '0')
 
     private fun event(
@@ -53,8 +62,8 @@ class CachingEventDecoderTest {
         val decoder = CachingEventDecoder()
         val e = event(1)
 
-        val first = decoder.decode(frame("subA", e)) as EventMessage
-        val second = decoder.decode(frame("subB", e)) as EventMessage
+        val first = decoder.decodeAt(frame("subA", e)) as EventMessage
+        val second = decoder.decodeAt(frame("subB", e)) as EventMessage
 
         assertEquals(e.id, first.event.id)
         assertEquals("subA", first.subId)
@@ -77,7 +86,7 @@ class CachingEventDecoderTest {
                 }
             }
 
-        val decoded = frames.map { decoder.decode(it) as EventMessage }
+        val decoded = frames.map { decoder.decodeAt(it) as EventMessage }
         assertEquals(150, decoded.size)
         assertEquals(50, decoder.parsedCount)
         assertEquals(100, decoder.reusedCount)
@@ -98,11 +107,11 @@ class CachingEventDecoderTest {
         // The escaped \"id\":\" inside content must NOT be read as the outer id.
         val repost = event(8, content = inner.toJson())
 
-        val decoded = decoder.decode(frame("s", repost)) as EventMessage
+        val decoded = decoder.decodeAt(frame("s", repost)) as EventMessage
         assertEquals(repost.id, decoded.event.id, "outer id wins")
 
         // and a duplicate of the repost still resolves to the repost, not the inner event
-        val dup = decoder.decode(frame("s2", repost)) as EventMessage
+        val dup = decoder.decodeAt(frame("s2", repost)) as EventMessage
         assertSame(decoded.event, dup.event)
         assertEquals(repost.id, dup.event.id)
     }
@@ -110,9 +119,9 @@ class CachingEventDecoderTest {
     @Test
     fun nonEventFramesPassThroughUntouched() {
         val decoder = CachingEventDecoder()
-        assertTrue(decoder.decode("""["EOSE","sub1"]""") is EoseMessage)
-        assertTrue(decoder.decode("""["NOTICE","hi"]""") is NoticeMessage)
-        assertTrue(decoder.decode("""["OK","${hexId(3)}",true,""]""") is OkMessage)
+        assertTrue(decoder.decodeAt("""["EOSE","sub1"]""") is EoseMessage)
+        assertTrue(decoder.decodeAt("""["NOTICE","hi"]""") is NoticeMessage)
+        assertTrue(decoder.decodeAt("""["OK","${hexId(3)}",true,""]""") is OkMessage)
         assertEquals(0, decoder.parsedCount, "only EVENT frames populate the cache")
     }
 
@@ -120,11 +129,11 @@ class CachingEventDecoderTest {
     fun escapedSubIdFallsBackToFullParse() {
         val decoder = CachingEventDecoder()
         val e = event(11)
-        decoder.decode(frame("plain", e)) // cache it
+        decoder.decodeAt(frame("plain", e)) // cache it
 
         // subId with an escaped quote: scan must bail, full parse must win.
         val weird = """["EVENT","a\"b",${e.toJson()}]"""
-        val decoded = decoder.decode(weird) as EventMessage
+        val decoded = decoder.decodeAt(weird) as EventMessage
         assertEquals("a\"b", decoded.subId)
         assertEquals(e.id, decoded.event.id)
     }
@@ -133,13 +142,13 @@ class CachingEventDecoderTest {
     fun malformedIdValueFallsBackToFullParse() {
         val decoder = CachingEventDecoder()
         val e = event(12)
-        decoder.decode(frame("s", e))
+        decoder.decodeAt(frame("s", e))
 
         // Uppercase hex in the id key position → scan bails → full parse throws
         // or produces whatever the mapper does; here we just assert no cache hit
         // is fabricated for a different-id frame.
         val other = event(13)
-        val decoded = decoder.decode(frame("s", other)) as EventMessage
+        val decoded = decoder.decodeAt(frame("s", other)) as EventMessage
         assertEquals(other.id, decoded.event.id)
         assertNotSame(e, decoded.event)
     }
@@ -149,10 +158,10 @@ class CachingEventDecoderTest {
         val decoder = CachingEventDecoder(capacity = 8)
         val events = (1..40).map { event(it) }
 
-        events.forEach { decoder.decode(frame("s", it)) }
+        events.forEach { decoder.decodeAt(frame("s", it)) }
         // replay everything: some rotated out (re-parse), none may mismatch
         events.forEach {
-            val decoded = decoder.decode(frame("s2", it)) as EventMessage
+            val decoded = decoder.decodeAt(frame("s2", it)) as EventMessage
             assertEquals(it.id, decoded.event.id)
             assertEquals("s2", decoded.subId)
         }

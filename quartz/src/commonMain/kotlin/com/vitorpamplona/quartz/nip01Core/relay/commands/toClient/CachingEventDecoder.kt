@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
 import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
 import com.vitorpamplona.quartz.nip01Core.kite.indexOfByte
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -198,17 +199,29 @@ class CachingEventDecoder(
      */
     @Volatile var verifyOnArrival: (RelayRecord) -> Boolean = { it.badSigs >= 2 || it.badIds >= 20 }
 
+    /**
+     * Events the app already holds, consulted for an id this decoder's own cache does not have
+     * (it keeps only the last `2 * capacity` ids), e.g. the app's in-memory event cache, so an
+     * event delivered again long after it aged out here is still not parsed again. Called from
+     * every relay's reader thread: see [KnownEventLookup]. Ids under scrutiny never reach it.
+     */
+    @Volatile var knownEvents: KnownEventLookup? = null
+
     /** The clock for scrutiny expiry; tests move it. */
     internal var nowInSeconds: () -> Long = TimeUtils::now
 
     // Observability + benchmark hooks.
     private val parsed = AtomicLong(0)
     private val reused = AtomicLong(0)
+    private val reusedKnown = AtomicLong(0)
     private val verifiedHere = AtomicLong(0)
     private val skipped = AtomicLong(0)
 
     val parsedCount: Long get() = parsed.load()
     val reusedCount: Long get() = reused.load()
+
+    /** Of [reusedCount], the copies [knownEvents] answered for. */
+    val reusedKnownCount: Long get() = reusedKnown.load()
 
     /** Copies verified here: those from offending relays and those of scrutinized ids. */
     val verifiedCount: Long get() = verifiedHere.load()
@@ -244,7 +257,7 @@ class CachingEventDecoder(
                 val scrutiny = activeScrutiny(scanned.eventId)
                 if (scrutiny != null) return decodeScrutinized(text, relay, scanned.eventId, scrutiny)
             }
-            val cached = lookup(scanned.eventId)
+            val cached = lookupOrKnown(scanned.eventId)
             if (cached != null) {
                 reused.incrementAndFetch()
                 return EventMessage(scanned.subId, cached)
@@ -265,6 +278,16 @@ class CachingEventDecoder(
         length: Int,
         relay: NormalizedRelayUrl?,
     ): Message? {
+        // Kite's own reader asks for the id while it parses: one pass, hit or miss.
+        if (fullParser === MessageDecoder.Default) {
+            val frame = FrameLookup()
+            val msg = KiteReader.readMessageUtf8(bytes, offset, length, frame)
+            if (frame.hit) {
+                reused.incrementAndFetch()
+                return msg
+            }
+            return afterFullParse(msg, relay)
+        }
         val scanned = scanEventFrameUtf8(bytes, offset, offset + length)
         if (scanned != null) {
             if (anyScrutinizedId) {
@@ -272,13 +295,35 @@ class CachingEventDecoder(
                 // Rare: the scrutiny path works on the text.
                 if (scrutiny != null) return decodeScrutinized(bytes.decodeToString(offset, offset + length), relay, scanned.eventId, scrutiny)
             }
-            val cached = lookup(scanned.eventId)
+            val cached = lookupOrKnown(scanned.eventId)
             if (cached != null) {
                 reused.incrementAndFetch()
                 return EventMessage(scanned.subId, cached)
             }
         }
         return afterFullParse(fullParser.decodeUtf8(bytes, offset, length), relay)
+    }
+
+    /**
+     * What the reader asks at a frame's id, one per frame: this cache, then [knownEvents]. An
+     * id under scrutiny gets no answer, so its copy is parsed and checked ([afterFullParse]).
+     */
+    private inner class FrameLookup : KnownEventLookup {
+        var hit = false
+
+        override fun find(id: HexKey): Event? {
+            if (anyScrutinizedId && activeScrutiny(id) != null) return null
+            return lookupOrKnown(id)?.also { hit = true }
+        }
+    }
+
+    /** [lookup], then [knownEvents]; a revoked id (reported forged) is not asked further. */
+    private fun lookupOrKnown(id: HexKey): Event? {
+        val entry = live.get(id) ?: previous.get(id)
+        if (entry != null) return entry.event
+        val known = knownEvents?.find(id) ?: return null
+        reusedKnown.incrementAndFetch()
+        return known
     }
 
     /** A frame fully parsed: answers its id's scrutiny, verifies a suspect relay's copy, caches it. */

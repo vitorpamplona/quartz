@@ -38,7 +38,15 @@ import kotlin.test.assertTrue
  * recovered from; and a relay is charged only once a valid copy proves its copy was altered,
  * then verified on arrival from then on.
  */
-class CachingEventDecoderForgeryTest {
+open class CachingEventDecoderForgeryTest {
+    /** How a frame reaches the decoder; the subclass sends its bytes, as OkHttpBytesWebSocket does. */
+    open fun CachingEventDecoder.decodeAt(
+        text: String,
+        relay: NormalizedRelayUrl?,
+    ): Message? = decodeFrom(text, relay)
+
+    open fun CachingEventDecoder.decodeAt(text: String): Message = decode(text)
+
     private val signer = NostrSignerSync()
     private val rogue = NormalizedRelayUrl("wss://rogue.example/")
     private val rogue2 = NormalizedRelayUrl("wss://rogue2.example/")
@@ -64,7 +72,7 @@ class CachingEventDecoderForgeryTest {
     private fun CachingEventDecoder.read(
         event: Event,
         relay: NormalizedRelayUrl,
-    ): Event? = (decodeFrom(frame(event), relay) as EventMessage?)?.event
+    ): Event? = (decodeAt(frame(event), relay) as EventMessage?)?.event
 
     private val forgeries = mutableListOf<CachingEventDecoder.Forgery>()
 
@@ -141,7 +149,7 @@ class CachingEventDecoderForgeryTest {
         assertEquals(rogue, d.poisonAndReport(genuine, forged))
 
         val parsed = d.parsedCount
-        assertNull(d.decodeFrom(frame(forged), honest), "the same bad signature again")
+        assertNull(d.decodeAt(frame(forged), honest), "the same bad signature again")
         assertEquals(parsed, d.parsedCount, "dropped before parsing")
 
         assertTrue(d.read(genuine, honest)!!.verify())
@@ -157,8 +165,8 @@ class CachingEventDecoderForgeryTest {
         val broken = note("broken").withSig(randomSig())
         d.read(broken, honest)
         assertEquals(honest, d.reportForged(d.read(broken, other)!!))
-        assertNull(d.decodeFrom(frame(broken), other))
-        assertNull(d.decodeFrom(frame(broken), rogue))
+        assertNull(d.decodeAt(frame(broken), other))
+        assertNull(d.decodeAt(frame(broken), rogue))
 
         now += CachingEventDecoder.SCRUTINY_SECONDS + 1
         d.ageOutCache()
@@ -177,7 +185,7 @@ class CachingEventDecoderForgeryTest {
         assertEquals(setOf(rogue), d.suspectRelays())
 
         val third = note("third")
-        assertNull(d.decodeFrom(frame(third.withContent("forged third")), rogue), "caught before it can win the dedup")
+        assertNull(d.decodeAt(frame(third.withContent("forged third")), rogue), "caught before it can win the dedup")
         assertEquals("third", d.read(third, honest)!!.content)
         assertEquals(1, d.record(rogue).badIds)
 
@@ -233,7 +241,7 @@ class CachingEventDecoderForgeryTest {
         d.verifyOnArrival = { it.badIds >= 1 }
         d.provenForgery("first", badSig = false)
         assertEquals(setOf(rogue), d.suspectRelays())
-        assertNull(d.decodeFrom(frame(note("next").withContent("forged next")), rogue))
+        assertNull(d.decodeAt(frame(note("next").withContent("forged next")), rogue))
     }
 
     @Test
@@ -241,8 +249,8 @@ class CachingEventDecoderForgeryTest {
         val d = decoder()
         val genuine = note("genuine")
         d.poisonAndReport(genuine)
-        assertNull(d.decodeFrom(frame(genuine.withContent("another forgery")), rogue2))
-        assertNull(d.decodeFrom(frame(genuine.withSig(randomSig())), rogue2))
+        assertNull(d.decodeAt(frame(genuine.withContent("another forgery")), rogue2))
+        assertNull(d.decodeAt(frame(genuine.withSig(randomSig())), rogue2))
 
         d.read(genuine, honest)
         d.read(genuine, other)
@@ -259,8 +267,8 @@ class CachingEventDecoderForgeryTest {
         val genuine = note("genuine")
         d.poisonAndReport(genuine, genuine.withSig(randomSig()))
 
-        repeat(CachingEventDecoder.MAX_FORGED_COPIES) { assertNull(d.decodeFrom(frame(genuine.withSig(randomSig())), other)) }
-        assertNull(d.decodeFrom(frame(genuine), honest), "past the cap, even the genuine copy waits")
+        repeat(CachingEventDecoder.MAX_FORGED_COPIES) { assertNull(d.decodeAt(frame(genuine.withSig(randomSig())), other)) }
+        assertNull(d.decodeAt(frame(genuine), honest), "past the cap, even the genuine copy waits")
 
         now += CachingEventDecoder.SCRUTINY_SECONDS + 1
         assertEquals("genuine", d.read(genuine, honest)!!.content)
@@ -317,9 +325,9 @@ class CachingEventDecoderForgeryTest {
         val genuine = note("genuine")
         d.poisonAndReport(genuine)
 
-        val forgedAgain = d.decodeFrom(looseFrame(genuine.withContent("forged again")), rogue2)
+        val forgedAgain = d.decodeAt(looseFrame(genuine.withContent("forged again")), rogue2)
         assertNull(forgedAgain)
-        val fromLoose = assertNotNull(d.decodeFrom(looseFrame(genuine), honest) as EventMessage?).event
+        val fromLoose = assertNotNull(d.decodeAt(looseFrame(genuine), honest) as EventMessage?).event
         assertEquals("genuine", fromLoose.content)
         assertEquals(setOf(rogue, rogue2), chargedRelays())
     }
@@ -392,9 +400,9 @@ class CachingEventDecoderForgeryTest {
     fun withoutARelayADroppedFrameFails() {
         val d = decoder()
         val forged = note("x").withSig(randomSig())
-        d.decode(frame(forged))
-        d.reportForged((d.decode(frame(forged)) as EventMessage).event)
-        val outcome = runCatching { d.decode(frame(forged)) }.exceptionOrNull()
+        d.decodeAt(frame(forged))
+        d.reportForged((d.decodeAt(frame(forged)) as EventMessage).event)
+        val outcome = runCatching { d.decodeAt(frame(forged)) }.exceptionOrNull()
         assertTrue(outcome is IllegalArgumentException)
     }
 }

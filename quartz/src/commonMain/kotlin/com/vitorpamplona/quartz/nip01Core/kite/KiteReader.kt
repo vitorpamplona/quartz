@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.kite
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedSerializable
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.KnownEventLookup
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
@@ -1081,6 +1082,18 @@ internal class KiteReader {
             offset: Int = 0,
             length: Int = bytes.size - offset,
         ): Message = acquire().bytes().readEventFrame(bytes, offset, length) ?: readMessage(bytes.decodeToString(offset, offset + length))
+
+        /**
+         * [readMessageUtf8], asking [known] for an EVENT frame's event the moment its id is read:
+         * on an answer, that event is the frame's and the rest is not read (see
+         * [KiteBytesReader.readEventFrame]).
+         */
+        fun readMessageUtf8(
+            bytes: ByteArray,
+            offset: Int,
+            length: Int,
+            known: KnownEventLookup?,
+        ): Message = acquire().bytes().readEventFrame(bytes, offset, length, known) ?: readMessage(bytes.decodeToString(offset, offset + length))
 
         /** [readEvent] of UTF-8 bytes, like [readMessageUtf8]. */
         fun readEventUtf8(

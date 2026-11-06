@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.kite
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EoseMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.KnownEventLookup
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.NoticeMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
@@ -63,6 +64,26 @@ class KiteReaderUtf8Test {
         val viaString = runCatching { KiteReader.readMessage(bytes.decodeToString()) }
         assertSameAs(bytes, viaString, "bytes reader", runCatching { KiteReader.readMessageUtf8(bytes) })
         assertSameAs(bytes, viaString, "Latin-1 view", runCatching { KiteReader.readMessageLatin1View(bytes) })
+        // Deferred fields: a lookup that never answers must read exactly as no lookup.
+        val asked = ArrayList<String>()
+        assertSameAs(
+            bytes,
+            viaString,
+            "deferred, missed",
+            runCatching {
+                KiteReader.readMessageUtf8(
+                    bytes,
+                    0,
+                    bytes.size,
+                    KnownEventLookup {
+                        asked.add(it)
+                        null
+                    },
+                )
+            },
+        )
+        val expected = viaString.getOrNull()
+        if (expected is EventMessage && asked.isNotEmpty()) assertEquals(1, asked.size, "asked once per frame")
     }
 
     private fun assertSameAs(
@@ -193,6 +214,122 @@ class KiteReaderUtf8Test {
         assertSame("""["EVENT","s",{"pubkey":"$pubkey"},]""")
         assertSame("""["EVENT","s",{"pubkey":"$pubkey",}]""")
         assertSame("""["EVENT","s",{"p\u0075bkey":"$pubkey","\u0069d":"ab"}]""")
+    }
+
+    private val idA = "a".repeat(64)
+
+    /** One event in every key order seen on the wire, each with the same fields. */
+    private fun orders(
+        id: String,
+        content: String = "caf\u00e9 \\n x",
+    ): List<String> {
+        val f =
+            mapOf(
+                "id" to "\"$id\"",
+                "pubkey" to "\"$pubkey\"",
+                "created_at" to "1700000000",
+                "kind" to "1",
+                "tags" to "[[\"p\",\"$pubkey\"],[\"t\",\"x\",\"y\"]]",
+                "content" to "\"$content\"",
+                "sig" to "\"${"cd".repeat(64)}\"",
+            )
+
+        fun obj(keys: List<String>) = keys.joinToString(",", "{", "}") { "\"$it\":${f[it]}" }
+        return listOf(
+            obj(listOf("id", "pubkey", "created_at", "kind", "tags", "content", "sig")),
+            obj(listOf("content", "created_at", "id", "kind", "pubkey", "sig", "tags")),
+            obj(listOf("pubkey", "created_at", "kind", "tags", "content", "id", "sig")),
+            obj(listOf("kind", "created_at", "tags", "content", "pubkey", "id", "sig")),
+        ).map { """["EVENT","sub",$it]""" }
+    }
+
+    @Test
+    fun deferredFieldsReadTheSameInEveryKeyOrder() {
+        val first = KiteReader.readMessage(orders(idA)[0]) as EventMessage
+        for (frame in orders(idA) + orders(idA, "\\ud83d\\ude00 \\\"q\\\" \\ud83d")) {
+            assertSame(frame)
+            val asked = ArrayList<String>()
+            val msg =
+                KiteReader.readMessageUtf8(
+                    frame.encodeToByteArray(),
+                    0,
+                    frame.encodeToByteArray().size,
+                    KnownEventLookup {
+                        asked.add(it)
+                        null
+                    },
+                ) as EventMessage
+            assertEquals(listOf(idA), asked, frame)
+            assertEquals(describe(KiteReader.readMessage(frame)), describe(msg))
+        }
+        assertEquals("caf\u00e9 \n x", first.event.content)
+    }
+
+    @Test
+    fun aKnownIdEndsTheReadInEveryKeyOrder() {
+        val cached = KiteReader.readEvent(orders(idA)[0].substringAfter("\"sub\",").dropLast(1))
+        for (frame in orders(idA)) {
+            val msg = KiteReader.readMessageUtf8(frame.encodeToByteArray(), 0, frame.encodeToByteArray().size, KnownEventLookup { if (it == idA) cached else null })
+            assertTrue(msg is EventMessage)
+            assertTrue(msg.event === cached, "the known event, not a copy: $frame")
+            assertEquals("sub", msg.subId)
+        }
+        // Spaced and with an escaped key, as some relays send them.
+        val spaced = """[ "EVENT" , "s2" , { "content" : "x" , "\u0069d" : "$idA" , "kind" : 1 } ]"""
+        val hit = KiteReader.readMessageUtf8(spaced.encodeToByteArray(), 0, spaced.encodeToByteArray().size, KnownEventLookup { cached }) as EventMessage
+        assertTrue(hit.event === cached)
+        assertEquals("s2", hit.subId)
+    }
+
+    @Test
+    fun aHitStopsReadingSoWhatFollowsTheIdIsNotChecked() {
+        val cached = KiteReader.readEvent(orders(idA)[0].substringAfter("\"sub\",").dropLast(1))
+        // Broken after the id: a hit hands out the known event, as CachingEventDecoder's scan did;
+        // a miss reads on and fails.
+        val broken = """["EVENT","s",{"content":"x","id":"$idA","kind":"""
+        val bytes = broken.encodeToByteArray()
+        val msg = KiteReader.readMessageUtf8(bytes, 0, bytes.size, KnownEventLookup { cached }) as EventMessage
+        assertTrue(msg.event === cached)
+        assertTrue(runCatching { KiteReader.readMessageUtf8(bytes, 0, bytes.size, KnownEventLookup { null }) }.isFailure)
+    }
+
+    @Test
+    fun theLastOccurrenceOfAFieldStillWins() {
+        // A deferred field, then the same field read directly after the id, and the other way.
+        assertSame("""["EVENT","s",{"content":"first","pubkey":"$pubkey","id":"$idA","content":"second"}]""")
+        assertSame("""["EVENT","s",{"tags":[["a"]],"id":"$idA","pubkey":"$pubkey","tags":[["b"]]}]""")
+        assertSame("""["EVENT","s",{"id":"$idA","content":"first","pubkey":"$pubkey","content":"second"}]""")
+        assertSame("""["EVENT","s",{"content":"first","content":"second","pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"sig":"a","sig":"b","pubkey":"$pubkey"}]""")
+        // Two ids: looked up by the first, read with the last.
+        val idB = "b".repeat(64)
+        val twoIds = """["EVENT","s",{"id":"$idA","pubkey":"$pubkey","id":"$idB"}]"""
+        assertSame(twoIds)
+        val asked = ArrayList<String>()
+        val read =
+            KiteReader.readMessageUtf8(
+                twoIds.encodeToByteArray(),
+                0,
+                twoIds.encodeToByteArray().size,
+                KnownEventLookup {
+                    asked.add(it)
+                    null
+                },
+            ) as EventMessage
+        assertEquals(listOf(idA), asked)
+        assertEquals(idB, read.event.id)
+    }
+
+    @Test
+    fun deferredValuesStillFailWhereTheyShould() {
+        // Skipped while deferred, these fail when read on a miss, as they do without a lookup.
+        assertSame("""["EVENT","s",{"content":5,"pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"pubkey":5,"id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"tags":{"a":1},"pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"tags":[["a",["b"]]],"pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"sig":null,"pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"content":null,"pubkey":"$pubkey","id":"$idA"}]""")
+        assertSame("""["EVENT","s",{"content":"\uZZZZ","pubkey":"$pubkey","id":"$idA"}]""")
     }
 
     @Test
