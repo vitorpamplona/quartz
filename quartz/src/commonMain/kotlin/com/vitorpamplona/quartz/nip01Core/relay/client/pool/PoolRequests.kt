@@ -282,43 +282,26 @@ class PoolRequests(
     suspend fun onIncomingMessage(
         relay: IRelayClient,
         msg: Message,
-    ) = if (msg is EventMessage) onEventMessage(relay, msg) else onControlMessage(relay, msg)
-
-    /**
-     * An EVENT: the message nearly every frame is. Kept apart from [onControlMessage] so the JIT
-     * compiles a small method for it, profiled on events alone: in one method with EOSE, NOTICE and
-     * CLOSED, the first EOSE (it ends every REQ) invalidated the compiled method and C2 compiled the
-     * whole of it again.
-     */
-    suspend fun onEventMessage(
-        relay: IRelayClient,
-        msg: EventMessage,
-    ) {
-        var isLive = false
-        var forFilters: List<Filter>? = null
-        relayState.get(msg.subId)?.let { state ->
-            state.withLock(relay.url) {
-                state.onNewEvent(relay.url)
-                isLive = state.isLive(relay.url)
-                forFilters = state.lastKnownFilterStates(relay.url)
-            }
-        }
-        val listener = desiredSubListeners.get(msg.subId) ?: return
-        // A tail call, so this suspend function needs no continuation of its own per event.
-        return listener.onEvent(
-            event = msg.event,
-            isLive = isLive,
-            relay = relay.url,
-            forFilters = forFilters,
-        )
-    }
-
-    /** EOSE, NOTICE and CLOSED: once per REQ, or rarer. */
-    private fun onControlMessage(
-        relay: IRelayClient,
-        msg: Message,
     ) {
         when (msg) {
+            is EventMessage -> {
+                var isLive = false
+                var forFilters: List<Filter>? = null
+                relayState.get(msg.subId)?.let { state ->
+                    state.withLock(relay.url) {
+                        state.onNewEvent(relay.url)
+                        isLive = state.isLive(relay.url)
+                        forFilters = state.lastKnownFilterStates(relay.url)
+                    }
+                }
+                desiredSubListeners.get(msg.subId)?.onEvent(
+                    event = msg.event,
+                    isLive = isLive,
+                    relay = relay.url,
+                    forFilters = forFilters,
+                )
+            }
+
             is EoseMessage -> {
                 var forFilters: List<Filter>? = null
                 val cmd =
