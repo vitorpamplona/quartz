@@ -153,6 +153,69 @@ open class CachingEventDecoderTest {
         assertNotSame(e, decoded.event)
     }
 
+    /** [e] as relays that pretty-print or space their JSON send it, in strfry's key order. */
+    private fun spacedFrames(
+        subId: String,
+        e: Event,
+    ): List<String> {
+        val tags = e.tags.joinToString(", ", "[", "]") { t -> t.joinToString(", ", "[", "]") { "\"$it\"" } }
+        val body = """"content": "${e.content}", "created_at": ${e.createdAt}, "id": "${e.id}", "kind": ${e.kind}, "pubkey": "${e.pubKey}", "sig": "${e.sig}", "tags": $tags"""
+        return listOf(
+            """["EVENT","$subId",{${body.replace(": ", ":").replace(", ", ",")}}]""",
+            """["EVENT", "$subId", {$body}]""",
+            """[ "EVENT" , "$subId" , { $body } ]""",
+            "\t[\n  \"EVENT\",\r\n  \"$subId\",\n  {\n    ${body.replace(", ", ",\n    ")}\n  }\n]\n",
+        )
+    }
+
+    @Test
+    fun spacedFramesAreRecognizedAsDuplicates() {
+        val decoder = CachingEventDecoder()
+        val e = event(20)
+        val first = decoder.decodeAt(frame("s0", e)) as EventMessage
+        val frames = spacedFrames("s1", e)
+        for (f in frames) {
+            val dup = decoder.decodeAt(f) as EventMessage
+            assertSame(first.event, dup.event, "a spaced copy is the cached event: $f")
+            assertEquals("s1", dup.subId)
+        }
+        assertEquals(1, decoder.parsedCount, "no spaced copy was parsed again")
+        assertEquals(frames.size.toLong(), decoder.reusedCount)
+    }
+
+    @Test
+    fun aSpacedFrameOfAnotherEventIsParsedNotReused() {
+        val decoder = CachingEventDecoder()
+        val e = event(21)
+        decoder.decodeAt(frame("s", e))
+        val other = event(22)
+        val frames = spacedFrames("s", other)
+        for (f in frames) {
+            val decoded = decoder.decodeAt(f) as EventMessage
+            assertEquals(other.id, decoded.event.id)
+            assertEquals(other.content, decoded.event.content)
+        }
+        assertEquals(2, decoder.parsedCount, "the first copy of the new event is parsed")
+        assertEquals((frames.size - 1).toLong(), decoder.reusedCount, "and its later copies reused")
+    }
+
+    @Test
+    fun theWordIdAsAValueIsNotMistakenForTheKey() {
+        val decoder = CachingEventDecoder()
+        val cached = event(23)
+        decoder.decodeAt(frame("s", cached))
+        // Before the real key: content quoting a key named id (with the cached id), and "id" as
+        // tag values, one of them spaced like a key.
+        val trickyId = hexId(24)
+        val frame =
+            """[ "EVENT", "s", {"content": "say \"id\": \"${cached.id}\"", "tags": [["t", "id"], ["id" , "x"]], """ +
+                """"id": "$trickyId", "pubkey": "${hexId(100_024)}", "created_at": 24, "kind": 1, "sig": "${"f".repeat(128)}"} ]"""
+        val decoded = decoder.decodeAt(frame) as EventMessage
+        assertEquals(trickyId, decoded.event.id, "the frame's own id, not the one quoted in its content")
+        assertEquals("say \"id\": \"${cached.id}\"", decoded.event.content)
+        assertNotSame(cached, decoded.event)
+    }
+
     @Test
     fun cacheRotationOnlyCausesReparseNeverWrongMessages() {
         val decoder = CachingEventDecoder(capacity = 8)

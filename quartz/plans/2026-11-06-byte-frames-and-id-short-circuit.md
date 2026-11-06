@@ -643,8 +643,15 @@ on Android's GC.
    ASCII/non-ASCII, scans by value length, the end-to-end dedup path with the decode
    included). Add a recorded *wire-order* corpus, since the current one is re-serialized with
    `id` first and hides the strfry case.
-2. **Quick win, no API change:** let `CachingEventDecoder.scanEventFrame` accept whitespace
-   around `:`. Today it misses relay.snort.social's spaced frames.
+2. **Done: the text path's duplicate scan accepts JSON whitespace.** `CachingEventDecoder`'s
+   `scanEventFrame` and `scanSig` (and the byte `scanSigUtf8`) accept whitespace between the
+   frame's tokens and around the colon of `"id"`/`"sig"`, so relay.snort.social's `"id": "…"`
+   frames (20% of its sample) hit the cache instead of being parsed again. A string can't hold
+   `"id"` unescaped and a string value is never followed by `:`, so the first `"id"` followed by a
+   colon is a key. Compact frames take the same `indexOf` path as before. Tests: spaced and
+   pretty-printed copies are recognized as duplicates; a spaced copy of another event is parsed;
+   `"id"` as a tag value or quoted in the content is not taken for the key. The two spaced tests
+   fail on the old scan.
 3. **Done, then removed: the Latin-1 view (option A)**, superseded by option B.
 4. **Done: the byte reader for EVENT frames (option B)**, `KiteReader.readMessageUtf8` /
    `KiteBytesReader`. Still open in this step: SWAR on Android API 33+ and on native, measured on

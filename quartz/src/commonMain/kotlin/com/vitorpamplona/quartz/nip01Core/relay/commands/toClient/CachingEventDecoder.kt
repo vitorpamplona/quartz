@@ -575,16 +575,24 @@ class CachingEventDecoder(
     )
 
     /**
-     * Extracts (subId, eventId) from a compact `["EVENT","<subId>",{...}]`
-     * frame, or null when the frame isn't an EVENT or anything about it is
-     * unusual (whitespace variants, escaped subIds, missing/malformed id) —
+     * Extracts (subId, eventId) from a `["EVENT","<subId>",{...}]` frame, compact or with JSON
+     * whitespace between its tokens (some relays write `"id": "…"`), or null when the frame isn't
+     * an EVENT or anything about it is unusual (an escaped subId, a missing or malformed id):
      * null means "do the full parse".
      */
     private fun scanEventFrame(text: String): ScannedEvent? {
-        if (!text.startsWith(EVENT_PREFIX)) return null
+        val n = text.length
+        var i = skipWs(text, 0)
+        if (i >= n || text[i] != '[') return null
+        i = skipWs(text, i + 1)
+        if (!text.startsWith(EVENT_LABEL, i)) return null
+        i = skipWs(text, i + EVENT_LABEL.length)
+        if (i >= n || text[i] != ',') return null
+        i = skipWs(text, i + 1)
+        if (i >= n || text[i] != '"') return null
+        i++
 
         // subId: read up to the closing quote; any escape → bail.
-        var i = EVENT_PREFIX.length
         val subStart = i
         while (i < text.length) {
             val c = text[i]
@@ -595,10 +603,9 @@ class CachingEventDecoder(
         if (i >= text.length) return null
         val subId = text.substring(subStart, i)
 
-        // id: the literal top-level key with a 64-char lowercase-hex value.
-        val idKey = text.indexOf(ID_KEY, i)
-        if (idKey < 0) return null
-        val idStart = idKey + ID_KEY.length
+        // id: the first `"id"` key with a 64-char lowercase-hex value.
+        val idStart = stringValueOf(text, ID_KEY, i + 1)
+        if (idStart < 0) return null
         val idEnd = idStart + 64
         if (idEnd >= text.length || text[idEnd] != '"') return null
         for (j in idStart until idEnd) {
@@ -608,27 +615,14 @@ class CachingEventDecoder(
         return ScannedEvent(subId, text.substring(idStart, idEnd))
     }
 
-    /** [scanSig] over UTF-8 bytes from [from] to [to]: the first `"sig":"` and 128 lowercase hex chars. */
+    /** [scanSig] over UTF-8 bytes from [from] to [to]: the first `"sig"` key and 128 lowercase hex chars. */
     private fun scanSigUtf8(
         b: ByteArray,
         from: Int,
         to: Int,
     ): String? {
-        var q = from
-        while (true) {
-            q = indexOfByte(b, q, to, QUOTE)
-            if (q < 0 || q + SIG_KEY_BYTES.size > to) return null
-            var match = true
-            for (k in 1 until SIG_KEY_BYTES.size) {
-                if (b[q + k] != SIG_KEY_BYTES[k]) {
-                    match = false
-                    break
-                }
-            }
-            if (match) break
-            q++
-        }
-        val start = q + SIG_KEY_BYTES.size
+        val start = stringValueOfUtf8(b, from, to, SIG_KEY_BYTES)
+        if (start < 0) return null
         val end = start + 128
         if (end >= to || b[end] != QUOTE) return null
         for (j in start until end) {
@@ -636,6 +630,83 @@ class CachingEventDecoder(
             if (c !in ZERO..NINE && c !in LOWER_A..LOWER_F) return null
         }
         return b.decodeToString(start, end)
+    }
+
+    /**
+     * Where the string value of the first [key] (with its quotes, e.g. `"id"`) at or after
+     * [from] starts, just past its opening quote, allowing JSON whitespace around the colon; or
+     * -1. A string can't hold [key] unescaped, and a string value is never followed by a colon,
+     * so the first match followed by `:` is a key.
+     */
+    private fun stringValueOf(
+        text: String,
+        key: String,
+        from: Int,
+    ): Int {
+        var k = text.indexOf(key, from)
+        while (k >= 0) {
+            var j = skipWs(text, k + key.length)
+            if (j < text.length && text[j] == ':') {
+                j = skipWs(text, j + 1)
+                return if (j < text.length && text[j] == '"') j + 1 else -1
+            }
+            k = text.indexOf(key, k + 1)
+        }
+        return -1
+    }
+
+    /** [stringValueOf] over UTF-8 bytes from [from] to [to]. */
+    private fun stringValueOfUtf8(
+        b: ByteArray,
+        from: Int,
+        to: Int,
+        key: ByteArray,
+    ): Int {
+        var q = from
+        while (true) {
+            q = indexOfByte(b, q, to, QUOTE)
+            if (q < 0 || q + key.size > to) return -1
+            var match = true
+            for (k in 1 until key.size) {
+                if (b[q + k] != key[k]) {
+                    match = false
+                    break
+                }
+            }
+            if (match) {
+                var j = skipWsUtf8(b, q + key.size, to)
+                if (j < to && b[j] == COLON) {
+                    j = skipWsUtf8(b, j + 1, to)
+                    return if (j < to && b[j] == QUOTE) j + 1 else -1
+                }
+            }
+            q++
+        }
+    }
+
+    private fun skipWs(
+        text: String,
+        from: Int,
+    ): Int {
+        var i = from
+        while (i < text.length) {
+            val c = text[i]
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') i++ else break
+        }
+        return i
+    }
+
+    private fun skipWsUtf8(
+        b: ByteArray,
+        from: Int,
+        to: Int,
+    ): Int {
+        var i = from
+        while (i < to) {
+            val c = b[i]
+            if (c == SPACE || c == LF || c == CR || c == TAB) i++ else break
+        }
+        return i
     }
 
     /**
@@ -657,11 +728,10 @@ class CachingEventDecoder(
         val badSigs: Int,
     )
 
-    /** The frame's `sig` value, found like the id: the literal key and 128 lowercase-hex chars; null when unusual. */
+    /** The frame's `sig` value, found like the id: the first `"sig"` key and 128 lowercase-hex chars; null when unusual. */
     private fun scanSig(text: String): String? {
-        val key = text.indexOf(SIG_KEY)
-        if (key < 0) return null
-        val start = key + SIG_KEY.length
+        val start = stringValueOf(text, SIG_KEY, 0)
+        if (start < 0) return null
         val end = start + 128
         if (end >= text.length || text[end] != '"') return null
         for (j in start until end) {
@@ -672,11 +742,16 @@ class CachingEventDecoder(
     }
 
     companion object {
-        private const val EVENT_PREFIX = "[\"EVENT\",\""
-        private const val ID_KEY = "\"id\":\""
-        private const val SIG_KEY = "\"sig\":\""
+        private const val EVENT_LABEL = "\"EVENT\""
+        private const val ID_KEY = "\"id\""
+        private const val SIG_KEY = "\"sig\""
         private val SIG_KEY_BYTES = SIG_KEY.encodeToByteArray()
         private const val QUOTE = '"'.code.toByte()
+        private const val COLON = ':'.code.toByte()
+        private const val SPACE = ' '.code.toByte()
+        private const val LF = '\n'.code.toByte()
+        private const val CR = '\r'.code.toByte()
+        private const val TAB = '\t'.code.toByte()
 
         /** [FrameLookup]'s answer for a copy to drop unparsed; never handed out. */
         private val DROPPED = Event("", "", 0L, 0, emptyArray(), "", "")
