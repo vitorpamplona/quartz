@@ -158,6 +158,17 @@ class Nip30Test {
     }
 
     @Test()
+    fun unknownCodeLendsItsClosingColon() {
+        val tags = mapOf(":soapbox:" to "http://soapbox")
+        val result = CustomEmoji.assembleAnnotatedList("hi :nope:soapbox: x", tags)!!
+
+        assertEquals(3, result.size)
+        assertEquals("hi :nope", (result[0] as CustomEmoji.TextType).text)
+        assertEquals("http://soapbox", (result[1] as CustomEmoji.ImageUrlType).url)
+        assertEquals(" x", (result[2] as CustomEmoji.TextType).text)
+    }
+
+    @Test()
     fun parseJapanese() {
         val tags = mapOf(":x30EDE:" to "http://x30EDE", ":\uD883\uDEDE:" to "http://\uD883\uDEDE")
         val input = "\uD883\uDEDE\uD883\uDEDE麺の:x30EDE:。:\uD883\uDEDE:(Violation of NIP-30)"

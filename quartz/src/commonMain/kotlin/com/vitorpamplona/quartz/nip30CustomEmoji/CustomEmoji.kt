@@ -83,8 +83,9 @@ class CustomEmoji {
         /**
          * Splits [input] into text runs and the images of the `:code:`s that [emojiPairs] knows
          * (keyed `:code:`), or null when none of them resolves. A code it does not know stays in
-         * the text. Codes match as [customEmojiPattern] does, left to right without overlapping,
-         * in one pass and with no regex.
+         * the text, and its closing colon may open the next code (`:nope:soapbox:` still shows
+         * the soapbox). Codes match [customEmojiPattern]'s characters, left to right, in one pass
+         * and with no regex.
          */
         fun assembleAnnotatedList(
             input: String,
@@ -103,12 +104,15 @@ class CustomEmoji {
                     continue
                 }
                 val url = emojiPairs[input.substring(open, close + 1)]
-                if (url != null) {
-                    val list = finalList ?: ArrayList<Renderable>().also { finalList = it }
-                    if (open > textStart) list.add(TextType(input.substring(textStart, open)))
-                    list.add(ImageUrlType(url))
-                    textStart = close + 1
+                if (url == null) {
+                    // Not an emoji, so its closing colon is free to open the next code.
+                    open = close
+                    continue
                 }
+                val list = finalList ?: ArrayList<Renderable>().also { finalList = it }
+                if (open > textStart) list.add(TextType(input.substring(textStart, open)))
+                list.add(ImageUrlType(url))
+                textStart = close + 1
                 open = input.indexOf(':', close + 1)
             }
             val list = finalList ?: return null
