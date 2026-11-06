@@ -28,8 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.Utf8WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
-import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
@@ -175,7 +175,7 @@ open class BasicRelayClient(
         }
     }
 
-    inner class MyWebsocketListener : WebSocketListener {
+    inner class MyWebsocketListener : Utf8WebSocketListener {
         /**
          * The socket this listener was built for. A socket may now deliver its last messages and
          * its end after the relay closed it (BasicOkHttpWebSocket drains what it had received),
@@ -230,6 +230,37 @@ open class BasicRelayClient(
             // Before the listener: a refusal's back-off must hold what the listener re-sends.
             rateLimits?.onIncoming(msg)
             return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+        }
+
+        /**
+         * The frame in [bytes], decoded on the socket's reader thread without building its text.
+         * Null drops it: unparseable, a forged copy the decoder caught, or a socket already
+         * replaced.
+         */
+        override fun decodeUtf8(
+            bytes: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Message? {
+            if (!isCurrent()) return null
+            return try {
+                val decoder = decoder
+                if (decoder is CachingEventDecoder) decoder.decodeFromUtf8(bytes, offset, length, url) else decoder.decodeUtf8(bytes, offset, length)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.e("BasicRelayClient", "Failure to parse message from ${url.url}: ${bytes.decodeToString(offset, offset + length)}", e)
+                null
+            }
+        }
+
+        /** [onMessageUnguarded] for a message [decodeUtf8] read: the listeners get its size, no text. */
+        override suspend fun onDecodedMessage(
+            msg: Message,
+            frameBytes: Int,
+        ) {
+            if (!isCurrent()) return
+            rateLimits?.onIncoming(msg)
+            return listener.onIncomingMessage(this@BasicRelayClient, msg, frameBytes)
         }
 
         /** The message, or null to drop the frame: unparseable, or a forged copy the decoder caught. */

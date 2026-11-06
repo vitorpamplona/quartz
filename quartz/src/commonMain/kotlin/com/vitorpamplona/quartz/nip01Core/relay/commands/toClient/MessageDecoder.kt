@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.commands.toClient
 
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
 
 /**
  * Turns one raw relay frame into a [Message]. The strategy the relay client
@@ -32,6 +33,16 @@ import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
  */
 fun interface MessageDecoder {
     fun decode(text: String): Message
+
+    /**
+     * [decode] of a frame's UTF-8 bytes, [length] of them from [offset], read only during the
+     * call. The default decodes them to text first; [Default] reads them without building it.
+     */
+    fun decodeUtf8(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Message = decode(bytes.decodeToString(offset, offset + length))
 
     /**
      * Ages out whatever the decoder is holding. Call periodically: an entry must
@@ -52,6 +63,15 @@ fun interface MessageDecoder {
 
     companion object {
         /** Plain full-JSON parse of every frame. */
-        val Default: MessageDecoder = MessageDecoder { OptimizedJsonMapper.fromJsonToMessage(it) }
+        val Default: MessageDecoder =
+            object : MessageDecoder {
+                override fun decode(text: String): Message = OptimizedJsonMapper.fromJsonToMessage(text)
+
+                override fun decodeUtf8(
+                    bytes: ByteArray,
+                    offset: Int,
+                    length: Int,
+                ): Message = KiteReader.readMessageUtf8(bytes, offset, length)
+            }
     }
 }

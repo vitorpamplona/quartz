@@ -557,12 +557,25 @@ class NostrClient(
     ) = if (msg is EventMessage && listeners.value.forMessages.isEmpty()) {
         activeRequests.onIncomingMessage(relay, msg)
     } else {
-        onIncomingMessageInFull(relay, msgStr, msg)
+        onIncomingMessageInFull(relay, msgStr, 0, msg)
     }
 
+    /** The same, for a frame read from its bytes: the listeners get its size and no text. */
+    override suspend fun onIncomingMessage(
+        relay: IRelayClient,
+        msg: Message,
+        frameBytes: Int,
+    ) = if (msg is EventMessage && listeners.value.forMessages.isEmpty()) {
+        activeRequests.onIncomingMessage(relay, msg)
+    } else {
+        onIncomingMessageInFull(relay, null, frameBytes, msg)
+    }
+
+    /** [msgStr] is null when the frame was read from its [frameBytes] bytes, with no text. */
     private suspend fun onIncomingMessageInFull(
         relay: IRelayClient,
-        msgStr: String,
+        msgStr: String?,
+        frameBytes: Int,
         msg: Message,
     ) {
         activeRequests.onIncomingMessage(relay, msg)
@@ -591,7 +604,11 @@ class NostrClient(
             else -> {}
         }
 
-        forEachMessageListener { it.onIncomingMessage(relay, msgStr, msg) }
+        if (msgStr != null) {
+            forEachMessageListener { it.onIncomingMessage(relay, msgStr, msg) }
+        } else {
+            forEachMessageListener { it.onIncomingMessage(relay, msg, frameBytes) }
+        }
     }
 
     /**

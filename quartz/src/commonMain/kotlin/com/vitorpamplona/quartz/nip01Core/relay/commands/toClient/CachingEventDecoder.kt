@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
 import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
+import com.vitorpamplona.quartz.nip01Core.kite.indexOfByte
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
@@ -221,6 +222,13 @@ class CachingEventDecoder(
      */
     override fun decode(text: String): Message = decodeFrom(text, null) ?: throw IllegalArgumentException("A forged copy, dropped")
 
+    /** [decode] of a frame's UTF-8 bytes, like [decodeFromUtf8] with no relay to attribute it to. */
+    override fun decodeUtf8(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Message = decodeFromUtf8(bytes, offset, length, null) ?: throw IllegalArgumentException("A forged copy, dropped")
+
     /**
      * Decodes [text], which [relay] sent, or returns null when it is a forged copy to drop: one
      * of an id under scrutiny that failed verification or carries a signature known bad, or one
@@ -243,7 +251,41 @@ class CachingEventDecoder(
             }
         }
 
-        val msg = fullParser.decode(text)
+        return afterFullParse(fullParser.decode(text), relay)
+    }
+
+    /**
+     * [decodeFrom] of a frame's UTF-8 bytes ([length] of them from [offset], read only during the
+     * call), for sockets that hand over bytes: a duplicate is found by scanning the bytes for its
+     * id, so it costs no text at all, and a new frame is read with [MessageDecoder.decodeUtf8].
+     */
+    internal fun decodeFromUtf8(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+        relay: NormalizedRelayUrl?,
+    ): Message? {
+        val scanned = scanEventFrameUtf8(bytes, offset, offset + length)
+        if (scanned != null) {
+            if (anyScrutinizedId) {
+                val scrutiny = activeScrutiny(scanned.eventId)
+                // Rare: the scrutiny path works on the text.
+                if (scrutiny != null) return decodeScrutinized(bytes.decodeToString(offset, offset + length), relay, scanned.eventId, scrutiny)
+            }
+            val cached = lookup(scanned.eventId)
+            if (cached != null) {
+                reused.incrementAndFetch()
+                return EventMessage(scanned.subId, cached)
+            }
+        }
+        return afterFullParse(fullParser.decodeUtf8(bytes, offset, length), relay)
+    }
+
+    /** A frame fully parsed: answers its id's scrutiny, verifies a suspect relay's copy, caches it. */
+    private fun afterFullParse(
+        msg: Message,
+        relay: NormalizedRelayUrl?,
+    ): Message? {
         if (msg is EventMessage) {
             val event = msg.event
             if (anyScrutinizedId) {
@@ -519,6 +561,54 @@ class CachingEventDecoder(
     }
 
     /**
+     * [scanEventFrame] over UTF-8 bytes from [from] to [to]: the same prefix, subId and id rules,
+     * byte for byte, so a frame is a hit here exactly when its text would be one there.
+     */
+    private fun scanEventFrameUtf8(
+        b: ByteArray,
+        from: Int,
+        to: Int,
+    ): ScannedEvent? {
+        if (to - from < EVENT_PREFIX_BYTES.size) return null
+        for (k in EVENT_PREFIX_BYTES.indices) if (b[from + k] != EVENT_PREFIX_BYTES[k]) return null
+
+        var i = from + EVENT_PREFIX_BYTES.size
+        val subStart = i
+        while (i < to) {
+            val c = b[i]
+            if (c == BACKSLASH) return null
+            if (c == QUOTE) break
+            i++
+        }
+        if (i >= to) return null
+        val subId = b.decodeToString(subStart, i)
+
+        // The first `"id":"`: hop quote to quote.
+        var q = i + 1
+        while (true) {
+            q = indexOfByte(b, q, to, QUOTE)
+            if (q < 0 || q + ID_KEY_BYTES.size > to) return null
+            var match = true
+            for (k in 1 until ID_KEY_BYTES.size) {
+                if (b[q + k] != ID_KEY_BYTES[k]) {
+                    match = false
+                    break
+                }
+            }
+            if (match) break
+            q++
+        }
+        val idStart = q + ID_KEY_BYTES.size
+        val idEnd = idStart + 64
+        if (idEnd >= to || b[idEnd] != QUOTE) return null
+        for (j in idStart until idEnd) {
+            val c = b[j]
+            if (c !in ZERO..NINE && c !in LOWER_A..LOWER_F) return null
+        }
+        return ScannedEvent(subId, b.decodeToString(idStart, idEnd))
+    }
+
+    /**
      * A forged copy proven: [relay] sent a copy of [eventId] whose id didn't match its content
      * ([badId]) or whose signature was bad, and [record] holds its counts in the window, this
      * one included.
@@ -555,6 +645,14 @@ class CachingEventDecoder(
         private const val EVENT_PREFIX = "[\"EVENT\",\""
         private const val ID_KEY = "\"id\":\""
         private const val SIG_KEY = "\"sig\":\""
+        private val EVENT_PREFIX_BYTES = EVENT_PREFIX.encodeToByteArray()
+        private val ID_KEY_BYTES = ID_KEY.encodeToByteArray()
+        private const val QUOTE = '"'.code.toByte()
+        private const val BACKSLASH = '\\'.code.toByte()
+        private const val ZERO = '0'.code.toByte()
+        private const val NINE = '9'.code.toByte()
+        private const val LOWER_A = 'a'.code.toByte()
+        private const val LOWER_F = 'f'.code.toByte()
 
         /** Bad copies an id may bring before the rest are skipped until its scrutiny expires. */
         const val MAX_FORGED_COPIES = 8

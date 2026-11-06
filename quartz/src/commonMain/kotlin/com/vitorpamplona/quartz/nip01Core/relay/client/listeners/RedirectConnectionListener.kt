@@ -57,6 +57,14 @@ open class RedirectConnectionListener(
         listener.onIncomingMessage(relay, msgStr, msg)
     }
 
+    override suspend fun onIncomingMessage(
+        relay: IRelayClient,
+        msg: Message,
+        frameBytes: Int,
+    ) {
+        listener.onIncomingMessage(relay, msg, frameBytes)
+    }
+
     override fun onDisconnected(relay: IRelayClient) {
         listener.onDisconnected(relay)
     }

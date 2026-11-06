@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp
 
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -52,7 +53,14 @@ import kotlin.concurrent.thread
  * Driven against a minimal RFC 6455 server on a loopback [ServerSocket] rather than a mock
  * server library, so the test needs no new dependency and controls the exact frames on the wire.
  */
-class BasicOkHttpWebSocketCloseHandshakeTest {
+open class BasicOkHttpWebSocketCloseHandshakeTest {
+    /** The socket under test; [OkHttpBytesWebSocketContractTest] runs these against the other one. */
+    open fun newSocket(
+        url: NormalizedRelayUrl,
+        httpClient: (NormalizedRelayUrl) -> OkHttpClient,
+        out: WebSocketListener,
+    ): WebSocket = BasicOkHttpWebSocket(url, httpClient, out)
+
     /** Handshakes one client, sends it a CLOSE frame on demand, and records the frames it sends back. */
     private class TinyRelay : AutoCloseable {
         private val server = ServerSocket(0)
@@ -192,7 +200,7 @@ class BasicOkHttpWebSocketCloseHandshakeTest {
         TinyRelay().use { relay ->
             val recorder = Recorder()
             val client = OkHttpClient()
-            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+            val socket = newSocket(relay.url, { client }, recorder)
 
             socket.connect()
             assertTrue("relay never saw the client", relay.awaitClient())
@@ -223,7 +231,7 @@ class BasicOkHttpWebSocketCloseHandshakeTest {
         TinyRelay().use { relay ->
             val recorder = Recorder()
             val client = OkHttpClient()
-            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+            val socket = newSocket(relay.url, { client }, recorder)
 
             socket.connect()
             assertTrue("relay never saw the client", relay.awaitClient())

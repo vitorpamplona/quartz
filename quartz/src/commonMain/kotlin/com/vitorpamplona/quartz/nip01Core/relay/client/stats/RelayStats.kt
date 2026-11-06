@@ -87,10 +87,24 @@ class RelayStats(
                 relay: IRelayClient,
                 msgStr: String,
                 msg: Message,
+            ) = received(relay, msgStr.bytesUsedInMemory(), msg)
+
+            // A frame read from its bytes: counted as the string it would have been, so the
+            // totals stay comparable whichever socket a relay uses.
+            override suspend fun onIncomingMessage(
+                relay: IRelayClient,
+                msg: Message,
+                frameBytes: Int,
+            ) = received(relay, 8 * (((frameBytes * 2) + 45) / 8), msg)
+
+            private fun received(
+                relay: IRelayClient,
+                bytes: Int,
+                msg: Message,
             ) {
                 val stat = get(relay.url)
 
-                stat.addBytesReceived(msgStr.bytesUsedInMemory())
+                stat.addBytesReceived(bytes)
 
                 when (msg) {
                     is NoticeMessage -> {

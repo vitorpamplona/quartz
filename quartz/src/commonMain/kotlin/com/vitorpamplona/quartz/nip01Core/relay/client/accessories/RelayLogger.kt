@@ -54,11 +54,24 @@ class RelayLogger(
                 relay: IRelayClient,
                 msgStr: String,
                 msg: Message,
+            ) = received(relay, msgStr, msg)
+
+            // A frame read from its bytes has no text: a debug log shows the event re-serialized.
+            override suspend fun onIncomingMessage(
+                relay: IRelayClient,
+                msg: Message,
+                frameBytes: Int,
+            ) = received(relay, null, msg)
+
+            private fun received(
+                relay: IRelayClient,
+                msgStr: String?,
+                msg: Message,
             ) {
                 val logTag = logTag(relay.url)
 
                 when (msg) {
-                    is EventMessage -> if (debugReceiving) Log.d(logTag) { "Received: $msgStr" }
+                    is EventMessage -> if (debugReceiving) Log.d(logTag) { "Received: ${msgStr ?: "[\"EVENT\",\"${msg.subId}\",${msg.event.toJson()}]"}" }
                     is EoseMessage -> if (debugReceiving) Log.d(logTag) { "EOSE: ${msg.subId}" }
                     is NoticeMessage -> Log.w(logTag) { "Notice: ${msg.message}" }
                     is OkMessage -> if (debugReceiving) Log.d(logTag) { "OK: ${msg.eventId} ${msg.success} ${msg.message}${msg.params?.let { " [$it]" } ?: ""}" }

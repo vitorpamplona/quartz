@@ -706,6 +706,32 @@ val fleetClient = NostrClient(BasicOkHttpWebSocket.Builder { fleetHttpClient }, 
 On JDK 21 or newer (not Android), `Dispatcher(Executors.newVirtualThreadPerTaskExecutor())` keeps
 each socket's thread from being a platform thread that the dialing caller has to start.
 
+### Reading frames as bytes
+
+`OkHttpBytesWebSocket` is a drop-in for `BasicOkHttpWebSocket` that never builds a frame's
+`String`. OkHttp still dials, through the same `OkHttpClient` (proxy, Tor, DNS, TLS, timeouts),
+and hands back the upgraded connection (`Response.socket`, OkHttp 5.2+). The socket reads the
+WebSocket frames itself, and the relay client parses each one straight from its bytes on the
+socket's thread. Duplicates are caught by scanning the bytes for the id, so they cost no text at
+all. On nostrJsonBench's startup corpus that halves the allocation per frame, cuts 60–70% with
+duplicates, and uses 35–50% less CPU on permessage-deflate traffic.
+
+```kotlin
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.OkHttpBytesWebSocket
+
+val bytesClient = NostrClient(OkHttpBytesWebSocket.Builder { fleetHttpClient }, scope, CachingEventDecoder())
+```
+
+Frames read as bytes have no text, so they reach `RelayConnectionListener` through
+`onIncomingMessage(relay, msg, frameBytes)`, which carries the frame's size. A listener that only
+overrides `onIncomingMessage(relay, msgStr, msg)` still gets every message, with an **empty**
+`msgStr`. Override the size overload if you count bytes or log frames.
+
+Unlike OkHttp's own WebSocket, its dial holds no `Dispatcher` slot and isn't capped by
+`maxRequestsPerHost`. But the app's network interceptors run on the upgrade call, and one that
+reads a response body fails the dial.
+
 ### Duplicates across relays, and forged copies
 
 The same event arrives once per relay and per subscription. `CachingEventDecoder` parses it once

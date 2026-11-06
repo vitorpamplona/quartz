@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp
 
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
@@ -50,7 +51,14 @@ import kotlin.concurrent.thread
  * Driven against a minimal RFC 6455 server on a loopback [ServerSocket], like
  * [BasicOkHttpWebSocketCloseHandshakeTest].
  */
-class BasicOkHttpWebSocketDrainTest {
+open class BasicOkHttpWebSocketDrainTest {
+    /** The socket under test; [OkHttpBytesWebSocketContractTest] runs these against the other one. */
+    open fun newSocket(
+        url: NormalizedRelayUrl,
+        httpClient: (NormalizedRelayUrl) -> OkHttpClient,
+        out: WebSocketListener,
+    ): WebSocket = BasicOkHttpWebSocket(url, httpClient, out)
+
     /** Handshakes one client, then sends it [count] text frames and drops the TCP session, unless [holdOpen]. */
     private class BurstThenHangUp(
         private val count: Int,
@@ -177,7 +185,7 @@ class BasicOkHttpWebSocketDrainTest {
         BurstThenHangUp(count = 50).use { relay ->
             val recorder = SlowRecorder(perMessageMs = 20)
             val client = OkHttpClient()
-            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+            val socket = newSocket(relay.url, { client }, recorder)
 
             socket.connect()
             assertTrue("the relay never hung up", relay.hungUp.await(5, TimeUnit.SECONDS))
@@ -196,7 +204,7 @@ class BasicOkHttpWebSocketDrainTest {
         BurstThenHangUp(count = 10).use { relay ->
             val recorder = SlowRecorder(perMessageMs = 0, failOn = setOf("m0", "m4", "m9"))
             val client = OkHttpClient()
-            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+            val socket = newSocket(relay.url, { client }, recorder)
 
             socket.connect()
             assertTrue("no end reported", recorder.ended.await(10, TimeUnit.SECONDS))
@@ -213,7 +221,7 @@ class BasicOkHttpWebSocketDrainTest {
         BurstThenHangUp(count = 50).use { relay ->
             val recorder = SlowRecorder(perMessageMs = 50)
             val client = OkHttpClient()
-            val socket = BasicOkHttpWebSocket(relay.url, { client }, recorder)
+            val socket = newSocket(relay.url, { client }, recorder)
 
             socket.connect()
             assertTrue("the relay never hung up", relay.hungUp.await(5, TimeUnit.SECONDS))
@@ -242,7 +250,7 @@ class BasicOkHttpWebSocketDrainTest {
     fun `a draining session does not ask for a reconnect, and an ended one does`() {
         BurstThenHangUp(count = 50).use { relay ->
             val recorder = SlowRecorder(perMessageMs = 20)
-            val socket = BasicOkHttpWebSocket(relay.url, { OkHttpClient() }, recorder)
+            val socket = newSocket(relay.url, { OkHttpClient() }, recorder)
             socket.connect()
 
             assertTrue("relay never hung up", relay.hungUp.await(5, TimeUnit.SECONDS))
@@ -263,7 +271,7 @@ class BasicOkHttpWebSocketDrainTest {
             val dialed = OkHttpClient()
             var current = dialed
             val recorder = SlowRecorder(perMessageMs = 0)
-            val socket = BasicOkHttpWebSocket(relay.url, { current }, recorder)
+            val socket = newSocket(relay.url, { current }, recorder)
             socket.connect()
             assertTrue("never opened", recorder.opened.await(5, TimeUnit.SECONDS))
 

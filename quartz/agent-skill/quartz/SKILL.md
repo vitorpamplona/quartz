@@ -73,6 +73,11 @@ suspend fun read(pubkey: String) {
 }
 ```
 
+`OkHttpBytesWebSocket.Builder { okHttp }` is a drop-in that parses each frame straight from its
+bytes, with no frame `String` (about half the allocation; see the client guide). Its frames reach a
+`RelayConnectionListener` through `onIncomingMessage(relay, msg, frameBytes)`. A listener that
+overrides only the `msgStr` overload gets an empty `msgStr` from it.
+
 **Reach for the accessories before writing a REQ loop.** They are extension functions in
 `nip01Core.relay.client.accessories` (live flows are in `…client.reqs`), so they don't show
 in `NostrClient` completion — import them by name:

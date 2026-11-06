@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp
 
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -54,7 +55,14 @@ import okhttp3.WebSocketListener as OkHttpWebSocketListener
  * fed the same relay client: the REQ went out twice, each page came back twice, and the first
  * connection stayed open on the relay for the life of the process.
  */
-class BasicOkHttpWebSocketDialRaceTest {
+open class BasicOkHttpWebSocketDialRaceTest {
+    /** The socket under test; [OkHttpBytesWebSocketContractTest] runs these against the other one. */
+    open fun newSocket(
+        url: NormalizedRelayUrl,
+        httpClient: (NormalizedRelayUrl) -> OkHttpClient,
+        out: WebSocketListener,
+    ): WebSocket = BasicOkHttpWebSocket(url, httpClient, out)
+
     /** Accepts WebSocket handshakes and records each connection's end. */
     private class HandshakeServer : AutoCloseable {
         private val server = ServerSocket(0)
@@ -151,10 +159,10 @@ class BasicOkHttpWebSocketDialRaceTest {
     @Test
     fun aDialInFlightIsNotReportedAsNeedingAReconnect() {
         val listener = RecordingListener()
-        lateinit var socket: BasicOkHttpWebSocket
+        lateinit var socket: WebSocket
         var midDial: Boolean? = null
         socket =
-            BasicOkHttpWebSocket(server.url, { _ ->
+            newSocket(server.url, { _ ->
                 // Only the dial's own call: an open session's needsReconnect() asks for the client
                 // too (to notice a changed proxy or timeout), and asking back from here would recurse.
                 if (midDial == null) midDial = socket.needsReconnect()
@@ -172,9 +180,9 @@ class BasicOkHttpWebSocketDialRaceTest {
     @Test
     fun aDisconnectDuringTheDialEndsIt() {
         val listener = RecordingListener()
-        lateinit var socket: BasicOkHttpWebSocket
+        lateinit var socket: WebSocket
         socket =
-            BasicOkHttpWebSocket(server.url, { _ ->
+            newSocket(server.url, { _ ->
                 // A concurrent teardown landing before OkHttp has handed back the socket.
                 socket.disconnect()
                 okhttp
@@ -196,10 +204,10 @@ class BasicOkHttpWebSocketDialRaceTest {
      * never answered. Seen on macOS CI as a refusing relay that sent nothing at all.
      */
     @Test
-    fun whatIsSentFromOnOpenGoesOutWhenTheSocketOpensBeforeTheDialReturns() {
+    open fun whatIsSentFromOnOpenGoesOutWhenTheSocketOpensBeforeTheDialReturns() {
         val sentFromOpen = AtomicReference<Boolean?>(null)
         val opened = CountDownLatch(1)
-        lateinit var socket: BasicOkHttpWebSocket
+        lateinit var socket: WebSocket
         val listener =
             object : WebSocketListener {
                 override fun onOpen(

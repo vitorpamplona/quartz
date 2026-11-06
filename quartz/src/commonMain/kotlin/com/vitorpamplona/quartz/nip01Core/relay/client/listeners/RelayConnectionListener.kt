@@ -60,6 +60,19 @@ interface RelayConnectionListener {
     ) {}
 
     /**
+     * [onIncomingMessage] for a frame the socket read straight from its UTF-8 bytes, [frameBytes]
+     * of them, without ever building its text (`OkHttpBytesWebSocket` does, so relay traffic makes
+     * no frame-sized string per message). A listener that needs only the frame's size should
+     * override this too. The default hands the message to [onIncomingMessage] with an **empty**
+     * `msgStr`, so a listener that reads the text sees "" for these frames.
+     */
+    suspend fun onIncomingMessage(
+        relay: IRelayClient,
+        msg: Message,
+        frameBytes: Int,
+    ) = onIncomingMessage(relay, "", msg)
+
+    /**
      * Relay just diconnected.
      */
     fun onDisconnected(relay: IRelayClient) {}

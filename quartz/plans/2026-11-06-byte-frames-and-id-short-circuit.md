@@ -1,10 +1,16 @@
 # Byte frames: Kite on UTF-8 bytes, OkHttp without the String, and an id short-circuit
 
 **Date:** 2026-11-06
-**Status:** investigation. Two byte readers are in as internal entry points that nothing calls
-yet: option B, the SWAR byte reader (`KiteReader.readMessageUtf8`, which is `KiteBytesReader`),
-and option A, the Latin-1 view (`readMessageLatin1View`). B allocates 43% less than today on
-nostrJsonBench's startup corpus. The socket and the id hook are still a plan. The
+**Status:** the byte path is built end to end, opt-in. `OkHttpBytesWebSocket` reads frames
+off OkHttp's `Response.socket` and the relay client parses them with the SWAR byte reader
+(`KiteBytesReader`). Against `BasicOkHttpWebSocket`, through `BasicRelayClient` and
+`CachingEventDecoder` on nostrJsonBench's startup corpus:
+- allocation per frame falls 40–71%;
+- CPU falls 27–53% on compressed or duplicate traffic and 6% on paced plain traffic;
+- CPU rises 20–30% only when a loopback relay floods uncompressed unique frames.
+
+Still a plan: the deferred-field id hook (`KnownEventLookup`) and the device measurements. The
+Latin-1 view (`readMessageLatin1View`) stays as a comparison point. The
 measurements and the OkHttp probe are reproducible, and the plan at the end is staged so each
 step can be benchmarked before the next.
 
@@ -423,6 +429,73 @@ carries `Message`s instead of `String`s:
   in-memory estimate, which needs a line in the release notes. Check Amethyst for other readers
   of `msgStr` before deprecating.
 
+## 2c. The socket, built and measured
+
+`OkHttpBytesWebSocket` (jvmAndroid) has the same contract and Builder as `BasicOkHttpWebSocket`.
+
+- **Dial:** a plain HTTP/1.1 upgrade call through the app's client, run with `execute()` on the
+  session's own thread. It holds no dispatcher slot and isn't capped by `maxRequestsPerHost`.
+- **Framing:** `WsFrameReader` / `WsFrameWriter` (RFC 6455, written here, not vendored) on
+  `Response.socket`. It covers:
+  - fragments, with control frames between them;
+  - ping/pong, and a ping timeout from `pingIntervalMillis`;
+  - the close handshake;
+  - permessage-deflate inflate, with or without context takeover;
+  - masked writes, a size cap (`maxMessageBytes`), and OkHttp's 16 MiB send queue.
+- **Buffers:** frames are read into `WsBufferPool`, shared by all connections. What it keeps
+  follows how many connections are reading at once, not how many are open.
+- **Parsing:** each text frame is parsed on the reader thread through `Utf8WebSocketListener`.
+  `BasicRelayClient`'s listener routes it to `CachingEventDecoder.decodeFromUtf8`, whose
+  duplicate scan reads the bytes, or to `MessageDecoder.decodeUtf8`.
+- **Delivery:** decoded messages go to the delivery coroutine in batches, once per network read.
+  Queuing them one at a time woke the coroutine per message: CPU for unique plain frames was 2.4×
+  `BasicOkHttpWebSocket`'s before batching, 1.2–1.3× after.
+- **Listener API:** the relay client calls `RelayConnectionListener.onIncomingMessage(relay, msg,
+  frameBytes)`, a new overload whose default bridges to the old one with an empty `msgStr`.
+  `NostrClient`, `RelayPool` and `RedirectConnectionListener` forward it. `RelayStats` counts its
+  size as the old string estimate, and `RelayLogger` re-serializes the event for debug logs.
+  Amethyst's `msgStr` readers (`RelayUsageListener`, `RelaySpeedLogger`) only take its length and
+  should override the new overload when Amethyst opts in.
+
+**Tests:** `BasicOkHttpWebSocket`'s drain, close-handshake and dial-race suites now run against
+both sockets, through a `newSocket` factory. `OkHttpBytesWebSocketTest` (19 tests, against a
+scripted raw RFC 6455 relay) covers:
+- every length encoding, fragments with a ping between them, and context takeover with and
+  without reset;
+- a masked server frame, an oversized message, and a relay close with its code and reason;
+- a refused upgrade and a bad accept header;
+- a missed pong, answered pings, an idle relay past `readTimeout`, and a stalled frame;
+- masked UTF-8 sends from `onOpen`, binary frames, and the byte listener's thread and order;
+- the relay client end to end, with the cached `Event` reused, plus a listener that overrides
+  only the text overload.
+
+`SocketIngestBenchmark`: a loopback relay streams the corpus as EVENT frames. Each run goes
+through `BasicRelayClient` with a fresh `CachingEventDecoder`. Times are medians of 5 rounds (3
+for paced), after warm-up. CPU and allocation are summed over every thread but the server's.
+Three full runs agreed within about 10%.
+
+| Workload (frames) | Basic: CPU, alloc per frame | Bytes: CPU, alloc per frame |
+|---|---|---|
+| unique, plain (31,161) | 3,103–3,500 ns, 3,712 B | 4,012–4,178 ns, **1,821 B (−51%)** |
+| unique, deflate | 14,530–14,989 ns, 3,150 B | **7,921–8,201 ns (−45%)**, **1,881 B (−40%)** |
+| 3× duplicates, plain (93,483) | 3,600–3,933 ns, 2,751 B | **2,695–2,839 ns (−27%)**, **784 B (−71%)** |
+| 3× duplicates, deflate | 14,773–15,401 ns, 2,193 B | **7,011–7,106 ns (−53%)**, **844 B (−62%)** |
+| unique, plain, paced 20 frames/ms | 7,815 ns, 3,736 B | **7,323 ns (−6%)**, **1,853 B (−50%)** |
+| unique, deflate, paced 20 frames/ms | 17,641 ns, 3,163 B | **11,484 ns (−35%)**, **1,913 B (−40%)** |
+
+The one CPU loss, unique plain frames flooded over loopback, comes from the shape of that test.
+`BasicOkHttpWebSocket`'s consumer coroutine is the slower side there, so it never parks, and the
+parse overlaps OkHttp's reader on another core. Wall time to the last frame is 51–65 ms against
+100–106 ms. Paced like a network, where its consumer parks per frame, the gap is gone. Over a
+network, CPU matters more than time to the last frame. Deflate wins most because OkHttp inflates
+into okio segments and then decodes those, while this inflates into a pooled array that is parsed
+in place. A breakdown with raw sockets and no relay client (`SocketIngestBenchmark.breakdown`,
+`SOCKET_BREAKDOWN=1`) shows framing alone at 65 B per frame. Most of its ~1.5 µs is kernel time
+for the 8 KiB socket reads, which both sockets pay.
+
+Not measured: Android (ART, the plain-loop `indexOfByte`, compact strings only for ASCII) and
+Kotlin/Native (no socket there yet). Measure on a device before Amethyst Android opts in.
+
 ## Expected gain (estimate, not measured end to end)
 
 Per frame, against today's decode cost on the corpus mix, and before any change to Kite's own
@@ -460,11 +533,16 @@ on Android's GC.
 5. **Deferred fields + `KnownEventLookup`,** wired into `CachingEventDecoder`, keeping every
    forgery rule. Gate: duplicate frames allocate under 200 B; `CachingEventDecoder` tests
    unchanged.
-6. **`OkHttpRawWebSocket`** on `Response.socket`, next to `BasicOkHttpWebSocket`, opt-in. It
+6. **Done: `OkHttpBytesWebSocket`**, on `Response.socket`, next to `BasicOkHttpWebSocket`,
+   opt-in (section 2c). Still open: amy against a few hundred real relays. Originally:
+   `OkHttpRawWebSocket` on `Response.socket`, next to `BasicOkHttpWebSocket`, opt-in. It
    needs tests for fragmentation, control frames between fragments, deflate (with and without
    context takeover), close handshake, ping timeout and oversized frames. Gate: amy against a
    few hundred real relays, same events delivered as `BasicOkHttpWebSocket`.
-7. **The listener API** (`FrameDecodingListener`, the new `onIncomingMessage` overload,
+7. **Done, as built: the listener API**: `Utf8WebSocketListener`, the
+   `onIncomingMessage(relay, msg, frameBytes)` overload, `MessageDecoder.decodeUtf8`, and the
+   CLIENT.md and agent-skill notes. Amethyst moving over is still open. Originally: the listener
+   API (`FrameDecodingListener`, the new `onIncomingMessage` overload,
    deprecations), the `quartz/CLIENT.md` and agent-skill updates, then Amethyst moves over.
 8. **Upstream:** open the OkHttp issue for public framing API.
 
