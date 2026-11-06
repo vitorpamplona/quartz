@@ -508,7 +508,9 @@ class SQLiteEventStore(
         }
         if (event.kind.isEphemeral()) return IEventStore.InsertOutcome.Accepted
 
-        val sp = "ev$index"
+        // One name for every row: each savepoint is released before the next opens, and a
+        // per-row name would put two new SQL strings in the statement cache per row.
+        val sp = "ev"
         db.execSQL("SAVEPOINT $sp")
         return try {
             // The delta records this row only after every module insert
