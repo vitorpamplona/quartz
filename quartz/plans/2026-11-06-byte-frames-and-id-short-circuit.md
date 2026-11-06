@@ -1,8 +1,10 @@
 # Byte frames: Kite on UTF-8 bytes, OkHttp without the String, and an id short-circuit
 
 **Date:** 2026-11-06
-**Status:** investigation. Option A below (the Latin-1 view) is in as an internal reader entry
-point, `KiteReader.readMessageUtf8`, which nothing calls yet. The rest is a plan. The
+**Status:** investigation. Two byte readers are in as internal entry points that nothing calls
+yet: option B, the SWAR byte reader (`KiteReader.readMessageUtf8`, which is `KiteBytesReader`),
+and option A, the Latin-1 view (`readMessageLatin1View`). B allocates 43% less than today on
+nostrJsonBench's startup corpus. The socket and the id hook are still a plan. The
 measurements and the OkHttp probe are reproducible, and the plan at the end is staged so each
 step can be benchmarked before the next.
 
@@ -199,7 +201,52 @@ view only wins where the decode leaves its fast path, which on this corpus is 7%
 the live relays above is 15–40%. The remaining ~900 B of frame copy on ASCII frames can only go
 with option B (no view at all) or with the id hook (no parse at all).
 
-### Shape of B
+### Option B, built and measured
+
+`KiteBytesReader` reads `["EVENT", subId, {event}]` frames, and bare event objects, straight
+from the bytes:
+
+- **Grammar:** the same as `KiteReader`'s, translated function by function. A byte is compared
+  as the Latin-1 char it is, which is exact for every ASCII token.
+- **Values:** each one is decoded from its own byte range (`decodeToString`). Escaped values go
+  through a UTF-8 scratch, as in option A.
+- **Other frames:** any other label returns null, and `readMessageUtf8` decodes the frame and
+  reads it with `KiteReader` as before. Those frames are rare, and their grammar stays in one
+  place.
+- **Scanning:** quotes and backslashes are found with `indexOfByte`, an expect/actual:
+  - **JVM:** SWAR over `MethodHandles.byteArrayViewVarHandle` long loads, two words per turn.
+    Kotlin compiles the call to the direct `VarHandle.get:([BI)J` signature, so there is no
+    boxing.
+  - **Android:** a plain loop. The VarHandle byte view is API 33+ and minSdk is 26, so an
+    API-gated SWAR path waits for a device benchmark.
+  - **Native:** a plain loop; `getLongAt` SWAR or `memchr` comes later. Neither Android nor
+    native is measured.
+
+**Parity:** `KiteReaderUtf8Test` covers number forms, odd tag values, unknown fields of every
+shape, extra frame elements, an escaped label, nesting past the depth limit, whitespace, trailing
+input, the escapes and malformed UTF-8 from option A. Plus all 31,161 corpus events, both readers,
+against decode-then-`readMessage`.
+
+Same benchmark as option A (`KiteUtf8Benchmark`, two rounds, median of 9 passes; allocation is
+deterministic, time varies ±10% run to run on this VM):
+
+| Frames | Today: decode + `readMessage` | Latin-1 view (A) | **Byte reader, SWAR (B)** |
+|---|---|---|---|
+| all 31,161 | 865–944 ns, 2,618 B | 778–857 ns, 2,426 B | **771–907 ns, 1,497 B (−43%)** |
+| ASCII only | 697–748 ns, 2,199 B | 702–829 ns, 2,232 B | **697–707 ns, 1,328 B (−40%)** |
+| non-ASCII | 2,764–2,792 ns, 8,041 B | 1,840–2,078 ns, 4,938 B | **1,816–2,057 ns, 3,677 B (−54%)** |
+| ≥ 4 KiB | 7,437–8,655 ns, 27,889 B | 6,373–6,591 ns, 23,249 B | **6,292–6,370 ns, 15,346 B (−45%)** |
+
+Parsing alone, from a prebuilt `String`, allocates 1,393 B per frame, which is about the `Event`
+itself. So B leaves about 100 B of short-lived garbage per frame on top of what the app keeps,
+against about 1,225 B today.
+
+CPU is a wash on ASCII frames: the lost intrinsic costs about what skipping the decode saves.
+Non-ASCII and large frames are 15–35% faster. **B supersedes A**: the same or better on every
+row, with no frame-sized copy. A stays only as the comparison point and can go once B has a
+caller.
+
+### Shape of B (the original plan, for reference)
 
 - **Only the hot subset moves to bytes:** `["EVENT", sub, {event}]`, `EOSE`, `OK`, `CLOSED`,
   `NOTICE`. That is the frame label, strings, numbers, tags, the event object and `skipValue`,
@@ -401,9 +448,12 @@ on Android's GC.
    `id` first and hides the strfry case.
 2. **Quick win, no API change:** let `CachingEventDecoder.scanEventFrame` accept whitespace
    around `:`. Today it misses relay.snort.social's spaced frames.
-3. **Done: the Latin-1 view (option A)** as `KiteReader.readMessageUtf8`, internal and
-   unused until a socket hands over bytes.
-4. **Byte reader for the hot frames (option B),** behind an internal API, with the pinned suites
+3. **Done: the Latin-1 view (option A)**, `KiteReader.readMessageLatin1View`, kept as the
+   comparison point.
+4. **Done: the byte reader for EVENT frames (option B)**, `KiteReader.readMessageUtf8` /
+   `KiteBytesReader`. Still open in this step: SWAR on Android API 33+ and on native, measured on
+   devices; and whether ASCII values should skip `decodeToString`'s non-ASCII check, since the
+   scan could report it. Originally planned as: **Byte reader for the hot frames (option B),** behind an internal API, with the pinned suites
    run against both readers, and `nextQuote` as expect/actual (SWAR on JVM, loop or SWAR on
    Android by API level, `memchr` on native). Gate: ASCII unique frames no slower than decode +
    String parse; non-ASCII frames faster.

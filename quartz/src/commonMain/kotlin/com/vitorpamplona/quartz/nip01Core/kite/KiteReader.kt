@@ -100,6 +100,17 @@ internal class KiteReader {
     private var frameClosed = false
 
     private var inUse = false
+
+    /** This reader's byte reader, made on first use, so it is kept per thread like this one. */
+    private var bytesReader: KiteBytesReader? = null
+
+    /** [bytesReader], or a fresh one if a parse on this thread already holds it. */
+    private fun bytes(): KiteBytesReader {
+        val r = bytesReader
+        if (r == null) return KiteBytesReader().also { bytesReader = it }
+        return if (r.inUse) KiteBytesReader() else r
+    }
+
     private var cb: CharArray? = null
     private var tagScratch: Array<String?>? = null
     private var tagsScratch: Array<Array<String>?>? = null
@@ -1061,9 +1072,29 @@ internal class KiteReader {
 
         /**
          * [readMessage] of the frame in [bytes] (UTF-8, [length] bytes from [offset]), without
-         * building the frame's string. The bytes are only read during the call.
+         * building the frame's string: an EVENT frame is read by [KiteBytesReader] straight from
+         * the bytes, any other frame is decoded and read as before. The bytes are only read
+         * during the call.
          */
         fun readMessageUtf8(
+            bytes: ByteArray,
+            offset: Int = 0,
+            length: Int = bytes.size - offset,
+        ): Message = acquire().bytes().readEventFrame(bytes, offset, length) ?: readMessage(bytes.decodeToString(offset, offset + length))
+
+        /** [readEvent] of UTF-8 bytes, like [readMessageUtf8]. */
+        fun readEventUtf8(
+            bytes: ByteArray,
+            offset: Int = 0,
+            length: Int = bytes.size - offset,
+        ): Event = acquire().bytes().readEvent(bytes, offset, length)
+
+        /**
+         * [readMessage] of UTF-8 bytes through a Latin-1 view of them ([parseUtf8]), where the
+         * platform has one ([LATIN1_VIEW]), else decoded first. Kept to compare against
+         * [readMessageUtf8] (`KiteUtf8Benchmark`).
+         */
+        fun readMessageLatin1View(
             bytes: ByteArray,
             offset: Int = 0,
             length: Int = bytes.size - offset,
@@ -1074,8 +1105,8 @@ internal class KiteReader {
                 readMessage(bytes.decodeToString(offset, offset + length))
             }
 
-        /** [readEvent] of UTF-8 bytes, like [readMessageUtf8]. */
-        fun readEventUtf8(
+        /** [readEvent] through a Latin-1 view, like [readMessageLatin1View]. */
+        fun readEventLatin1View(
             bytes: ByteArray,
             offset: Int = 0,
             length: Int = bytes.size - offset,

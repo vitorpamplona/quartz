@@ -61,15 +61,24 @@ class KiteReaderUtf8Test {
 
     private fun assertSame(bytes: ByteArray) {
         val viaString = runCatching { KiteReader.readMessage(bytes.decodeToString()) }
-        val viaBytes = runCatching { KiteReader.readMessageUtf8(bytes) }
+        assertSameAs(bytes, viaString, "bytes reader", runCatching { KiteReader.readMessageUtf8(bytes) })
+        assertSameAs(bytes, viaString, "Latin-1 view", runCatching { KiteReader.readMessageLatin1View(bytes) })
+    }
+
+    private fun assertSameAs(
+        bytes: ByteArray,
+        viaString: Result<Message>,
+        name: String,
+        viaBytes: Result<Message>,
+    ) {
         if (viaString.isFailure) {
-            assertTrue(viaBytes.isFailure, "bytes parsed what the string path rejects: ${bytes.decodeToString()}")
+            assertTrue(viaBytes.isFailure, "$name parsed what the string path rejects: ${bytes.decodeToString()}")
             assertTrue(viaBytes.exceptionOrNull() is IllegalArgumentException)
             return
         }
         val expected = viaString.getOrThrow()
-        val actual = viaBytes.getOrElse { fail("bytes failed where the string path parsed ${bytes.decodeToString()}: $it") }
-        assertEquals(describe(expected), describe(actual))
+        val actual = viaBytes.getOrElse { fail("$name failed where the string path parsed ${bytes.decodeToString()}: $it") }
+        assertEquals(describe(expected), describe(actual), name)
         if (expected is EventMessage && actual is EventMessage) {
             assertTrue(expected.event.tags.contentDeepEquals(actual.event.tags))
         }
@@ -138,6 +147,52 @@ class KiteReaderUtf8Test {
         for (b in bad) assertSame(prefix + b + suffix)
         // A bad byte outside a string fails both ways.
         assertSame("""["EVENT","s",""".encodeToByteArray() + byteArrayOf(0xC3.toByte()) + """{"pubkey":"$pubkey"}]""".encodeToByteArray())
+    }
+
+    private fun event(body: String) = """["EVENT","s",{"pubkey":"$pubkey",$body}]"""
+
+    @Test
+    fun numbersAsTheStringReaderReadsThem() {
+        for (v in listOf("0", "1", "-1", "1710026692", "123456789012345678", "1234567890123456789", "99999999999999999999", "1.9", "1e3", "-0", "2.5E+2", "01", "1.", "-", "+1", "1e", "9.3e18", "1e400")) {
+            assertSame(event(""""created_at":$v"""))
+            assertSame(event(""""kind":$v"""))
+        }
+    }
+
+    @Test
+    fun tagValuesFieldsAndFrameShapes() {
+        assertSame(event(""""tags":[]"""))
+        assertSame(event(""""tags":[[]]"""))
+        assertSame(event(""""tags":[["e",null,true,false,12,-1.5e2,"x"]]"""))
+        assertSame(event(""""tags":[["p","a"],["p","b"],["p","c"],["p","d"]]"""))
+        assertSame(event(""""tags":[["a"${",\"v\"".repeat(40)}]]"""))
+        assertSame(event(""""tags":[${(1..2000).joinToString(",") { """["p","$it"]""" }}]"""))
+        assertSame(event(""""tags":[["e",["nested"]]]"""))
+        assertSame(event(""""tags":[["e",{"o":1}]]"""))
+        assertSame(event(""""tags":[["",""," "]]"""))
+        assertSame(event(""""extra":{"a":[1,2,{"b":null}],"c":"\"q\""},"more":[true,false,null,-3e-2],"content":"ok""""))
+        assertSame(event(""""content":null"""))
+        assertSame(event(""""content":5"""))
+        assertSame(event(""""id":5"""))
+        assertSame(event(""""pubKey":"x""""))
+        assertSame("""["EVENT","s",{"content":"no pubkey"}]""")
+        assertSame("""["EVENT","s",{}]""")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey"},"extra",[1,{"a":2}],null]""")
+        assertSame("""["EVENT","s"]""")
+        assertSame("""["EVENT"]""")
+        assertSame("""["EVENT",5,{"pubkey":"$pubkey"}]""")
+        assertSame("""["EVENT","s",[]]""")
+        assertSame("""["EV\u0045NT","s",{"pubkey":"$pubkey"}]""")
+        assertSame("""["EVENTS","s",{"pubkey":"$pubkey"}]""")
+        assertSame("""[5,"s"]""")
+        assertSame("""{"EVENT":1}""")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey","x":${"[".repeat(1200)}${"]".repeat(1200)}}]""")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey","x":${"[".repeat(990)}${"]".repeat(990)}}]""")
+        assertSame("\t[\r\n\"EVENT\" ,\n\"s\"\t,\r{ \"pubkey\" :\"$pubkey\" , \"kind\" : 1 } ]\n")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey"}]trailing""")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey"},]""")
+        assertSame("""["EVENT","s",{"pubkey":"$pubkey",}]""")
+        assertSame("""["EVENT","s",{"p\u0075bkey":"$pubkey","\u0069d":"ab"}]""")
     }
 
     @Test
