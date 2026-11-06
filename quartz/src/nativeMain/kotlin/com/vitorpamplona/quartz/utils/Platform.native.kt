@@ -28,6 +28,7 @@ import kotlinx.cinterop.ptr
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
+import kotlin.experimental.ExperimentalNativeApi
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun currentTimeSeconds(): Long {
@@ -46,3 +47,6 @@ actual fun currentTimeMillis(): Long {
         return ts.tv_sec * 1000 + ts.tv_nsec / 1_000_000
     }
 }
+
+@OptIn(ExperimentalNativeApi::class)
+internal actual fun availableProcessors(): Int = Platform.getAvailableProcessors()

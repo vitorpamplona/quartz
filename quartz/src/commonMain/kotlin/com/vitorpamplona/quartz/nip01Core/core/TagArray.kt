@@ -86,7 +86,7 @@ inline fun <T, U, R : Any> Array<out T>.fastFirstNotNullOfOrNull(
 /**
  * Performs the given [action] on each tag that matches the given [tagName].
  */
-fun TagArray.forEachTagged(
+inline fun TagArray.forEachTagged(
     tagName: String,
     action: (eventId: HexKey) -> Unit,
 ) = this.fastForEach {
@@ -98,7 +98,7 @@ fun TagArray.forEachTagged(
 /**
  * Returns `true` if at least one tag matches the given [tagName] and the action.
  */
-fun TagArray.anyTagged(
+inline fun TagArray.anyTagged(
     tagName: String,
     predicate: (tagValue: String) -> Boolean,
 ) = this.fastAny { it.size > 1 && it[0] == tagName && predicate(it[1]) }
@@ -128,7 +128,7 @@ fun TagArray.hasTagName(tagName: String) = this.fastAny { it.isNotEmpty() && it[
  * Returns a list containing only the non-null results of applying the tag value to the given [transform] function
  * to each tag that matches the [tagName]
  */
-fun <R> TagArray.mapValueTagged(
+inline fun <R> TagArray.mapValueTagged(
     tagName: String,
     transform: (tagValue: String) -> R,
 ) = this.mapNotNull {
@@ -171,7 +171,7 @@ fun TagArray.isAnyTagged(
     tagValues: Set<String>,
 ) = this.fastAny { it.size > 1 && it[0] == tagName && it[1] in tagValues }
 
-fun <U> TagArray.any(
+inline fun <U> TagArray.any(
     predicate: (Array<String>, U) -> Boolean,
     extras: U,
 ): Boolean {

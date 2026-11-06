@@ -129,6 +129,46 @@ class Nip30Test {
     }
 
     @Test()
+    fun unknownCodeStaysInTheText() {
+        val tags = mapOf(":known:" to "http://known")
+        val result = CustomEmoji.assembleAnnotatedList("hi :known: and :nope: end", tags)!!
+
+        assertEquals(3, result.size)
+        assertEquals("hi ", (result[0] as CustomEmoji.TextType).text)
+        assertEquals("http://known", (result[1] as CustomEmoji.ImageUrlType).url)
+        assertEquals(" and :nope: end", (result[2] as CustomEmoji.TextType).text)
+    }
+
+    @Test()
+    fun clockTimeIsNotAnEmoji() {
+        val tags = mapOf(":soapbox:" to "http://soapbox")
+        assertNull(CustomEmoji.assembleAnnotatedList("meet at 10:30:00 ok", tags))
+    }
+
+    @Test()
+    fun codeAfterAFailedColonStillMatches() {
+        // ":a b:" is not a code, but the colon closing it opens ":soapbox:".
+        val tags = mapOf(":soapbox:" to "http://soapbox")
+        val result = CustomEmoji.assembleAnnotatedList("x :a b::soapbox: y", tags)!!
+
+        assertEquals(3, result.size)
+        assertEquals("x :a b:", (result[0] as CustomEmoji.TextType).text)
+        assertEquals("http://soapbox", (result[1] as CustomEmoji.ImageUrlType).url)
+        assertEquals(" y", (result[2] as CustomEmoji.TextType).text)
+    }
+
+    @Test()
+    fun unknownCodeLendsItsClosingColon() {
+        val tags = mapOf(":soapbox:" to "http://soapbox")
+        val result = CustomEmoji.assembleAnnotatedList("hi :nope:soapbox: x", tags)!!
+
+        assertEquals(3, result.size)
+        assertEquals("hi :nope", (result[0] as CustomEmoji.TextType).text)
+        assertEquals("http://soapbox", (result[1] as CustomEmoji.ImageUrlType).url)
+        assertEquals(" x", (result[2] as CustomEmoji.TextType).text)
+    }
+
+    @Test()
     fun parseJapanese() {
         val tags = mapOf(":x30EDE:" to "http://x30EDE", ":\uD883\uDEDE:" to "http://\uD883\uDEDE")
         val input = "\uD883\uDEDE\uD883\uDEDE麺の:x30EDE:。:\uD883\uDEDE:(Violation of NIP-30)"

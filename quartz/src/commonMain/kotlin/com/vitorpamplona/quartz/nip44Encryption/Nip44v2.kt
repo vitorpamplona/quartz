@@ -317,7 +317,15 @@ class Nip44v2(
             }
         }
 
-        fun encodePayload(): String = Base64.encode(byteArrayOf(V.toByte()) + nonce + ciphertext + mac)
+        fun encodePayload(): String {
+            // One buffer instead of three `+` copies (each a copy of the ciphertext so far).
+            val out = ByteArray(1 + nonce.size + ciphertext.size + mac.size)
+            out[0] = V.toByte()
+            nonce.copyInto(out, 1)
+            ciphertext.copyInto(out, 1 + nonce.size)
+            mac.copyInto(out, 1 + nonce.size + ciphertext.size)
+            return Base64.encode(out)
+        }
     }
 
     // -----------------------------------

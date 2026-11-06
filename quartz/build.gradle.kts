@@ -84,6 +84,9 @@ kotlin {
         (project.findProperty("prodRelayBench") as? String)?.let {
             environment("PROD_RELAY_BENCH", it)
         }
+        // Opt-in gate for StageThroughputBenchmark: `-PstageBench=1` runs every stage, any
+        // other value only the stages whose label contains it.
+        (project.findProperty("stageBench") as? String)?.let { systemProperty("stageBench", it) }
         // Forward the negentropy-benchmark corpus size to the test JVM.
         System.getProperty("negBenchN")?.let { systemProperty("negBenchN", it) }
         System.getProperty("followBenchScale")?.let { systemProperty("followBenchScale", it) }

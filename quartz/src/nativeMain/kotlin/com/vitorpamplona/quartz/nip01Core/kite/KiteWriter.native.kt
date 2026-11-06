@@ -20,8 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip01Core.kite
 
-import com.vitorpamplona.crypto.sha2.sha256
 import kotlin.native.concurrent.ThreadLocal
+import com.vitorpamplona.crypto.sha2.sha256Into as cryptoSha256Into
 
 // One writer per thread, as the JVM's ThreadLocal gives, so its buffers outlive a write.
 @ThreadLocal
@@ -47,16 +47,17 @@ internal actual fun sha256Feed(
 
 internal actual fun sha256Abort() {}
 
-// crypto-kmp has no public streaming SHA-256 on native, so this hashes a copy.
+// No streaming feed on native, so the writer keeps every byte; these hash its buffer's prefix
+// in place, without copying it.
 internal actual fun sha256Of(
     data: ByteArray,
     length: Int,
-): ByteArray = sha256(data.copyOf(length))
+): ByteArray = cryptoSha256Into(ByteArray(32), data, length)
 
 internal actual fun sha256Into(
     data: ByteArray,
     length: Int,
     out: ByteArray,
 ) {
-    sha256(data.copyOf(length)).copyInto(out)
+    cryptoSha256Into(out, data, length)
 }
