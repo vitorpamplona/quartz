@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip30CustomEmoji
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
@@ -46,7 +47,11 @@ class CustomEmoji {
             return input.contains(":")
         }
 
-        fun createEmojiMap(tags: Array<Array<String>>): Map<String, String> = tags.filter { it.size > 2 && it[0] == EmojiUrlTag.TAG_NAME }.associate { ":${it[1]}:" to it[2] }
+        fun createEmojiMap(tags: Array<Array<String>>): Map<String, String> {
+            val map = HashMap<String, String>()
+            tags.fastForEach { if (it.size > 2 && it[0] == EmojiUrlTag.TAG_NAME) map[":${it[1]}:"] = it[2] }
+            return map
+        }
 
         fun findAllEmojis(input: String): List<String> {
             val matcher = customEmojiPattern.findAll(input)
@@ -75,41 +80,44 @@ class CustomEmoji {
             return assembleAnnotatedList(input, emojiPairs)
         }
 
+        /**
+         * Splits [input] into text runs and the images of the `:code:`s that [emojiPairs] knows
+         * (keyed `:code:`), or null when none of them resolves. A code it does not know stays in
+         * the text. Codes match as [customEmojiPattern] does, left to right without overlapping,
+         * in one pass and with no regex.
+         */
         fun assembleAnnotatedList(
             input: String,
             emojiPairs: Map<String, String>,
         ): ImmutableList<Renderable>? {
-            val emojiNamesInOrder = findAllEmojis(input)
-            if (emojiNamesInOrder.isEmpty()) {
-                return null
-            }
-
-            val regularCharsInOrder = input.split(customEmojiPattern)
-
-            val finalList = mutableListOf<Renderable>()
-
-            // Merge the two lists in Order.
-            var index = 0
-            for (word in regularCharsInOrder) {
-                if (word.isNotEmpty()) {
-                    finalList.add(TextType(word))
+            if (emojiPairs.isEmpty()) return null
+            var finalList: ArrayList<Renderable>? = null
+            var textStart = 0
+            var open = input.indexOf(':')
+            while (open >= 0) {
+                var close = open + 1
+                while (close < input.length && isEmojiCodeChar(input[close])) close++
+                if (close == open + 1 || close >= input.length || input[close] != ':') {
+                    // Not a code: the regex would retry from the next colon, which may be [close].
+                    open = input.indexOf(':', open + 1)
+                    continue
                 }
-                if (index < emojiNamesInOrder.size) {
-                    val url = emojiPairs[emojiNamesInOrder[index]]
-
-                    if (url != null) {
-                        finalList.add(ImageUrlType(url))
-                    } else {
-                        if (word.isNotEmpty()) {
-                            finalList.add(TextType(word))
-                        }
-                    }
+                val url = emojiPairs[input.substring(open, close + 1)]
+                if (url != null) {
+                    val list = finalList ?: ArrayList<Renderable>().also { finalList = it }
+                    if (open > textStart) list.add(TextType(input.substring(textStart, open)))
+                    list.add(ImageUrlType(url))
+                    textStart = close + 1
                 }
-                index++
+                open = input.indexOf(':', close + 1)
             }
-
-            return finalList.toImmutableList()
+            val list = finalList ?: return null
+            if (textStart < input.length) list.add(TextType(input.substring(textStart)))
+            return list.toImmutableList()
         }
+
+        /** `[A-Za-z0-9_\-]`, the code characters of [customEmojiPattern]. */
+        private fun isEmojiCodeChar(c: Char): Boolean = c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '-'
     }
 
     @Immutable open class Renderable
