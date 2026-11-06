@@ -5,6 +5,7 @@ _Audited 2026-09-17. 13 plans: 7 shipped (archived), 0 in-progress, 5 queued, 1 
 ## Queued
 | Plan | Summary |
 | ---- | ------- |
+| [2026-11-06-byte-frames-and-id-short-circuit.md](2026-11-06-byte-frames-and-id-short-circuit.md) | Investigation: parse relay frames from UTF-8 bytes and stop at a known id. Decoding a frame with any non-ASCII byte costs ~1.08 µs and 5.3 KB (15-40% of live frames), as much as Kite's parse; HotSpot's `String.indexOf` intrinsic only wins on long values (SWAR ~10 vs ~60 GB/s). No OkHttp fork: `Response.socket` (5.2+) hands over the upgraded socket. Strfry puts `content` before `id`, so the hook defers building, not scanning. Staged plan. |
 | [2026-11-06-performance-review.md](2026-11-06-performance-review.md) | Library-wide perf review: verify is ~95% of ingest CPU (parse ~1 µs/event, verify ~37 µs). Shipped an 18x custom-emoji split (and its rendering bug), copy-free native id hashing, index-pulling parallel verify (unweighted `verifySchnorrBatch` left open); ranked backlog led by a covering `event_tags` index and multi-filter merge routing. |
 | [2026-05-08-local-headers-explorer.md](2026-05-08-local-headers-explorer.md) | Headers-only Bitcoin P2P client to verify NIP-03 OTS attestations without a trusted block explorer. |
 | [2026-06-12-giftwrap-deletion-requests.md](2026-06-12-giftwrap-deletion-requests.md) | Let a recipient-authored kind-5 delete/block a gift wrap (kind 1059) addressed to them. |
