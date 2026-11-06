@@ -25,17 +25,20 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
+import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
 import com.vitorpamplona.quartz.nip40Expiration.expiration
+import com.vitorpamplona.quartz.nip44Encryption.Nip44
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -157,10 +160,26 @@ open class GiftWrapEvent(
             expirationDelta: Long? = null,
             createdAt: Long = TimeUtils.randomWithTwoDays(),
             initializer: TagArrayBuilder<GiftWrapEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, wrapSigner.nip44Encrypt(event.toJson(), recipient.pubKey), createdAt) {
+        ) = eventTemplate(KIND, encryptWithThrowawayKey(event.toJson(), recipient.pubKey, wrapSigner), createdAt) {
             recipient(recipient)
             expirationDelta?.let { expiration(createdAt + it + TimeUtils.twoDays()) }
             initializer()
+        }
+
+        /**
+         * [NostrSignerSync.nip44Encrypt] without the shared conversation-key cache: the wrap key
+         * is used once, so caching its key would only evict a real peer's (and keep a throwaway
+         * private key in a process-wide cache).
+         */
+        private fun encryptWithThrowawayKey(
+            plaintext: String,
+            toPublicKey: HexKey,
+            wrapSigner: NostrSignerSync,
+        ): String {
+            val privKey = wrapSigner.keyPair.privKey ?: throw SignerExceptions.ReadOnlyException()
+            if (plaintext.isBlank()) return ""
+            val conversationKey = Nip44.v2.computeConversationKey(privKey, toPublicKey.hexToByteArray())
+            return Nip44.v2.encrypt(plaintext, conversationKey).encodePayload()
         }
 
         /**
