@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.sockets
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 
 /**
  * Interface to abstract the socket implementation.
@@ -53,3 +54,15 @@ interface WebSocketListener {
  * stays guarded.
  */
 internal suspend fun WebSocketListener.deliverMessage(text: String) = if (this is BasicRelayClient.MyWebsocketListener) onMessageUnguarded(text) else onMessage(text)
+
+/** EXPERIMENT: whether frames for this listener can be decoded on the socket's read thread. */
+internal fun WebSocketListener.decodesOffThread(): Boolean = this is BasicRelayClient.MyWebsocketListener
+
+/** EXPERIMENT: decodes on the calling (read) thread; only when [decodesOffThread]. Null drops the frame. */
+internal fun WebSocketListener.decodeOffThread(text: String): Message? = (this as BasicRelayClient.MyWebsocketListener).decodeOffThread(text)
+
+/** EXPERIMENT: delivers a frame [decodeOffThread] decoded. */
+internal suspend fun WebSocketListener.deliverDecoded(
+    text: String,
+    msg: Message,
+) = (this as BasicRelayClient.MyWebsocketListener).onDecodedUnguarded(text, msg)

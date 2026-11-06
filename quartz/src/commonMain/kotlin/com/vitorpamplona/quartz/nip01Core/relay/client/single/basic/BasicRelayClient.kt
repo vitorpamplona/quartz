@@ -232,6 +232,22 @@ open class BasicRelayClient(
             return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
         }
 
+        /**
+         * EXPERIMENT: decodes [text] on the socket's read thread instead of the delivery coroutine;
+         * null drops the frame. [onDecodedUnguarded] then delivers it, in order.
+         */
+        internal fun decodeOffThread(text: String): Message? = decodeOrNull(text)
+
+        /** EXPERIMENT: [onMessageUnguarded] for a frame [decodeOffThread] already decoded. */
+        internal suspend fun onDecodedUnguarded(
+            text: String,
+            msg: Message,
+        ) {
+            if (!isCurrent()) return
+            rateLimits?.onIncoming(msg)
+            return listener.onIncomingMessage(this@BasicRelayClient, text, msg)
+        }
+
         /** The message, or null to drop the frame: unparseable, or a forged copy the decoder caught. */
         private fun decodeOrNull(text: String): Message? =
             try {

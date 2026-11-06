@@ -24,6 +24,12 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
+import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.decodeOffThread
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.decodesOffThread
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverDecoded
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.utils.Log
 import kotlinx.coroutines.CancellationException
@@ -50,6 +56,11 @@ class BasicOkHttpWebSocket(
         private const val OPEN = 0
         private const val DRAINING = 1
         private const val CLOSED = 2
+
+        // EXPERIMENT: decode each frame on OkHttp's read thread, and (with readerIdCheck) drop an
+        // event whose id doesn't match its content there too.
+        private val READER_PARSE = System.getProperty("quartz.experiment.readerParse") == "true"
+        private val READER_ID_CHECK = System.getProperty("quartz.experiment.readerIdCheck") == "true"
 
         // Exists to avoid exceptions stopping the coroutine
         val exceptionHandler =
@@ -132,6 +143,12 @@ class BasicOkHttpWebSocket(
         val incoming: Channel<Any>,
     )
 
+    /** EXPERIMENT: a frame decoded on the read thread. */
+    private class Decoded(
+        val text: String,
+        val msg: Message,
+    )
+
     private class SessionEnd(
         val report: () -> Unit,
     )
@@ -163,7 +180,7 @@ class BasicOkHttpWebSocket(
                 // A listener that throws must not end delivery: the session's end is queued behind
                 // this message, and without it the relay client would never learn the session closed.
                 try {
-                    out.deliverMessage(item as String)
+                    if (item is Decoded) out.deliverDecoded(item.text, item.msg) else out.deliverMessage(item as String)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -173,6 +190,7 @@ class BasicOkHttpWebSocket(
             scope.cancel()
         }
 
+        val parseOnReader = READER_PARSE && out.decodesOffThread()
         val listener =
             object : OkHttpWebSocketListener() {
                 /**
@@ -213,7 +231,13 @@ class BasicOkHttpWebSocket(
                     if (state.get() != OPEN) return
                     // Never blocks (unlimited channel): the OkHttp reader
                     // thread must stay free to keep draining the socket.
-                    incoming.trySendBlocking(text)
+                    if (parseOnReader) {
+                        val msg = out.decodeOffThread(text) ?: return
+                        if (READER_ID_CHECK && msg is EventMessage && !runCatching { msg.event.verifyId() }.getOrDefault(false)) return
+                        incoming.trySendBlocking(Decoded(text, msg))
+                    } else {
+                        incoming.trySendBlocking(text)
+                    }
                 }
 
                 override fun onClosing(
