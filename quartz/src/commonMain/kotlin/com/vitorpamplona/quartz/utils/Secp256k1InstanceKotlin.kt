@@ -75,7 +75,7 @@ object Secp256k1InstanceKotlin {
 
     /**
      * Batch-verify multiple signatures from the same pubkey.
-     * Uses scalar+point summation — one mulDoubleG for the whole batch.
+     * Checks each signature on its own, with the pubkey lift cached across them.
      */
     fun verifySchnorrBatch(
         pubKey: ByteArray,

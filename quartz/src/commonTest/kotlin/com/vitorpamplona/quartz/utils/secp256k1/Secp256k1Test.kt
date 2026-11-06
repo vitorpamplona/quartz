@@ -399,4 +399,29 @@ class Secp256k1Test {
         }
         assertTrue(Secp256k1.verifySchnorrBatch(pub, sigs, msgs))
     }
+
+    /**
+     * Two signatures that are each invalid but whose errors cancel: (r1, s1 + d) and (r2, s2 - d).
+     * An unweighted sum check (sum of s times G against the sum of R plus e·P) accepts the pair, so
+     * a batch must weight each signature by an independent random scalar, or verify each one.
+     */
+    @Test
+    fun batchRejectsCancellingInvalidSignatures() {
+        val seckey = "67E56582298859DDAE725F972992A07C6C4FB9F62A8FFF58CE3CA926A1063530".hexToByteArray()
+        val pub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(seckey)).copyOfRange(1, 33)
+        val msg1 = ByteArray(32) { 0x01 }
+        val msg2 = ByteArray(32) { 0x02 }
+        val sig1 = Secp256k1.signSchnorr(msg1, seckey, null)
+        val sig2 = Secp256k1.signSchnorr(msg2, seckey, null)
+
+        val delta = U256.fromBytes(ByteArray(32) { if (it == 31) 0x05 else 0 })
+        val s1 = U256.fromBytes(sig1, 32)
+        val s2 = U256.fromBytes(sig2, 32)
+        val forged1 = sig1.copyOf().also { U256.toBytesInto(ScalarN.add(s1, delta), it, 32) }
+        val forged2 = sig2.copyOf().also { U256.toBytesInto(ScalarN.sub(s2, delta), it, 32) }
+
+        assertFalse(Secp256k1.verifySchnorr(forged1, msg1, pub))
+        assertFalse(Secp256k1.verifySchnorr(forged2, msg2, pub))
+        assertFalse(Secp256k1.verifySchnorrBatch(pub, listOf(forged1, forged2), listOf(msg1, msg2)))
+    }
 }

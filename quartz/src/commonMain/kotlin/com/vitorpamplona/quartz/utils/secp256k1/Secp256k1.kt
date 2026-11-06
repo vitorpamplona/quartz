@@ -636,27 +636,17 @@ object Secp256k1 {
     // ==================== Same-Pubkey Batch Verification ====================
 
     /**
-     * Batch-verify multiple BIP-340 Schnorr signatures from the SAME public key
-     * using scalar and point summation. Returns true if ALL signatures are valid.
+     * Verifies several BIP-340 Schnorr signatures from the SAME public key. Returns true if ALL
+     * of them are valid.
      *
-     * Instead of n individual mulDoubleG calls (each with ~130 doublings + toAffine),
-     * this combines everything into scalar sums + one point sum + one mulDoubleG:
+     * Each signature is checked on its own; the pubkey's lift is cached after the first one, so
+     * the rest skip that square root.
      *
-     *   S = Σ sᵢ mod n          (scalar addition — trivial)
-     *   E = Σ eᵢ mod n          (scalar addition — trivial)
-     *   R_sum = Σ liftX(rᵢ)     (point addition — n-1 addMixed calls)
-     *   Check: S·G - E·P - R_sum == O  (one mulDoubleG + point subtraction)
-     *
-     * This works because valid Schnorr signatures are linear:
-     *   sᵢ·G = Rᵢ + eᵢ·P  →  (Σsᵢ)·G = (ΣRᵢ) + (Σeᵢ)·P
-     *
-     * Performance: ~1,350 + 11·n field ops vs n × ~1,620 individual (with caches).
-     * For n=16: ~1,526 vs ~25,920 = ~17x throughput improvement.
-     *
-     * Security: by linearity, if any signature is invalid (sᵢ·G ≠ Rᵢ + eᵢ·P),
-     * the sum fails — errors cannot cancel without solving the discrete log.
-     * For extra hardening with duplicate events from multiple relays, the caller
-     * can verify duplicates individually to detect relay manipulation.
+     * An unweighted sum check (`(Σsᵢ)·G == ΣRᵢ + (Σeᵢ)·P`), which this used to do, is NOT a valid
+     * batch verifier: `(r₁, s₁+δ)` and `(r₂, s₂−δ)` each fail but their sum passes, and since
+     * the signer picks the messages, cancelling challenges is a k-sum search. A sound batch
+     * weights each equation by an independent random scalar (BIP-340 "Batch Verification") and
+     * needs a multi-scalar multiplication for `Σaᵢ·Rᵢ` to be any faster than one-by-one.
      *
      * @param pub 32-byte x-only public key (same for all events)
      * @param signatures list of 64-byte signatures (R.x || s)
@@ -670,88 +660,9 @@ object Secp256k1 {
     ): Boolean {
         val n = signatures.size
         require(n == messages.size) { "signatures and messages must have same size" }
-        if (n == 0) return true
-        if (n == 1) return verifySchnorr(signatures[0], messages[0], pub)
-        if (pub.size != 32) return false
-
-        val sc = ECPoint.getScratch()
-
-        // Decompress pubkey P once (uses liftX cache)
-        val px = sc.entryPx
-        val py = sc.entryPy
-        if (!liftXCached(px, py, pub)) return false
-
-        // Accumulators for the scalar sums
-        val sSum = Fe4() // Σ sᵢ mod n
-        val eSum = Fe4() // Σ eᵢ mod n
-
-        // Accumulator for R point sum (Jacobian)
-        val rSum = MutablePoint()
-        rSum.setInfinity()
-        val rTmp = sc.entryResult // reuse as temp for addMixed
-
-        // Pre-allocated scratch for the per-signature loop (eliminates ~7 allocs per sig)
-        val r = sc.scalarTmp1 // reuse for r parsing
-        val s = sc.scalarTmp2 // reuse for s parsing
-        val e = sc.scalarTmp3 // reuse for e scalar
-        val rx = sc.entryTmp // reuse for liftX output x
-        val ry = sc.entryTmp2 // reuse for liftX output y
-
         for (i in 0 until n) {
-            val sig = signatures[i]
-            val msg = messages[i]
-            if (sig.size != 64) return false
-
-            // Parse r, s from signature into scratch
-            U256.fromBytesInto(r, sig, 0)
-            if (U256.cmp(r, FieldP.P) >= 0) return false
-            U256.fromBytesInto(s, sig, 32)
-            if (U256.cmp(s, ScalarN.N) >= 0) return false
-
-            // Accumulate s: sSum += sᵢ mod n
-            ScalarN.addTo(sSum, sSum, s)
-
-            // Compute challenge eᵢ = H(rᵢ || pub || msgᵢ) using scratch buffers
-            val hashLen = 64 + 32 + 32 + msg.size
-            val hashInput = if (hashLen <= sc.hashBuf.size) sc.hashBuf else ByteArray(hashLen)
-            CHALLENGE_PREFIX.copyInto(hashInput, 0, 0, 64)
-            sig.copyInto(hashInput, 64, 0, 32)
-            pub.copyInto(hashInput, 96, 0, 32)
-            msg.copyInto(hashInput, 128, 0, msg.size)
-            sha256Into(sc.bytesTmp1, hashInput, hashLen)
-            U256.fromBytesInto(e, sc.bytesTmp1, 0)
-            ScalarN.reduceTo(e, e)
-
-            // Accumulate e: eSum += eᵢ mod n
-            ScalarN.addTo(eSum, eSum, e)
-
-            // Decompress Rᵢ = liftX(rᵢ) and accumulate into rSum
-            if (!KeyCodec.liftX(rx, ry, r, sc.zInv)) return false
-
-            // rSum += Rᵢ (mixed addition: Rᵢ is affine)
-            if (rSum.isInfinity()) {
-                rSum.setAffine(rx, ry)
-            } else {
-                ECPoint.addMixed(rTmp, rSum, rx, ry, sc)
-                rSum.copyFrom(rTmp)
-            }
+            if (!verifySchnorr(signatures[i], messages[i], pub)) return false
         }
-
-        // Compute Q = sSum·G + (-eSum)·P via Shamir's trick (one mulDoubleG)
-        ScalarN.negTo(eSum, eSum)
-        val pPoint = sc.entryPoint
-        pPoint.setAffine(px, py)
-        // mulDoubleG uses sc.mixTmp internally (ping-pong), so output must be separate.
-        val q = MutablePoint()
-        ECPoint.mulDoubleG(q, sSum, pPoint, eSum)
-
-        // Check: Q - R_sum == O  →  Q + (-R_sum) == O
-        // Negate R_sum: just negate its Y coordinate
-        FieldP.neg(rSum.y, rSum.y)
-
-        // Add Q + (-R_sum) and check if result is infinity
-        ECPoint.addPoints(sc.entryResult, q, rSum, sc)
-
-        return sc.entryResult.isInfinity()
+        return true
     }
 }
