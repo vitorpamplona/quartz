@@ -335,8 +335,8 @@ class Secp256k1Benchmark {
 
         // ==================== Batch verification benchmark ====================
         // Same pubkey, n events — the typical Nostr pattern (feed from one author).
-        // Batch verify uses scalar+point summation: one mulDoubleG for the whole batch
-        // instead of n individual mulDoubleG calls.
+        // verifySchnorrBatch checks each signature on its own now (the unweighted sum was forgeable),
+        // so "Batched" should track "Pure Kotlin" here.
         val batchPub = kotlinXOnlyPub
         for (batchSize in intArrayOf(4, 8, 16, 32, 200)) {
             val sigs = mutableListOf<ByteArray>()
