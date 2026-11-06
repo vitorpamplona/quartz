@@ -5,6 +5,7 @@ _Audited 2026-09-17. 13 plans: 7 shipped (archived), 0 in-progress, 5 queued, 1 
 ## Queued
 | Plan | Summary |
 | ---- | ------- |
+| [2026-11-06-performance-review.md](2026-11-06-performance-review.md) | Library-wide perf review: verify is ~95% of ingest CPU (parse ~1 µs/event, verify ~37 µs). Shipped a batch-verify forgery fix, an 18x custom-emoji split (and its rendering bug), copy-free native id hashing, chunked server verify; ranked backlog led by a covering `event_tags` index and multi-filter merge routing. |
 | [2026-05-08-local-headers-explorer.md](2026-05-08-local-headers-explorer.md) | Headers-only Bitcoin P2P client to verify NIP-03 OTS attestations without a trusted block explorer. |
 | [2026-06-12-giftwrap-deletion-requests.md](2026-06-12-giftwrap-deletion-requests.md) | Let a recipient-authored kind-5 delete/block a gift wrap (kind 1059) addressed to them. |
 | [2026-07-03-incremental-negentropy-storage.md](2026-07-03-incremental-negentropy-storage.md) | Always-current (created_at, id) index so cold NEG-OPENs stop paying a full scan + seal (~340 ms at 50k vs strfry's ~21 ms). |
