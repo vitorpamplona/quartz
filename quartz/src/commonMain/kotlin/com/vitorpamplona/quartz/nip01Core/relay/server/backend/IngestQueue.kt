@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
@@ -252,18 +253,26 @@ class IngestQueue(
             val sub = batch[0]
             return BooleanArray(1) { sub.skipVerify || hook(sub.event) }
         }
-        if (batch.all { it.skipVerify }) return BooleanArray(batch.size) { true }
-        return coroutineScope {
-            batch
-                .map { sub ->
-                    if (sub.skipVerify) {
-                        null
-                    } else {
-                        async(Dispatchers.Default) { hook(sub.event) }
+        val results = BooleanArray(batch.size) { batch[it].skipVerify }
+        if (results.all { it }) return results
+        // One worker per core-sized chunk, not per event: a per-event async measured ~40µs/event
+        // of scheduling overhead, swallowing the parallel gain (ParallelEventVerifier, same fix).
+        coroutineScope {
+            val workers = minOf(VERIFY_PARALLELISM, batch.size)
+            val chunkSize = (batch.size + workers - 1) / workers
+            (0 until workers)
+                .map { w ->
+                    async(Dispatchers.Default) {
+                        var i = w * chunkSize
+                        val end = minOf(i + chunkSize, batch.size)
+                        while (i < end) {
+                            if (!results[i]) results[i] = hook(batch[i].event)
+                            i++
+                        }
                     }
-                }.map { it?.await() ?: true }
-                .toBooleanArray()
+                }.awaitAll()
         }
+        return results
     }
 
     /**
@@ -350,6 +359,9 @@ class IngestQueue(
     }
 
     companion object {
+        /** Verify workers per batch; Dispatchers.Default caps real parallelism at the core count. */
+        private const val VERIFY_PARALLELISM = 8
+
         /**
          * Default for a missing per-row outcome — only reachable on a
          * contract violation (the store returned fewer outcomes than
