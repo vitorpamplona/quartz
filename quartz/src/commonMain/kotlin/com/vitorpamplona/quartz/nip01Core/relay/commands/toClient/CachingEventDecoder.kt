@@ -485,16 +485,24 @@ class CachingEventDecoder(
     )
 
     /**
-     * Extracts (subId, eventId) from a compact `["EVENT","<subId>",{...}]`
-     * frame, or null when the frame isn't an EVENT or anything about it is
-     * unusual (whitespace variants, escaped subIds, missing/malformed id) —
+     * Extracts (subId, eventId) from a `["EVENT","<subId>",{...}]` frame, compact or with JSON
+     * whitespace between its tokens (some relays write `"id": "…"`), or null when the frame isn't
+     * an EVENT or anything about it is unusual (an escaped subId, a missing or malformed id):
      * null means "do the full parse".
      */
     private fun scanEventFrame(text: String): ScannedEvent? {
-        if (!text.startsWith(EVENT_PREFIX)) return null
+        val n = text.length
+        var i = skipWs(text, 0)
+        if (i >= n || text[i] != '[') return null
+        i = skipWs(text, i + 1)
+        if (!text.startsWith(EVENT_LABEL, i)) return null
+        i = skipWs(text, i + EVENT_LABEL.length)
+        if (i >= n || text[i] != ',') return null
+        i = skipWs(text, i + 1)
+        if (i >= n || text[i] != '"') return null
+        i++
 
         // subId: read up to the closing quote; any escape → bail.
-        var i = EVENT_PREFIX.length
         val subStart = i
         while (i < text.length) {
             val c = text[i]
@@ -505,10 +513,9 @@ class CachingEventDecoder(
         if (i >= text.length) return null
         val subId = text.substring(subStart, i)
 
-        // id: the literal top-level key with a 64-char lowercase-hex value.
-        val idKey = text.indexOf(ID_KEY, i)
-        if (idKey < 0) return null
-        val idStart = idKey + ID_KEY.length
+        // id: the first `"id"` key with a 64-char lowercase-hex value.
+        val idStart = stringValueOf(text, ID_KEY, i + 1)
+        if (idStart < 0) return null
         val idEnd = idStart + 64
         if (idEnd >= text.length || text[idEnd] != '"') return null
         for (j in idStart until idEnd) {
@@ -537,11 +544,10 @@ class CachingEventDecoder(
         val badSigs: Int,
     )
 
-    /** The frame's `sig` value, found like the id: the literal key and 128 lowercase-hex chars; null when unusual. */
+    /** The frame's `sig` value, found like the id: the first `"sig"` key and 128 lowercase-hex chars; null when unusual. */
     private fun scanSig(text: String): String? {
-        val key = text.indexOf(SIG_KEY)
-        if (key < 0) return null
-        val start = key + SIG_KEY.length
+        val start = stringValueOf(text, SIG_KEY, 0)
+        if (start < 0) return null
         val end = start + 128
         if (end >= text.length || text[end] != '"') return null
         for (j in start until end) {
@@ -551,10 +557,45 @@ class CachingEventDecoder(
         return text.substring(start, end)
     }
 
+    /**
+     * Where the string value of the first [key] (with its quotes, e.g. `"id"`) at or after
+     * [from] starts, just past its opening quote, allowing JSON whitespace around the colon; or
+     * -1. A string can't hold [key] unescaped, and a string value is never followed by a colon,
+     * so the first match followed by `:` is a key.
+     */
+    private fun stringValueOf(
+        text: String,
+        key: String,
+        from: Int,
+    ): Int {
+        var k = text.indexOf(key, from)
+        while (k >= 0) {
+            var j = skipWs(text, k + key.length)
+            if (j < text.length && text[j] == ':') {
+                j = skipWs(text, j + 1)
+                return if (j < text.length && text[j] == '"') j + 1 else -1
+            }
+            k = text.indexOf(key, k + 1)
+        }
+        return -1
+    }
+
+    private fun skipWs(
+        text: String,
+        from: Int,
+    ): Int {
+        var i = from
+        while (i < text.length) {
+            val c = text[i]
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') i++ else break
+        }
+        return i
+    }
+
     companion object {
-        private const val EVENT_PREFIX = "[\"EVENT\",\""
-        private const val ID_KEY = "\"id\":\""
-        private const val SIG_KEY = "\"sig\":\""
+        private const val EVENT_LABEL = "\"EVENT\""
+        private const val ID_KEY = "\"id\""
+        private const val SIG_KEY = "\"sig\""
 
         /** Bad copies an id may bring before the rest are skipped until its scrutiny expires. */
         const val MAX_FORGED_COPIES = 8
