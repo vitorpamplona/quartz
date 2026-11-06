@@ -75,9 +75,7 @@ object Secp256k1InstanceKotlin {
 
     /**
      * Batch-verify multiple signatures from the same pubkey.
-     * Random-weighted BIP-340 batch math: one double multiplication for G and P plus one
-     * interleaved multiplication over the R points. Beats pure-Kotlin one-by-one from ~4 events and
-     * native one-by-one from ~32 (JVM measurements in plans/2026-11-06-performance-review.md).
+     * Uses scalar+point summation — one mulDoubleG for the whole batch.
      */
     fun verifySchnorrBatch(
         pubKey: ByteArray,

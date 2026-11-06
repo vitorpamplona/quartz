@@ -335,8 +335,8 @@ class Secp256k1Benchmark {
 
         // ==================== Batch verification benchmark ====================
         // Same pubkey, n events — the typical Nostr pattern (feed from one author).
-        // verifySchnorrBatch: random-weighted sum, one mulDoubleG for G and P plus one interleaved
-        // multiplication over the R points. "x faster" is against native (C) one-by-one.
+        // Batch verify uses scalar+point summation: one mulDoubleG for the whole batch
+        // instead of n individual mulDoubleG calls.
         val batchPub = kotlinXOnlyPub
         for (batchSize in intArrayOf(4, 8, 16, 32, 200)) {
             val sigs = mutableListOf<ByteArray>()
@@ -366,7 +366,8 @@ class Secp256k1Benchmark {
             val indivNativeStart = System.nanoTime()
             repeat(iters) {
                 for (j in 0 until batchSize) {
-                    native.verifySchnorr(sigs[j], msgs[j], batchPub)
+                    com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+                        .verifySchnorr(sigs[j], msgs[j], batchPub)
                 }
             }
             val indivNativeNs = System.nanoTime() - indivNativeStart

@@ -35,7 +35,6 @@ Micro-tuning the parser further buys little.
 
 | Change | Evidence |
 |---|---|
-| `Secp256k1.verifySchnorrBatch` uses BIP-340 weighted batch math | **Security.** The unweighted sum accepted `(r1, s1+d)` + `(r2, s2-d)`, each invalid alone (`batchRejectsCancellingInvalidSignatures` failed before). Each equation is now scaled by a 128-bit weight hashed from every input, so a bad batch passes with probability ~2⁻¹²⁸: `(Σaᵢsᵢ)·G − (Σaᵢeᵢ)·P − Σaᵢ·Rᵢ == O`, with one `mulDoubleG` for G and P and one interleaved wNAF-5 multiplication over the Rᵢ, whose odd-multiple tables share one inversion. **Measured (JVM, same pubkey):** against pure-Kotlin one-by-one, 0.9× at n=2, ~2.0× at 8, ~2.3× at 16, ~2.6–2.8× at 32–200; against native (C) one-by-one, 0.5× at 2, ~0.9× at 8–16, ~1.07–1.14× at 32–200. Nothing in production calls it; it pays only for 32+ events from one author. |
 | `CustomEmoji.assembleAnnotatedList`: one `indexOf` pass, unknown codes stay text | **Bug + 18×.** An unknown `:code:` re-added the preceding text and dropped itself (`10:30:00` → `10`,`10`,`00`); its closing colon can now open the next code (`:nope:soapbox:`). Cost on the corpus went from 3,750 to 207 ns/event, measured A/B against a copy of the old algorithm. |
 | Native `sha256Of`/`sha256Into` hash the writer buffer's prefix in place | Removes one content-sized `copyOf` per id hash and verify on iOS, macOS and Linux, via crypto-kmp's `sha256Into(out, data, length)`. |
 | `IngestQueue` and `ParallelEventVerifier` verify with workers that each pull the next index (`forEachIndexInParallel`) | Measured on 4 cores over real events, two runs. **Batch 256 (client default):** ~106–110k/s vs ~84–91k/s for the fixed chunks `ParallelEventVerifier` used, and ~86–96k/s for one `async` per event. **Batch 64 (`IngestQueue` default):** ~80–100k/s vs ~78–84k/s for per-event `async` (the old `IngestQueue`). An intermediate fixed-chunk version of `IngestQueue` on this branch measured 64–76k/s, a regression; the audit caught it before release. `IngestQueue` starts one worker per core rather than a fixed 8, so relays with more than 8 cores use all of them; `ParallelEventVerifier` keeps its `parallelism` setting (default 8). |
@@ -119,6 +118,7 @@ needs a benchmark in this repo before it lands.
 
 ### Crypto
 
+0. **Open: `Secp256k1.verifySchnorrBatch` (pure Kotlin) sums signatures without random weights.** `(r1, s1+d)` and `(r2, s2-d)` each fail alone but pass together, so a batch that returns true does not prove each signature valid. Nothing in production calls it. A weighted BIP-340 batch was tried on this branch and reverted: it was 2.4–3.4× slower than this unweighted one on the JVM (31.7 vs 9.5 µs/sig at n=200; 24.9 µs with 64-bit weights), against 39 µs for native one-by-one.
 1. Gift-wrap **receive** still inserts each one-shot ephemeral key into the 200-slot
    `SharedKeyCache`, which can evict real peers during a large DM sync and force a second ECDH
    for the seal. Fix: an admission policy (cache on the second sighting). The hit-rate effect is
