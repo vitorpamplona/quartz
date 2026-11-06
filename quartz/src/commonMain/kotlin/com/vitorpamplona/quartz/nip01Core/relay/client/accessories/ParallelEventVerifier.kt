@@ -23,15 +23,13 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.forEachIndexInParallel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.trySendBlocking
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.concurrent.Volatile
 
@@ -151,24 +149,10 @@ class ParallelEventVerifier<C>(
         if (batch.size == 1) {
             if (!results[0]) results[0] = batch[0].event.verify()
         } else {
-            // One worker per core-sized CHUNK, not per event: a per-event
-            // async measured ~40µs/event end-to-end (scheduling overhead
-            // swallowing the parallel gain) vs near-linear scaling with
-            // chunked workers — same pattern as the offline verify benchmark.
-            coroutineScope {
-                val workers = minOf(parallelism, batch.size)
-                val chunkSize = (batch.size + workers - 1) / workers
-                (0 until workers)
-                    .map { w ->
-                        async(Dispatchers.Default) {
-                            var i = w * chunkSize
-                            val end = minOf(i + chunkSize, batch.size)
-                            while (i < end) {
-                                if (!results[i]) results[i] = batch[i].event.verify()
-                                i++
-                            }
-                        }
-                    }.awaitAll()
+            // Up to [parallelism] workers, each taking the next event: fixed per-worker chunks
+            // left cores idle behind the slowest chunk (91k/s against 111k/s at batch 256).
+            forEachIndexInParallel(batch.size, parallelism) { i ->
+                if (!results[i]) results[i] = batch[i].event.verify()
             }
         }
 

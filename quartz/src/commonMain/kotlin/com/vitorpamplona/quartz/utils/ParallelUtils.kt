@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -33,6 +34,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.fetchAndIncrement
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 
@@ -62,6 +66,37 @@ suspend fun <T> launchAndWaitAll(
                 it.cancel("Timeout")
             }
         }
+    }
+}
+
+/**
+ * Runs [work] for every index in `0 until count` on up to [parallelism] [Dispatchers.Default]
+ * workers, each taking the next index from a shared counter until none are left.
+ *
+ * For CPU-bound items of uneven cost (signature checks over events of mixed size). One coroutine
+ * per item pays a launch per item; fixed chunks per worker leave cores idle behind the slowest
+ * chunk. Pulling from a counter does neither. Verifying real events on 4 cores, batch 256:
+ * ~106-110k/s, against ~84-91k/s with eight fixed chunks and ~86-96k/s with one async per event
+ * (batch 64: ~80-100k/s, ~64-76k/s and ~78-84k/s).
+ */
+@OptIn(ExperimentalAtomicApi::class)
+internal suspend fun forEachIndexInParallel(
+    count: Int,
+    parallelism: Int,
+    work: (index: Int) -> Unit,
+) {
+    if (count <= 0) return
+    val next = AtomicInt(0)
+    coroutineScope {
+        List(minOf(parallelism, count).coerceAtLeast(1)) {
+            async(Dispatchers.Default) {
+                while (true) {
+                    val i = next.fetchAndIncrement()
+                    if (i >= count) break
+                    work(i)
+                }
+            }
+        }.awaitAll()
     }
 }
 

@@ -25,3 +25,6 @@ expect fun platform(): String
 expect fun currentTimeSeconds(): Long
 
 expect fun currentTimeMillis(): Long
+
+/** Processors this process may run on: how many CPU-bound workers a parallel stage should start. */
+internal expect fun availableProcessors(): Int

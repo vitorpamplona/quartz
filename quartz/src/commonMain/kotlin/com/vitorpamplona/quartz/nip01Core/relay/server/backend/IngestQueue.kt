@@ -24,15 +24,14 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.RejectionReason
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.availableProcessors
+import com.vitorpamplona.quartz.utils.forEachIndexInParallel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
@@ -240,9 +239,9 @@ class IngestQueue(
 
     /**
      * Tier 3: per-row verify. Returns `null` when no [verify] hook is
-     * configured (skip the stage entirely). For multi-event batches
-     * each verify runs as its own `async(Default)` so they spread
-     * across CPU cores; single-event batches short-circuit to a
+     * configured (skip the stage entirely). Multi-event batches spread
+     * across one Default worker per core, each taking the next row
+     * ([forEachIndexInParallel]); single-event batches short-circuit to a
      * direct call to avoid coroutine-scope overhead. Rows flagged
      * [Submission.skipVerify] (trusted publishers) pass without
      * invoking the hook.
@@ -255,22 +254,8 @@ class IngestQueue(
         }
         val results = BooleanArray(batch.size) { batch[it].skipVerify }
         if (results.all { it }) return results
-        // One worker per core-sized chunk, not per event: a per-event async measured ~40µs/event
-        // of scheduling overhead, swallowing the parallel gain (ParallelEventVerifier, same fix).
-        coroutineScope {
-            val workers = minOf(VERIFY_PARALLELISM, batch.size)
-            val chunkSize = (batch.size + workers - 1) / workers
-            (0 until workers)
-                .map { w ->
-                    async(Dispatchers.Default) {
-                        var i = w * chunkSize
-                        val end = minOf(i + chunkSize, batch.size)
-                        while (i < end) {
-                            if (!results[i]) results[i] = hook(batch[i].event)
-                            i++
-                        }
-                    }
-                }.awaitAll()
+        forEachIndexInParallel(batch.size, availableProcessors()) { i ->
+            if (!results[i]) results[i] = hook(batch[i].event)
         }
         return results
     }
@@ -359,9 +344,6 @@ class IngestQueue(
     }
 
     companion object {
-        /** Verify workers per batch; Dispatchers.Default caps real parallelism at the core count. */
-        private const val VERIFY_PARALLELISM = 8
-
         /**
          * Default for a missing per-row outcome — only reachable on a
          * contract violation (the store returned fewer outcomes than
