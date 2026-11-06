@@ -540,6 +540,37 @@ old scan-then-parse:
 - `KiteUtf8Benchmark` re-orders all 31,161 corpus events into strfry and nostr-tools key order:
   every one reads the same through the miss path, and the hit path returns the known event.
 
+## 2e. nostrLibBench: the whole client path
+
+[nostrLibBench](https://github.com/vitorpamplona/nostrLibBench) times a client from its REQ to
+the EOSE of 31,161 events streamed by a local Rust relay. Each event is parsed, its id
+recomputed and its signature verified. The relay sends no permessage-deflate, keeps the corpus's
+id-first key order, and is never paced. The harness turns off dedup caches, so the default
+decoder runs and the id hook does not.
+
+Two rows were added to its JVM harness, `quartz-bytes-fetch` and `quartz-bytes-parallelverifier`:
+the same two Quartz configurations on `OkHttpBytesWebSocket`. The patch is a `QuartzClient(bytes
+= true)` flag plus two `Registry` entries. All four Quartz rows ran against this checkout
+(`QUARTZ_DIR`, commit 7b998a3) on Temurin JDK 27.0.1, `-Xmx2g -XX:+UseG1GC`, on the 4-core
+container. Three passes, each the harness's median of its timed runs, on the `all` workload:
+
+| Client | µs/event | CPU µs/event | Alloc B/event | Memory growth |
+|---|---|---|---|---|
+| `quartz-fetch` | 44.1–45.3 | 48.8–50.7 | 3,569–3,575 | 97–276 MB |
+| `quartz-bytes-fetch` | 42.2–44.9 | 50.0–50.4 | **1,606–1,866** | 192–281 MB |
+| `quartz-parallelverifier` | 16.6–17.3 | 52.0–56.2 | 3,490–3,522 | 259–264 MB |
+| `quartz-bytes-parallelverifier` | 16.6–16.8 | 52.3–54.1 | **1,558–1,777** | 197–237 MB |
+
+- **Correctness:** every row delivers exactly the 29,614 events and passes the three forged
+  workloads (content, id and sig forgeries).
+- **Allocation:** about half (−48% to −56%).
+- **Time and CPU:** the same within the harness's noise. Signature verification is about 37 µs
+  of each event's ~50 µs of CPU, so a parse saving well under 1 µs can't show. The harness reads
+  process CPU from `times()`, in 10 ms ticks, which is about 0.3 µs/event over this run.
+- **Memory growth:** peak RSS minus RSS after setup varies 2–3× between passes for the same
+  client (G1 sizes the heap as it likes under `-Xmx2g`). This harness can't tell the sockets
+  apart on it.
+
 ## Expected gain (estimate, not measured end to end)
 
 Per frame, against today's decode cost on the corpus mix, and before any change to Kite's own
