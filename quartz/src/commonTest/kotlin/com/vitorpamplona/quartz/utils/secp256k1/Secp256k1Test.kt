@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.utils.secp256k1
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.Secp256k1Instance
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -423,5 +424,43 @@ class Secp256k1Test {
         assertFalse(Secp256k1.verifySchnorr(forged1, msg1, pub))
         assertFalse(Secp256k1.verifySchnorr(forged2, msg2, pub))
         assertFalse(Secp256k1.verifySchnorrBatch(pub, listOf(forged1, forged2), listOf(msg1, msg2)))
+    }
+
+    /** Batches of every shape agree with one-by-one verification, and any single corruption fails them. */
+    @Test
+    fun batchAgreesWithIndividualVerification() {
+        val rnd = Random(42)
+        val seckey = "3982F19BEF1615BCCFBB05E321C10E1D4CBA3DF0E841C2E41EEB6016347653C3".hexToByteArray()
+        val pub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(seckey)).copyOfRange(1, 33)
+        for (size in intArrayOf(2, 3, 7, 16, 33)) {
+            val msgs = List(size) { rnd.nextBytes(32) }
+            val sigs = msgs.map { Secp256k1.signSchnorr(it, seckey, rnd.nextBytes(32)) }
+            assertTrue(Secp256k1.verifySchnorrBatch(pub, sigs, msgs), "valid batch of $size")
+            // The same signature twice is still a valid batch.
+            assertTrue(Secp256k1.verifySchnorrBatch(pub, sigs + sigs[0], msgs + msgs[0]), "repeated signature in $size")
+
+            repeat(6) { round ->
+                val at = rnd.nextInt(size)
+                val badSigs = sigs.toMutableList()
+                val badMsgs = msgs.toMutableList()
+                when (round % 3) {
+                    0 -> badSigs[at] = badSigs[at].copyOf().also { it[32 + rnd.nextInt(32)] = (it[32 + rnd.nextInt(32)].toInt() xor 0x10).toByte() }
+                    1 -> badMsgs[at] = badMsgs[at].copyOf().also { it[rnd.nextInt(32)] = (it[0].toInt() xor 0x01).toByte() }
+                    else -> badSigs[at] = sigs[(at + 1) % size].copyOfRange(0, 32) + badSigs[at].copyOfRange(32, 64)
+                }
+                val individually = badSigs.indices.all { Secp256k1.verifySchnorr(badSigs[it], badMsgs[it], pub) }
+                assertEquals(individually, Secp256k1.verifySchnorrBatch(pub, badSigs, badMsgs), "corruption $round at $at of $size")
+            }
+        }
+    }
+
+    @Test
+    fun batchRejectsAnotherKeysSignature() {
+        val seckey = "3982F19BEF1615BCCFBB05E321C10E1D4CBA3DF0E841C2E41EEB6016347653C3".hexToByteArray()
+        val other = "67E56582298859DDAE725F972992A07C6C4FB9F62A8FFF58CE3CA926A1063530".hexToByteArray()
+        val pub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(seckey)).copyOfRange(1, 33)
+        val msgs = List(4) { i -> ByteArray(32) { (it * 3 + i).toByte() } }
+        val sigs = msgs.mapIndexed { i, m -> Secp256k1.signSchnorr(m, if (i == 2) other else seckey, null) }
+        assertFalse(Secp256k1.verifySchnorrBatch(pub, sigs, msgs))
     }
 }

@@ -636,17 +636,24 @@ object Secp256k1 {
     // ==================== Same-Pubkey Batch Verification ====================
 
     /**
-     * Verifies several BIP-340 Schnorr signatures from the SAME public key. Returns true if ALL
-     * of them are valid.
+     * Batch-verifies BIP-340 Schnorr signatures from the SAME public key [pub]: true only if
+     * every signature is valid.
      *
-     * Each signature is checked on its own; the pubkey's lift is cached after the first one, so
-     * the rest skip that square root.
+     * Each valid signature satisfies `sᵢ·G = Rᵢ + eᵢ·P`. A plain sum of those equations is NOT a
+     * verifier: `(r₁, s₁+δ)` and `(r₂, s₂−δ)` each fail but their sum holds. So each equation is
+     * scaled by an independent 128-bit weight aᵢ (a₀ = 1), as BIP-340's batch verification does:
      *
-     * An unweighted sum check (`(Σsᵢ)·G == ΣRᵢ + (Σeᵢ)·P`), which this used to do, is NOT a valid
-     * batch verifier: `(r₁, s₁+δ)` and `(r₂, s₂−δ)` each fail but their sum passes, and since
-     * the signer picks the messages, cancelling challenges is a k-sum search. A sound batch
-     * weights each equation by an independent random scalar (BIP-340 "Batch Verification") and
-     * needs a multi-scalar multiplication for `Σaᵢ·Rᵢ` to be any faster than one-by-one.
+     *   (Σ aᵢ·sᵢ)·G − (Σ aᵢ·eᵢ)·P − Σ aᵢ·Rᵢ == O
+     *
+     * A batch with any invalid signature passes with probability about 2⁻¹²⁸. The weights come
+     * from SHA-256 over every input of the batch, so a signer cannot know them before choosing its
+     * signatures and changing any input changes all of them.
+     *
+     * Cost: the G and P terms collapse to one [ECPoint.mulDoubleG] for the whole batch (one
+     * pubkey), and Σ aᵢ·Rᵢ is one interleaved (Strauss) wNAF-5 multiplication over 128-bit
+     * weights with shared doublings. Per signature that leaves the lift of Rᵢ, its odd-multiples
+     * table and ~22 mixed additions, against a full double-scalar multiplication plus an
+     * inversion for [verifySchnorr]. A false result does not say which signature failed.
      *
      * @param pub 32-byte x-only public key (same for all events)
      * @param signatures list of 64-byte signatures (R.x || s)
@@ -660,9 +667,167 @@ object Secp256k1 {
     ): Boolean {
         val n = signatures.size
         require(n == messages.size) { "signatures and messages must have same size" }
+        if (n == 0) return true
+        if (n == 1) return verifySchnorr(signatures[0], messages[0], pub)
+        if (pub.size != 32) return false
+        for (i in 0 until n) if (signatures[i].size != 64) return false
+
+        val sc = ECPoint.getScratch()
+        val px = Fe4()
+        val py = Fe4()
+        if (!liftXCached(px, py, pub)) return false
+
+        val weights = batchWeights(pub, signatures, messages)
+        val wide = Wide8()
+        val sSum = Fe4() // Σ aᵢ·sᵢ mod n
+        val eSum = Fe4() // Σ aᵢ·eᵢ mod n
+        val term = Fe4()
+        val r = Fe4()
+        val sv = Fe4()
+        val e = Fe4()
+        val liftTmp = Fe4()
+        val wnafs = arrayOfNulls<IntArray>(n)
+        // Every Rᵢ's odd multiples, converted to affine together below: one inversion per batch.
+        val jac = Array(n * BATCH_TABLE_SIZE) { MutablePoint() }
+        val r2 = MutablePoint()
+        val rPoint = MutablePoint()
+        val rx = Fe4()
+        val ry = Fe4()
+
         for (i in 0 until n) {
-            if (!verifySchnorr(signatures[i], messages[i], pub)) return false
+            val sig = signatures[i]
+            val msg = messages[i]
+            U256.fromBytesInto(r, sig, 0)
+            if (U256.cmp(r, FieldP.P) >= 0) return false
+            U256.fromBytesInto(sv, sig, 32)
+            if (U256.cmp(sv, ScalarN.N) >= 0) return false
+
+            // eᵢ = H_challenge(rᵢ || P || mᵢ) mod n
+            val hashLen = 64 + 32 + 32 + msg.size
+            val hashInput = if (hashLen <= sc.hashBuf.size) sc.hashBuf else ByteArray(hashLen)
+            CHALLENGE_PREFIX.copyInto(hashInput, 0, 0, 64)
+            sig.copyInto(hashInput, 64, 0, 32)
+            pub.copyInto(hashInput, 96, 0, 32)
+            msg.copyInto(hashInput, 128, 0, msg.size)
+            sha256Into(sc.bytesTmp1, hashInput, hashLen)
+            U256.fromBytesInto(e, sc.bytesTmp1, 0)
+            ScalarN.reduceTo(e, e)
+
+            val a = weights[i]
+            ScalarN.mulTo(term, a, sv, wide)
+            ScalarN.addTo(sSum, sSum, term)
+            ScalarN.mulTo(term, a, e, wide)
+            ScalarN.addTo(eSum, eSum, term)
+
+            // Rᵢ = lift_x(rᵢ) (even y); its odd multiples [1,3,…,15]·Rᵢ for the wNAF digits.
+            if (!KeyCodec.liftX(rx, ry, r, liftTmp)) return false
+            rPoint.setAffine(rx, ry)
+            ECPoint.doublePoint(r2, rPoint, sc)
+            val base = i * BATCH_TABLE_SIZE
+            jac[base].copyFrom(rPoint)
+            for (k in 1 until BATCH_TABLE_SIZE) ECPoint.addPoints(jac[base + k], jac[base + k - 1], r2, sc)
+            wnafs[i] = Glv.wnaf(a, BATCH_WINDOW, BATCH_WEIGHT_BITS)
         }
-        return true
+        val tables = ECPoint.batchToAffine(jac)
+
+        // M = Σ aᵢ·Rᵢ: one pass of shared doublings, a mixed addition per non-zero digit.
+        var acc = MutablePoint()
+        var alt = MutablePoint()
+        acc.setInfinity()
+        val negY = Fe4()
+        for (bit in BATCH_WEIGHT_BITS + BATCH_WINDOW - 1 downTo 0) {
+            if (!acc.isInfinity()) {
+                ECPoint.doublePoint(alt, acc, sc)
+                val t = acc
+                acc = alt
+                alt = t
+            }
+            for (i in 0 until n) {
+                val digit = wnafs[i]!![bit]
+                if (digit == 0) continue
+                val entry = tables[i * BATCH_TABLE_SIZE + ((if (digit > 0) digit else -digit) shr 1)]
+                val y =
+                    if (digit > 0) {
+                        entry.y
+                    } else {
+                        FieldP.neg(negY, entry.y)
+                        negY
+                    }
+                ECPoint.addMixed(alt, acc, entry.x, y, sc)
+                val t = acc
+                acc = alt
+                alt = t
+            }
+        }
+
+        // Q = (Σ aᵢ·sᵢ)·G − (Σ aᵢ·eᵢ)·P, then Q − M must be the point at infinity.
+        ScalarN.negTo(eSum, eSum)
+        val pPoint = MutablePoint()
+        pPoint.setAffine(px, py)
+        val q = MutablePoint()
+        ECPoint.mulDoubleG(q, sSum, pPoint, eSum, sc)
+        if (acc.isInfinity()) return q.isInfinity()
+        FieldP.neg(acc.y, acc.y)
+        val result = MutablePoint()
+        ECPoint.addPoints(result, q, acc, sc)
+        return result.isInfinity()
     }
+
+    /**
+     * The batch weights: a₀ = 1 and, for i ≥ 1, 128 bits of SHA-256(seed || i), where the seed is
+     * SHA-256 over the tag, the pubkey and every signature and message (each length-prefixed).
+     */
+    private fun batchWeights(
+        pub: ByteArray,
+        signatures: List<ByteArray>,
+        messages: List<ByteArray>,
+    ): Array<Fe4> {
+        val n = signatures.size
+        var seedLen = BATCH_SEED_TAG.size + 32
+        for (i in 0 until n) seedLen += 64 + 4 + messages[i].size
+        val seedInput = ByteArray(seedLen)
+        var at = 0
+        BATCH_SEED_TAG.copyInto(seedInput, at)
+        at += BATCH_SEED_TAG.size
+        pub.copyInto(seedInput, at)
+        at += 32
+        for (i in 0 until n) {
+            signatures[i].copyInto(seedInput, at)
+            at += 64
+            val len = messages[i].size
+            seedInput[at] = (len ushr 24).toByte()
+            seedInput[at + 1] = (len ushr 16).toByte()
+            seedInput[at + 2] = (len ushr 8).toByte()
+            seedInput[at + 3] = len.toByte()
+            at += 4
+            messages[i].copyInto(seedInput, at)
+            at += len
+        }
+        val block = ByteArray(36)
+        sha256(seedInput).copyInto(block, 0)
+        val digest = ByteArray(32)
+        val weightBytes = ByteArray(32)
+        return Array(n) { i ->
+            if (i == 0) {
+                Fe4(1L, 0L, 0L, 0L)
+            } else {
+                block[32] = (i ushr 24).toByte()
+                block[33] = (i ushr 16).toByte()
+                block[34] = (i ushr 8).toByte()
+                block[35] = i.toByte()
+                sha256Into(digest, block, 36)
+                // The low 16 bytes of a big-endian 256-bit value: a 128-bit weight.
+                weightBytes.fill(0)
+                digest.copyInto(weightBytes, 16, 0, 16)
+                val a = U256.fromBytes(weightBytes)
+                if (a.isZero()) a.l0 = 1L
+                a
+            }
+        }
+    }
+
+    private const val BATCH_WINDOW = 5
+    private const val BATCH_TABLE_SIZE = 1 shl (BATCH_WINDOW - 2) // [1,3,…,15]·R
+    private const val BATCH_WEIGHT_BITS = 128
+    private val BATCH_SEED_TAG = "quartz/schnorr-batch/v1".encodeToByteArray()
 }
