@@ -78,6 +78,19 @@ internal class KiteReader {
     internal var i = 0
 
     /**
+     * The input's UTF-8 bytes, when [s] is their Latin-1 view (see [parseUtf8]), else null. That
+     * view has one char per byte, so an offset in [s] is the same offset in these bytes from
+     * [utf8Base]. Every token the grammar reads (brackets, quotes, backslashes, digits, keys,
+     * literals) is ASCII and so the same in both; only string values differ, and those are
+     * decoded from the bytes ([slice], [readEscapedUtf8]).
+     */
+    private var utf8: ByteArray? = null
+    private var utf8Base = 0
+
+    /** Scratch for an escaped value's unescaped UTF-8 bytes, in [utf8] mode. */
+    private var bb: ByteArray? = null
+
+    /**
      * Position of the next backslash at or after the cursor, or [n] when there is none. -1 until
      * the first string asks, so a frame that is not an EVENT is never scanned.
      */
@@ -121,6 +134,37 @@ internal class KiteReader {
             if ((tagScratch?.size ?: 0) > MAX_KEPT_TAGS) tagScratch = null
             if ((cb?.size ?: 0) > MAX_KEPT_CHARS) cb = null
         }
+    }
+
+    /**
+     * [parse] over UTF-8 bytes without decoding them first: the grammar runs on their Latin-1
+     * view, a byte-for-char copy that keeps `String.indexOf`'s intrinsic, and each string value
+     * is decoded from the bytes on its own. Decoding the frame as UTF-8 instead costs a pass over
+     * it and, when a single byte is not ASCII, a UTF-16 string twice its size plus scratch.
+     */
+    private inline fun <T> parseUtf8(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+        read: () -> T,
+    ): T {
+        utf8 = bytes
+        utf8Base = offset
+        try {
+            return parse(latin1String(bytes, offset, length), read)
+        } finally {
+            utf8 = null
+            if ((bb?.size ?: 0) > MAX_KEPT_CHARS) bb = null
+        }
+    }
+
+    /** The string value spanning [start] to [end] of the input. */
+    private fun slice(
+        start: Int,
+        end: Int,
+    ): String {
+        val bytes = utf8 ?: return s.substring(start, end)
+        return bytes.decodeToString(utf8Base + start, utf8Base + end)
     }
 
     internal fun fail(msg: String): Nothing = throw IllegalArgumentException("$msg at offset $i")
@@ -446,8 +490,9 @@ internal class KiteReader {
         val esc0 = escapeAtOrAfter(start)
         if (q < esc0) {
             i = q + 1
-            return s.substring(start, q)
+            return slice(start, q)
         }
+        if (utf8 != null) return readEscapedUtf8(start, q, esc0)
         return readEscapedBody(start, q, esc0)
     }
 
@@ -489,6 +534,97 @@ internal class KiteReader {
         // Don't let one huge value pin its buffer to the thread.
         if (buf.size > MAX_KEPT_CHARS) cb = null
         return value
+    }
+
+    /**
+     * [readEscapedBody] in [utf8] mode: the raw runs are copied as bytes and each escape written as
+     * UTF-8 into [bb], then the value is decoded once. An escaped surrogate pair becomes its 4-byte
+     * sequence; a lone escaped surrogate, which UTF-8 cannot hold, goes to [readEscapedUtf8Chars].
+     */
+    private fun readEscapedUtf8(
+        start: Int,
+        q: Int,
+        esc0: Int,
+    ): String {
+        val src = utf8!!
+        val base = utf8Base
+        var buf = bb ?: ByteArray(256).also { bb = it }
+        var len = 0
+        var quote = q
+        var esc = esc0
+        var from = start
+        while (esc < quote) {
+            buf = roomBytes(buf, len + (esc - from) + 4)
+            src.copyInto(buf, len, base + from, base + esc)
+            len += esc - from
+            i = esc
+            val c = readEscape().code
+            when {
+                c < 0x80 -> buf[len++] = c.toByte()
+                c < 0x800 -> {
+                    buf[len++] = (0xC0 or (c shr 6)).toByte()
+                    buf[len++] = (0x80 or (c and 0x3F)).toByte()
+                }
+                c in 0xD800..0xDBFF && i + 1 < n && s[i] == '\\' && s[i + 1] == 'u' -> {
+                    val low = readEscape().code
+                    if (low !in 0xDC00..0xDFFF) return readEscapedUtf8Chars(start)
+                    val cp = 0x10000 + ((c - 0xD800) shl 10) + (low - 0xDC00)
+                    buf[len++] = (0xF0 or (cp shr 18)).toByte()
+                    buf[len++] = (0x80 or ((cp shr 12) and 0x3F)).toByte()
+                    buf[len++] = (0x80 or ((cp shr 6) and 0x3F)).toByte()
+                    buf[len++] = (0x80 or (cp and 0x3F)).toByte()
+                }
+                c in 0xD800..0xDFFF -> return readEscapedUtf8Chars(start)
+                else -> {
+                    buf[len++] = (0xE0 or (c shr 12)).toByte()
+                    buf[len++] = (0x80 or ((c shr 6) and 0x3F)).toByte()
+                    buf[len++] = (0x80 or (c and 0x3F)).toByte()
+                }
+            }
+            from = i
+            if (quote < i) quote = quoteAfter(i).also { if (it < 0) fail("unexpected end of input in a string") }
+            esc = s.indexOf('\\', i).let { if (it < 0) n else it }
+        }
+        buf = roomBytes(buf, len + (quote - from))
+        src.copyInto(buf, len, base + from, base + quote)
+        len += quote - from
+        i = quote + 1
+        nextEscape = esc
+        return buf.decodeToString(0, len)
+    }
+
+    /**
+     * An escaped value holding a lone escaped surrogate, in [utf8] mode, read char by char as
+     * [readEscapedBody] would build it: the raw runs decoded from the bytes, the escapes as chars.
+     */
+    private fun readEscapedUtf8Chars(start: Int): String {
+        val src = utf8!!
+        val sb = StringBuilder()
+        i = start
+        var from = start
+        while (true) {
+            if (i >= n) fail("unexpected end of input in a string")
+            val c = s[i]
+            if (c == '"' || c == '\\') {
+                sb.append(src.decodeToString(utf8Base + from, utf8Base + i))
+                if (c == '"') break
+                sb.append(readEscape())
+                from = i
+            } else {
+                i++
+            }
+        }
+        i++
+        nextEscape = -1
+        return sb.toString()
+    }
+
+    private fun roomBytes(
+        buf: ByteArray,
+        needed: Int,
+    ): ByteArray {
+        if (needed <= buf.size) return buf
+        return buf.copyOf(maxOf(needed, buf.size * 2)).also { bb = it }
     }
 
     /** [buf] if it holds [needed] chars, else a copy at least twice as big, kept as [cb]. */
@@ -923,6 +1059,33 @@ internal class KiteReader {
         /** One relay-to-client frame; throws [IllegalArgumentException] on malformed or unsupported frames. */
         fun readMessage(json: String): Message = acquire().run { parse(json) { readMessageFrame() } }
 
+        /**
+         * [readMessage] of the frame in [bytes] (UTF-8, [length] bytes from [offset]), without
+         * building the frame's string. The bytes are only read during the call.
+         */
+        fun readMessageUtf8(
+            bytes: ByteArray,
+            offset: Int = 0,
+            length: Int = bytes.size - offset,
+        ): Message =
+            if (LATIN1_VIEW) {
+                acquire().run { parseUtf8(bytes, offset, length) { readMessageFrame() } }
+            } else {
+                readMessage(bytes.decodeToString(offset, offset + length))
+            }
+
+        /** [readEvent] of UTF-8 bytes, like [readMessageUtf8]. */
+        fun readEventUtf8(
+            bytes: ByteArray,
+            offset: Int = 0,
+            length: Int = bytes.size - offset,
+        ): Event =
+            if (LATIN1_VIEW) {
+                acquire().run { parseUtf8(bytes, offset, length) { readEventObject(1) } }
+            } else {
+                readEvent(bytes.decodeToString(offset, offset + length))
+            }
+
         /** One client-to-relay frame; throws [IllegalArgumentException] on malformed or unsupported frames. */
         fun readCommand(json: String): Command = acquire().run { parse(json) { readCommandFrame() } }
 
@@ -962,6 +1125,23 @@ internal class KiteReader {
             }
     }
 }
+
+/**
+ * [length] bytes of [bytes] from [offset] as a string of one char per byte (Latin-1). Only called
+ * where [LATIN1_VIEW] is true.
+ */
+internal expect fun latin1String(
+    bytes: ByteArray,
+    offset: Int,
+    length: Int,
+): String
+
+/**
+ * Whether [KiteReader] reads UTF-8 through a Latin-1 view of the bytes: true where that view is
+ * a plain copy into a one-byte-per-char string with an intrinsic `indexOf` (the JVM's compact
+ * strings). Elsewhere the bytes are decoded first, as before.
+ */
+internal expect val LATIN1_VIEW: Boolean
 
 /** This thread's reusable reader, or null where readers are not kept per thread (native). */
 internal expect fun threadKiteReader(): KiteReader?

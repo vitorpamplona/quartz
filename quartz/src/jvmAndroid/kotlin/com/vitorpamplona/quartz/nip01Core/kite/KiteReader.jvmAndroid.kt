@@ -24,3 +24,12 @@ private val threadReader = ThreadLocal.withInitial { KiteReader() }
 
 // Android's SDK annotates ThreadLocal.get() as nullable; withInitial never yields null.
 internal actual fun threadKiteReader(): KiteReader? = threadReader.get()
+
+// A compact Latin-1 string: one copy of the bytes, and String.indexOf stays an intrinsic on it.
+internal actual fun latin1String(
+    bytes: ByteArray,
+    offset: Int,
+    length: Int,
+): String = String(bytes, offset, length, Charsets.ISO_8859_1)
+
+internal actual val LATIN1_VIEW: Boolean = true

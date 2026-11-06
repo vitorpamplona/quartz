@@ -1,8 +1,10 @@
 # Byte frames: Kite on UTF-8 bytes, OkHttp without the String, and an id short-circuit
 
 **Date:** 2026-11-06
-**Status:** investigation. Nothing shipped; the measurements and the OkHttp probe below are
-reproducible, and the plan at the end is staged so each step can be benchmarked before the next.
+**Status:** investigation. Option A below (the Latin-1 view) is in as an internal reader entry
+point, `KiteReader.readMessageUtf8`, which nothing calls yet. The rest is a plan. The
+measurements and the OkHttp probe are reproducible, and the plan at the end is staged so each
+step can be benchmarked before the next.
 
 ## The questions
 
@@ -150,10 +152,52 @@ a space after the colon (`"id": "…"`), which `CachingEventDecoder.scanEventFra
 
 | Option | Keeps intrinsic | Frame-size allocation | Diff size | Verdict |
 |---|---|---|---|---|
-| A. Latin-1 shadow: `String(bytes, ISO_8859_1)` (a memcpy), walk it with today's Kite, build each value with `String(bytes, s, e - s, UTF_8)` from the original bytes | yes | yes, 1× the UTF-8 size (not 4.25×) | small | Good interim step: removes the UTF-8 decode and the UTF-16 blow-up, but not the per-frame garbage, and a duplicate still pays the copy. |
+| A. Latin-1 shadow: `String(bytes, ISO_8859_1)` (a memcpy), walk it with today's Kite, build each value with `String(bytes, s, e - s, UTF_8)` from the original bytes | yes | yes, 1× the UTF-8 size (not 4.25×) | small | **Prototyped, below.** Removes the UTF-8 decode and the UTF-16 blow-up (−39% alloc, −33% CPU on non-ASCII frames), but not the per-frame copy, and a duplicate still pays the copy. |
 | B. Byte reader with a per-platform `nextQuote` (SWAR / loop / `memchr`) | no on HotSpot, yes on native | none (reused scratch) | large | **The target.** |
 | C. Vector API | yes | none | medium | Not for a library (incubator, JVM-only, needs a runtime flag). |
 | D. Abstract the input behind an interface, one grammar | – | – | medium | A virtual call on every char. HotSpot inlines a bimorphic site, but Kotlin/Native doesn't inline it, and a performance regression on native is not acceptable. |
+
+### Option A, prototyped and measured
+
+`KiteReader.readMessageUtf8(bytes, offset, length)` and `readEventUtf8` (internal) parse UTF-8
+bytes through a Latin-1 view:
+
+- **The view:** `String(bytes, ISO_8859_1)` is a byte-for-char copy into a compact string, so
+  `String.indexOf` keeps its intrinsic.
+- **What changes in the reader:** every token it reads is ASCII and the same in the view. Only
+  two places build string values, and they now take the bytes:
+  - `slice`: `decodeToString` of the value's byte range;
+  - `readEscapedUtf8`: raw runs are copied as bytes and escapes written as UTF-8, with an
+    escaped surrogate pair becoming its 4-byte sequence; then one decode.
+  - A lone escaped surrogate, which UTF-8 can't hold, falls back to a char-by-char path that
+    keeps it lone, as the `String` reader does.
+- **Native** decodes first, as before (`LATIN1_VIEW = false`). Its strings are UTF-16, so a view
+  would only double the bytes.
+- **Parity:**
+  - `KiteReaderUtf8Test` checks it against decode-then-`readMessage`: non-ASCII, escapes next
+    to non-ASCII, pairs, lone surrogates, escaped keys, malformed UTF-8 inside and outside
+    strings, malformed JSON, offsets.
+  - `KiteUtf8Benchmark` checks **all 31,161 events of nostrJsonBench's startup corpus**. Every
+    one reads the same both ways.
+
+Results, frame bytes → `Message` with both paths timed from the bytes (median of 9 passes, two
+rounds; `KiteUtf8Benchmark`, corpus `nostr-2024-startup.ndjson.gz`, 883 B mean, JDK 21):
+
+| Frames | Today: decode + `readMessage` | Latin-1 view | Change |
+|---|---|---|---|
+| all 31,161 | 1,127–1,205 ns, 2,618 B | 1,020–1,051 ns, 2,426 B | −9–13% CPU, −7% alloc |
+| ASCII only (28,927) | 833–862 ns, 2,199 B | 767–942 ns, 2,232 B | same, within noise |
+| non-ASCII (2,234) | 2,724–3,159 ns, 8,041 B | 1,829–2,094 ns, 4,938 B | **−33% CPU, −39% alloc** |
+| ≥ 4 KiB (196) | 7,767–8,864 ns, 27,889 B | 6,522–7,447 ns, 23,249 B | −16% CPU, −17% alloc |
+
+For reference, the parse alone, from a prebuilt `String` (what nostrJsonBench times), is 856–962
+ns and 1,393 B. So about half of today's allocation per frame is the frame `String`.
+
+**Why ASCII frames don't gain:** on an ASCII frame, the JDK's UTF-8 decode is already a
+vectorized "any negative byte?" check plus a copy (903 B). The Latin-1 view is the same copy. The
+view only wins where the decode leaves its fast path, which on this corpus is 7% of frames and on
+the live relays above is 15–40%. The remaining ~900 B of frame copy on ASCII frames can only go
+with option B (no view at all) or with the id hook (no parse at all).
 
 ### Shape of B
 
@@ -357,23 +401,28 @@ on Android's GC.
    `id` first and hides the strfry case.
 2. **Quick win, no API change:** let `CachingEventDecoder.scanEventFrame` accept whitespace
    around `:`. Today it misses relay.snort.social's spaced frames.
-3. **Byte reader for the hot frames (option B),** behind an internal API, with the pinned suites
+3. **Done: the Latin-1 view (option A)** as `KiteReader.readMessageUtf8`, internal and
+   unused until a socket hands over bytes.
+4. **Byte reader for the hot frames (option B),** behind an internal API, with the pinned suites
    run against both readers, and `nextQuote` as expect/actual (SWAR on JVM, loop or SWAR on
    Android by API level, `memchr` on native). Gate: ASCII unique frames no slower than decode +
    String parse; non-ASCII frames faster.
-4. **Deferred fields + `KnownEventLookup`,** wired into `CachingEventDecoder`, keeping every
+5. **Deferred fields + `KnownEventLookup`,** wired into `CachingEventDecoder`, keeping every
    forgery rule. Gate: duplicate frames allocate under 200 B; `CachingEventDecoder` tests
    unchanged.
-5. **`OkHttpRawWebSocket`** on `Response.socket`, next to `BasicOkHttpWebSocket`, opt-in. It
+6. **`OkHttpRawWebSocket`** on `Response.socket`, next to `BasicOkHttpWebSocket`, opt-in. It
    needs tests for fragmentation, control frames between fragments, deflate (with and without
    context takeover), close handshake, ping timeout and oversized frames. Gate: amy against a
    few hundred real relays, same events delivered as `BasicOkHttpWebSocket`.
-6. **The listener API** (`FrameDecodingListener`, the new `onIncomingMessage` overload,
+7. **The listener API** (`FrameDecodingListener`, the new `onIncomingMessage` overload,
    deprecations), the `quartz/CLIENT.md` and agent-skill updates, then Amethyst moves over.
-7. **Upstream:** open the OkHttp issue for public framing API.
+8. **Upstream:** open the OkHttp issue for public framing API.
 
 ## Open questions
 
+- ART: compact strings there hold only ASCII, so a Latin-1 view of a frame with any high byte
+  is UTF-16 (2× the bytes). Does option A still beat the decode there, and does option B beat
+  both? `LATIN1_VIEW` is shared by JVM and Android today; measure before Android calls it.
 - ART: is `String.indexOf` vectorized? How fast are byte loops and VarHandle loads on a mid-range
   arm64 device?
 - What share of Amethyst's real traffic is non-ASCII, and what wire order does it see? It

@@ -27,3 +27,13 @@ import kotlin.native.concurrent.ThreadLocal
 private val threadReader = KiteReader()
 
 internal actual fun threadKiteReader(): KiteReader? = threadReader
+
+// Kotlin/Native strings are UTF-16 and its indexOf has no intrinsic, so a Latin-1 view would
+// only double the bytes: native decodes the frame instead (LATIN1_VIEW is false).
+internal actual fun latin1String(
+    bytes: ByteArray,
+    offset: Int,
+    length: Int,
+): String = CharArray(length) { (bytes[offset + it].toInt() and 0xFF).toChar() }.concatToString()
+
+internal actual val LATIN1_VIEW: Boolean = false
