@@ -103,8 +103,12 @@ class ScriptedRelay(
         fun text(message: String) = frame(1, message.encodeToByteArray())
 
         /** Bytes as they are, for frames [frame] won't write (a truncated one). */
-        fun raw(bytes: ByteArray) {
-            output.write(bytes)
+        fun raw(
+            bytes: ByteArray,
+            offset: Int = 0,
+            length: Int = bytes.size - offset,
+        ) {
+            output.write(bytes, offset, length)
             output.flush()
         }
 
@@ -160,7 +164,8 @@ class ScriptedRelay(
         }
     }
 
-    private val thread =
+    /** The thread running [script], e.g. to leave its CPU and allocation out of a measurement. */
+    val serverThread =
         thread(isDaemon = true, name = "scripted-relay") {
             try {
                 val s = server.accept()
@@ -219,6 +224,6 @@ class ScriptedRelay(
     override fun close() {
         runCatching { socket?.close() }
         runCatching { server.close() }
-        thread.join(2_000)
+        serverThread.join(2_000)
     }
 }

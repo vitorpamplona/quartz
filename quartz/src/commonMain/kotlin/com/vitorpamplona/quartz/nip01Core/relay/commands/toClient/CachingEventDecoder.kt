@@ -269,8 +269,10 @@ class CachingEventDecoder(
 
     /**
      * [decodeFrom] of a frame's UTF-8 bytes ([length] of them from [offset], read only during the
-     * call), for sockets that hand over bytes: a duplicate is found by scanning the bytes for its
-     * id, so it costs no text at all, and a new frame is read with [MessageDecoder.decodeUtf8].
+     * call), for sockets that hand over bytes. Kite's reader asks [FrameLookup] for the event the
+     * moment it reads the id, so a duplicate builds nothing past it and a new frame is read in
+     * one pass. A decoder with another [fullParser] decodes the frame to text and takes
+     * [decodeFrom].
      */
     internal fun decodeFromUtf8(
         bytes: ByteArray,
@@ -278,46 +280,52 @@ class CachingEventDecoder(
         length: Int,
         relay: NormalizedRelayUrl?,
     ): Message? {
-        // Kite's own reader asks for the id while it parses: one pass, hit or miss.
-        if (fullParser === MessageDecoder.Default) {
-            val frame = FrameLookup()
-            val msg = KiteReader.readMessageUtf8(bytes, offset, length, frame)
-            if (frame.hit) {
-                reused.incrementAndFetch()
-                return msg
-            }
-            return afterFullParse(msg, relay)
+        if (fullParser !== MessageDecoder.Default) return decodeFrom(bytes.decodeToString(offset, offset + length), relay)
+        val frame = FrameLookup(bytes, offset, length)
+        val msg = KiteReader.readMessageUtf8(bytes, offset, length, frame)
+        if (frame.dropped) {
+            skipped.incrementAndFetch()
+            return null
         }
-        val scanned = scanEventFrameUtf8(bytes, offset, offset + length)
-        if (scanned != null) {
-            if (anyScrutinizedId) {
-                val scrutiny = activeScrutiny(scanned.eventId)
-                // Rare: the scrutiny path works on the text.
-                if (scrutiny != null) return decodeScrutinized(bytes.decodeToString(offset, offset + length), relay, scanned.eventId, scrutiny)
-            }
-            val cached = lookupOrKnown(scanned.eventId)
-            if (cached != null) {
-                reused.incrementAndFetch()
-                return EventMessage(scanned.subId, cached)
-            }
+        if (frame.hit) {
+            reused.incrementAndFetch()
+            return msg
         }
-        return afterFullParse(fullParser.decodeUtf8(bytes, offset, length), relay)
+        return afterFullParse(msg, relay)
     }
 
     /**
-     * What the reader asks at a frame's id, one per frame: this cache, then [knownEvents]. An
-     * id under scrutiny gets no answer, so its copy is parsed and checked ([afterFullParse]).
+     * What the reader asks at a frame's id, once per frame: this cache, then [knownEvents].
+     *
+     * An id under scrutiny gets no answer, so its copy is parsed and checked ([afterFullParse]),
+     * except a copy [decodeScrutinized] would skip unparsed: past [MAX_FORGED_COPIES], or carrying
+     * a signature already proven bad (scanned from the bytes). That one is answered [DROPPED], so
+     * a relay flooding forged copies costs a scan, not a parse.
      */
-    private inner class FrameLookup : KnownEventLookup {
+    private inner class FrameLookup(
+        private val bytes: ByteArray,
+        private val offset: Int,
+        private val length: Int,
+    ) : KnownEventLookup {
         var hit = false
+        var dropped = false
 
         override fun find(id: HexKey): Event? {
-            if (anyScrutinizedId && activeScrutiny(id) != null) return null
+            if (anyScrutinizedId) {
+                val scrutiny = activeScrutiny(id)
+                if (scrutiny != null) {
+                    if (scrutiny.badCopies >= MAX_FORGED_COPIES || scanSigUtf8(bytes, offset, offset + length)?.let { it in scrutiny.badSigs } == true) {
+                        dropped = true
+                        return DROPPED
+                    }
+                    return null
+                }
+            }
             return lookupOrKnown(id)?.also { hit = true }
         }
     }
 
-    /** [lookup], then [knownEvents]; a revoked id (reported forged) is not asked further. */
+    /** This cache, then [knownEvents]; a revoked id (reported forged) is not asked further. */
     private fun lookupOrKnown(id: HexKey): Event? {
         val entry = live.get(id) ?: previous.get(id)
         if (entry != null) return entry.event
@@ -387,11 +395,6 @@ class CachingEventDecoder(
         chargesNow.remove(relay)
         chargesBefore.remove(relay)
         suspects.remove(relay)
-    }
-
-    private fun lookup(id: HexKey): Event? {
-        val entry = live.get(id) ?: previous.get(id) ?: return null
-        return entry.event
     }
 
     private fun remember(
@@ -605,37 +608,19 @@ class CachingEventDecoder(
         return ScannedEvent(subId, text.substring(idStart, idEnd))
     }
 
-    /**
-     * [scanEventFrame] over UTF-8 bytes from [from] to [to]: the same prefix, subId and id rules,
-     * byte for byte, so a frame is a hit here exactly when its text would be one there.
-     */
-    private fun scanEventFrameUtf8(
+    /** [scanSig] over UTF-8 bytes from [from] to [to]: the first `"sig":"` and 128 lowercase hex chars. */
+    private fun scanSigUtf8(
         b: ByteArray,
         from: Int,
         to: Int,
-    ): ScannedEvent? {
-        if (to - from < EVENT_PREFIX_BYTES.size) return null
-        for (k in EVENT_PREFIX_BYTES.indices) if (b[from + k] != EVENT_PREFIX_BYTES[k]) return null
-
-        var i = from + EVENT_PREFIX_BYTES.size
-        val subStart = i
-        while (i < to) {
-            val c = b[i]
-            if (c == BACKSLASH) return null
-            if (c == QUOTE) break
-            i++
-        }
-        if (i >= to) return null
-        val subId = b.decodeToString(subStart, i)
-
-        // The first `"id":"`: hop quote to quote.
-        var q = i + 1
+    ): String? {
+        var q = from
         while (true) {
             q = indexOfByte(b, q, to, QUOTE)
-            if (q < 0 || q + ID_KEY_BYTES.size > to) return null
+            if (q < 0 || q + SIG_KEY_BYTES.size > to) return null
             var match = true
-            for (k in 1 until ID_KEY_BYTES.size) {
-                if (b[q + k] != ID_KEY_BYTES[k]) {
+            for (k in 1 until SIG_KEY_BYTES.size) {
+                if (b[q + k] != SIG_KEY_BYTES[k]) {
                     match = false
                     break
                 }
@@ -643,14 +628,14 @@ class CachingEventDecoder(
             if (match) break
             q++
         }
-        val idStart = q + ID_KEY_BYTES.size
-        val idEnd = idStart + 64
-        if (idEnd >= to || b[idEnd] != QUOTE) return null
-        for (j in idStart until idEnd) {
+        val start = q + SIG_KEY_BYTES.size
+        val end = start + 128
+        if (end >= to || b[end] != QUOTE) return null
+        for (j in start until end) {
             val c = b[j]
             if (c !in ZERO..NINE && c !in LOWER_A..LOWER_F) return null
         }
-        return ScannedEvent(subId, b.decodeToString(idStart, idEnd))
+        return b.decodeToString(start, end)
     }
 
     /**
@@ -690,10 +675,11 @@ class CachingEventDecoder(
         private const val EVENT_PREFIX = "[\"EVENT\",\""
         private const val ID_KEY = "\"id\":\""
         private const val SIG_KEY = "\"sig\":\""
-        private val EVENT_PREFIX_BYTES = EVENT_PREFIX.encodeToByteArray()
-        private val ID_KEY_BYTES = ID_KEY.encodeToByteArray()
+        private val SIG_KEY_BYTES = SIG_KEY.encodeToByteArray()
         private const val QUOTE = '"'.code.toByte()
-        private const val BACKSLASH = '\\'.code.toByte()
+
+        /** [FrameLookup]'s answer for a copy to drop unparsed; never handed out. */
+        private val DROPPED = Event("", "", 0L, 0, emptyArray(), "", "")
         private const val ZERO = '0'.code.toByte()
         private const val NINE = '9'.code.toByte()
         private const val LOWER_A = 'a'.code.toByte()

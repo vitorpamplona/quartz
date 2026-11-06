@@ -181,6 +181,12 @@ internal class WsFrameReader(
             code: Int,
             reason: String,
         )
+
+        /**
+         * The next read has to wait for the network: what was read so far should be handed on
+         * now, not after the rest of a frame that may take long to arrive.
+         */
+        fun onWouldBlock() {}
     }
 
     private var inflater: Inflater? = null
@@ -196,7 +202,7 @@ internal class WsFrameReader(
     fun readMessage(callback: Callback) {
         if (receivedClose) throw IOException("closed")
         while (true) {
-            readHeader()
+            readHeader(callback)
             if (opcode >= WsOpcode.CLOSE) {
                 readControlFrame(callback)
                 if (receivedClose) return
@@ -207,7 +213,16 @@ internal class WsFrameReader(
         }
     }
 
-    private fun readHeader() {
+    /** Calls [Callback.onWouldBlock] when fewer than [bytes] are buffered. */
+    private fun need(
+        bytes: Long,
+        callback: Callback,
+    ) {
+        if (source.buffer.size < bytes) callback.onWouldBlock()
+    }
+
+    private fun readHeader(callback: Callback) {
+        need(2, callback)
         // Waiting for the next frame is not a read timeout: an idle relay is fine (pings check
         // liveness). The payload that follows is read under the timeout again.
         val timeout = source.timeout()
@@ -242,8 +257,10 @@ internal class WsFrameReader(
         if (b1 and 0x80 != 0) throw WsProtocolException("Server-sent frames must not be masked.")
         length = (b1 and 0x7F).toLong()
         if (length == 126L) {
+            need(2, callback)
             length = (source.readShort().toInt() and 0xFFFF).toLong()
         } else if (length == 127L) {
+            need(8, callback)
             length = source.readLong()
             if (length < 0) throw WsProtocolException("Frame length 0x${length.toULong().toString(16)} > 0x7FFFFFFFFFFFFFFF")
         }
@@ -251,6 +268,7 @@ internal class WsFrameReader(
     }
 
     private fun readControlFrame(callback: Callback) {
+        need(length, callback)
         val payload = if (length > 0) source.readByteString(length) else ByteString.EMPTY
         when (opcode) {
             WsOpcode.PING -> callback.onPing(payload)
@@ -282,12 +300,12 @@ internal class WsFrameReader(
                 if (length > maxMessageBytes - len) throw WsProtocolException("Message larger than $maxMessageBytes bytes", 1009)
                 val n = length.toInt()
                 buf = WsBufferPool.grow(buf, len, len + n + if (messageCompressed) 4 else 0)
-                readFully(buf, len, n)
+                readFully(buf, len, n, callback)
                 len += n
                 if (fin) break
                 // Control frames may come between the fragments.
                 while (true) {
-                    readHeader()
+                    readHeader(callback)
                     if (opcode < WsOpcode.CLOSE) break
                     readControlFrame(callback)
                     if (receivedClose) return
@@ -363,9 +381,11 @@ internal class WsFrameReader(
         dst: ByteArray,
         offset: Int,
         count: Int,
+        callback: Callback,
     ) {
         var done = 0
         while (done < count) {
+            if (source.buffer.size == 0L) callback.onWouldBlock()
             val r = source.read(dst, offset + done, count - done)
             if (r < 0) throw EOFException()
             done += r

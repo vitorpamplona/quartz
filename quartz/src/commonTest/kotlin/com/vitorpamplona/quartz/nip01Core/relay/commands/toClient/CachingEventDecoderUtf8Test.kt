@@ -162,3 +162,38 @@ class CachingEventDecoderKnownEventsTest {
             assertEquals(0, d.reusedKnownCount, "the forged copy the app holds is never handed out")
         }
 }
+
+/** The byte path skips a scrutinized id's spam unparsed, as the text path's sig scan does. */
+class CachingEventDecoderUtf8SpamTest {
+    private val signer = NostrSignerSync()
+    private val rogue = NormalizedRelayUrl("wss://rogue.example/")
+
+    private fun frame(e: Event) = "[\"EVENT\",\"sub\",${e.toJson()}]"
+
+    private fun sig(n: Int) = n.toString(16).padStart(128, '0')
+
+    @Test
+    fun aKnownBadSignatureAndCopiesPastTheCapAreDroppedUnparsed() {
+        val genuine: Event = signer.sign(1_700_000_000L, 1, arrayOf(arrayOf("t", "x")), "genuine")
+        val badSig = Event(genuine.id, genuine.pubKey, genuine.createdAt, genuine.kind, genuine.tags, genuine.content, sig(1))
+        val d = CachingEventDecoder()
+        val handedOut = (d.utf8(frame(badSig), rogue) as EventMessage).event
+        assertFalse(handedOut.verify())
+        d.reportForged(handedOut)
+
+        val parsed = d.parsedCount
+        val skipped = d.skippedCount
+        repeat(50) { assertEquals(null, d.utf8(frame(badSig), rogue), "the known-bad signature again") }
+        assertEquals(parsed, d.parsedCount, "dropped without a parse")
+        assertEquals(skipped + 50, d.skippedCount)
+
+        // New bad signatures are parsed and checked, until the cap; then every copy is dropped unparsed.
+        for (n in 2..CachingEventDecoder.MAX_FORGED_COPIES + 1) assertEquals(null, d.utf8(frame(badSig.withSig(sig(n))), rogue))
+        val afterCap = d.parsedCount
+        repeat(20) { n -> assertEquals(null, d.utf8(frame(badSig.withSig(sig(1000 + n))), rogue)) }
+        assertEquals(afterCap, d.parsedCount, "past the cap, copies are not parsed")
+        assertTrue(d.skippedCount > skipped + 50)
+    }
+
+    private fun Event.withSig(sig: String) = Event(id, pubKey, createdAt, kind, tags, content, sig)
+}

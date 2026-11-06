@@ -175,8 +175,8 @@ class OkHttpBytesWebSocket(
     )
 
     /**
-     * Messages read but not yet queued: the reader queues them as one batch once it has nothing
-     * left to read without blocking. Queuing each one woke the delivering coroutine for each
+     * Messages read but not yet queued: the reader queues them as one batch right before a read
+     * that has to wait for the network ([WsFrameReader.Callback.onWouldBlock]), or at [BATCH]. Queuing each one woke the delivering coroutine for each
      * message (it is faster than the reader and parks between them), and those wakeups cost more
      * CPU than the parse. Only the reader thread touches it.
      */
@@ -326,8 +326,11 @@ class OkHttpBytesWebSocket(
         val response =
             try {
                 upgradeCall.execute()
-            } catch (e: IOException) {
+            } catch (e: Throwable) {
+                // Not only IOException: an interceptor may throw anything, and a session that
+                // never reports its end is never redialed.
                 endedByRelay(incoming) { out.onFailure(e, null, null) }
+                if (e is Error) throw e
                 return
             }
 
@@ -371,6 +374,9 @@ class OkHttpBytesWebSocket(
                         pongs.incrementAndGet()
                     }
 
+                    // About to wait on the network: hand over what was read.
+                    override fun onWouldBlock() = flush(incoming)
+
                     override fun onClose(
                         code: Int,
                         reason: String,
@@ -387,16 +393,18 @@ class OkHttpBytesWebSocket(
 
             while (state.get() == OPEN && closedWith == null) {
                 reader.readMessage(callback)
-                // Nothing more without blocking: hand over what was read.
-                if (source.buffer.size == 0L || pending.size >= BATCH) flush(incoming)
+                if (pending.size >= BATCH) flush(incoming)
             }
             flush(incoming)
             closedWith?.let { (code, reason) -> endedByRelay(incoming) { out.onClosed(code, reason) } }
-        } catch (e: Exception) {
-            // A read error, a protocol error, or the listener's onOpen throwing, as OkHttp reports them.
+        } catch (e: Throwable) {
+            // A read error, a protocol error, the listener's onOpen throwing, as OkHttp reports
+            // them; and an Error (out of memory for a huge frame), which must still end the
+            // session, or it is never redialed.
             flush(incoming)
             val cause = brokenBy ?: e
             endedByRelay(incoming) { out.onFailure(cause, null, null) }
+            if (e is Error) throw e
         } finally {
             pingTask?.cancel(false)
             pingTask = null

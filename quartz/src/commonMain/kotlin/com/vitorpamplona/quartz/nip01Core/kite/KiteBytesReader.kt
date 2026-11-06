@@ -431,7 +431,12 @@ internal class KiteBytesReader {
         return readEscapedBody(s0, q, esc0)
     }
 
-    /** As `KiteReader.readEscapedUtf8`: runs copied as bytes, escapes written as UTF-8, one decode. */
+    /**
+     * [readStringBody]'s escape path: the raw runs are copied as bytes and each escape written as
+     * UTF-8 into [bb], then the value is decoded once. An escaped surrogate pair becomes its 4-byte
+     * sequence; a lone escaped surrogate, which UTF-8 cannot hold, goes to [readEscapedChars], so it
+     * stays lone as [KiteReader] keeps it.
+     */
     private fun readEscapedBody(
         s0: Int,
         q: Int,

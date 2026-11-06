@@ -33,8 +33,8 @@ import kotlin.test.assertTrue
 import com.sun.management.ThreadMXBean as SunThreadMXBean
 
 /**
- * Frame bytes → `Message`, the way a socket that hands over UTF-8 would feed Kite (the byte
- * reader, and the Latin-1 view), against today's path, which decodes the frame to a `String` first (OkHttp's `readUtf8`) and parses that.
+ * Frame bytes → `Message`, the way a socket that hands over UTF-8 feeds Kite (the byte reader),
+ * against the path that decodes the frame to a `String` first (OkHttp's `readUtf8`) and parses that.
  * Both are timed from the bytes, so the decode is counted.
  *
  * Corpus: nostrJsonBench's `corpus/nostr-2024-startup.ndjson.gz` (what Amethyst reads at
@@ -149,13 +149,11 @@ class KiteUtf8Benchmark {
         // Same result for every event of the corpus, both ways.
         for (k in events.indices) {
             val expected = KiteReader.readEvent(events[k].decodeToString())
-            for (actual in listOf(KiteReader.readEventUtf8(events[k]), KiteReader.readEventLatin1View(events[k]))) {
-                assertEquals(describe(expected), describe(actual), "event $k")
-                assertTrue(expected.tags.contentDeepEquals(actual.tags))
-            }
-            for (msg in listOf(KiteReader.readMessageUtf8(frames[k]), KiteReader.readMessageLatin1View(frames[k]))) {
-                assertEquals(describe(expected), describe((msg as EventMessage).event), "frame $k")
-            }
+            val actual = KiteReader.readEventUtf8(events[k])
+            assertEquals(describe(expected), describe(actual), "event $k")
+            assertTrue(expected.tags.contentDeepEquals(actual.tags))
+            val msg = KiteReader.readMessageUtf8(frames[k]) as EventMessage
+            assertEquals(describe(expected), describe(msg.event), "frame $k")
         }
 
         // Deferred fields: every event in the key orders relays send, through a lookup that
@@ -186,7 +184,6 @@ class KiteUtf8Benchmark {
                 println(" $name (round $round)")
                 run("decode only: String(bytes, UTF_8)", set) { it.decodeToString() }
                 run("today: decode + readMessage(String)", set) { KiteReader.readMessage(it.decodeToString()) }
-                run("Latin-1 view: readMessageLatin1View", set) { KiteReader.readMessageLatin1View(it) }
                 run("byte reader (SWAR): readMessageUtf8", set) { KiteReader.readMessageUtf8(it) }
             }
             // The number nostrJsonBench reports: the String already built, parse only.

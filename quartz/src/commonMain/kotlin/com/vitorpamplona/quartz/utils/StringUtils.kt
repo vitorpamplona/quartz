@@ -24,7 +24,13 @@ import kotlin.math.min
 
 val pointerSizeInBytes = 4
 
-fun String.bytesUsedInMemory(): Int = (8 * (((this.length * 2) + 45) / 8))
+fun String.bytesUsedInMemory(): Int = stringBytesUsedInMemory(length)
+
+/**
+ * The memory [String.bytesUsedInMemory] estimates for a string of [length] chars, for a text
+ * only known by its size (a relay frame read as bytes, see `RelayConnectionListener`).
+ */
+fun stringBytesUsedInMemory(length: Int): Int = (8 * (((length * 2) + 45) / 8))
 
 fun Long.bytesUsedInMemory(): Int = 8
 

@@ -9,8 +9,9 @@ off OkHttp's `Response.socket` and the relay client parses them with the SWAR by
 - CPU falls 27–53% on compressed or duplicate traffic and 6% on paced plain traffic;
 - CPU rises 20–30% only when a loopback relay floods uncompressed unique frames.
 
-The id hook with deferred fields is in too (section 2d). Still open: the device measurements. The
-Latin-1 view (`readMessageLatin1View`) stays as a comparison point. The
+The id hook with deferred fields is in too (section 2d). The Latin-1 view (option A) was measured
+and then removed, superseded by the byte reader. A review pass fixed three bugs (section 2f).
+Still open: the device measurements. The
 measurements and the OkHttp probe are reproducible, and the plan at the end is staged so each
 step can be benchmarked before the next.
 
@@ -165,9 +166,10 @@ a space after the colon (`"id": "…"`), which `CachingEventDecoder.scanEventFra
 | C. Vector API | yes | none | medium | Not for a library (incubator, JVM-only, needs a runtime flag). |
 | D. Abstract the input behind an interface, one grammar | – | – | medium | A virtual call on every char. HotSpot inlines a bimorphic site, but Kotlin/Native doesn't inline it, and a performance regression on native is not acceptable. |
 
-### Option A, prototyped and measured
+### Option A, prototyped, measured, then removed
 
-`KiteReader.readMessageUtf8(bytes, offset, length)` and `readEventUtf8` (internal) parse UTF-8
+Option B below beat it on every row, so it is gone from the code; its numbers stay here. It was
+`KiteReader.readMessageUtf8(bytes, offset, length)` and `readEventUtf8` (internal), parsing UTF-8
 bytes through a Latin-1 view:
 
 - **The view:** `String(bytes, ISO_8859_1)` is a byte-for-char copy into a compact string, so
@@ -447,9 +449,12 @@ carries `Message`s instead of `String`s:
 - **Parsing:** each text frame is parsed on the reader thread through `Utf8WebSocketListener`.
   `BasicRelayClient`'s listener routes it to `CachingEventDecoder.decodeFromUtf8`, whose
   duplicate scan reads the bytes, or to `MessageDecoder.decodeUtf8`.
-- **Delivery:** decoded messages go to the delivery coroutine in batches, once per network read.
+- **Delivery:** decoded messages go to the delivery coroutine in batches, flushed right before any
+  read that has to wait for the network (`WsFrameReader.Callback.onWouldBlock`), or at 128.
   Queuing them one at a time woke the coroutine per message: CPU for unique plain frames was 2.4×
-  `BasicOkHttpWebSocket`'s before batching, 1.2–1.3× after.
+  `BasicOkHttpWebSocket`'s before batching, 1.2–1.3× after. The first version flushed only
+  between messages when okio's buffer was empty, which held messages back behind a partly
+  arrived next frame (section 2f).
 - **Listener API:** the relay client calls `RelayConnectionListener.onIncomingMessage(relay, msg,
   frameBytes)`, a new overload whose default bridges to the old one with an empty `msgStr`.
   `NostrClient`, `RelayPool` and `RedirectConnectionListener` forward it. `RelayStats` counts its
@@ -540,6 +545,50 @@ old scan-then-parse:
 - `KiteUtf8Benchmark` re-orders all 31,161 corpus events into strfry and nostr-tools key order:
   every one reads the same through the miss path, and the hit path returns the known event.
 
+## 2f. Review fixes
+
+A code review of the branch found the following, now fixed, each with a test that fails without
+the fix.
+
+**Bugs:**
+- **A session that never reported its end.** `OkHttpBytesWebSocket` caught only `IOException`
+  from the dial and `Exception` from the read loop. An interceptor's `IllegalStateException`, or
+  an `OutOfMemoryError` growing a frame buffer, ended the reader thread with no `onFailure`. The
+  relay client then kept a dead socket and never redialed. Both catches now take `Throwable`,
+  report it, and rethrow `Error`s.
+- **Messages held back behind a partial frame.** The reader flushed parsed messages only between
+  messages and only when okio's buffer was empty. A read that ended partway into a large next
+  frame held everything already parsed until that frame finished arriving: seconds on a slow
+  link. It now flushes right before any read that would block.
+  - The cost shows in flood benchmarks only. okio reads at most 8 KiB, so in a flood most reads
+    end partway into a frame, and the reader now wakes the delivery coroutine about every 9
+    frames instead of every 128.
+  - `SocketIngestBenchmark` on a host ~20% slower than the earlier runs, as the bytes socket's
+    CPU over Basic's:
+    - flooded duplicates, plain: 0.72 → 1.20;
+    - flooded unique, plain: 1.2–1.3 → 1.56;
+    - deflate: about 0.5–0.6 either way;
+    - paced traffic, plain and deflate: 0.97 and 0.68, about as before.
+  - Not worth avoiding: only time tells a frame about to arrive from one that will take seconds,
+    and a timer-driven flush would cost about what a wakeup does.
+- **Forged-copy spam parsed in full on the byte path.** Copies of a scrutinized id past
+  `MAX_FORGED_COPIES`, or carrying a signature already proven bad, were parsed before being
+  dropped. `FrameLookup` now answers them with a drop at the id, the latter after a byte scan of
+  the `sig`, as the text path's `decodeScrutinized` does.
+
+**Cleanups:**
+- **Dead code removed:**
+  - the Latin-1 view (option A, its platform actuals and tests);
+  - `CachingEventDecoder.lookup()`;
+  - the byte pre-scan (`scanEventFrameUtf8`): a decoder with a custom `fullParser` now decodes
+    to text and takes `decodeFrom`, so one dedup path remains per input type.
+- **Duplication:**
+  - `RelayStats` uses `stringBytesUsedInMemory(length)` instead of a copy of the formula;
+  - `SocketIngestBenchmark` uses `ScriptedRelay` instead of its own handshake.
+- **Android:** the parity and decoder suites (`KiteReaderUtf8Test`, the decoder suites through
+  bytes, the spam test) pass under `testAndroidHostTest`, on the Android `indexOfByte`. Kotlin/Native
+  is still unrun: its toolchain could not be installed in this container.
+
 ## 2e. nostrLibBench: the whole client path
 
 [nostrLibBench](https://github.com/vitorpamplona/nostrLibBench) times a client from its REQ to
@@ -596,8 +645,7 @@ on Android's GC.
    `id` first and hides the strfry case.
 2. **Quick win, no API change:** let `CachingEventDecoder.scanEventFrame` accept whitespace
    around `:`. Today it misses relay.snort.social's spaced frames.
-3. **Done: the Latin-1 view (option A)**, `KiteReader.readMessageLatin1View`, kept as the
-   comparison point.
+3. **Done, then removed: the Latin-1 view (option A)**, superseded by option B.
 4. **Done: the byte reader for EVENT frames (option B)**, `KiteReader.readMessageUtf8` /
    `KiteBytesReader`. Still open in this step: SWAR on Android API 33+ and on native, measured on
    devices; and whether ASCII values should skip `decodeToString`'s non-ASCII check, since the

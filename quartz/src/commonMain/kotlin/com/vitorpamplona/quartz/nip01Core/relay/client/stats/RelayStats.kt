@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.bytesUsedInMemory
+import com.vitorpamplona.quartz.utils.stringBytesUsedInMemory
 
 class RelayStats(
     val client: INostrClient,
@@ -95,7 +96,7 @@ class RelayStats(
                 relay: IRelayClient,
                 msg: Message,
                 frameBytes: Int,
-            ) = received(relay, 8 * (((frameBytes * 2) + 45) / 8), msg)
+            ) = received(relay, stringBytesUsedInMemory(frameBytes), msg)
 
             private fun received(
                 relay: IRelayClient,

@@ -34,19 +34,16 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.BasicOkHttpWebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.OkHttpBytesWebSocket
+import com.vitorpamplona.quartz.nip01Core.relay.sockets.okhttp.ScriptedRelay
 import okhttp3.OkHttpClient
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.lang.management.ManagementFactory
-import java.net.ServerSocket
-import java.security.MessageDigest
-import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.Deflater
 import java.util.zip.GZIPInputStream
-import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import com.sun.management.ThreadMXBean as SunThreadMXBean
@@ -128,74 +125,36 @@ class SocketIngestBenchmark {
         return Wire(out.toByteArray(), ends)
     }
 
-    /** Accepts one client, answers the handshake, writes [wire], and holds the connection until closed. */
-    private class BulkRelay(
-        private val wire: Wire,
-        private val deflate: Boolean,
-        /** Frames written per millisecond, as a network delivers them; null floods. */
-        private val perMs: Int? = null,
-    ) : AutoCloseable {
-        private val server = ServerSocket(0)
-        val url = NormalizedRelayUrl("ws://127.0.0.1:${server.localPort}/")
-        lateinit var serverThread: Thread
-        private val release = CountDownLatch(1)
-
-        init {
-            serverThread =
-                thread(isDaemon = true, name = "bulk-relay") {
-                    runCatching {
-                        server.accept().use { s ->
-                            val input = s.getInputStream()
-                            val output = s.getOutputStream()
-                            var key: String? = null
-                            val line = StringBuilder()
-                            while (true) {
-                                val c = input.read()
-                                if (c == -1) return@use
-                                if (c == '\n'.code) {
-                                    val l = line.toString().trim()
-                                    if (l.isEmpty()) break
-                                    if (l.lowercase().startsWith("sec-websocket-key:")) key = l.substring(18).trim()
-                                    line.setLength(0)
-                                } else if (c != '\r'.code) {
-                                    line.append(c.toChar())
-                                }
-                            }
-                            val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()))
-                            val ext = if (deflate) "Sec-WebSocket-Extensions: permessage-deflate\r\n" else ""
-                            output.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n$ext\r\n".toByteArray(Charsets.ISO_8859_1))
-                            val bytes = wire.bytes
-                            if (perMs == null) {
-                                var off = 0
-                                while (off < bytes.size) {
-                                    val n = minOf(64 * 1024, bytes.size - off)
-                                    output.write(bytes, off, n)
-                                    off += n
-                                }
-                            } else {
-                                var off = 0
-                                var k = 0
-                                while (k < wire.ends.size) {
-                                    val last = minOf(wire.ends.size, k + perMs) - 1
-                                    output.write(bytes, off, wire.ends[last] - off)
-                                    output.flush()
-                                    off = wire.ends[last]
-                                    k = last + 1
-                                    Thread.sleep(1)
-                                }
-                            }
-                            output.flush()
-                            release.await(60, TimeUnit.SECONDS)
-                        }
-                    }
-                }
+    /**
+     * A relay that answers the handshake, writes [wire] (as fast as the socket takes it, or
+     * [perMs] frames per millisecond, as a network delivers them), then holds the connection
+     * until the client hangs up.
+     */
+    private fun bulkRelay(
+        wire: Wire,
+        deflate: Boolean,
+        perMs: Int? = null,
+    ) = ScriptedRelay(extensions = if (deflate) "permessage-deflate" else null) {
+        val bytes = wire.bytes
+        if (perMs == null) {
+            var off = 0
+            while (off < bytes.size) {
+                val n = minOf(64 * 1024, bytes.size - off)
+                raw(bytes, off, n)
+                off += n
+            }
+        } else {
+            var off = 0
+            var k = 0
+            while (k < wire.ends.size) {
+                val last = minOf(wire.ends.size, k + perMs) - 1
+                raw(bytes, off, wire.ends[last] - off)
+                off = wire.ends[last]
+                k = last + 1
+                Thread.sleep(1)
+            }
         }
-
-        override fun close() {
-            release.countDown()
-            runCatching { server.close() }
-            serverThread.join(2_000)
-        }
+        awaitHangUp()
     }
 
     private class Counter(
@@ -247,7 +206,7 @@ class SocketIngestBenchmark {
         frames: Int,
         perMs: Int? = null,
     ): Result {
-        BulkRelay(wire, deflate, perMs).use { relay ->
+        bulkRelay(wire, deflate, perMs).use { relay ->
             val counter = Counter(frames)
             val client = BasicRelayClient(relay.url, builder, counter, decoder = CachingEventDecoder())
             System.gc()
@@ -348,7 +307,7 @@ class SocketIngestBenchmark {
             val cpus = ArrayList<Long>()
             val allocs = ArrayList<Long>()
             repeat(7) { r ->
-                BulkRelay(wire, false).use { relay ->
+                bulkRelay(wire, false).use { relay ->
                     val (socket, done) = make(relay.url)
                     val a0 = allocatedExcept(relay.serverThread.id)
                     val c0 = cpuExcept(relay.serverThread.id)

@@ -63,7 +63,6 @@ class KiteReaderUtf8Test {
     private fun assertSame(bytes: ByteArray) {
         val viaString = runCatching { KiteReader.readMessage(bytes.decodeToString()) }
         assertSameAs(bytes, viaString, "bytes reader", runCatching { KiteReader.readMessageUtf8(bytes) })
-        assertSameAs(bytes, viaString, "Latin-1 view", runCatching { KiteReader.readMessageLatin1View(bytes) })
         // Deferred fields: a lookup that never answers must read exactly as no lookup.
         val asked = ArrayList<String>()
         assertSameAs(

@@ -309,6 +309,46 @@ class OkHttpBytesWebSocketTest {
     }
 
     @Test
+    fun anInterceptorThatThrowsIsAFailureNotAStuckSession() {
+        ScriptedRelay { awaitHangUp() }.use { relay ->
+            val okhttp = client.newBuilder().addInterceptor { error("an interceptor bug") }.build()
+            val recorder = Recorder()
+            val socket = dial(relay, recorder, okhttp)
+            assertTrue(recorder.ended.await(5, TimeUnit.SECONDS), "the session must end, or it is never redialed")
+            assertIs<IllegalStateException>(recorder.failure.get())
+            val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (!socket.needsReconnect() && System.nanoTime() < until) Thread.sleep(5)
+            assertTrue(socket.needsReconnect())
+        }
+    }
+
+    @Test
+    fun aMessageReadBeforeAPartialFrameIsNotHeldBackByIt() {
+        val firstDelivered = CountDownLatch(1)
+        val deliveredBeforeTheRest = AtomicReference<Boolean?>(null)
+        ScriptedRelay {
+            // One write: a whole frame, then the header and half of the next one.
+            raw(byteArrayOf(0x81.toByte(), 5) + "first".encodeToByteArray() + byteArrayOf(0x81.toByte(), 10) + "01234".encodeToByteArray())
+            deliveredBeforeTheRest.set(firstDelivered.await(3, TimeUnit.SECONDS))
+            raw("56789".encodeToByteArray())
+            awaitHangUp()
+        }.use { relay ->
+            val recorder =
+                object : Recorder() {
+                    override suspend fun onMessage(text: String) {
+                        super.onMessage(text)
+                        if (text == "first") firstDelivered.countDown()
+                    }
+                }
+            val socket = dial(relay, recorder)
+            assertTrue(recorder.awaitMessages(2))
+            assertEquals(true, deliveredBeforeTheRest.get(), "\"first\" waited for the rest of the next frame")
+            assertEquals(listOf("first", "0123456789"), recorder.messages.toList())
+            socket.disconnect()
+        }
+    }
+
+    @Test
     fun anIdleRelayIsNotAReadTimeout() {
         ScriptedRelay {
             text("before")
