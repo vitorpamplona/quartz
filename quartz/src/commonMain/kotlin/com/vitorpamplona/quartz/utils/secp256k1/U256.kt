@@ -90,7 +90,7 @@ internal expect fun uLt(
 internal fun uLtInline(
     a: Long,
     b: Long,
-): Boolean = (a xor Long.MIN_VALUE) < (b xor Long.MIN_VALUE)
+): Boolean = a.toULong() < b.toULong() // JVM: Long.compareUnsigned, which HotSpot compiles better than the xor trick
 
 /**
  * Raw 256-bit unsigned integer arithmetic using 4×64-bit limbs.
