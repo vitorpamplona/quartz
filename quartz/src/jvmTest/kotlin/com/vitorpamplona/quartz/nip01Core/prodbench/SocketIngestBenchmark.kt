@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnection
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.NoticeMessage
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -198,6 +199,252 @@ class SocketIngestBenchmark {
     }
 
     private fun gcCount() = ManagementFactory.getGarbageCollectorMXBeans().sumOf { maxOf(0, it.collectionCount) }
+
+    private fun gcMillis() = ManagementFactory.getGarbageCollectorMXBeans().sumOf { maxOf(0, it.collectionTime) }
+
+    private fun cpuExcept(skip: Set<Long>): Long {
+        val ids = mx.allThreadIds.filter { it !in skip }.toLongArray()
+        return mx.getThreadCpuTime(ids).filter { it > 0 }.sum()
+    }
+
+    private fun allocatedExcept(skip: Set<Long>): Long {
+        val ids = mx.allThreadIds.filter { it !in skip }.toLongArray()
+        return mx.getThreadAllocatedBytes(ids).filter { it > 0 }.sum()
+    }
+
+    private val sockets: List<Pair<String, (OkHttpClient) -> WebsocketBuilder>> =
+        listOf(
+            "BasicOkHttpWebSocket" to { okhttp -> BasicOkHttpWebSocket.Builder { okhttp } },
+            "OkHttpBytesWebSocket" to { okhttp -> OkHttpBytesWebSocket.Builder { okhttp } },
+        )
+
+    private fun corpusFrames(subId: (Int) -> String = { "sub1" }): List<ByteArray> = events().mapIndexed { i, e -> """["EVENT","${subId(i)}",""".encodeToByteArray() + e + "]".encodeToByteArray() }
+
+    private fun median(xs: List<Double>) = xs.sorted()[xs.size / 2]
+
+    /**
+     * A multi-relay startup: [relays] relays each send the same corpus at once to one client per
+     * relay, sharing one [CachingEventDecoder], so (relays - 1) of every relays copies are
+     * duplicates, caught by whichever copy was parsed first. Flooded and paced, plain and
+     * deflate. CPU and allocation leave out every server thread.
+     */
+    @Test
+    fun manyRelays() {
+        if (path == null || System.getenv("SOCKET_DECISION") == null) return
+        val relays = 8
+        val frames = corpusFrames()
+        val okhttp = OkHttpClient()
+        println("\n=== $relays relays x ${frames.size} frames (the same events), shared CachingEventDecoder ===")
+        for (perMs in listOf<Int?>(null, 20)) {
+            for (deflate in listOf(false, true)) {
+                val wire = wire(frames, deflate)
+                println(" ${if (perMs == null) "flooded" else "paced $perMs frames/ms per relay"}, ${if (deflate) "permessage-deflate" else "plain"}")
+                val results = sockets.associate { it.first to ArrayList<DoubleArray>() }
+                repeat(if (perMs == null) 6 else 4) { round ->
+                    for ((name, builder) in sockets) {
+                        val servers = List(relays) { bulkRelay(wire, deflate, perMs) }
+                        try {
+                            val skip = servers.map { it.serverThread.id }.toSet()
+                            val counter = Counter(relays * frames.size)
+                            val decoder = CachingEventDecoder()
+                            val clients = servers.map { BasicRelayClient(it.url, builder(okhttp), counter, decoder = decoder) }
+                            System.gc()
+                            val gc0 = gcCount()
+                            val gt0 = gcMillis()
+                            val a0 = allocatedExcept(skip)
+                            val c0 = cpuExcept(skip)
+                            val t0 = System.nanoTime()
+                            clients.forEach { it.connect() }
+                            assertTrue(counter.done.await(300, TimeUnit.SECONDS), "got ${counter.count.get()}")
+                            val t = System.nanoTime() - t0
+                            val total = (relays * frames.size).toDouble()
+                            val row =
+                                doubleArrayOf(
+                                    t / 1e6,
+                                    (cpuExcept(skip) - c0) / total,
+                                    (allocatedExcept(skip) - a0) / total,
+                                    (gcCount() - gc0).toDouble(),
+                                    (gcMillis() - gt0).toDouble(),
+                                    decoder.reusedCount * 100.0 / total,
+                                )
+                            if (round >= 1) results.getValue(name).add(row) // the first round warms up
+                            clients.forEach { it.disconnect() }
+                        } finally {
+                            servers.forEach { it.close() }
+                        }
+                    }
+                }
+                for ((name, rows) in results) {
+                    fun col(k: Int) = median(rows.map { it[k] })
+                    println(
+                        "   %-22s %8.0f ms wall | CPU %6.0f ns/frame | %6.0f B alloc/frame | %3.0f GCs, %4.0f ms GC | %4.1f%% reused".format(
+                            name,
+                            col(0),
+                            col(1),
+                            col(2),
+                            col(3),
+                            col(4),
+                            col(5),
+                        ),
+                    )
+                }
+            }
+        }
+        okhttp.dispatcher.executorService.shutdown()
+    }
+
+    /**
+     * Delivery latency: one relay paces frames at 20 per ms; for each frame, the time from the
+     * relay's write to the listener's call. The batching of [OkHttpBytesWebSocket] must not add to it.
+     */
+    @Test
+    fun latency() {
+        if (path == null || System.getenv("SOCKET_DECISION") == null) return
+        val frames = corpusFrames { "s$it" }
+        val okhttp = OkHttpClient()
+        println("\n=== delivery latency, ${frames.size} frames paced at 20/ms, relay write -> listener ===")
+        for (deflate in listOf(false, true)) {
+            val wire = wire(frames, deflate)
+            println(" ${if (deflate) "permessage-deflate" else "plain"}")
+            val results = sockets.associate { it.first to ArrayList<DoubleArray>() }
+            repeat(4) { round ->
+                for ((name, builder) in sockets) {
+                    val sentAt = LongArray(frames.size)
+                    val gotAt = LongArray(frames.size)
+                    val relay =
+                        ScriptedRelay(extensions = if (deflate) "permessage-deflate" else null) {
+                            var off = 0
+                            var k = 0
+                            while (k < wire.ends.size) {
+                                val last = minOf(wire.ends.size, k + 20) - 1
+                                raw(wire.bytes, off, wire.ends[last] - off)
+                                val now = System.nanoTime()
+                                for (x in k..last) sentAt[x] = now
+                                off = wire.ends[last]
+                                k = last + 1
+                                Thread.sleep(1)
+                            }
+                            awaitHangUp()
+                        }
+                    relay.use {
+                        val done = CountDownLatch(frames.size)
+                        val listener =
+                            object : RelayConnectionListener {
+                                fun got(msg: Message) {
+                                    if (msg is EventMessage) {
+                                        gotAt[msg.subId.substring(1).toInt()] = System.nanoTime()
+                                        done.countDown()
+                                    }
+                                }
+
+                                override suspend fun onIncomingMessage(
+                                    relay: IRelayClient,
+                                    msgStr: String,
+                                    msg: Message,
+                                ) = got(msg)
+
+                                override suspend fun onIncomingMessage(
+                                    relay: IRelayClient,
+                                    msg: Message,
+                                    frameBytes: Int,
+                                ) = got(msg)
+                            }
+                        val client = BasicRelayClient(relay.url, builder(okhttp), listener, decoder = CachingEventDecoder())
+                        client.connect()
+                        assertTrue(done.await(120, TimeUnit.SECONDS))
+                        client.disconnect()
+                        val lat = LongArray(frames.size) { gotAt[it] - sentAt[it] }.sorted()
+                        if (round >= 1) {
+                            results.getValue(name).add(
+                                doubleArrayOf(lat[lat.size / 2] / 1e3, lat[lat.size * 99 / 100] / 1e3, lat[lat.size * 999 / 1000] / 1e3, lat.last() / 1e3),
+                            )
+                        }
+                    }
+                }
+            }
+            for ((name, rows) in results) {
+                fun col(k: Int) = median(rows.map { it[k] })
+                println("   %-22s p50 %6.0f us | p99 %6.0f us | p99.9 %6.0f us | max %7.0f us".format(name, col(0), col(1), col(2), col(3)))
+            }
+        }
+        okhttp.dispatcher.executorService.shutdown()
+    }
+
+    /**
+     * What a backlog holds: the listener is stuck on the first message while the relay sends the
+     * whole corpus, so every frame waits in the socket's delivery queue. BasicOkHttpWebSocket
+     * queues each frame's String, OkHttpBytesWebSocket each parsed message. Heap used after a GC,
+     * against before the connect, per frame.
+     */
+    @Test
+    fun backlog() {
+        if (path == null || System.getenv("SOCKET_DECISION") == null) return
+        val frames = corpusFrames()
+        val okhttp = OkHttpClient()
+        val memory = ManagementFactory.getMemoryMXBean()
+
+        fun heapAfterGc(): Long {
+            repeat(3) {
+                System.gc()
+                Thread.sleep(100)
+            }
+            return memory.heapMemoryUsage.used
+        }
+        println("\n=== backlog: ${frames.size} frames queued behind a stuck listener ===")
+        for (deflate in listOf(false, true)) {
+            val wire = wire(frames, deflate)
+            println(" ${if (deflate) "permessage-deflate" else "plain"}")
+            val results = sockets.associate { it.first to ArrayList<Double>() }
+            repeat(4) { round ->
+                for ((name, builder) in sockets) {
+                    val written = CountDownLatch(1)
+                    val relay =
+                        ScriptedRelay(extensions = if (deflate) "permessage-deflate" else null) {
+                            raw(wire.bytes)
+                            written.countDown()
+                            awaitHangUp()
+                        }
+                    relay.use {
+                        val release = CountDownLatch(1)
+                        val counter = Counter(frames.size)
+                        val stuck =
+                            object : RelayConnectionListener {
+                                override suspend fun onIncomingMessage(
+                                    relay: IRelayClient,
+                                    msgStr: String,
+                                    msg: Message,
+                                ) {
+                                    release.await()
+                                    counter.onIncomingMessage(relay, msgStr, msg)
+                                }
+
+                                override suspend fun onIncomingMessage(
+                                    relay: IRelayClient,
+                                    msg: Message,
+                                    frameBytes: Int,
+                                ) {
+                                    release.await()
+                                    counter.onIncomingMessage(relay, msg, frameBytes)
+                                }
+                            }
+                        val decoder = CachingEventDecoder(capacity = 1) // no cache to keep events alive
+                        val client = BasicRelayClient(relay.url, builder(okhttp), stuck, decoder = decoder)
+                        val before = heapAfterGc()
+                        client.connect()
+                        assertTrue(written.await(60, TimeUnit.SECONDS))
+                        Thread.sleep(2_000) // let the client read what the relay wrote
+                        val held = heapAfterGc() - before
+                        release.countDown()
+                        assertTrue(counter.done.await(120, TimeUnit.SECONDS))
+                        client.disconnect()
+                        if (round >= 1) results.getValue(name).add(held.toDouble() / frames.size)
+                    }
+                }
+            }
+            for ((name, rows) in results) println("   %-22s %6.0f B held per queued frame".format(name, median(rows)))
+        }
+        okhttp.dispatcher.executorService.shutdown()
+    }
 
     private fun once(
         builder: WebsocketBuilder,

@@ -622,6 +622,82 @@ container. Three passes, each the harness's median of its timed runs, on the `al
   client (G1 sizes the heap as it likes under `-Xmx2g`). This harness can't tell the sockets
   apart on it.
 
+## 2g. Decision numbers (2026-11-07, branch at 117b960)
+
+All on the 4-core cloud VM, JDK 21 for the Quartz benchmarks and JDK 27 for nostrLibBench, after
+the review fixes. Run-to-run spread on this VM is ±10–20% for CPU per frame (the same paced
+single-relay case has measured −6%, −3% and +12% for the byte socket on different runs), so only
+large or consistent differences count.
+
+**Parser** (`KiteUtf8Benchmark`, decode + `readMessage` against `readMessageUtf8`, two rounds):
+
+| Frames | CPU | Alloc per frame |
+|---|---|---|
+| all | 1,009–1,074 → 926–990 ns (−8%) | 2,618 → 1,497 B (−43%) |
+| ASCII | 858–884 → 825–839 ns (−4%) | 2,199 → 1,328 B (−40%) |
+| non-ASCII | 2,920–3,051 → 1,981–1,995 ns (−33%) | 8,041 → 3,677 B (−54%) |
+| ≥ 4 KiB | 8,125–8,381 → 6,851–6,884 ns (−17%) | 27,889 → 15,346 B (−45%) |
+
+**One relay** (`SocketIngestBenchmark.basicVersusBytes`, through `BasicRelayClient` and
+`CachingEventDecoder`):
+
+| Workload | CPU per frame, Basic → Bytes | Alloc per frame, Basic → Bytes |
+|---|---|---|
+| unique, plain, flooded | 2,623 → 4,553 ns (**+74%**) | 3,711 → 1,747 B |
+| unique, deflate, flooded | 14,985 → 8,891 ns (−41%) | 3,151 → 1,767 B |
+| 3× dupes, plain, flooded | 3,336 → 4,293 ns (**+29%**) | 2,750 → 813 B |
+| 3× dupes, deflate, flooded | 15,869 → 8,714 ns (−45%) | 2,183 → 831 B |
+| unique, plain, paced 20/ms | 7,878 → 8,848 ns (+12%, within spread) | 3,736 → 1,763 B |
+| unique, deflate, paced 20/ms | 16,985 → 12,362 ns (−27%) | 3,156 → 1,779 B |
+
+**Eight relays, the same events, one shared decoder** (`manyRelays`, the startup shape; 249,288
+frames, 87.5% duplicates):
+
+| Workload | CPU per frame | Alloc per frame | GC count / time | Reused |
+|---|---|---|---|---|
+| flooded, plain | 3,210 → 3,495 ns (+9%) | 2,593 → 521 B (−80%) | 3 / 18 ms → 1 / 8 ms | 77.5% → 87.5% |
+| flooded, deflate | 16,089 → 8,352 ns (−48%) | 2,206 → 541 B (−75%) | 4 / 23 ms → 1 / 9 ms | 87.5% both |
+| paced, plain | 6,117 → 5,545 ns (−9%) | 2,479 → 542 B (−78%) | 4 / 23 ms → 0 / 0 ms | 87.4% both |
+| paced, deflate | 19,676 → 10,006 ns (−49%) | 2,014 → 555 B (−72%) | 4 / 23 ms → 1 / 10 ms | 87.5% both |
+
+The flooded-plain reuse gap is a race: eight consumers parsing the same new ids at once before
+any is cached. It is not a property to count on.
+
+**Delivery latency** (`latency`, one relay paced at 20 frames/ms, relay write → listener):
+
+| | p50 | p99 | p99.9 | max |
+|---|---|---|---|---|
+| plain, Basic → Bytes | 106 → 112 µs | 419 → **746** µs | 4,989 → 4,687 µs | 6,074 → 5,691 µs |
+| deflate, Basic → Bytes | 135 → **210** µs | 488 → **742** µs | 2,700 → 3,035 µs | 7,318 → 4,173 µs |
+
+The byte socket parses a whole burst before handing it over, so the first frame of a burst waits
+for the rest. Sub-millisecond, but a real regression at p50 for deflate and at p99 for both.
+
+**Memory behind a stuck listener** (`backlog`, the whole corpus queued): 1,004 → **1,443** B held
+per queued frame (+44%), plain and deflate alike. A parsed event is bigger than its frame's
+String.
+
+**nostrLibBench** (JDK 27, two passes, `all`; every row passes the forged checks):
+
+| Client | µs/event | CPU µs/event | Alloc B/event | Memory growth |
+|---|---|---|---|---|
+| `quartz-fetch` | 34.9 | 39.5–40.1 | 3,439–3,468 | 255–320 MB |
+| `quartz-bytes-fetch` | 31.2–32.8 | 37.5–38.2 | 1,662–1,846 | 196–208 MB |
+| `quartz-parallelverifier` | 13.1–13.9 | 41.7–44.3 | 3,486–3,523 | 261–264 MB |
+| `quartz-bytes-parallelverifier` | 13.1–13.2 | 40.8–41.4 | 1,612–1,614 | 262–268 MB |
+
+**Cost:**
+- 2,496 production lines, of which 914 are a second copy of Kite's grammar (`KiteBytesReader`,
+  against `KiteReader`'s 1,032) and 1,033 are our own RFC 6455 client (`WebSocketFrames`,
+  `OkHttpBytesWebSocket`);
+- 2,064 lines of tests and benchmarks;
+- public API to keep or deprecate: `OkHttpBytesWebSocket`, `Utf8WebSocketListener`, the
+  `onIncomingMessage(relay, msg, frameBytes)` overload, `MessageDecoder.decodeUtf8`,
+  `stringBytesUsedInMemory`.
+
+**Not measured:** Android (ART, the plain-loop scan, its GC), Kotlin/Native, real relays at scale,
+proxies and Tor, and the share of Amethyst's real frames that arrive compressed.
+
 ## Expected gain (estimate, not measured end to end)
 
 Per frame, against today's decode cost on the corpus mix, and before any change to Kite's own
