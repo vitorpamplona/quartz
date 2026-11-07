@@ -217,6 +217,23 @@ open class CachingEventDecoderTest {
     }
 
     @Test
+    fun aKeyEndingInAnEscapedQuoteAndIdIsNotTakenForTheIdKey() {
+        val decoder = CachingEventDecoder()
+        val cached = event(25)
+        decoder.decodeAt(frame("s", cached))
+        // The key `x\"id` holds the characters "id" right before its colon, at its escaped quote.
+        val realId = hexId(26)
+        for (spacing in listOf("", " ")) {
+            val decoy =
+                """["EVENT","s",{"x\"id":$spacing"${cached.id}","id":$spacing"$realId","pubkey":"${hexId(100_026)}",""" +
+                    """"created_at":26,"kind":1,"tags":[],"content":"c","sig":"${"f".repeat(128)}"}]"""
+            val decoded = decoder.decodeAt(decoy) as EventMessage
+            assertEquals(realId, decoded.event.id, "the frame's own id, not the decoy's: $decoy")
+            assertNotSame(cached, decoded.event)
+        }
+    }
+
+    @Test
     fun cacheRotationOnlyCausesReparseNeverWrongMessages() {
         val decoder = CachingEventDecoder(capacity = 8)
         val events = (1..40).map { event(it) }

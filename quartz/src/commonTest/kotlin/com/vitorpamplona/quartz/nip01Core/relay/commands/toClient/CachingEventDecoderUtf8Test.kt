@@ -195,5 +195,27 @@ class CachingEventDecoderUtf8SpamTest {
         assertTrue(d.skippedCount > skipped + 50)
     }
 
+    @Test
+    fun aDecoySigKeyDoesNotGetTheGenuineCopyDropped() {
+        val paths =
+            listOf<Pair<String, (CachingEventDecoder, String) -> Message?>>(
+                "text" to { d, f -> d.decodeFrom(f, rogue) },
+                "bytes" to { d, f -> d.utf8(f, rogue) },
+            )
+        for ((name, decode) in paths) {
+            val genuine: Event = signer.sign(1_700_000_000L, 1, arrayOf(arrayOf("t", "x")), "genuine $name")
+            val d = CachingEventDecoder()
+            val handedOut = (decode(d, frame(genuine.withSig(sig(1)))) as EventMessage).event
+            assertFalse(handedOut.verify())
+            d.reportForged(handedOut)
+
+            // The genuine copy, behind a key ending in \"sig that holds the known-bad signature.
+            val decoy = "[\"EVENT\",\"sub\",{\"x\\\"sig\":\"${sig(1)}\"," + genuine.toJson().removePrefix("{") + "]"
+            val recovered = (decode(d, decoy) as EventMessage?)?.event
+            assertEquals(genuine.sig, recovered?.sig, "$name: the genuine copy is parsed and checked, not dropped by the decoy")
+            assertTrue(recovered!!.verify())
+        }
+    }
+
     private fun Event.withSig(sig: String) = Event(id, pubKey, createdAt, kind, tags, content, sig)
 }
