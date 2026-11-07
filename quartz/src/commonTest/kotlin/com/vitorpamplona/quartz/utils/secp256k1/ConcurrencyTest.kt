@@ -51,6 +51,7 @@ class ConcurrencyTest {
 
     private fun cases(n: Int): List<Case> {
         val r = Random(0x5EC9)
+
         fun seckey(): ByteArray {
             while (true) {
                 val k = r.nextBytes(32)
