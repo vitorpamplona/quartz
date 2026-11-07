@@ -473,9 +473,11 @@ internal object ECPoint {
         val tableSize = 1 shl (wnd - 2) // 8 entries
 
         // Split scalar via GLV: scalar = k₁ + k₂·λ (allocation-free)
-        val split = Glv.splitScalarInto(s.splitK1, s.splitK2, scalar, s.splitWide, s.splitT1, s.splitT2)
-        Glv.wnafInto(s.wnaf1, s.wnafTmp, split.k1, wnd, 129)
-        Glv.wnafInto(s.wnaf2, s.wnafTmp, split.k2, wnd, 129)
+        val neg = Glv.splitScalarInto(s.splitK1, s.splitK2, scalar, s.splitWide, s.splitT1, s.splitT2)
+        val negK1 = (neg and Glv.NEG_K1) != 0
+        val negK2 = (neg and Glv.NEG_K2) != 0
+        Glv.wnafInto(s.wnaf1, s.wnafTmp, s.splitK1, wnd, 129)
+        Glv.wnafInto(s.wnaf2, s.wnafTmp, s.splitK2, wnd, 129)
         val wnaf1 = s.wnaf1
         val wnaf2 = s.wnaf2
 
@@ -518,12 +520,12 @@ internal object ECPoint {
             var t = cur
             cur = alt
             alt = t
-            if (addWnafMixedPP(cur, alt, negY, wnaf1, i, pOdd, split.negK1, s)) {
+            if (addWnafMixedPP(cur, alt, negY, wnaf1, i, pOdd, negK1, s)) {
                 t = cur
                 cur = alt
                 alt = t
             }
-            if (addWnafMixedPP(cur, alt, negY, wnaf2, i, pLamOdd, split.negK2, s)) {
+            if (addWnafMixedPP(cur, alt, negY, wnaf2, i, pLamOdd, negK2, s)) {
                 t = cur
                 cur = alt
                 alt = t
@@ -612,13 +614,13 @@ internal object ECPoint {
         // Split scalars via GLV decomposition (allocation-free).
         // sSplit writes into splitK1/K2, then wNAF encodes them immediately
         // before eSplit overwrites the same scratch buffers.
-        val sSplit = Glv.splitScalarInto(sc.splitK1, sc.splitK2, s, sc.splitWide, sc.splitT1, sc.splitT2)
-        Glv.wnafInto(sc.wnaf1, sc.wnafTmp, sSplit.k1, WINDOW_G, 129)
-        Glv.wnafInto(sc.wnaf2, sc.wnafTmp, sSplit.k2, WINDOW_G, 129)
+        val sNeg = Glv.splitScalarInto(sc.splitK1, sc.splitK2, s, sc.splitWide, sc.splitT1, sc.splitT2)
+        Glv.wnafInto(sc.wnaf1, sc.wnafTmp, sc.splitK1, WINDOW_G, 129)
+        Glv.wnafInto(sc.wnaf2, sc.wnafTmp, sc.splitK2, WINDOW_G, 129)
         // Now safe to reuse splitK1/K2 for the e scalar
-        val eSplit = Glv.splitScalarInto(sc.splitK1, sc.splitK2, e, sc.splitWide, sc.splitT1, sc.splitT2)
-        Glv.wnafInto(sc.wnaf3, sc.wnafTmp, eSplit.k1, wP, 129)
-        Glv.wnafInto(sc.wnaf4, sc.wnafTmp, eSplit.k2, wP, 129)
+        val eNeg = Glv.splitScalarInto(sc.splitK1, sc.splitK2, e, sc.splitWide, sc.splitT1, sc.splitT2)
+        Glv.wnafInto(sc.wnaf3, sc.wnafTmp, sc.splitK1, wP, 129)
+        Glv.wnafInto(sc.wnaf4, sc.wnafTmp, sc.splitK2, wP, 129)
         val wnafS1 = sc.wnaf1
         val wnafS2 = sc.wnaf2
         val wnafE1 = sc.wnaf3
@@ -690,10 +692,10 @@ internal object ECPoint {
         // addWnafMixedPP. ~70% of digits are zero, so this avoids ~364
         // function calls per verify. Each function call on ART has ~5-8ns
         // overhead (parameter null checks, frame setup), saving ~2-3μs total.
-        val negK1s = sSplit.negK1
-        val negK2s = sSplit.negK2
-        val negK1e = eSplit.negK1
-        val negK2e = eSplit.negK2
+        val negK1s = (sNeg and Glv.NEG_K1) != 0
+        val negK2s = (sNeg and Glv.NEG_K2) != 0
+        val negK1e = (eNeg and Glv.NEG_K1) != 0
+        val negK2e = (eNeg and Glv.NEG_K2) != 0
 
         for (i in bits - 1 downTo 0) {
             doublePoint(alt, cur, sc)

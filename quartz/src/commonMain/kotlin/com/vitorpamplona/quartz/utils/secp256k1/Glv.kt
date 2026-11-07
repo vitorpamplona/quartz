@@ -74,9 +74,17 @@ internal object Glv {
         )
     }
 
+    /** Bit set in [splitScalarInto]'s result when k1 was negated. */
+    const val NEG_K1 = 1
+
+    /** Bit set in [splitScalarInto]'s result when k2 was negated. */
+    const val NEG_K2 = 2
+
     /**
-     * Allocation-free splitScalar using pre-allocated scratch from PointScratch.
-     * Eliminates ~26 LongArray allocations per call (called 2× per verify = ~52 allocs saved).
+     * Allocation-free splitScalar using pre-allocated scratch from PointScratch: writes |k1|, |k2|
+     * into [outK1], [outK2] and returns the negation flags as [NEG_K1] | [NEG_K2] bits (an Int,
+     * not a [Split] object: without escape analysis, as on ART, that object was 2 allocations
+     * per verify).
      */
     fun splitScalarInto(
         outK1: Fe4,
@@ -85,7 +93,7 @@ internal object Glv {
         w: Wide8,
         t1: Fe4,
         t2: Fe4,
-    ): Split {
+    ): Int {
         // c1 = mulShift384(k, G1)
         mulShift384Into(t1, k, G1, w)
         // c2 = mulShift384(k, G2)
@@ -105,7 +113,7 @@ internal object Glv {
         val neg2 = U256.cmp(outK2, N_HALF) > 0
         if (neg1) ScalarN.negTo(outK1, outK1)
         if (neg2) ScalarN.negTo(outK2, outK2)
-        return Split(outK1, outK2, neg1, neg2)
+        return (if (neg1) NEG_K1 else 0) or (if (neg2) NEG_K2 else 0)
     }
 
     /** Allocation-free mulShift384. */
