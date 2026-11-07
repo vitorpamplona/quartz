@@ -86,11 +86,16 @@ internal expect fun uLt(
  *
  * Originally non-inlined `uLt` was ~82-91ns/call on ART vs zero overhead
  * inlined; the slowdown is the cost of not crashing the JIT compiler.
+ *
+ * Platform-specific for the same reason as [uLt]: `Long.compareUnsigned` on the JVM (the field
+ * multiply runs ~27% faster on HotSpot than with the xor trick), the xor trick on Android and
+ * native (`a.toULong() < b.toULong()` would add two `ULong.constructor-impl` calls per compare
+ * on ART).
  */
-internal fun uLtInline(
+internal expect fun uLtInline(
     a: Long,
     b: Long,
-): Boolean = a.toULong() < b.toULong() // JVM: Long.compareUnsigned, which HotSpot compiles better than the xor trick
+): Boolean
 
 /**
  * Raw 256-bit unsigned integer arithmetic using 4×64-bit limbs.

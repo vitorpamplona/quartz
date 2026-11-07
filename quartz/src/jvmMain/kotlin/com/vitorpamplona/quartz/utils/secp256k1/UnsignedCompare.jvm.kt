@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.utils.secp256k1
 
+import java.lang.Long.compareUnsigned
+
 /**
  * JVM: Long.compareUnsigned is a HotSpot C2 JIT intrinsic.
  *
@@ -35,4 +37,10 @@ package com.vitorpamplona.quartz.utils.secp256k1
 internal actual fun uLt(
     a: Long,
     b: Long,
-): Boolean = java.lang.Long.compareUnsigned(a, b) < 0
+): Boolean = compareUnsigned(a, b) < 0
+
+/** Hot-path unsigned less-than; see uLtInline in U256.kt. */
+internal actual fun uLtInline(
+    a: Long,
+    b: Long,
+): Boolean = compareUnsigned(a, b) < 0

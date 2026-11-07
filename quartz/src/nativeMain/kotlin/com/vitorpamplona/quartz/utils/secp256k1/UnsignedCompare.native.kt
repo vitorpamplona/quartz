@@ -32,3 +32,9 @@ internal actual fun uLt(
     a: Long,
     b: Long,
 ): Boolean = (a xor Long.MIN_VALUE) < (b xor Long.MIN_VALUE)
+
+/** Hot-path unsigned less-than; see uLtInline in U256.kt. */
+internal actual fun uLtInline(
+    a: Long,
+    b: Long,
+): Boolean = (a xor Long.MIN_VALUE) < (b xor Long.MIN_VALUE)
