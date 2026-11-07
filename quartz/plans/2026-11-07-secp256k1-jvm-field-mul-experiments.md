@@ -24,6 +24,13 @@ inputs and `out` aliasing an input included) before timing.
   ops/s in `Secp256k1Benchmark`). It is expect/actual, like `uLt`: Android and native keep the
   xor trick, because `a.toULong() < b.toULong()` adds two `ULong.constructor-impl` calls per
   compare that ART does not remove.
+- **But not for the square.** The same change made `U256.sqrWide` ~50% slower on HotSpot, which
+  the multiply-only benchmark above did not show; batch verify (a square root per event, so
+  mostly squarings) fell ~11% below the original. JMH, ns per square + reduction, two rounds:
+  xor-trick square 30-34, `compareUnsigned` square 46-48; for the multiply the order is
+  reversed (31-35 against 35-40), and the reduction is slightly faster with `compareUnsigned`.
+  `sqrWide` therefore uses its own xor helper (`uLtXor`); after that, batch verify ran ~10% and
+  single verify ~15% faster than the original code (alternating A/B, three rounds each).
 - **Memory traffic is not the problem.** Keeping the whole 512-bit product in locals and fusing
   the reduction gains nothing over the two-function version: HotSpot already scalar-replaces
   the `Wide8` traffic.

@@ -98,6 +98,17 @@ internal expect fun uLtInline(
 ): Boolean
 
 /**
+ * Unsigned less-than by the xor trick, on every platform. Used by [U256.sqrWide]: on HotSpot the
+ * squaring runs ~50% slower with `Long.compareUnsigned` carries (JMH: 46-48 vs 30-34 ns for
+ * sqrWide + reduceWide), while the multiply runs ~10-20% faster with them, so the two use
+ * different helpers. Not inline, for the same ART JIT reason as [uLtInline].
+ */
+internal fun uLtXor(
+    a: Long,
+    b: Long,
+): Boolean = (a xor Long.MIN_VALUE) < (b xor Long.MIN_VALUE)
+
+/**
  * Raw 256-bit unsigned integer arithmetic using 4×64-bit limbs.
  */
 internal object U256 {
@@ -404,13 +415,13 @@ internal object U256 {
 
         lo = a0 * a2
         s = lo + carry
-        c1 = if (uLtInline(s, lo)) 1L else 0L
+        c1 = if (uLtXor(s, lo)) 1L else 0L
         out.l2 = s
         carry = unsignedMultiplyHigh(a0, a2) + c1
 
         lo = a0 * a3
         s = lo + carry
-        c1 = if (uLtInline(s, lo)) 1L else 0L
+        c1 = if (uLtXor(s, lo)) 1L else 0L
         out.l3 = s
         out.l4 = unsignedMultiplyHigh(a0, a3) + c1
 
@@ -419,7 +430,7 @@ internal object U256 {
         hi = unsignedMultiplyHigh(a1, a2)
         prev = out.l3
         s = prev + lo
-        c1 = if (uLtInline(s, prev)) 1L else 0L
+        c1 = if (uLtXor(s, prev)) 1L else 0L
         out.l3 = s
         carry = hi + c1
 
@@ -427,9 +438,9 @@ internal object U256 {
         hi = unsignedMultiplyHigh(a1, a3)
         prev = out.l4
         s = prev + lo
-        c1 = if (uLtInline(s, prev)) 1L else 0L
+        c1 = if (uLtXor(s, prev)) 1L else 0L
         s += carry
-        c2 = if (uLtInline(s, carry)) 1L else 0L
+        c2 = if (uLtXor(s, carry)) 1L else 0L
         out.l4 = s
         out.l5 = hi + c1 + c2
 
@@ -438,7 +449,7 @@ internal object U256 {
         hi = unsignedMultiplyHigh(a2, a3)
         prev = out.l5
         s = prev + lo
-        c1 = if (uLtInline(s, prev)) 1L else 0L
+        c1 = if (uLtXor(s, prev)) 1L else 0L
         out.l5 = s
         out.l6 = hi + c1
 
@@ -470,7 +481,7 @@ internal object U256 {
         hi = unsignedMultiplyHigh(a0, a0)
         out.l0 = lo // out.l0 was 0
         s = out.l1 + hi
-        c1 = if (uLtInline(s, out.l1)) 1L else 0L
+        c1 = if (uLtXor(s, out.l1)) 1L else 0L
         out.l1 = s
         var dCarry = c1
 
@@ -478,14 +489,14 @@ internal object U256 {
         lo = a1 * a1
         hi = unsignedMultiplyHigh(a1, a1)
         s = out.l2 + lo
-        c1 = if (uLtInline(s, out.l2)) 1L else 0L
+        c1 = if (uLtXor(s, out.l2)) 1L else 0L
         s += dCarry
-        c2 = if (uLtInline(s, dCarry)) 1L else 0L
+        c2 = if (uLtXor(s, dCarry)) 1L else 0L
         out.l2 = s
         prev = out.l3 + hi
-        val c3a = if (uLtInline(prev, out.l3)) 1L else 0L
+        val c3a = if (uLtXor(prev, out.l3)) 1L else 0L
         prev += c1 + c2
-        val c4a = if (uLtInline(prev, c1 + c2)) 1L else 0L
+        val c4a = if (uLtXor(prev, c1 + c2)) 1L else 0L
         out.l3 = prev
         dCarry = c3a + c4a
 
@@ -493,14 +504,14 @@ internal object U256 {
         lo = a2 * a2
         hi = unsignedMultiplyHigh(a2, a2)
         s = out.l4 + lo
-        c1 = if (uLtInline(s, out.l4)) 1L else 0L
+        c1 = if (uLtXor(s, out.l4)) 1L else 0L
         s += dCarry
-        c2 = if (uLtInline(s, dCarry)) 1L else 0L
+        c2 = if (uLtXor(s, dCarry)) 1L else 0L
         out.l4 = s
         prev = out.l5 + hi
-        val c3b = if (uLtInline(prev, out.l5)) 1L else 0L
+        val c3b = if (uLtXor(prev, out.l5)) 1L else 0L
         prev += c1 + c2
-        val c4b = if (uLtInline(prev, c1 + c2)) 1L else 0L
+        val c4b = if (uLtXor(prev, c1 + c2)) 1L else 0L
         out.l5 = prev
         dCarry = c3b + c4b
 
@@ -508,12 +519,12 @@ internal object U256 {
         lo = a3 * a3
         hi = unsignedMultiplyHigh(a3, a3)
         s = out.l6 + lo
-        c1 = if (uLtInline(s, out.l6)) 1L else 0L
+        c1 = if (uLtXor(s, out.l6)) 1L else 0L
         s += dCarry
-        c2 = if (uLtInline(s, dCarry)) 1L else 0L
+        c2 = if (uLtXor(s, dCarry)) 1L else 0L
         out.l6 = s
         prev = out.l7 + hi
-        val c3c = if (uLtInline(prev, out.l7)) 1L else 0L
+        val c3c = if (uLtXor(prev, out.l7)) 1L else 0L
         prev += c1 + c2
         out.l7 = prev
     }
