@@ -366,6 +366,21 @@ kotlin {
         getByName("linuxX64Test") {
             dependsOn(linuxTest)
         }
+
+        // MultiplyHigh.native.kt's @GCUnsafeCall, for the shared metadata compiles
+        // (compileNativeMainKotlinMetadata, ...); the per-target compilations get it above. Every
+        // source set that depends on nativeMain must declare the same opt-in.
+        listOf(
+            nativeMain,
+            appleMain,
+            iosMain.get(),
+            macosMain,
+            linuxMain,
+            getByName("iosArm64Main"),
+            getByName("iosSimulatorArm64Main"),
+            getByName("macosArm64Main"),
+            getByName("linuxX64Main"),
+        ).forEach { it.languageSettings.optIn("kotlin.native.internal.InternalForKotlinNative") }
     }
 }
 
