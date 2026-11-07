@@ -732,6 +732,34 @@ comment on the channel). The flooded case shows the throughput cost: 52 → 142 
 ground, delivering directly while the consumer is idle and queuing while it is busy, needs its own
 design and measurement.
 
+**Correction: with an app-like consumer, the handoff costs little or nothing measurable.** The
+table above uses `basicVersusBytes`' listener, which only counts. A consumer that cheap is always
+faster than OkHttp's reader, so it parks after every message: the worst case.
+
+A rerun with a consumer shaped like the app's (verify each new event once, a set lookup for a
+duplicate; paced 20/ms; median of 3) gave:
+
+| Consumer verifies new events | Handoff | No handoff |
+|---|---|---|
+| all new | 38.7 µs/frame | 44.9 µs/frame |
+| 3× duplicates | 20.2 µs/frame | 16.2 µs/frame |
+
+The duplicate case later measured 17.9 µs with the handoff, the same build and setup, so the
+apparent ~4 µs is within this VM's spread.
+
+A prototype that spins in the delivery loop before parking (window 0, 5, 20, 50 µs) changed
+nothing outside noise either:
+
+| Workload | 0 µs | 5 µs | 20 µs | 50 µs |
+|---|---|---|---|---|
+| 3× duplicates, paced | 17.9 | 20.5 | 17.7 | 18.6 µs/frame |
+| unique, paced | 40.1 | 41.5 | 40.6 | 44.6 µs/frame |
+| unique, flooded | 37.4 | 35.5 | 36.6 | 34.8 µs/frame |
+
+The sparse-traffic measurement was unreliable: one value came out below the cost of a single
+verify. Busy-waiting would also cost battery on Android. The prototype is reverted: nothing to
+ship from the handoff.
+
 **OkHttp's decompression is not the problem.** `MessageInflater` (okio `InflaterSource` +
 `readUtf8`) takes 5.2 µs per corpus frame, against 5.1 µs for a plain `Inflater` into a reused
 array plus `String(bytes, UTF_8)`. That disproves the earlier guess (2g's verdict) that its inflate
