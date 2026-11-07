@@ -18,6 +18,8 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package com.vitorpamplona.quartz.utils.secp256k1
 
 import com.vitorpamplona.crypto.sha2.sha256
@@ -31,6 +33,8 @@ import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1.secKeyVerify
 import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1.signSchnorr
 import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1.signSchnorrWithPubKey
 import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1.verifySchnorr
+import kotlin.concurrent.atomics.AtomicArray
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * Pure Kotlin implementation of secp256k1 elliptic curve operations for Nostr.
@@ -97,7 +101,8 @@ object Secp256k1 {
         val py: Fe4, // decompressed y (4 limbs)
     )
 
-    private val pubkeyCache = arrayOfNulls<CachedPubkey>(PUBKEY_CACHE_SIZE)
+    // Shared by all threads; AtomicArray for safe publication of entries (see ECPoint.pTableCache).
+    private val pubkeyCache = AtomicArray(arrayOfNulls<CachedPubkey>(PUBKEY_CACHE_SIZE))
 
     /**
      * liftX with caching. Returns true and fills outX/outY if the pubkey is valid.
@@ -116,7 +121,7 @@ object Secp256k1 {
                     ((pub[1].toInt() and 0xFF) shl 8)
             ) and PUBKEY_CACHE_MASK
 
-        val cached = pubkeyCache[slot]
+        val cached = pubkeyCache.loadAt(slot)
         if (cached != null && cached.keyBytes.contentEquals(pub)) {
             // Cache hit — copy pre-computed coordinates
             outX.copyFrom(cached.px)
@@ -127,7 +132,7 @@ object Secp256k1 {
         // Cache miss — compute sqrt and store
         if (!KeyCodec.liftX(outX, outY, U256.fromBytes(pub))) return false
 
-        pubkeyCache[slot] = CachedPubkey(pub.copyOf(), outX.copyOf(), outY.copyOf())
+        pubkeyCache.storeAt(slot, CachedPubkey(pub.copyOf(), outX.copyOf(), outY.copyOf()))
         return true
     }
 

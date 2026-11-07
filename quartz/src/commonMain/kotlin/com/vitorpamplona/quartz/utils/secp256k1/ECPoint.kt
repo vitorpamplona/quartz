@@ -18,7 +18,12 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package com.vitorpamplona.quartz.utils.secp256k1
+
+import kotlin.concurrent.atomics.AtomicArray
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 // =====================================================================================
 // ELLIPTIC CURVE POINT OPERATIONS ON secp256k1
@@ -124,7 +129,10 @@ internal object ECPoint {
         val pLamOdd: Array<AffinePoint>, // 8 affine odd-multiples of λ(P)
     )
 
-    private val pTableCache = arrayOfNulls<CachedPTable>(P_TABLE_CACHE_SIZE)
+    // Shared by all threads. AtomicArray publishes each entry with release/acquire ordering, so a
+    // thread that reads an entry also sees the table it points to (Kotlin/Native gives no final-field
+    // guarantee like the JVM's; on ARM64 a plain array could expose the reference before the limbs).
+    private val pTableCache = AtomicArray(arrayOfNulls<CachedPTable>(P_TABLE_CACHE_SIZE))
 
     /** Hash a field element to a cache slot index. */
     private fun cacheSlot(px: Fe4): Int = (px.l0.toInt() xor px.l1.toInt().shl(3)) and P_TABLE_CACHE_MASK
@@ -625,7 +633,7 @@ internal object ECPoint {
         val pOdd: Array<AffinePoint>
         val pLamOdd: Array<AffinePoint>
         val cacheSlot = cacheSlot(p.x)
-        val cached = pTableCache[cacheSlot]
+        val cached = pTableCache.loadAt(cacheSlot)
         if (cached != null && U256.cmp(cached.px, p.x) == 0) {
             // Cache hit — use cached affine tables directly (no copy needed)
             pOdd = cached.pOdd
@@ -654,7 +662,7 @@ internal object ECPoint {
                 Array(pTableSize) {
                     AffinePoint(sc.pLamOddAff[it].x.copyOf(), sc.pLamOddAff[it].y.copyOf())
                 }
-            pTableCache[cacheSlot] = CachedPTable(p.x.copyOf(), cachedPOdd, cachedPLamOdd)
+            pTableCache.storeAt(cacheSlot, CachedPTable(p.x.copyOf(), cachedPOdd, cachedPLamOdd))
 
             pOdd = cachedPOdd
             pLamOdd = cachedPLamOdd
