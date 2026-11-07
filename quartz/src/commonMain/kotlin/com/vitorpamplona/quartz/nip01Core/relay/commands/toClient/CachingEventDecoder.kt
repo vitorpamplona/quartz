@@ -204,17 +204,30 @@ class CachingEventDecoder(
      */
     @Volatile var verifyOnArrival: (RelayRecord) -> Boolean = { it.badSigs >= 2 || it.badIds >= 20 }
 
+    /**
+     * Events the app already holds, asked for an id this decoder's own cache does not have (it
+     * keeps only the last `2 * capacity` ids), e.g. the app's in-memory event cache, so an event
+     * delivered again long after it aged out here is still not parsed again. Called from every
+     * relay's delivery thread: see [KnownEventLookup]. An id under scrutiny, or reported forged,
+     * is never asked.
+     */
+    @Volatile var knownEvents: KnownEventLookup? = null
+
     /** The clock for scrutiny expiry; tests move it. */
     internal var nowInSeconds: () -> Long = TimeUtils::now
 
     // Observability + benchmark hooks.
     private val parsed = AtomicLong(0)
     private val reused = AtomicLong(0)
+    private val reusedKnown = AtomicLong(0)
     private val verifiedHere = AtomicLong(0)
     private val skipped = AtomicLong(0)
 
     val parsedCount: Long get() = parsed.load()
     val reusedCount: Long get() = reused.load()
+
+    /** Of [reusedCount], the copies [knownEvents] answered for. */
+    val reusedKnownCount: Long get() = reusedKnown.load()
 
     /** Copies verified here: those from offending relays and those of scrutinized ids. */
     val verifiedCount: Long get() = verifiedHere.load()
@@ -243,7 +256,7 @@ class CachingEventDecoder(
                 val scrutiny = activeScrutiny(scanned.eventId)
                 if (scrutiny != null) return decodeScrutinized(text, relay, scanned.eventId, scrutiny)
             }
-            val cached = lookup(scanned.eventId)
+            val cached = lookupOrKnown(scanned.eventId)
             if (cached != null) {
                 reused.incrementAndFetch()
                 return EventMessage(scanned.subId, cached)
@@ -309,9 +322,13 @@ class CachingEventDecoder(
         suspects.remove(relay)
     }
 
-    private fun lookup(id: HexKey): Event? {
-        val entry = live.get(id) ?: previous.get(id) ?: return null
-        return entry.event
+    /** This cache, then [knownEvents]; a revoked id (reported forged) is not asked further. */
+    private fun lookupOrKnown(id: HexKey): Event? {
+        val entry = live.get(id) ?: previous.get(id)
+        if (entry != null) return entry.event
+        val known = knownEvents?.find(id) ?: return null
+        reusedKnown.incrementAndFetch()
+        return known
     }
 
     private fun remember(
