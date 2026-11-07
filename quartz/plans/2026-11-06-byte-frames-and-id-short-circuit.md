@@ -698,6 +698,64 @@ String.
 **Not measured:** Android (ART, the plain-loop scan, its GC), Kotlin/Native, real relays at scale,
 proxies and Tor, and the share of Amethyst's real frames that arrive compressed.
 
+## 2h. What transfers to the String path
+
+Probes run after 2g. None are committed: the probe tests are deleted, and the socket was restored
+after the experiment.
+
+**The thread handoff, not the parse, is the String path's largest cost on real traffic.**
+`BasicOkHttpWebSocket` hands every frame from OkHttp's reader thread to its delivery coroutine. On
+paced traffic, and on compressed traffic where OkHttp's reader is the slower side, the coroutine
+empties its queue after each message and must be woken for the next.
+
+Run with the delivery coroutine on `Dispatchers.Unconfined`, which delivers on OkHttp's reader
+thread with no handoff, `SocketIngestBenchmark.basicVersusBytes` gave:
+
+| CPU per frame | Basic | Basic, no handoff | Byte socket |
+|---|---|---|---|
+| unique, plain, paced | 7,878 ns | 5,344 ns | 6,558 ns |
+| unique, deflate, paced | 16,985 ns | 9,505 ns | 9,865 ns |
+| unique, deflate, flooded | 14,985 ns | 8,834 ns | 8,537 ns |
+| 3× dupes, deflate, flooded | 15,869 ns | 7,957 ns | 7,717 ns |
+| unique, plain, flooded | 2,623 ns | 4,982 ns (wall 52 → 142 ms) | 5,712 ns |
+
+(The Basic and byte-socket columns come from separate runs.)
+
+So most of the byte socket's CPU win on compressed and paced traffic comes from handing over
+batches instead of single messages, not from parsing bytes. That win is reachable without the byte
+stack.
+
+The catch is policy, and it is why this is not a patch. With no handoff, the listener chain runs on
+OkHttp's reader thread, and reading stops while it works. `BasicOkHttpWebSocket` deliberately drains
+the relay into an unbounded queue instead, so that a slow consumer never pushes back on relays (its
+comment on the channel). The flooded case shows the throughput cost: 52 → 142 ms wall. A middle
+ground, delivering directly while the consumer is idle and queuing while it is busy, needs its own
+design and measurement.
+
+**OkHttp's decompression is not the problem.** `MessageInflater` (okio `InflaterSource` +
+`readUtf8`) takes 5.2 µs per corpus frame, against 5.1 µs for a plain `Inflater` into a reused
+array plus `String(bytes, UTF_8)`. That disproves the earlier guess (2g's verdict) that its inflate
+path was inefficient.
+
+**`CachingEventDecoder`'s text path is expensive on unique frames.** Measured on the corpus:
+
+| | id first | strfry order |
+|---|---|---|
+| Kite alone | 655–734 ns, 1,393 B | 865–996 ns |
+| unique frame, through the decoder | 1,260–1,394 ns, 1,650 B | 1,404–1,562 ns |
+| duplicate, with a big enough cache | 431–435 ns, 200 B | 547–946 ns |
+
+A unique frame pays ~550 ns over Kite alone: its scan, the map lookup and the insert. Two
+transferable changes:
+- **Ask for the id while parsing, on the String reader too** (the deferred fields of 2d, in
+  `KiteReader`). A miss then skips the separate scan and its id and subId strings. The scan is
+  estimated at ~100–250 ns of the 550; not measured on its own.
+- **Key the cache by the id's first 64 bits, parsed from the hex.** A probe table measured 189–224 →
+  149–171 ns and 119 → 15 B per duplicate. Small, and it needs a thread-safe open-addressing table.
+
+**Not transferable:** the frame `String` itself. OkHttp builds it, so the allocation win stays with
+the byte socket.
+
 ## Expected gain (estimate, not measured end to end)
 
 Per frame, against today's decode cost on the corpus mix, and before any change to Kite's own
