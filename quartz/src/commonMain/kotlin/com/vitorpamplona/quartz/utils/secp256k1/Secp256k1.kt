@@ -284,10 +284,10 @@ object Secp256k1 {
         auxrand: ByteArray?,
     ): ByteArray {
         require(seckey.size == 32 && compressedPub.size == 33)
-        // Use zInv for d0 — not used by signSchnorrInternal.
-        val sc = ECPoint.getScratch()
-        val d0 = sc.zInv
-        U256.fromBytesInto(d0, seckey, 0)
+        require(compressedPub[0] == 0x02.toByte() || compressedPub[0] == 0x03.toByte())
+        // Not a scratch buffer: signSchnorrInternal's R = k·G and its affine conversion reuse the
+        // point scratch (toAffine writes sc.zInv), and d must survive until s = k + e·d.
+        val d0 = U256.fromBytes(seckey)
         require(ScalarN.isValid(d0))
         val hasEvenY = compressedPub[0] == 0x02.toByte()
         val xOnlyPub = compressedPub.copyOfRange(1, 33)
@@ -295,13 +295,14 @@ object Secp256k1 {
     }
 
     /**
-     * Fast signing with a pre-computed x-only public key (32 bytes).
+     * Signing with the 32-byte x-only public key already known.
      *
-     * BIP-340 public keys always have even y, so the y-parity is known (even = true).
-     * This avoids both the expensive G multiplication to derive the pubkey AND the
-     * 33→32 byte array copy that signSchnorrWithPubKey does internally.
+     * Costs the same as [signSchnorr]: BIP-340 signs with d or n - d depending on the parity of
+     * y in d·G, and an x-only key does not carry that parity, so it is derived here. (An earlier
+     * version assumed even y, and produced invalid signatures for half of all keys.) The fast
+     * path is [signSchnorrWithPubKey], whose 33-byte compressed key carries the parity.
      *
-     * Use when the caller already has the 32-byte x-only pubkey (e.g., from KeyPair.pubKey).
+     * Fails (IllegalArgumentException) if [xOnlyPub] is not the x-only key of [seckey].
      */
     fun signSchnorrWithXOnlyPubKey(
         data: ByteArray,
@@ -310,13 +311,13 @@ object Secp256k1 {
         auxrand: ByteArray?,
     ): ByteArray {
         require(seckey.size == 32 && xOnlyPub.size == 32)
-        // Use zInv for d0 — not used by signSchnorrInternal.
-        val sc = ECPoint.getScratch()
-        val d0 = sc.zInv
-        U256.fromBytesInto(d0, seckey, 0)
+        val d0 = U256.fromBytes(seckey)
         require(ScalarN.isValid(d0))
-        // BIP-340: x-only pubkeys always have even y
-        return signSchnorrInternal(data, d0, xOnlyPub, true, auxrand)
+        val sc = ECPoint.getScratch()
+        ECPoint.mulG(sc.entryResult, d0, sc)
+        check(ECPoint.toAffine(sc.entryResult, sc.entryPx, sc.entryPy, sc))
+        require(U256.toBytes(sc.entryPx).contentEquals(xOnlyPub)) { "xOnlyPub is not the public key of seckey" }
+        return signSchnorrInternal(data, d0, xOnlyPub, KeyCodec.hasEvenY(sc.entryPy), auxrand)
     }
 
     /**
