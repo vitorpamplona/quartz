@@ -20,15 +20,52 @@
  */
 package com.vitorpamplona.quartz.utils.secp256k1
 
-/**
- * Native: holds value directly (no thread-local needed).
- * Kotlin/Native coroutines are cooperative — scratch buffers are safe to share
- * within a single thread's call stack.
- */
-internal actual class ScratchLocal<T : Any> actual constructor(
-    initializer: () -> T,
-) {
-    private val value: T = initializer()
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.native.concurrent.ThreadLocal
 
-    actual fun get(): T = value
+/**
+ * Kotlin/Native: one scratch value per thread, like java.lang.ThreadLocal on the JVM.
+ *
+ * Kotlin/Native code runs on many threads (Dispatchers.Default is a thread pool), so a single
+ * shared scratch buffer lets two concurrent signs, verifies or ECDHs overwrite each other's
+ * intermediate field elements: wrong results, and secret-dependent state crossing threads.
+ *
+ * Each ScratchLocal takes a slot number when it is created (there are three, all in shared
+ * objects). [slots] is a `@ThreadLocal` top-level property, so every thread sees its own
+ * array; `get()` is one thread-local load, a bounds check and an array read. The value is
+ * created on a thread's first `get()`.
+ */
+@OptIn(ExperimentalAtomicApi::class)
+private val nextSlot = AtomicInt(0)
+
+@ThreadLocal
+private var slots: Array<Any?> = arrayOfNulls(4)
+
+internal actual class ScratchLocal<T : Any> actual constructor(
+    private val initializer: () -> T,
+) {
+    @OptIn(ExperimentalAtomicApi::class)
+    private val slot = nextSlot.fetchAndAdd(1)
+
+    @Suppress("UNCHECKED_CAST")
+    actual fun get(): T {
+        val s = slots
+        if (slot < s.size) {
+            val v = s[slot]
+            if (v != null) return v as T
+        }
+        return create()
+    }
+
+    private fun create(): T {
+        var s = slots
+        if (slot >= s.size) {
+            s = s.copyOf(maxOf(slot + 1, s.size * 2))
+            slots = s
+        }
+        val v = initializer()
+        s[slot] = v
+        return v
+    }
 }
