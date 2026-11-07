@@ -207,10 +207,12 @@ class CachingEventDecoder(
     @Volatile var verifyOnArrival: (RelayRecord) -> Boolean = { it.badSigs >= 2 || it.badIds >= 20 }
 
     /**
-     * Events the app already holds, consulted for an id this decoder's own cache does not have
-     * (it keeps only the last `2 * capacity` ids), e.g. the app's in-memory event cache, so an
-     * event delivered again long after it aged out here is still not parsed again. Called from
-     * every relay's reader thread: see [KnownEventLookup]. Ids under scrutiny never reach it.
+     * Events the app already holds, asked for an id this decoder's own cache does not have (it
+     * keeps only the last `2 * capacity` ids), e.g. the app's in-memory event cache, so an event
+     * delivered again long after it aged out here is still not parsed again. Called from every
+     * relay's delivery thread (its reader
+     * thread, for a socket that hands over bytes): see [KnownEventLookup]. An id under scrutiny, or reported forged,
+     * is never asked.
      */
     @Volatile var knownEvents: KnownEventLookup? = null
 

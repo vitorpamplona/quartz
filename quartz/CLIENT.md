@@ -760,6 +760,19 @@ if (!event.verify()) {
 
 `record(relay)`, `suspectRelays()` and `forgive(relay)` read and clear a relay's record.
 
+The decoder remembers only the last `2 * capacity` ids (16,384 by default), so a duplicate that
+arrives after its id aged out is parsed again. If the app keeps its own cache of the events it
+received, let the decoder ask it with `knownEvents`. A frame whose id the decoder doesn't have
+is then answered from the app's cache, if the app holds it, instead of being parsed. The lookup
+runs on every relay's delivery thread, so it must be thread-safe and fast (a map lookup, never
+I/O). It is never asked for an id under scrutiny, so a forged copy the app still holds is never
+handed out again.
+
+```kotlin
+decoder.knownEvents = KnownEventLookup { id -> appEvents[id] }
+// decoder.reusedKnownCount: how many copies the app answered for
+```
+
 ## Full Example: Simple Feed Reader
 
 ```kotlin

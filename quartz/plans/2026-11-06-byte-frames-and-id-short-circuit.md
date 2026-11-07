@@ -524,6 +524,8 @@ reads the id.
 2. the decoder's own cache;
 3. the new `knownEvents` (`@Volatile var`, no constructor change), the app's events, e.g.
    Amethyst's in-memory cache, which reaches past the last 2 × 8,192 ids.
+   The text-path part of this, `KnownEventLookup` and `knownEvents` answering `decodeFrom`'s
+   scan, is on `main` since vitorpamplona/quartz#97; the byte path's deferred lookup stays here.
 
 A revoked (reported) id is never asked of the app. The text path's scan also falls back to
 `knownEvents`, and `reusedKnownCount` counts the app's answers. What the byte path gains over the
@@ -643,7 +645,8 @@ on Android's GC.
    ASCII/non-ASCII, scans by value length, the end-to-end dedup path with the decode
    included). Add a recorded *wire-order* corpus, since the current one is re-serialized with
    `id` first and hides the strfry case.
-2. **Done: the text path's duplicate scan accepts JSON whitespace.** `CachingEventDecoder`'s
+2. **Done, on `main` since vitorpamplona/quartz#96: the text path's duplicate scan accepts JSON
+   whitespace**, and takes `"id"`/`"sig"` only where a key can start. `CachingEventDecoder`'s
    `scanEventFrame` and `scanSig` (and the byte `scanSigUtf8`) accept whitespace between the
    frame's tokens and around the colon of `"id"`/`"sig"`, so relay.snort.social's `"id": "…"`
    frames (20% of its sample) hit the cache instead of being parsed again. A string can't hold

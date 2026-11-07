@@ -24,15 +24,15 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 
 /**
- * Events the app already holds, by id, so a frame carrying one is not parsed again: the reader
- * asks [find] the moment it reads the frame's `id`, and on an answer stops reading and hands
- * that event out instead (with the frame's own subscription id).
+ * Events the app already holds, by id, so a frame carrying one is not parsed again. Set one on
+ * [CachingEventDecoder.knownEvents]: when the decoder finds a frame's id and its own cache of
+ * recent ids doesn't have it, it asks [find], and on an answer hands that event out (with the
+ * frame's own subscription id) instead of parsing the frame. Kite's byte reader
+ * (`KiteBytesReader`) asks the moment it reads the id, and on an answer reads nothing past it.
  *
- * Set one on [CachingEventDecoder.knownEvents] to reach past the decoder's own cache of recent
- * ids, e.g. with the app's in-memory event cache. It is consulted on every frame whose id the
- * decoder does not have, from the sockets' reader threads at once: it must be thread-safe and
- * fast (a map lookup, never I/O). Return only events you would hand out for that id: not one
- * you found forged.
+ * It is called on every such frame, from every relay's delivery thread at once: it must be
+ * thread-safe and fast (a map lookup, never I/O). Return only events you would hand out for that
+ * id: not one you found forged.
  */
 fun interface KnownEventLookup {
     fun find(id: HexKey): Event?
