@@ -370,10 +370,14 @@ jobs:
           exit 1
 
   # Apple klibs cross-compile on Linux; only Apple test and framework binaries need a Mac.
+  # Publishes from macOS: the iOS/macOS klibs carry a cinterop (the secp256k1 multiply-high
+  # helpers, src/nativeInterop/cinterop/mulhi.def), and Kotlin 2.4 cannot cross-compile an Apple
+  # klib with a cinterop on a Linux host. macOS builds every target, Linux and Android included.
+  # The daemon heap is capped at 4 GB for the 7 GB runner, as in build.yml's test-apple job.
   maven:
     needs: [check-version, tag]
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: macos-latest
+    timeout-minutes: 90
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
 
@@ -402,7 +406,7 @@ jobs:
           restore-keys: release-build-cache-${{ github.run_id }}-
 
       - name: Publish
-        run: ./gradlew :quartz:publishAllPublicationsToMavenCentral --no-configuration-cache
+        run: ./gradlew -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" :quartz:publishAllPublicationsToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_VERSION_NAME: ${{ env.VERSION }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
