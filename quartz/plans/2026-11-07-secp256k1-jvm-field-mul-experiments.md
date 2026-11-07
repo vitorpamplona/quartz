@@ -31,13 +31,26 @@ inputs and `out` aliasing an input included) before timing.
 - **The remaining 2x to native is most likely the multiplies.** Kotlin on the JVM cannot ask
   for both halves of a 64x64 product, so each product is an `imul` for the low half plus a
   `mul` for the high half: 32 multiplies per field multiply where LLVM emits 16 `mul`s that
-  yield both halves. Newer JDKs might combine the two; not yet measured (JDK 25 test pending).
+  yield both halves.
+
+## JDK 27
+
+Same JMH set, Temurin 27.0.1 against JDK 21, run back to back:
+
+| Variant | JDK 21 | JDK 27 |
+|---|---|---|
+| Quartz, xor-trick carries | 37.6 ± 3.2 | 38.4 ± 2.6 |
+| Quartz, `Long.compareUnsigned` carries | 28.1 ± 2.7 | 25.8 ± 2.5 |
+| Fused, `Long.compareUnsigned` carries | 29.3 ± 2.1 | 28.1 ± 1.8 |
+| 5x52 limbs | 39.1 ± 3.6 | 35.5 ± 3.5 |
+
+At most ~8% better on the best variant, with overlapping error bars: JDK 27 does not close the
+gap to native (13-15 ns). `Secp256k1Benchmark` (verify against ACINQ) on JDK 27 was too noisy
+to read: ACINQ's own verify, identical C code, swung 21.7k-32.1k ops/s between runs.
 
 ## Next candidates
 
-1. Re-run this JMH set on JDK 25: if C2 merges `MulL` + `MulHiL`, the JVM gap shrinks with no
-   code change.
-2. Fewer multiplies: Karatsuba at the 2x2-limb level trades multiplies for additions; worth one
+1. Fewer multiplies: Karatsuba at the 2x2-limb level trades multiplies for additions; worth one
    measurement now that additions are cheaper.
-3. Android/ART: re-measure all of the above on a device; ART's code generation differs from
+2. Android/ART: re-measure all of the above on a device; ART's code generation differs from
    C2's, and `uLtInline` is common code.
