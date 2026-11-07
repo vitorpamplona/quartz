@@ -23,8 +23,9 @@ package com.vitorpamplona.quartz.utils.secp256k1
 /**
  * Modular inversion by safegcd (Bernstein-Yang divsteps), variable time.
  *
- * A port of libsecp256k1's `secp256k1_modinv64_var` (src/modinv64_impl.h, MIT license,
- * Copyright (c) 2020 Peter Dettman, Pieter Wuille), which see for the derivation. Numbers are
+ * A port of libsecp256k1's `secp256k1_modinv64_var` (src/modinv64_impl.h), which see for the
+ * derivation. MIT license; src/modinv64_impl.h: "Copyright (c) 2020 Peter Dettman"; the
+ * library's COPYING: "Copyright (c) 2013 Pieter Wuille". Numbers are
  * held as five signed 62-bit limbs; each round does 62 divsteps on the bottom limbs, then applies
  * the resulting 2x2 matrix to the full numbers. A 256-bit inverse takes about 10 rounds, against
  * 270 field multiplies for Fermat's a^(p-2).
@@ -43,7 +44,9 @@ internal object SafeGcd {
         val m3: Long,
         val m4: Long,
         val inv62: Long,
-    )
+    ) {
+        val limbs = longArrayOf(m0, m1, m2, m3, m4)
+    }
 
     /** p = 2^256 - 2^32 - 977. */
     val P = Modulus(-0x1000003D1L, 0L, 0L, 0L, 256L, 0x27C7F6E22DDACACFL)
@@ -181,34 +184,20 @@ internal object SafeGcd {
         return eta
     }
 
-    /** Signed 128-bit accumulator. */
-    private class Acc {
-        var hi = 0L
-        var lo = 0L
+    // Signed 128-bit accumulators are kept as (hi, lo) pairs of locals, not objects: ART has no
+    // escape analysis to remove a per-round allocation. hiAdd(hi, lo, p, ph) is the new high word
+    // of (hi, lo) + (ph, p); the caller then sets lo += p.
 
-        fun set(
-            a: Long,
-            b: Long,
-        ) {
-            lo = a * b
-            hi = multiplyHigh(a, b)
-        }
-
-        fun add(
-            a: Long,
-            b: Long,
-        ) {
-            val p = a * b
-            val l = lo + p
-            hi += multiplyHigh(a, b) + (if (l.toULong() < p.toULong()) 1L else 0L)
-            lo = l
-        }
-
-        /** Arithmetic shift right by 62. */
-        fun shr62() {
-            lo = (lo ushr 62) or (hi shl 2)
-            hi = hi shr 62
-        }
+    /** Carry out of lo + p, branch-free (no unsigned compare: see uLt for why that is per platform). */
+    @Suppress("NOTHING_TO_INLINE")
+    private inline fun hiAdd(
+        hi: Long,
+        lo: Long,
+        p: Long,
+        ph: Long,
+    ): Long {
+        val s = lo + p
+        return hi + ph + (((lo and p) or ((lo or p) and s.inv())) ushr 63)
     }
 
     /** [d, e] = (t * [d, e] + m * [md, me]) / 2^62, keeping both in (-2m, m). */
@@ -223,85 +212,76 @@ internal object SafeGcd {
         val q = t[2]
         val r = t[3]
         val d0 = d[0]
-        val d1 = d[1]
-        val d2 = d[2]
-        val d3 = d[3]
-        val d4 = d[4]
         val e0 = e[0]
-        val e1 = e[1]
-        val e2 = e[2]
-        val e3 = e[3]
+        val d4 = d[4]
         val e4 = e[4]
-        val cd = Acc()
-        val ce = Acc()
+        var p: Long
 
         val sd = d4 shr 63
         val se = e4 shr 63
         var md = (u and sd) + (v and se)
         var me = (q and sd) + (r and se)
-        cd.set(u, d0)
-        cd.add(v, e0)
-        ce.set(q, d0)
-        ce.add(r, e0)
-        md -= (m.inv62 * cd.lo + md) and M62
-        me -= (m.inv62 * ce.lo + me) and M62
-        cd.add(m.m0, md)
-        ce.add(m.m0, me)
-        cd.shr62()
-        ce.shr62()
 
-        cd.add(u, d1)
-        cd.add(v, e1)
-        ce.add(q, d1)
-        ce.add(r, e1)
-        if (m.m1 != 0L) {
-            cd.add(m.m1, md)
-            ce.add(m.m1, me)
+        // limb 0: cd = u*d0 + v*e0, ce = q*d0 + r*e0
+        var cdLo = u * d0
+        var cdHi = multiplyHigh(u, d0)
+        p = v * e0
+        cdHi = hiAdd(cdHi, cdLo, p, multiplyHigh(v, e0))
+        cdLo += p
+        var ceLo = q * d0
+        var ceHi = multiplyHigh(q, d0)
+        p = r * e0
+        ceHi = hiAdd(ceHi, ceLo, p, multiplyHigh(r, e0))
+        ceLo += p
+        // choose md, me so the bottom 62 bits cancel
+        md -= (m.inv62 * cdLo + md) and M62
+        me -= (m.inv62 * ceLo + me) and M62
+        p = m.m0 * md
+        cdHi = hiAdd(cdHi, cdLo, p, multiplyHigh(m.m0, md))
+        cdLo += p
+        p = m.m0 * me
+        ceHi = hiAdd(ceHi, ceLo, p, multiplyHigh(m.m0, me))
+        ceLo += p
+        cdLo = (cdLo ushr 62) or (cdHi shl 2)
+        cdHi = cdHi shr 62
+        ceLo = (ceLo ushr 62) or (ceHi shl 2)
+        ceHi = ceHi shr 62
+
+        // limbs 1..4, each stored one limb down (iteration i reads d[i] before writing d[i - 1])
+        val ml = m.limbs
+        for (i in 1..4) {
+            val di = d[i]
+            val ei = e[i]
+            val mi = ml[i]
+            p = u * di
+            cdHi = hiAdd(cdHi, cdLo, p, multiplyHigh(u, di))
+            cdLo += p
+            p = v * ei
+            cdHi = hiAdd(cdHi, cdLo, p, multiplyHigh(v, ei))
+            cdLo += p
+            p = q * di
+            ceHi = hiAdd(ceHi, ceLo, p, multiplyHigh(q, di))
+            ceLo += p
+            p = r * ei
+            ceHi = hiAdd(ceHi, ceLo, p, multiplyHigh(r, ei))
+            ceLo += p
+            if (mi != 0L) { // p's limbs 1..3 are zero; n's limb 3 is
+                p = mi * md
+                cdHi = hiAdd(cdHi, cdLo, p, multiplyHigh(mi, md))
+                cdLo += p
+                p = mi * me
+                ceHi = hiAdd(ceHi, ceLo, p, multiplyHigh(mi, me))
+                ceLo += p
+            }
+            d[i - 1] = cdLo and M62
+            e[i - 1] = ceLo and M62
+            cdLo = (cdLo ushr 62) or (cdHi shl 2)
+            cdHi = cdHi shr 62
+            ceLo = (ceLo ushr 62) or (ceHi shl 2)
+            ceHi = ceHi shr 62
         }
-        d[0] = cd.lo and M62
-        cd.shr62()
-        e[0] = ce.lo and M62
-        ce.shr62()
-
-        cd.add(u, d2)
-        cd.add(v, e2)
-        ce.add(q, d2)
-        ce.add(r, e2)
-        if (m.m2 != 0L) {
-            cd.add(m.m2, md)
-            ce.add(m.m2, me)
-        }
-        d[1] = cd.lo and M62
-        cd.shr62()
-        e[1] = ce.lo and M62
-        ce.shr62()
-
-        cd.add(u, d3)
-        cd.add(v, e3)
-        ce.add(q, d3)
-        ce.add(r, e3)
-        if (m.m3 != 0L) {
-            cd.add(m.m3, md)
-            ce.add(m.m3, me)
-        }
-        d[2] = cd.lo and M62
-        cd.shr62()
-        e[2] = ce.lo and M62
-        ce.shr62()
-
-        cd.add(u, d4)
-        cd.add(v, e4)
-        ce.add(q, d4)
-        ce.add(r, e4)
-        cd.add(m.m4, md)
-        ce.add(m.m4, me)
-        d[3] = cd.lo and M62
-        cd.shr62()
-        e[3] = ce.lo and M62
-        ce.shr62()
-
-        d[4] = cd.lo
-        e[4] = ce.lo
+        d[4] = cdLo
+        e[4] = ceLo
     }
 
     /** [f, g] = t * [f, g] / 2^62 over the bottom [len] limbs. */
@@ -315,30 +295,47 @@ internal object SafeGcd {
         val v = t[1]
         val q = t[2]
         val r = t[3]
-        val cf = Acc()
-        val cg = Acc()
+        var p: Long
         var fi = f[0]
         var gi = g[0]
-        cf.set(u, fi)
-        cf.add(v, gi)
-        cg.set(q, fi)
-        cg.add(r, gi)
-        cf.shr62()
-        cg.shr62()
+        var cfLo = u * fi
+        var cfHi = multiplyHigh(u, fi)
+        p = v * gi
+        cfHi = hiAdd(cfHi, cfLo, p, multiplyHigh(v, gi))
+        cfLo += p
+        var cgLo = q * fi
+        var cgHi = multiplyHigh(q, fi)
+        p = r * gi
+        cgHi = hiAdd(cgHi, cgLo, p, multiplyHigh(r, gi))
+        cgLo += p
+        cfLo = (cfLo ushr 62) or (cfHi shl 2)
+        cfHi = cfHi shr 62
+        cgLo = (cgLo ushr 62) or (cgHi shl 2)
+        cgHi = cgHi shr 62
         for (i in 1 until len) {
             fi = f[i]
             gi = g[i]
-            cf.add(u, fi)
-            cf.add(v, gi)
-            cg.add(q, fi)
-            cg.add(r, gi)
-            f[i - 1] = cf.lo and M62
-            cf.shr62()
-            g[i - 1] = cg.lo and M62
-            cg.shr62()
+            p = u * fi
+            cfHi = hiAdd(cfHi, cfLo, p, multiplyHigh(u, fi))
+            cfLo += p
+            p = v * gi
+            cfHi = hiAdd(cfHi, cfLo, p, multiplyHigh(v, gi))
+            cfLo += p
+            p = q * fi
+            cgHi = hiAdd(cgHi, cgLo, p, multiplyHigh(q, fi))
+            cgLo += p
+            p = r * gi
+            cgHi = hiAdd(cgHi, cgLo, p, multiplyHigh(r, gi))
+            cgLo += p
+            f[i - 1] = cfLo and M62
+            g[i - 1] = cgLo and M62
+            cfLo = (cfLo ushr 62) or (cfHi shl 2)
+            cfHi = cfHi shr 62
+            cgLo = (cgLo ushr 62) or (cgHi shl 2)
+            cgHi = cgHi shr 62
         }
-        f[len - 1] = cf.lo
-        g[len - 1] = cg.lo
+        f[len - 1] = cfLo
+        g[len - 1] = cgLo
     }
 
     /** Bring d from (-2m, m) to [0, m), negating first if sign < 0. */
