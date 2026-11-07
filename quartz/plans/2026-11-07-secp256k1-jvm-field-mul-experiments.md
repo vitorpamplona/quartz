@@ -48,6 +48,39 @@ At most ~8% better on the best variant, with overlapping error bars: JDK 27 does
 gap to native (13-15 ns). `Secp256k1Benchmark` (verify against ACINQ) on JDK 27 was too noisy
 to read: ACINQ's own verify, identical C code, swung 21.7k-32.1k ops/s between runs.
 
+## GraalVM and JDK 28
+
+GraalVM CE 25.0.4.1 (Graal JIT on by default) on the same JMH set: the best variant (`Long.compareUnsigned`
+carries) ran 27.7 ± 1.7 ns against 28.0 ± 1.3 on JDK 21 back to back. Graal compiles the xor-trick
+and 5x52 variants better (30 vs 37-39 ns) but not the one Quartz uses. In `Secp256k1Benchmark`
+Schnorr verify on Graal was 18.8k-20.6k ops/s, the same as JDK 21 (18.8k-19.2k).
+
+OpenJDK mainline (JDK 28, built from source on 2026-11-07) has JDK-8379327: C2 fuses `a * b` with
+`Math.multiplyHigh`/`Math.unsignedMultiplyHigh(a, b)` into one x86-64 `mul` (`MulHiLoL`/`UMulHiLoL`
+nodes; x86-64 only). It does fire on `mulWide`, and it does not help:
+
+| C2 code for `mulWide` | JDK 27 | JDK 28 |
+|---|---|---|
+| instructions | 321 | 316 |
+| `imul` + `mul` | 16 + 16 | 0 + 16 |
+| `mov` | 104 | 147 |
+| `vmovq` (spills to xmm) | 32 | 0 |
+| memory operands | 75 | 118 |
+
+`mul` writes `rdx:rax`, so every product now passes through the same two registers, and C2 spills
+around them to the stack. Timings, two rounds each, run back to back:
+
+| Variant | JDK 21 | JDK 27 | JDK 28 |
+|---|---|---|---|
+| Quartz, `Long.compareUnsigned` carries | 26.5, 28.3 | 25.5, 25.7 | 26.0, 26.0 |
+| Quartz, xor-trick carries | 40.0, 38.1 | 37.4, 38.5 | 29.2, 29.9 |
+| 5x52 limbs | 39.4, 40.0 | 35.5, 35.1 | 25.8, 26.8 |
+
+The fusion helps code that is limited by its multiplies (5x52 does 31 multiply-highs) and leaves the
+fastest 4x64 code where it was: what limits that code is the compare-based carries and register
+pressure, not the multiplier. C, for reference: the same algorithm under clang -O3 runs 14-18 ns,
+the same as Kotlin/Native.
+
 ## Next candidates
 
 1. Fewer multiplies: Karatsuba at the 2x2-limb level trades multiplies for additions; worth one
