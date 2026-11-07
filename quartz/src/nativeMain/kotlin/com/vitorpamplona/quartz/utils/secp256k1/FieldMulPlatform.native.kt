@@ -25,10 +25,9 @@ package com.vitorpamplona.quartz.utils.secp256k1
  *
  * That path makes 16 multiply-high calls per multiply (10 per square) plus 4-5 in the
  * reduction, and on Kotlin/Native each one is now a single inlined `mul` / `umulh`
- * (MultiplyHigh.native.kt, @GCUnsafeCall). The fused path (FieldMulFused.kt) shares
- * 32-bit sub-products to save one IMUL per 128-bit product; it was the better choice
- * only while Kotlin/Native had no hardware multiply-high and every product cost four
- * IMULs.
+ * (MultiplyHigh.native.kt, @GCUnsafeCall). Before that, native used a fused path that
+ * shared 32-bit sub-products across each product's low and high halves, the better choice
+ * only while every multiply-high cost four IMULs; it was removed once nothing called it.
  */
 internal actual fun fieldMulReduce(
     out: Fe4,

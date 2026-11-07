@@ -31,7 +31,7 @@ import kotlin.native.concurrent.ThreadLocal
  * shared scratch buffer lets two concurrent signs, verifies or ECDHs overwrite each other's
  * intermediate field elements: wrong results, and secret-dependent state crossing threads.
  *
- * Each ScratchLocal takes a slot number when it is created (there are three, all in shared
+ * Each ScratchLocal takes a slot number when it is created (a handful, all in shared
  * objects). [slots] is a `@ThreadLocal` top-level property, so every thread sees its own
  * array; `get()` is one thread-local load, a bounds check and an array read. The value is
  * created on a thread's first `get()`.
@@ -40,7 +40,7 @@ import kotlin.native.concurrent.ThreadLocal
 private val nextSlot = AtomicInt(0)
 
 @ThreadLocal
-private var slots: Array<Any?> = arrayOfNulls(4)
+private var slots: Array<Any?> = arrayOfNulls(8) // grows if more ScratchLocals are added
 
 internal actual class ScratchLocal<T : Any> actual constructor(
     private val initializer: () -> T,
