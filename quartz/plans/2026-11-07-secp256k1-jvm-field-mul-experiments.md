@@ -19,10 +19,11 @@ inputs and `out` aliasing an input included) before timing.
 ## What it says
 
 - **The carry idiom is what HotSpot cares about.** `(a xor MIN_VALUE) < (b xor MIN_VALUE)`
-  compiles to noticeably worse code than `Long.compareUnsigned(a, b) < 0`. Kotlin's
-  `a.toULong() < b.toULong()` compiles to the latter, so `uLtInline` now uses it (commit
-  "compute carries with an unsigned compare HotSpot compiles well"): field multiply -27%,
-  Schnorr verify 15.4k -> 20.7k ops/s in `Secp256k1Benchmark`.
+  compiles to noticeably worse code than `Long.compareUnsigned(a, b) < 0`, so `uLtInline` now
+  uses `Long.compareUnsigned` on the JVM (field multiply -27%, Schnorr verify 15.4k -> 20.7k
+  ops/s in `Secp256k1Benchmark`). It is expect/actual, like `uLt`: Android and native keep the
+  xor trick, because `a.toULong() < b.toULong()` adds two `ULong.constructor-impl` calls per
+  compare that ART does not remove.
 - **Memory traffic is not the problem.** Keeping the whole 512-bit product in locals and fusing
   the reduction gains nothing over the two-function version: HotSpot already scalar-replaces
   the `Wide8` traffic.
@@ -84,7 +85,7 @@ the same as Kotlin/Native.
 ## Experiment: teaching C2 to emit `adc`
 
 To test whether the compare-based carries are what keeps the JVM behind C, JDK 28 was patched with
-two x86-64 match rules (`2026-11-07-c2-carry-adc-experiment.patch`, 63 lines in `x86.ad`):
+two x86-64 match rules (63 lines in `x86.ad`, the diff is in the appendix below):
 `dst + (cond ? 1 : 0)` with `cond` an unsigned below / above-or-equal compare becomes `cmp` +
 `adc dst, 0` (or `sbb dst, -1`), instead of today's `xor`, `cmp`, `mov $1`, `cmovb`, `add`. Kotlin's
 `if (uLt(s, a)) 1L else 0L` produces exactly that shape, and no existing rule matched it.
@@ -123,3 +124,91 @@ registers the way LLVM does, which is a much larger change than a match rule.
    measurement now that additions are cheaper.
 2. Android/ART: re-measure all of the above on a device; ART's code generation differs from
    C2's, and `uLtInline` is common code.
+
+## Appendix: the C2 adc patch
+
+Against OpenJDK mainline `986c9a759` (2026-11-07).
+
+```diff
+diff --git a/src/hotspot/cpu/x86/x86.ad b/src/hotspot/cpu/x86/x86.ad
+index 21d096eeb..8493e2602 100644
+--- a/src/hotspot/cpu/x86/x86.ad
++++ b/src/hotspot/cpu/x86/x86.ad
+@@ -6134,6 +6134,26 @@ operand cmpOpU()
+ %}
+ 
+ 
++// An unsigned test that is exactly the carry flag (b) or its inverse (ae), for adc/sbb.
++operand cmpOpU_carry()
++%{
++  match(Bool);
++  predicate(n->as_Bool()->_test._test == BoolTest::lt ||
++            n->as_Bool()->_test._test == BoolTest::ge);
++
++  format %{ "" %}
++  interface(COND_INTER) %{
++    equal(0x4, "e");
++    not_equal(0x5, "ne");
++    less(0x2, "b");
++    greater_equal(0x3, "ae");
++    less_equal(0x6, "be");
++    greater(0x7, "a");
++    overflow(0x0, "o");
++    no_overflow(0x1, "no");
++  %}
++%}
++
+ // Floating comparisons that don't require any fixup for the unordered case,
+ // If both inputs of the comparison are the same, ZF is always set so we
+ // don't need to use cmpOpUCF2 for eq/ne
+@@ -9680,6 +9700,49 @@ instruct cmovL_imm_01U(rRegL dst, immL1 src, rFlagsRegU cr, cmpOpU cop)
+   ins_pipe(ialu_reg);
+ %}
+ 
++
++// dst + (cond ? 1 : 0) where cond is an unsigned below / above-or-equal test: the value
++// added is the carry flag, so add it with adc (below) or sbb -1 (above-or-equal, adds 1 - CF).
++// This is the carry idiom `s = a + b; carry = (s <u a) ? 1 : 0; hi += carry`.
++instruct addL_rReg_carryU(rRegL dst, cmpOpU_carry cop, rFlagsRegU cr, immL0 zero, immL1 one, rFlagsReg kill)
++%{
++  predicate(!UseAPX);
++  match(Set dst (AddL dst (CMoveL (Binary cop cr) (Binary zero one))));
++  match(Set dst (AddL (CMoveL (Binary cop cr) (Binary zero one)) dst));
++  effect(KILL kill);
++
++  ins_cost(100);
++  format %{ "adcq/sbbq $dst, carry($cop)\t# long += unsigned compare" %}
++  ins_encode %{
++    if ((Assembler::Condition)($cop$$cmpcode) == Assembler::below) {
++      __ adcq($dst$$Register, 0);
++    } else {
++      __ sbbq($dst$$Register, -1);
++    }
++  %}
++  ins_pipe(ialu_reg);
++%}
++
++// dst + (cond ? 0 : 1): the same with the constants swapped.
++instruct addL_rReg_carryU_inv(rRegL dst, cmpOpU_carry cop, rFlagsRegU cr, immL0 zero, immL1 one, rFlagsReg kill)
++%{
++  predicate(!UseAPX);
++  match(Set dst (AddL dst (CMoveL (Binary cop cr) (Binary one zero))));
++  match(Set dst (AddL (CMoveL (Binary cop cr) (Binary one zero)) dst));
++  effect(KILL kill);
++
++  ins_cost(100);
++  format %{ "adcq/sbbq $dst, !carry($cop)\t# long += unsigned compare" %}
++  ins_encode %{
++    if ((Assembler::Condition)($cop$$cmpcode) == Assembler::below) {
++      __ sbbq($dst$$Register, -1);
++    } else {
++      __ adcq($dst$$Register, 0);
++    }
++  %}
++  ins_pipe(ialu_reg);
++%}
++
+ instruct cmovL_regU(cmpOpU cop, rFlagsRegU cr, rRegL dst, rRegL src)
+ %{
+   predicate(!UseAPX);
+```

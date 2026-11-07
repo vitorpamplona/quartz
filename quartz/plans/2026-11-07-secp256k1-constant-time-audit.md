@@ -1,6 +1,7 @@
 # secp256k1: constant-time audit before replacing ACINQ
 
-Status: findings, no fixes yet. Written while prototyping the hardware multiply-high on
+Status: findings, no fixes yet. Constant time is not required for now (maintainer decision,
+2026-11-07); kept as the record of what it would take. Written while prototyping the hardware multiply-high on
 Kotlin/Native (branch `claude/native-hw-mulhi`).
 
 ## Why this matters
@@ -68,6 +69,16 @@ every fold and the final subtraction unconditional (compute, then select with a 
 reduction can be made branch-free at little cost; one was written and checked against
 BigInteger in the JMH experiments for the JVM field multiply.
 
+### Medium: variable-time inversion
+
+Since commit "invert by safegcd", `FieldP.inv` and `ScalarN.inv` use libsecp256k1's variable-time
+safegcd (`SafeGcd.kt`): the number of divstep rounds depends on the input. Signing, key derivation
+and ECDH invert Z coordinates derived from secrets (the affine conversion of k*G and d*G).
+libsecp256k1 uses the variable-time variant only for public data and `secp256k1_modinv64` (constant
+time, slower) for secrets. Constant-time Kotlin would port that variant too. The
+maintainer has decided constant time is not required for now (2026-11-07), so this is recorded,
+not scheduled.
+
 ### Low: `addMixed`, `addPoints`, `doublePoint` special cases
 
 The point formulas branch on infinity and on doubling cases (`addMixed` has 3 top-level `if`s).
@@ -75,8 +86,7 @@ In a constant-time ladder those cases must be handled with complete formulas or 
 
 ### Fine as is
 
-- `FieldP.inv` uses a fixed addition chain, so it is constant-time if multiply and square are.
-- `ScalarN.inv` exponentiates by the public `N - 2`.
+- `ScalarN.inv` is not on a signing path (BIP-340 needs no scalar inverse).
 - Verification (`verifySchnorr`, batch verify): public inputs only.
 
 ## The JVM caveat
