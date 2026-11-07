@@ -108,6 +108,23 @@ kotlin {
         environment("SIMCTL_CHILD_TEST_RESOURCES_ROOT", rootDir)
     }
 
+    // Hardware 64x64->128 multiply-high for secp256k1 on Kotlin/Native (MultiplyHigh.native.kt):
+    // C helpers in src/nativeInterop/cinterop/mulhi.def, bound with @GCUnsafeCall. That
+    // annotation is a Kotlin/Native internal API, opted into here because the marker
+    // annotation is not visible to source code.
+    targets
+        .withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>()
+        .configureEach {
+            compilations.getByName("main").cinterops.create("mulhi") {
+                definitionFile.set(project.file("src/nativeInterop/cinterop/mulhi.def"))
+            }
+            compilations.configureEach {
+                compileTaskProvider.configure {
+                    compilerOptions.optIn.add("kotlin.native.internal.InternalForKotlinNative")
+                }
+            }
+        }
+
     // Enable LLVM optimizations for the linuxX64 test binary only: that is where
     // Secp256k1NativeBenchmark (src/linuxTest) runs, and a benchmark on an
     // unoptimized binary measures nothing (~20× slower code). Use the binary-level

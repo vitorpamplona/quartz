@@ -21,24 +21,14 @@
 package com.vitorpamplona.quartz.utils.secp256k1
 
 /**
- * Native fused field multiply/square using pure-Kotlin fallback.
+ * Native field multiply/square: the same unfused path as the JVM (mulWide + reduceWide).
  *
- * Uses fieldMulReduceFused which computes both lo and hi from shared 32-bit
- * sub-products (4 IMUL per 128-bit product instead of 5). This is the optimal
- * approach for Kotlin/Native because:
- *
- * 1. K/N has no way to emit the hardware MUL instruction (64×64→128) from
- *    Kotlin code. Long * Long only gives the lower 64 bits (IMUL).
- *
- * 2. C interop was benchmarked and adds ~15ns per call through the K/N bridge
- *    layer. With 20 multiply-high calls per field multiply, the bridge overhead
- *    (~300ns) far exceeds the savings from hardware MUL (~150ns saved).
- *
- * 3. The fused mulFull approach (FieldMulFused.kt) computes both lo and hi
- *    from 4 shared sub-products, saving 1 IMUL per product vs separate
- *    lo (IMUL) + hi (4 IMUL fallback) = 5 IMUL.
- *
- * Measured: 44 ns/op on linuxX64 (pure Kotlin fused) vs 331 ns/op (C interop).
+ * That path makes 16 multiply-high calls per multiply (10 per square) plus 4-5 in the
+ * reduction, and on Kotlin/Native each one is now a single inlined `mul` / `umulh`
+ * (MultiplyHigh.native.kt, @GCUnsafeCall). The fused path (FieldMulFused.kt) shares
+ * 32-bit sub-products to save one IMUL per 128-bit product; it was the better choice
+ * only while Kotlin/Native had no hardware multiply-high and every product cost four
+ * IMULs.
  */
 internal actual fun fieldMulReduce(
     out: Fe4,
@@ -46,7 +36,8 @@ internal actual fun fieldMulReduce(
     b: Fe4,
     w: Wide8,
 ) {
-    fieldMulReduceFused(out, a, b, w)
+    U256.mulWide(w, a, b)
+    FieldP.reduceWide(out, w)
 }
 
 internal actual fun fieldSqrReduce(
@@ -54,5 +45,6 @@ internal actual fun fieldSqrReduce(
     a: Fe4,
     w: Wide8,
 ) {
-    fieldSqrReduceFused(out, a, w)
+    U256.sqrWide(w, a)
+    FieldP.reduceWide(out, w)
 }

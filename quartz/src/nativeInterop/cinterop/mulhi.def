@@ -1,0 +1,36 @@
+package = com.vitorpamplona.quartz.utils.secp256k1.cinterop
+
+# Compile these helpers for the same CPU the Kotlin/Native backend uses for Kotlin code
+# (targetCpu.<target> in the distribution's konan/konan.properties, unchanged from Kotlin
+# 2.1 to 2.4). LLVM only inlines a function into a caller whose CPU features are a
+# superset of its own; with clang's default "generic" AArch64 CPU it refuses, and every
+# multiply-high becomes a call. Same flags as Long128-kmp's int128.def, where the linked
+# binary is disassembled to check the result.
+compilerOpts.linux_x64 = -march=x86-64
+compilerOpts.linux_arm64 = -mcpu=cortex-a57
+compilerOpts.macos_arm64 = -mcpu=apple-m1
+compilerOpts.ios_simulator_arm64 = -mcpu=apple-m1
+compilerOpts.ios_arm64 = -mcpu=apple-a7
+---
+#include <stdint.h>
+
+/*
+ * High 64 bits of a 64x64-bit product, from __int128: one `mul` (x86-64) / `umulh`
+ * (ARM64) for the unsigned case, `imul` / `smulh` for the signed one.
+ *
+ * Called from Kotlin through @GCUnsafeCall (MultiplyHigh.native.kt), not through the
+ * generated cinterop bindings: a regular cinterop call switches the thread's GC state
+ * around the C function (two atomic exchanges, ~11 ns), which costs more than the
+ * 4-multiply Kotlin fallback saves. Without the switch, LLVM inlines these bodies
+ * (cinterop C code is linked as bitcode) and the Kotlin caller gets a bare instruction.
+ *
+ * Safe only because they are a few instructions of pure arithmetic: they never block,
+ * never call back into Kotlin and never touch Kotlin objects.
+ */
+int64_t quartz_umulh(int64_t a, int64_t b) {
+    return (int64_t)(((unsigned __int128)(uint64_t)a * (uint64_t)b) >> 64);
+}
+
+int64_t quartz_smulh(int64_t a, int64_t b) {
+    return (int64_t)(((__int128)a * (__int128)b) >> 64);
+}
