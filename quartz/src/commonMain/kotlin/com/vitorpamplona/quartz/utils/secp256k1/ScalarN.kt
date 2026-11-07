@@ -144,7 +144,18 @@ internal object ScalarN {
         }
     }
 
+    /** a^-1 mod n, by safegcd (variable time; see [SafeGcd]). */
     fun inv(a: Fe4): Fe4 {
+        require(!a.isZero())
+        val t = a.copyOf()
+        reduceSelf(t)
+        val out = Fe4()
+        SafeGcd.inverse(out, t, SafeGcd.N)
+        return out
+    }
+
+    /** a^-1 mod n by Fermat, a^(n-2). Kept for tests. */
+    fun invFermat(a: Fe4): Fe4 {
         require(!a.isZero())
         return powModN(a, N_MINUS_2)
     }

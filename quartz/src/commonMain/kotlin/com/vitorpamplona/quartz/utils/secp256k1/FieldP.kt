@@ -33,10 +33,8 @@ package com.vitorpamplona.quartz.utils.secp256k1
  * reduceSelf after every add and conditional-add-p after every sub. This adds
  * ~6 extra reductions per doublePoint, ~12 per addMixed.
  *
- * Inversion uses Fermat's little theorem (a^(p-2), 255 sqr + 15 mul). The
- * safegcd algorithm (Bernstein-Yang 2019) was tested but is slower on JVM
- * because 128-bit arithmetic in the inner divstep matrix multiply has higher
- * constant overhead than well-optimized field squaring.
+ * Inversion uses safegcd (Bernstein-Yang 2019, variable time; see SafeGcd), ported from
+ * libsecp256k1. Fermat's a^(p-2) (255 sqr + 15 mul) remains as invFermat.
  */
 internal object FieldP {
     // p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
@@ -250,7 +248,22 @@ internal object FieldP {
 
     // ==================== Inversion and square root (optimized addition chains) ====================
 
+    private val invTmp = ScratchLocal { Fe4() }
+
+    /** out = a^-1 mod p, by safegcd (variable time; see [SafeGcd]). [out] may be [a]. */
     fun inv(
+        out: Fe4,
+        a: Fe4,
+    ) {
+        require(!a.isZero())
+        val t = invTmp.get()
+        t.copyFrom(a)
+        reduceSelf(t) // safegcd needs [0, p); lazy values are in [0, 2^256)
+        SafeGcd.inverse(out, t, SafeGcd.P)
+    }
+
+    /** out = a^-1 mod p by Fermat, a^(p-2): 255 sqr + 15 mul. Kept for tests and benchmarks. */
+    fun invFermat(
         out: Fe4,
         a: Fe4,
     ) {
