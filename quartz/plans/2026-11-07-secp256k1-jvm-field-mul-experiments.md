@@ -81,6 +81,42 @@ fastest 4x64 code where it was: what limits that code is the compare-based carri
 pressure, not the multiplier. C, for reference: the same algorithm under clang -O3 runs 14-18 ns,
 the same as Kotlin/Native.
 
+## Experiment: teaching C2 to emit `adc`
+
+To test whether the compare-based carries are what keeps the JVM behind C, JDK 28 was patched with
+two x86-64 match rules (`2026-11-07-c2-carry-adc-experiment.patch`, 63 lines in `x86.ad`):
+`dst + (cond ? 1 : 0)` with `cond` an unsigned below / above-or-equal compare becomes `cmp` +
+`adc dst, 0` (or `sbb dst, -1`), instead of today's `xor`, `cmp`, `mov $1`, `cmovb`, `add`. Kotlin's
+`if (uLt(s, a)) 1L else 0L` produces exactly that shape, and no existing rule matched it.
+
+The compiled code checked against BigInteger on 3.8 million products (mulWide's full 512-bit
+product and reduceWide mod p) after C2 compilation.
+
+| C2 code for `mulWide` | JDK 28 | JDK 28 + adc rules |
+|---|---|---|
+| instructions | 316 | 253 |
+| `cmovb` / `adc` | 20 / 0 | 0 / 20 |
+| memory operands | 118 | 113 |
+
+Timings on a quieter machine than the tables above (two rounds each, back to back, ±0.3-1.2 ns):
+
+| Variant | JDK 28 | JDK 28 + adc | JDK 28 + adc + `-XX:+OptoScheduling` |
+|---|---|---|---|
+| Quartz, `Long.compareUnsigned` carries | 21.5, 21.6 | 21.0, 21.4 | 19.4 |
+| Fused, `Long.compareUnsigned` carries | 22.6, 23.2 | 21.4, 21.9 | 23.2 |
+| C (clang -O3), same algorithm, same session | | | 14.8-15.4 |
+
+Removing 20% of the instructions buys 1-5%. The hypothesis was wrong: in a dependent chain
+(`out = out * b`, which is how verify and sign use the field) the carries are not on the critical
+path in a way that costs much. What separates C2 from LLVM is the memory traffic: 113 memory
+operands against LLVM's 29. C2 issues all 16 multiplies first and parks every result on the stack,
+and every store-then-reload adds latency to the chain. Turning on C2's instruction scheduler
+(`OptoScheduling`, off by default on x86) together with the adc rules gave the best result
+(19.4 ns, -10%) but made the fused variant slower, so it is not a general fix either.
+
+Closing the rest needs C2's register allocator and scheduler to keep the 8x4 multiply in
+registers the way LLVM does, which is a much larger change than a match rule.
+
 ## Next candidates
 
 1. Fewer multiplies: Karatsuba at the 2x2-limb level trades multiplies for additions; worth one
