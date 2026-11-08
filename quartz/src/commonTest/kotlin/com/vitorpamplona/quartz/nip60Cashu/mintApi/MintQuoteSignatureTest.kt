@@ -22,7 +22,7 @@ package com.vitorpamplona.quartz.nip60Cashu.mintApi
 
 import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+import com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -69,12 +69,12 @@ class MintQuoteSignatureTest {
         val sig = MintQuoteSignature.sign(quoteId, outputs, privkey)
         val expectedMsg = MintQuoteSignature.buildSigningPayload(quoteId, outputs)
         val expectedHash = sha256(expectedMsg)
-        val pubkey = Secp256k1.pubkeyCreate(privkey)
+        val pubkey = Schnorr256k1.pubkeyCreate(privkey)!!
         // x-only pubkey for BIP-340. pubkeyCreate gives 65 bytes uncompressed;
         // x is bytes 1..33.
         val xOnly = pubkey.copyOfRange(1, 33)
         assertTrue(
-            Secp256k1.verifySchnorr(sig.hexToByteArray(), expectedHash, xOnly),
+            Schnorr256k1.schnorrVerify(sig.hexToByteArray(), expectedHash, xOnly),
             "signature must verify against derived x-only pubkey",
         )
     }

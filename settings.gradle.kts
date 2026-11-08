@@ -30,3 +30,13 @@ providers.gradleProperty("cryptoKmpDir").orNull?.takeUnless { isIncludedBuild }?
         }
     }
 }
+
+// The same for libschnorr256k1-kotlin (vitorpamplona/libschnorr256k1-kotlin):
+//   ./gradlew -Pschnorr256k1KotlinDir=../libschnorr256k1-kotlin :quartz:jvmTest
+providers.gradleProperty("schnorr256k1KotlinDir").orNull?.takeUnless { isIncludedBuild }?.let { dir ->
+    includeBuild(dir) {
+        dependencySubstitution {
+            substitute(module("com.vitorpamplona.schnorr256k1:schnorr256k1-kotlin")).using(project(":schnorr256k1-kotlin"))
+        }
+    }
+}

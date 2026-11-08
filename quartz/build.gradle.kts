@@ -108,9 +108,10 @@ kotlin {
         environment("SIMCTL_CHILD_TEST_RESOURCES_ROOT", rootDir)
     }
 
-    // Enable LLVM optimizations for the linuxX64 test binary only: that is where
-    // Secp256k1NativeBenchmark (src/linuxTest) runs, and a benchmark on an
-    // unoptimized binary measures nothing (~20× slower code). Use the binary-level
+    // Enable LLVM optimizations for the linuxX64 test binary only. Added for the
+    // secp256k1 native benchmark, which moved to libschnorr256k1-bench with the
+    // curve code; kept until linuxX64Test is measured without it (an unoptimized
+    // binary runs ~20× slower code). Use the binary-level
     // API instead of the -opt freeCompilerArg to avoid the "Unsupported combination
     // of flags: -opt and -g" conflict in Kotlin/Native 2.1+.
     //
@@ -169,6 +170,10 @@ kotlin {
                 // SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 and secure random, from
                 // vitorpamplona/crypto-kmp. api: Quartz's own API takes and returns its types.
                 api(libs.crypto)
+
+                // Pure-Kotlin secp256k1 (vitorpamplona/libschnorr256k1-kotlin): Cashu's public-point
+                // math and Secp256k1InstanceKotlin. implementation: no Quartz API exposes its types.
+                implementation(libs.schnorr256k1.kotlin)
             }
         }
 

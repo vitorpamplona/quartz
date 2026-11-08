@@ -40,7 +40,6 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
     search/store guides dependents need. Update it, and `quartz/CLIENT.md`, when the public API
     changes, and compile any code you add to either.
   - `quartz/plans/`: design docs, `YYYY-MM-DD-<slug>.md`; finished ones go to `plans/archive/`.
-  - `quartz/benchmarks/`: native benchmark scripts.
 - `quartz/src/jvmAndroidTest/kotlin/com/vitorpamplona/quartz/testing/`: the in-process test
   relay (`TestRelay`, `InProcessRelays`, `RelayClientTest`, `SyntheticEvents`, `preload`,
   `collectUntilEose`). Relay-client tests run against it, with no socket and no network.
@@ -49,8 +48,14 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
   source sets). Amethyst keeps the same file for `commons`/`commonsUI`: change both.
 
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
-crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`); secp256k1 stays here. To change it
-alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest`.
+crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). secp256k1 is libsecp256k1 through
+ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the pure-Kotlin
+[libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin)
+(`libs.schnorr256k1.kotlin`, `com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1`: Cashu's public
+points, `Secp256k1InstanceKotlin`); benchmarks of both are in
+[libschnorr256k1-bench](https://github.com/vitorpamplona/libschnorr256k1-bench). To change either
+alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest`,
+`-Pschnorr256k1KotlinDir=../libschnorr256k1-kotlin`.
 
 ## Rules
 

@@ -22,11 +22,7 @@ package com.vitorpamplona.quartz.nip60Cashu.bdhke
 
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.utils.secp256k1.ECPoint
-import com.vitorpamplona.quartz.utils.secp256k1.Fe4
-import com.vitorpamplona.quartz.utils.secp256k1.KeyCodec
-import com.vitorpamplona.quartz.utils.secp256k1.MutablePoint
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+import com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -45,7 +41,7 @@ class BdhkeTest {
     fun hashToCurveZeroes() {
         val x = ByteArray(32) // 32 zero bytes
         val point = Bdhke.hashToCurve(x)
-        val compressed = compress(point)
+        val compressed = point
         assertEquals(
             "024cce997d3b518f739663b757deaec95bcd9473c30a14ac2fd04023a739d1a725",
             compressed.toHexKey(),
@@ -56,7 +52,7 @@ class BdhkeTest {
     fun hashToCurveTrailingOne() {
         val x = ByteArray(32).also { it[31] = 0x01 }
         val point = Bdhke.hashToCurve(x)
-        val compressed = compress(point)
+        val compressed = point
         assertEquals(
             "022e7158e11c9506f1aa4248bf531298daa7febd6194f003edcd9b93ade6253acf",
             compressed.toHexKey(),
@@ -67,7 +63,7 @@ class BdhkeTest {
     fun hashToCurveTrailingTwo() {
         val x = ByteArray(32).also { it[31] = 0x02 }
         val point = Bdhke.hashToCurve(x)
-        val compressed = compress(point)
+        val compressed = point
         assertEquals(
             "026cdbe15362df59cd1dd3c9c11de8aedac2106eca69236ecd9fbe117af897be4f",
             compressed.toHexKey(),
@@ -106,7 +102,7 @@ class BdhkeTest {
         // Use a non-trivial mint key
         val a = "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f".hexToByteArray()
         // K = a·G — derive
-        val k = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(a))
+        val k = compressedPub(a)
 
         val secret = "another secret".encodeToByteArray()
         val r = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".hexToByteArray()
@@ -135,8 +131,8 @@ class BdhkeTest {
     @Test
     fun hashToCurveIsDeterministic() {
         val x = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".hexToByteArray()
-        val p1 = compress(Bdhke.hashToCurve(x))
-        val p2 = compress(Bdhke.hashToCurve(x))
+        val p1 = Bdhke.hashToCurve(x)
+        val p2 = Bdhke.hashToCurve(x)
         assertEquals(p1.toHexKey(), p2.toHexKey())
     }
 
@@ -164,7 +160,7 @@ class BdhkeTest {
     fun dleqRoundTripVerifies() {
         val bTick = Bdhke.blind(secret, r)
         val (cTick, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         assertTrue(Bdhke.verifyDleq(e = e, s = s, blindedMessage = bTick, blindSignature = cTick, mintPubKey = mintPub))
     }
 
@@ -175,7 +171,7 @@ class BdhkeTest {
         val bTick = Bdhke.blind(secret, r)
         val (cTick, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
         val otherKey = ByteArray(32).also { it[31] = 0x42 }
-        val wrongPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(otherKey))
+        val wrongPub = compressedPub(otherKey)
         assertEquals(false, Bdhke.verifyDleq(e, s, bTick, cTick, wrongPub))
     }
 
@@ -185,7 +181,7 @@ class BdhkeTest {
         // the "malicious mint hands us proofs it can't spend later" case.
         val bTick = Bdhke.blind(secret, r)
         val (_, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         val junkC = Bdhke.sign(bTick, ByteArray(32).also { it[31] = 0x99.toByte() })
         assertEquals(false, Bdhke.verifyDleq(e, s, bTick, junkC, mintPub))
     }
@@ -194,7 +190,7 @@ class BdhkeTest {
     fun dleqRejectsTamperedE() {
         val bTick = Bdhke.blind(secret, r)
         val (cTick, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         // Flip one bit in e — any modification must be caught.
         val tamperedE = e.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() }
         assertEquals(false, Bdhke.verifyDleq(tamperedE, s, bTick, cTick, mintPub))
@@ -204,7 +200,7 @@ class BdhkeTest {
     fun dleqRejectsTamperedS() {
         val bTick = Bdhke.blind(secret, r)
         val (cTick, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         val tamperedS = s.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() }
         assertEquals(false, Bdhke.verifyDleq(e, tamperedS, bTick, cTick, mintPub))
     }
@@ -213,7 +209,7 @@ class BdhkeTest {
     fun dleqRejectsWrongLengthInputs() {
         // Wrong-length inputs are protocol violations; reject without
         // attempting any expensive curve operations.
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         val bTick = Bdhke.blind(secret, r)
         val (cTick, e, s) = Bdhke.signFull(bTick, mintKey, rPrime)
 
@@ -226,7 +222,7 @@ class BdhkeTest {
 
     @Test
     fun dleqRejectsZeroScalars() {
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         val bTick = Bdhke.blind(secret, r)
         val (cTick, _, s) = Bdhke.signFull(bTick, mintKey, rPrime)
         assertEquals(false, Bdhke.verifyDleq(ByteArray(32), s, bTick, cTick, mintPub))
@@ -242,7 +238,7 @@ class BdhkeTest {
         val nonce2 = "4444444444444444444444444444444444444444444444444444444444444444".hexToByteArray()
         val (c1, e1, s1) = Bdhke.signFull(bTick, mintKey, rPrime)
         val (c2, e2, s2) = Bdhke.signFull(bTick, mintKey, nonce2)
-        val mintPub = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey))
+        val mintPub = compressedPub(mintKey)
         // C' is deterministic given (k, B'); nonces only affect (e, s).
         assertEquals(c1.toHexKey(), c2.toHexKey())
         // Both proofs verify ...
@@ -298,10 +294,5 @@ class BdhkeTest {
         )
     }
 
-    private fun compress(p: MutablePoint): ByteArray {
-        val x = Fe4()
-        val y = Fe4()
-        require(ECPoint.toAffine(p, x, y))
-        return KeyCodec.serializeCompressed(x, y)
-    }
+    private fun compressedPub(seckey: ByteArray): ByteArray = Schnorr256k1.pubkeyCompress(Schnorr256k1.pubkeyCreate(seckey)!!)!!
 }
