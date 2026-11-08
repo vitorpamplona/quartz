@@ -10,12 +10,31 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // TEMPORARY: libschnorr256k1-kotlin from JitPack until 1.0.0 is on Maven Central. That group
-        // resolves only here (no requests to Central for it), and nothing else does. Remove with the
-        // catalog's schnorr256k1-kotlin entry before merging.
+        // libschnorr256k1-kotlin from JitPack until 1.0.1 is on Maven Central (the catalog says why).
+        // That group resolves only here (no requests to Central for it), and nothing else does.
+        // Remove when the catalog moves to the Maven Central coordinates.
         exclusiveContent {
             forRepository { maven("https://jitpack.io") }
             filter { includeGroup("com.github.vitorpamplona.libschnorr256k1-kotlin") }
+        }
+    }
+    // JitPack rewrites every Gradle module file it serves, and its rewrite drops the classifier
+    // from the file names: an Apple target's metadata variant lists <module>-<version>.jar, which
+    // doesn't exist, instead of the <module>-<version>-metadata.jar beside it, and the common and
+    // Apple metadata compiles fail to resolve it. Point those variants back at the real file.
+    // Remove with the JitPack repository above.
+    components {
+        listOf("iosArm64", "iosSimulatorArm64", "macosArm64").forEach { target ->
+            val module = "schnorr256k1-kotlin-${target.lowercase()}"
+            withModule("com.github.vitorpamplona.libschnorr256k1-kotlin:$module") {
+                val file = "$module-${id.version}-metadata.jar"
+                withVariant("${target}MetadataElements-published") {
+                    withFiles {
+                        removeAllFiles()
+                        addFile(file)
+                    }
+                }
+            }
         }
     }
 }

@@ -10,11 +10,13 @@ coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
 cryptoKmp = "2.1.0"
 # Pure-Kotlin BIP-340 Schnorr on secp256k1 (vitorpamplona/libschnorr256k1-kotlin).
-# TEMPORARY: a JitPack build of libschnorr256k1-kotlin's build/jvm-21 (main: the point operations,
-# the privkeyTweakAdd fix, JVM target 21) until the release is on Maven Central. JitPack builds
-# JVM and Android only. Before merging, set the released version, restore the
-# com.vitorpamplona.schnorr256k1 module below and drop jitpack.io (settings).
-schnorr256k1Kotlin = "b174ac9"
+# From JitPack until 1.0.1 is on Maven Central: the release is tagged and tested, but Maven Central
+# blocks the organization's uploads until its monthly limit resets (2026-12-01). 1d851c2 is 1.0.1's
+# code; JitPack builds it on Linux for every target, with a pure-Kotlin multiply-high on
+# Kotlin/Native in place of the release's hardware cinterop (slower there, the same results).
+# Once 1.0.1 is published: set "1.0.1", use the com.vitorpamplona.schnorr256k1 module below and
+# drop jitpack.io from settings.gradle.kts. Quartz releases depend on whatever this names.
+schnorr256k1Kotlin = "1d851c2"
 espressoCore = "3.7.0"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
