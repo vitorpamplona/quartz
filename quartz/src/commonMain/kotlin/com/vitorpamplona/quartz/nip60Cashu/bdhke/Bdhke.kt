@@ -22,15 +22,9 @@ package com.vitorpamplona.quartz.nip60Cashu.bdhke
 
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.crypto.sha2.sha256
+import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
-import com.vitorpamplona.quartz.utils.secp256k1.ECPoint
-import com.vitorpamplona.quartz.utils.secp256k1.Fe4
-import com.vitorpamplona.quartz.utils.secp256k1.FieldP
-import com.vitorpamplona.quartz.utils.secp256k1.KeyCodec
-import com.vitorpamplona.quartz.utils.secp256k1.MutablePoint
-import com.vitorpamplona.quartz.utils.secp256k1.ScalarN
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
-import com.vitorpamplona.quartz.utils.secp256k1.U256
+import com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1
 import fr.acinq.secp256k1.Secp256k1 as LibSecp256k1
 
 /**
@@ -51,8 +45,8 @@ import fr.acinq.secp256k1.Secp256k1 as LibSecp256k1
  *
  * Every multiplication by a secret scalar (the blinding factor `r`, the mint
  * key `a`, the DLEQ nonce) runs on libsecp256k1, which is constant-time. The
- * pure-Kotlin curve code in `utils.secp256k1` is variable-time by design, so it
- * only handles public values here: hash-to-curve and DLEQ verification.
+ * pure-Kotlin curve code (schnorr256k1-kotlin) is variable-time by design, so it
+ * only handles public values here: hash-to-curve, point checks and DLEQ verification.
  */
 object Bdhke {
     private val libsecp = LibSecp256k1.get()
@@ -69,12 +63,9 @@ object Bdhke {
      *     y_candidate = SHA256(msg_to_hash || counter as little-endian uint32)
      *     try lift_x(y_candidate); if it's on the curve, return that point.
      *
-     * Always returns the point with even Y (lift_x convention).
-     *
-     * Internal because [MutablePoint] is internal to the Quartz crypto package.
-     * External callers should use [hashToCurveCompressed] to get a 33-byte point.
+     * Always returns the point with even Y (lift_x convention), as 33 compressed bytes.
      */
-    internal fun hashToCurve(x: ByteArray): MutablePoint {
+    internal fun hashToCurve(x: ByteArray): ByteArray {
         val msgToHash = sha256(DOMAIN_SEPARATOR + x)
         val buf = ByteArray(36)
         msgToHash.copyInto(buf, 0)
@@ -86,15 +77,9 @@ object Bdhke {
             buf[34] = ((counter ushr 16) and 0xFF).toByte()
             buf[35] = ((counter ushr 24) and 0xFF).toByte()
 
-            val candidate = sha256(buf)
-            val x4 = U256.fromBytes(candidate)
-            val outX = Fe4()
-            val outY = Fe4()
-            if (KeyCodec.liftX(outX, outY, x4)) {
-                val point = MutablePoint()
-                point.setAffine(outX, outY)
-                return point
-            }
+            // lift_x(candidate): 02 || candidate is a point iff candidate is an x on the curve.
+            val point = EVEN_Y + sha256(buf)
+            if (Schnorr256k1.pubkeyParse(point) != null) return point
             counter++
         }
         error("hash_to_curve failed to find a valid point in $MAX_HASH_TO_CURVE_ITERATIONS iterations")
@@ -103,7 +88,7 @@ object Bdhke {
     /**
      * Public form of [hashToCurve] that returns a 33-byte compressed point.
      */
-    fun hashToCurveCompressed(x: ByteArray): ByteArray = toCompressed(hashToCurve(x))
+    fun hashToCurveCompressed(x: ByteArray): ByteArray = hashToCurve(x)
 
     /**
      * Step 1 of BDHKE — Alice creates a blinded message.
@@ -117,7 +102,7 @@ object Bdhke {
         r: ByteArray,
     ): ByteArray {
         require(r.size == 32) { "Blinding factor must be 32 bytes" }
-        require(Secp256k1.secKeyVerify(r)) { "Invalid blinding factor" }
+        require(Schnorr256k1.seckeyVerify(r)) { "Invalid blinding factor" }
 
         val y = hashToCurveCompressed(secret)
         val rg = libsecp.pubkeyCreate(r)
@@ -221,54 +206,27 @@ object Bdhke {
         if (e.size != 32 || s.size != 32) return false
         if (blindedMessage.size != 33 || blindSignature.size != 33 || mintPubKey.size != 33) return false
 
-        val eScalar = Fe4()
-        U256.fromBytesInto(eScalar, e, 0)
-        val sScalar = Fe4()
-        U256.fromBytesInto(sScalar, s, 0)
         // `s` is `r' + e*k mod n` by construction (NUT-12 §2), so it must
-        // be a canonical scalar < n; reject if not.
-        if (!ScalarN.isValid(sScalar)) return false
+        // be a canonical scalar in [1, n); reject if not.
+        if (!Schnorr256k1.seckeyVerify(s)) return false
         // `e` is a SHA-256 hash output that NUT-12 treats as raw bytes,
         // NOT a scalar mod n — there's no requirement that `e < n`. With
-        // probability ~2^-128 a valid proof has `e >= n`; rejecting on
-        // `isValid` here would spuriously fail those. We only check that
-        // `e` isn't zero (a zero `e` would let any junk signature pass
-        // because R1_check / R2_check would collapse to `sG` / `sB'`,
-        // independent of the mint's keyset key). Downstream point
-        // multiplications (`ECPoint.mul(_, A, eScalar)`) handle e >= n
-        // correctly via internal GLV reduction.
-        if (eScalar.isZero()) return false
+        // probability ~2^-128 a valid proof has `e >= n`; rejecting it would
+        // spuriously fail those, so e·P is computed as (e mod n)·P. A zero
+        // `e` (mod n) would let any junk signature pass, because R1 / R2
+        // would collapse to `sG` / `sB'` independent of the mint's key.
+        val eModN = reduceModN(e) ?: return false
 
-        val aX = Fe4()
-        val aY = Fe4()
-        if (!KeyCodec.parsePublicKey(mintPubKey, aX, aY)) return false
-        val aPoint = MutablePoint().also { it.setAffine(aX, aY) }
+        // R1 = sG - eA, R2 = sB' - eC'. Infinity anywhere (or an invalid
+        // point) makes the library return null, and the proof false.
+        val sG = Schnorr256k1.pubkeyCreate(s) ?: return false
+        val eA = Schnorr256k1.pubkeyTweakMul(mintPubKey, eModN) ?: return false
+        val r1Uncompressed = Schnorr256k1.pubkeyCombine(listOf(sG, Schnorr256k1.pubkeyNegate(eA) ?: return false)) ?: return false
 
-        val bX = Fe4()
-        val bY = Fe4()
-        if (!KeyCodec.parsePublicKey(blindedMessage, bX, bY)) return false
-        val bPoint = MutablePoint().also { it.setAffine(bX, bY) }
+        val sB = Schnorr256k1.pubkeyTweakMul(blindedMessage, s) ?: return false
+        val eC = Schnorr256k1.pubkeyTweakMul(blindSignature, eModN) ?: return false
+        val r2Uncompressed = Schnorr256k1.pubkeyCombine(listOf(sB, Schnorr256k1.pubkeyNegate(eC) ?: return false)) ?: return false
 
-        val cX = Fe4()
-        val cY = Fe4()
-        if (!KeyCodec.parsePublicKey(blindSignature, cX, cY)) return false
-        val cPoint = MutablePoint().also { it.setAffine(cX, cY) }
-
-        // R1 = sG - eA, R2 = sB' - eC'. We use the unblind() pattern for
-        // point negation: compute the positive multiple, take affine, flip
-        // the Y coordinate. Cheaper than computing (n-e) and re-multiplying.
-        val sG = MutablePoint().also { ECPoint.mulG(it, sScalar) }
-        val eA = MutablePoint().also { ECPoint.mul(it, aPoint, eScalar) }
-        val negEa = negate(eA) ?: return false
-        val r1 = MutablePoint().also { ECPoint.addPoints(it, sG, negEa) }
-
-        val sB = MutablePoint().also { ECPoint.mul(it, bPoint, sScalar) }
-        val eC = MutablePoint().also { ECPoint.mul(it, cPoint, eScalar) }
-        val negEc = negate(eC) ?: return false
-        val r2 = MutablePoint().also { ECPoint.addPoints(it, sB, negEc) }
-
-        val r1Uncompressed = toUncompressedOrNull(r1) ?: return false
-        val r2Uncompressed = toUncompressedOrNull(r2) ?: return false
         val aUncompressed = compressedToUncompressed(mintPubKey) ?: return false
         val cUncompressed = compressedToUncompressed(blindSignature) ?: return false
 
@@ -377,7 +335,7 @@ object Bdhke {
     }
 
     /** Whether [compressed] parses as a point on the curve; public data, so the Kotlin parser is fine. */
-    private fun isValidPoint(compressed: ByteArray): Boolean = KeyCodec.parsePublicKey(compressed, Fe4(), Fe4())
+    private fun isValidPoint(compressed: ByteArray): Boolean = Schnorr256k1.pubkeyParse(compressed) != null
 
     /**
      * Mint-side NUT-12 DLEQ-signing — produces `(C', e, s)` for the given
@@ -392,7 +350,7 @@ object Bdhke {
         rPrime: ByteArray = randomScalar(),
     ): Triple<ByteArray, ByteArray, ByteArray> {
         require(rPrime.size == 32) { "DLEQ nonce must be 32 bytes" }
-        require(Secp256k1.secKeyVerify(rPrime)) { "Invalid DLEQ nonce" }
+        require(Schnorr256k1.seckeyVerify(rPrime)) { "Invalid DLEQ nonce" }
 
         require(isValidPoint(blindedMessage)) { "Invalid B'" }
         val cTick = sign(blindedMessage, mintPrivKey)
@@ -427,7 +385,7 @@ object Bdhke {
     fun randomScalar(): ByteArray {
         while (true) {
             val candidate = RandomInstance.bytes(32)
-            if (Secp256k1.secKeyVerify(candidate)) return candidate
+            if (Schnorr256k1.seckeyVerify(candidate)) return candidate
         }
     }
 
@@ -438,45 +396,40 @@ object Bdhke {
      */
     fun randomSecret(): ByteArray = randomScalar()
 
-    private fun toCompressed(p: MutablePoint): ByteArray {
-        val x = Fe4()
-        val y = Fe4()
-        require(ECPoint.toAffine(p, x, y)) { "Point is at infinity" }
-        return KeyCodec.serializeCompressed(x, y)
-    }
-
     /**
-     * 65-byte uncompressed form `04 || X || Y`. Used only by the
-     * NUT-12 hash input — the on-wire form for everything else is
-     * compressed. Null on infinity.
+     * 65-byte uncompressed form `04 || X || Y` of a compressed point, for the
+     * NUT-12 hash input, where the spec requires uncompressed bytes rather than
+     * the wire form (`02/03 || X`). Null on parse failure.
      */
-    private fun toUncompressedOrNull(p: MutablePoint): ByteArray? {
-        val x = Fe4()
-        val y = Fe4()
-        return if (ECPoint.toAffine(p, x, y)) KeyCodec.serializeUncompressed(x, y) else null
+    private fun compressedToUncompressed(compressed: ByteArray): ByteArray? = Schnorr256k1.pubkeyParse(compressed)
+
+    /** e mod n for a 32-byte e, or null if it is 0 mod n. e < 2^256 < 2n, so it is e or e - n. */
+    private fun reduceModN(e: ByteArray): ByteArray? {
+        var cmp = 0
+        for (i in 0 until 32) {
+            cmp = (e[i].toInt() and 0xFF) - (ORDER[i].toInt() and 0xFF)
+            if (cmp != 0) break
+        }
+        val r =
+            if (cmp < 0) {
+                e
+            } else {
+                val out = ByteArray(32)
+                var borrow = 0
+                for (i in 31 downTo 0) {
+                    val d = (e[i].toInt() and 0xFF) - (ORDER[i].toInt() and 0xFF) - borrow
+                    out[i] = d.toByte()
+                    borrow = if (d < 0) 1 else 0
+                }
+                out
+            }
+        return if (r.all { it == 0.toByte() }) null else r
     }
 
-    /**
-     * Convert a 33-byte compressed point to its 65-byte uncompressed
-     * form. Used for the NUT-12 hash input where the spec requires
-     * uncompressed bytes (`04 || X || Y`) rather than the wire form
-     * (`02/03 || X`). Returns null on parse failure.
-     */
-    private fun compressedToUncompressed(compressed: ByteArray): ByteArray? {
-        val x = Fe4()
-        val y = Fe4()
-        if (!KeyCodec.parsePublicKey(compressed, x, y)) return null
-        return KeyCodec.serializeUncompressed(x, y)
-    }
+    private val EVEN_Y = byteArrayOf(0x02)
 
-    /** Negate a point by flipping its affine Y. Returns null on infinity. */
-    private fun negate(p: MutablePoint): MutablePoint? {
-        val x = Fe4()
-        val y = Fe4()
-        if (!ECPoint.toAffine(p, x, y)) return null
-        FieldP.neg(y, y)
-        return MutablePoint().also { it.setAffine(x, y) }
-    }
+    /** n, the group order, big-endian. */
+    private val ORDER = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141".hexToByteArray()
 
     // Spec doesn't bound this; in practice the first iteration succeeds with
     // probability ~1/2. We cap at 2^16 — astronomically unlikely to hit.

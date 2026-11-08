@@ -21,25 +21,29 @@
 package com.vitorpamplona.quartz.utils
 
 import com.vitorpamplona.crypto.random.RandomInstance
-import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
+import com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1
 
+/**
+ * Pure-Kotlin secp256k1 (schnorr256k1-kotlin), with Quartz's names. Invalid input throws
+ * [IllegalArgumentException], as it always has; verification returns false.
+ */
 object Secp256k1InstanceKotlin {
-    private val h02 = Hex.decode("02")
+    private fun invalid(what: String): Nothing = throw IllegalArgumentException("Invalid $what")
 
-    fun compressedPubKeyFor(privKey: ByteArray) = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(privKey))
+    fun compressedPubKeyFor(privKey: ByteArray): ByteArray = Schnorr256k1.pubkeyCreate(privKey)?.let { Schnorr256k1.pubkeyCompress(it) } ?: invalid("private key")
 
-    fun isPrivateKeyValid(il: ByteArray): Boolean = Secp256k1.secKeyVerify(il)
+    fun isPrivateKeyValid(il: ByteArray): Boolean = Schnorr256k1.seckeyVerify(il)
 
     fun signSchnorr(
         data: ByteArray,
         privKey: ByteArray,
         nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1.signSchnorr(data, privKey, nonce)
+    ): ByteArray = Schnorr256k1.schnorrSign(data, privKey, nonce) ?: invalid("signing input")
 
     fun signSchnorr(
         data: ByteArray,
         privKey: ByteArray,
-    ): ByteArray = Secp256k1.signSchnorr(data, privKey, null)
+    ): ByteArray = Schnorr256k1.schnorrSign(data, privKey, null) ?: invalid("signing input")
 
     /** Fast signing with pre-computed compressed public key (skips G multiplication). */
     fun signSchnorrWithPubKey(
@@ -47,49 +51,49 @@ object Secp256k1InstanceKotlin {
         privKey: ByteArray,
         compressedPubKey: ByteArray,
         nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1.signSchnorrWithPubKey(data, privKey, compressedPubKey, nonce)
+    ): ByteArray = Schnorr256k1.schnorrSignWithPubKey(data, privKey, compressedPubKey, nonce) ?: invalid("signing input")
 
-    /** Fast signing with pre-computed x-only public key — zero-copy, zero-allocation. */
+    /**
+     * Signing with the x-only public key known. No faster than [signSchnorr]: an x-only key does
+     * not carry the y parity signing needs ([signSchnorrWithPubKey] does).
+     */
     fun signSchnorrWithXOnlyPubKey(
         data: ByteArray,
         privKey: ByteArray,
         xOnlyPubKey: ByteArray,
         nonce: ByteArray? = RandomInstance.bytes(32),
-    ): ByteArray = Secp256k1.signSchnorrWithXOnlyPubKey(data, privKey, xOnlyPubKey, nonce)
+    ): ByteArray = Schnorr256k1.schnorrSignXOnly(data, privKey, xOnlyPubKey, nonce) ?: invalid("signing input")
 
     fun verifySchnorr(
         signature: ByteArray,
         hash: ByteArray,
         pubKey: ByteArray,
-    ): Boolean = Secp256k1.verifySchnorr(signature, hash, pubKey)
+    ): Boolean = Schnorr256k1.schnorrVerify(signature, hash, pubKey)
 
-    /**
-     * Fast Nostr verify — skips BIP-340 y-parity inversion (~15% faster).
-     * Safe for Nostr event verification. See Secp256k1.verifySchnorrFast KDoc.
-     */
+    /** Verification without BIP-340's y-parity check of R; safe for Nostr events (see the library). */
     fun verifySchnorrFast(
         signature: ByteArray,
         hash: ByteArray,
         pubKey: ByteArray,
-    ): Boolean = Secp256k1.verifySchnorrFast(signature, hash, pubKey)
+    ): Boolean = Schnorr256k1.schnorrVerifyFast(signature, hash, pubKey)
 
-    /**
-     * Batch-verify multiple signatures from the same pubkey.
-     * Uses scalar+point summation — one mulDoubleG for the whole batch.
-     */
+    /** BIP-340 batch verification of signatures by the same key (weighted: invalid ones can't cancel). */
     fun verifySchnorrBatch(
         pubKey: ByteArray,
         signatures: List<ByteArray>,
         messages: List<ByteArray>,
-    ): Boolean = Secp256k1.verifySchnorrBatch(pubKey, signatures, messages)
+    ): Boolean {
+        require(signatures.size == messages.size) { "signatures and messages must have same size" }
+        return Schnorr256k1.schnorrVerifyBatch(pubKey, signatures, messages)
+    }
 
     fun privateKeyAdd(
         first: ByteArray,
         second: ByteArray,
-    ): ByteArray = Secp256k1.privKeyTweakAdd(first, second)
+    ): ByteArray = Schnorr256k1.privkeyTweakAdd(first, second) ?: invalid("private key or tweak")
 
     fun pubKeyTweakMulCompact(
         pubKey: ByteArray,
         privateKey: ByteArray,
-    ): ByteArray = Secp256k1.ecdhXOnly(pubKey, privateKey)
+    ): ByteArray = Schnorr256k1.ecdhXOnly(pubKey, privateKey) ?: invalid("public key or private key")
 }
