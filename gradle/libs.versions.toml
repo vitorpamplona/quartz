@@ -10,10 +10,11 @@ coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
 cryptoKmp = "2.1.0"
 # Pure-Kotlin BIP-340 Schnorr on secp256k1 (vitorpamplona/libschnorr256k1-kotlin).
-# TEMPORARY: a JitPack build of libschnorr256k1-kotlin#3's commit until 1.0.0 is on Maven Central.
-# JitPack builds on Linux: JVM, Android and Linux only, no iOS/macOS. Before merging, set
-# 1.0.0, restore the com.vitorpamplona.schnorr256k1 module below and drop jitpack.io (settings).
-schnorr256k1Kotlin = "d2ec202"
+# TEMPORARY: a JitPack build of libschnorr256k1-kotlin's build/jvm-21 (main: the point operations,
+# the privkeyTweakAdd fix, JVM target 21) until the release is on Maven Central. JitPack builds
+# JVM and Android only. Before merging, set the released version, restore the
+# com.vitorpamplona.schnorr256k1 module below and drop jitpack.io (settings).
+schnorr256k1Kotlin = "b174ac9"
 espressoCore = "3.7.0"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
