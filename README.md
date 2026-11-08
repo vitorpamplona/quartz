@@ -22,7 +22,7 @@ dependencies {
 
 | Requirement | |
 |---|---|
-| JVM | Java 17 |
+| JVM | Java 21 |
 | Android | minSdk 26 |
 | Apple | iosArm64, iosSimulatorArm64, macosArm64 (Kotlin), iOS 15 / macOS 12 (Swift) |
 | Linux | linuxX64 |
