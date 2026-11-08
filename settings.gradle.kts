@@ -10,6 +10,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // TEMPORARY: libschnorr256k1-kotlin from JitPack until 1.0.0 is on Maven Central. That group
+        // resolves only here (no requests to Central for it), and nothing else does. Remove with the
+        // catalog's schnorr256k1-kotlin entry before merging.
+        exclusiveContent {
+            forRepository { maven("https://jitpack.io") }
+            filter { includeGroup("com.github.vitorpamplona.libschnorr256k1-kotlin") }
+        }
     }
 }
 
@@ -37,6 +44,8 @@ providers.gradleProperty("schnorr256k1KotlinDir").orNull?.takeUnless { isInclude
     includeBuild(dir) {
         dependencySubstitution {
             substitute(module("com.vitorpamplona.schnorr256k1:schnorr256k1-kotlin")).using(project(":schnorr256k1-kotlin"))
+            // the JitPack coordinates, while the catalog uses them
+            substitute(module("com.github.vitorpamplona.libschnorr256k1-kotlin:schnorr256k1-kotlin")).using(project(":schnorr256k1-kotlin"))
         }
     }
 }
