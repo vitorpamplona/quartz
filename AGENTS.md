@@ -79,7 +79,8 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
   them as common code. `verifyKmpPurity` and the metadata compiles catch most of it on Linux; CI's
   `test-apple` job is the authoritative check. For `@Volatile` import `kotlin.concurrent.Volatile`;
   in tests use `assertTrue`, not `assert`.
-- JVM target is 17: a dependency can't need a newer JVM than its users.
+- JVM target is 21: a dependency can't need a newer JVM than its users, so every dependency
+  targets 21 or lower (crypto-kmp: 17, libschnorr256k1-kotlin: 21).
 - Releases follow semantic versioning, with breaking changes held back for a major release once
   or twice a year: see [Versioning](#versioning) before you remove, rename or change anything
   public.
