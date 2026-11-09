@@ -224,9 +224,6 @@ kotlin {
                 // Bitcoin secp256k1 bindings
                 implementation(libs.secp256k1.kmp.jni.jvm)
 
-                // Custom C secp256k1 (libschnorr256k1) for cross-validation + 3-way benchmark
-                implementation(libs.schnorr256k1.kmp)
-
                 // SQLite bundled driver for JVM tests
                 implementation(libs.androidx.sqlite.bundled.jvm)
             }
@@ -267,9 +264,6 @@ kotlin {
 
                 // Bitcoin secp256k1 bindings to Android
                 api(libs.secp256k1.kmp.jni.android)
-
-                // Custom C secp256k1 (libschnorr256k1) for cross-validation + 3-way benchmark
-                implementation(libs.schnorr256k1.kmp)
             }
         }
 
