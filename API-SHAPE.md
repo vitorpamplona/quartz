@@ -1,7 +1,7 @@
 # Quartz .bit domain-resolution API
 
 Status: stable for the Amethyst NamecoinServices integration. This document is local to the
-`feat/bit-domain-resolution` branch; no publication or push is implied.
+`pr/bit-domain-resolution` branch; no publication or push is implied.
 
 ## Entry points
 

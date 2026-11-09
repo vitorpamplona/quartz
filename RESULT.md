@@ -95,3 +95,50 @@ Earlier verification history:
 - Amethyst `NamecoinServices` integration is a separate deliverable and is not included here.
 - Multiple `delegate` targets are not assigned an invented precedence; they are rejected as
   malformed, and this ambiguity decision is documented in API-SHAPE.md.
+
+## PR preparation rebase — 2026-11-10
+
+The four logical commits were rebased without conflicts in the isolated worktree
+`/Users/m/workspace-demo/quartz-worktrees/bit-domain-resolution-pr`, on branch
+`pr/bit-domain-resolution`. The original worktree was not modified.
+
+- New base: `288217ab3f8826e40cc2a60735cb4e80994f4f2c` (`github/main`)
+- Rebase command: `git rebase 288217ab3f8826e40cc2a60735cb4e80994f4f2c`
+- Result: exit 0; all four commits replayed successfully; no conflict resolution was needed.
+
+Rebased commits, in application order:
+
+1. `750065137951de78299534d9f815d6490588a65a` — `Bound Namecoin domain resolution`
+2. `af2d16e6fa9c2cd5553c863890b13fd8eefcadb1` — `Document Namecoin resolver verification`
+3. `f9069b9bb98e95f58f7384fc55efdcd2c8dc761d` — `Close Namecoin traversal failure gaps`
+4. `f36846ad1273184134f949e114016df4e125906d` — `Update Namecoin verification results`
+
+The public API is unchanged. With the documented `JAVA_HOME`, the exact post-rebase verification
+command was:
+
+```sh
+./gradlew :quartz:spotlessCheck :quartz:jvmTest --tests "com.vitorpamplona.quartz.nip05.namecoin.*"
+```
+
+Outcome: **exit 0, BUILD SUCCESSFUL** in 1m 37s. Spotless passed. XML reports contain **82 tests,
+0 failures, 0 errors, 0 skipped**. The increase from the historical 78-test run is exactly the
+four-test upstream `ElectrumXClientTlsTest`, introduced by upstream commit `237dcec57`:
+
+- `CompositeNamecoinBackendTest`: 8
+- `ElectrumXClientPinningTest`: 5
+- `ElectrumXClientTlsTest`: 4
+- `NamecoinBitDomainResolverTest`: 12
+- `NamecoinCoreRpcClientTest`: 10
+- `NamecoinImportTest`: 21
+- `NamecoinNameResolverExceptionTest`: 7
+- `NamecoinNameResolverTest`: 15
+
+Base-to-tip whitespace validation:
+
+```sh
+git diff --check 288217ab3f8826e40cc2a60735cb4e80994f4f2c HEAD
+```
+
+Outcome: exit 0 with no output. After the documentation-only commit, `git status --short --branch`
+reports only `## pr/bit-domain-resolution`; the worktree is clean. No broad multiplatform tests,
+push, PR operation, publication, or public-relay query was performed.
