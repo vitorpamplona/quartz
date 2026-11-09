@@ -14,6 +14,8 @@
 - Added hermetic JVM coverage using an in-memory `IElectrumXClient`; resolver tests open no
   backend sockets.
 - Added no transport, UI, IP, TLSA, or Tor/onion handling.
+- Follow-up hardening rejects nested import/delegate tuples unless they contain exactly one or two
+  items, and memoizes non-object top-level JSON failures consistently with other lookup outcomes.
 
 ## API contract
 
@@ -24,9 +26,10 @@ It contains the exact public signatures, defaults, outcome mapping, legacy compa
 Namecoin interpretation decisions (including ncdns exclusive `delegate` behavior and rejection of
 ambiguous multiple delegate targets).
 
-## Implementation commit
+## Implementation commits
 
-`b7408282e1a0272ca9527e4e5b8d0a67cf76a32f` — `Bound Namecoin domain resolution`
+- `b7408282e1a0272ca9527e4e5b8d0a67cf76a32f` — `Bound Namecoin domain resolution`
+- `69b3291806b0aadce77ae034532567a50807455b` — `Close Namecoin traversal failure gaps`
 
 No push or publication was performed.
 
@@ -43,13 +46,14 @@ Final scoped verification command:
 ```
 
 Outcome: **exit 0, BUILD SUCCESSFUL**. Both `:quartz:spotlessCheck` and `:quartz:jvmTest`
-passed. The focused filter ran **75 tests, 0 failures, 0 errors, 0 skipped** across:
+passed. After the follow-up hardening, the focused filter ran **78 tests, 0 failures, 0 errors,
+0 skipped** across:
 
 - `CompositeNamecoinBackendTest`: 8
 - `ElectrumXClientPinningTest`: 5
 - `NamecoinBitDomainResolverTest`: 12
 - `NamecoinCoreRpcClientTest`: 10
-- `NamecoinImportTest`: 18
+- `NamecoinImportTest`: 21
 - `NamecoinNameResolverExceptionTest`: 7
 - `NamecoinNameResolverTest`: 15
 
@@ -57,7 +61,9 @@ The new tests cover apex/subdomain normalization and lookup, exact/wildcard/defa
 imports/delegates and precedence, fail-closed failures, malformed records, cycles, global budget
 and depth limits, diamond memoization, the 24-label self-import shape with one backend lookup,
 zero lookups for unrelated map branches, invalid input without I/O, timeout, caller cancellation,
-and the Browser-vs-legacy extraction distinction.
+and the Browser-vs-legacy extraction distinction. Three follow-up regressions prove that oversized
+nested import/delegate tuples fail before target lookup and that repeated references to a non-object
+JSON value reuse one memoized backend lookup failure.
 
 Formatting was applied with:
 
@@ -65,8 +71,10 @@ Formatting was applied with:
 ./gradlew :quartz:spotlessApply
 ```
 
-Outcome: **exit 0, BUILD SUCCESSFUL**; only the six implementation/API/test files in the
-implementation commit were changed.
+Outcome: **exit 0, BUILD SUCCESSFUL**; only the six implementation/API/test files in the original
+implementation commit were changed. The follow-up used the same formatting command, followed by the
+final scoped verification command above; both exited 0, and only the resolver and its test file were
+changed before the hardening commit.
 
 Earlier verification history:
 
