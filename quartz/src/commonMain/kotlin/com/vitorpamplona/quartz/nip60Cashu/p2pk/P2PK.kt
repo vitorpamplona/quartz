@@ -65,19 +65,24 @@ object P2PK {
      * Build a Cashu P2PK secret JSON string locking the proof to [recipientPubKeyHex].
      *
      * Accepts either 32-byte x-only (64 hex chars — Nostr-style) or 33-byte
-     * compressed (66 hex chars with 02/03 prefix — cashu/NIP-61 style). The
-     * mint verifies using BIP-340 Schnorr which is x-only, so the parity byte
-     * is informational only. A fresh 16-byte nonce is generated.
+     * compressed (66 hex chars with 02/03 prefix — cashu/NIP-61 style), and always
+     * writes the compressed form. NUT-11 requires `data` to be a compressed key,
+     * and the parity byte is NOT optional in practice: cdk mints (cdk-mintd 0.18)
+     * enforce an x-only lock but can't verify a witness for it, so the recipient can
+     * never spend the proof, signed or not, and the ecash is stuck at that mint.
+     * An x-only key is the even-y point (BIP-340), which is the `02` prefix.
+     * A fresh 16-byte nonce is generated.
      */
     fun lockedSecret(recipientPubKeyHex: String): String {
         require(recipientPubKeyHex.length == 64 || recipientPubKeyHex.length == 66) {
             "Recipient pubkey must be 32-byte x-only (64 hex) or 33-byte compressed (66 hex)"
         }
+        val compressed = if (recipientPubKeyHex.length == 64) "02$recipientPubKeyHex" else recipientPubKeyHex
         val nonce = RandomInstance.bytes(16).toHexKey()
         val body =
             buildJsonObject {
                 put("nonce", nonce)
-                put("data", recipientPubKeyHex)
+                put("data", compressed)
                 put("tags", JsonArray(emptyList()))
             }
         val secret =

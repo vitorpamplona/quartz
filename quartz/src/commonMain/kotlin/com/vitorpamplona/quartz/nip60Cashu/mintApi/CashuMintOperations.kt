@@ -139,8 +139,6 @@ class CashuMintOperations(
             if (targetSplit > total) throw IllegalArgumentException("Target split exceeds available proofs")
         }
 
-        val keyset = fetchKeyset()
-
         // NUT-02: reserve per-input fees from the output total. Fees are
         // charged per the keyset of EACH input proof — which may be an
         // inactive, rotated-out keyset whose fee differs from the active
@@ -154,7 +152,13 @@ class CashuMintOperations(
         if (targetSplit != null && targetSplit > outputTotal) {
             throw IllegalArgumentException("Target split $targetSplit exceeds outputs after fee ($outputTotal)")
         }
-        if (outputTotal < 0L) throw IllegalArgumentException("Inputs $total don't cover NUT-02 fee $feeAtoms")
+        // Zero is as dead as negative: no outputs to blind, and a mint rejects a swap with an
+        // empty `outputs` ("no outputs provided"). A 1-sat proof on a 100-ppk keyset is the
+        // common case. Fail here, before the swap and before fetching the active keyset, so
+        // callers can tell it apart from a transient mint error and stop retrying it.
+        if (outputTotal <= 0L) throw SwapFeeExceedsInputsException(total, feeAtoms)
+
+        val keyset = fetchKeyset()
 
         // Batch all output construction into ONE secret reservation —
         // see [secretOutputsFor]. The wallet's persisted counter
@@ -630,33 +634,39 @@ class CashuMintOperations(
      * are allowed; each proof is verified against its own keyset's
      * amount key.
      */
-    suspend fun verifyTokenDleq(proofs: List<CashuProof>): Boolean {
-        if (proofs.isEmpty()) return true
+    suspend fun verifyTokenDleq(proofs: List<CashuProof>): Boolean = dleqFailures(proofs).isEmpty()
+
+    /**
+     * The proofs of [proofs] that fail NUT-12 Carol verification, by the rules of
+     * [verifyTokenDleq], with one `/v1/keys` round trip for the whole list (none when no proof
+     * carries a DLEQ `r`). Lets a caller holding proofs from several senders drop only the bad
+     * ones instead of re-verifying each sender's proofs with a fetch apiece.
+     */
+    suspend fun dleqFailures(proofs: List<CashuProof>): List<CashuProof> {
+        // Nothing to check without a DLEQ tuple carrying `r`: skip the /v1/keys round trip.
+        if (proofs.none { it.dleq?.r != null }) return emptyList()
         // Fetch all keysets the mint exposes so cross-keyset tokens
         // verify against the right amount key. Cheap — one round-trip.
         val allKeysets = client.activeKeysets().keysets.associateBy { it.id }
-        for (proof in proofs) {
-            val dleq = proof.dleq ?: continue
-            val r = dleq.r ?: continue
+        return proofs.filter { proof ->
+            val dleq = proof.dleq ?: return@filter false
+            val r = dleq.r ?: return@filter false
             val keyset =
                 allKeysets[proof.id]
                     // Mint that issued the proof may have rotated keysets
                     // since — without the original keyset's keys we can't
                     // verify offline. Fall through to spend-time check.
-                    ?: continue
-            val mintPubKeyHex = keyset.keys[proof.amount.toString()] ?: return false
-            val ok =
-                Bdhke.verifyDleqCarol(
-                    secret = proof.secret.encodeToByteArray(),
-                    r = r.hexToByteArray(),
-                    e = dleq.e.hexToByteArray(),
-                    s = dleq.s.hexToByteArray(),
-                    unblindedC = proof.c.hexToByteArray(),
-                    mintPubKey = mintPubKeyHex.hexToByteArray(),
-                )
-            if (!ok) return false
+                    ?: return@filter false
+            val mintPubKeyHex = keyset.keys[proof.amount.toString()] ?: return@filter true
+            !Bdhke.verifyDleqCarol(
+                secret = proof.secret.encodeToByteArray(),
+                r = r.hexToByteArray(),
+                e = dleq.e.hexToByteArray(),
+                s = dleq.s.hexToByteArray(),
+                unblindedC = proof.c.hexToByteArray(),
+                mintPubKey = mintPubKeyHex.hexToByteArray(),
+            )
         }
-        return true
     }
 
     /**
@@ -949,6 +959,19 @@ data class MintedProofs(
 ) {
     fun toTokenContent(mintUrl: String): TokenContent = TokenContent(mint = mintUrl, proofs = proofs)
 }
+
+/**
+ * A [CashuMintOperations.swap] whose NUT-02 input fee takes the whole input value, so nothing is
+ * left to blind. Deterministic for that proof set: retrying the same proofs fails the same way,
+ * but swapping them together with more proofs can succeed, since the fee is rounded up once per
+ * swap (ten 1-sat proofs at 100 ppk cost 1 sat together, but 1 sat each alone).
+ *
+ * An [IllegalArgumentException], like the other "these inputs can't work" refusals of [swap].
+ */
+class SwapFeeExceedsInputsException(
+    val inputTotal: Long,
+    val fee: Long,
+) : IllegalArgumentException("Inputs $inputTotal don't cover NUT-02 fee $fee: nothing left to swap")
 
 data class SwapResult(
     val send: List<CashuProof>,

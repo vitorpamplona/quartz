@@ -42,7 +42,9 @@ class P2PKTest {
         val parsed = Json.parseToJsonElement(secret) as JsonArray
         assertEquals("P2PK", (parsed[0] as JsonPrimitive).content)
         val body = parsed[1] as JsonObject
-        assertEquals(pubHex, (body["data"] as JsonPrimitive).content)
+        // An x-only key is written compressed (even-y, 02): NUT-11 requires it, and cdk mints
+        // can't verify a witness on an x-only lock, which leaves the proof unspendable.
+        assertEquals("02$pubHex", (body["data"] as JsonPrimitive).content)
         assertTrue((body["nonce"] as JsonPrimitive).content.length == 32, "nonce should be 16 bytes hex")
     }
 
@@ -50,7 +52,7 @@ class P2PKTest {
     fun roundTripSecretParse() {
         val secret = P2PK.lockedSecret(pubHex)
         val parsed = P2PK.parseSecret(secret)
-        assertEquals(pubHex, parsed?.pubKeyHex)
+        assertEquals("02$pubHex", parsed?.pubKeyHex)
         assertTrue(parsed?.nonceHex?.length == 32)
     }
 
