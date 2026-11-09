@@ -331,6 +331,11 @@ class ElectrumXClient(
                 var certFingerprint: String? = null
 
                 if (socket is javax.net.ssl.SSLSocket) {
+                    // Force the handshake before touching the session: JSSE's
+                    // getSession() can swallow a failed handshake and let the
+                    // failure surface later as a generic I/O error, which would
+                    // bypass the certificate-capture path below.
+                    socket.startHandshake()
                     tlsVersion = socket.session.protocol
                     // Capture the server's leaf certificate for TOFU pinning
                     try {
@@ -431,11 +436,18 @@ class ElectrumXClient(
                     } else {
                         "TLS handshake failed: ${e.message?.take(100) ?: "unknown error"}"
                     }
+                // A rejected handshake means the session above never exposed
+                // the peer's certificates — exactly the case the pin flow
+                // exists for. Re-connect once with a capture-only trust
+                // manager so the user can inspect and pin the certificate.
+                val captured = if (server.useSsl) captureUntrustedPeerCert(server) else null
                 ServerTestResult(
                     server = server,
                     success = false,
                     responseTimeMs = System.currentTimeMillis() - startTime,
                     error = detail,
+                    serverCertPem = captured?.pem,
+                    certFingerprint = captured?.fingerprint,
                 )
             } catch (e: javax.net.ssl.SSLException) {
                 ServerTestResult(
@@ -460,6 +472,84 @@ class ElectrumXClient(
                 )
             }
         }
+
+    /** A peer's leaf certificate captured without validating it. */
+    private class CapturedPeerCert(
+        val pem: String,
+        val fingerprint: String,
+    )
+
+    /**
+     * Re-connects to [server] with a capture-only trust manager and returns
+     * the leaf certificate it presents, or null when the second connection
+     * fails too.
+     *
+     * Used by [testServer] after a rejected handshake so the user can inspect
+     * and pin a certificate the trust store does not accept (a self-signed
+     * server, a CA the device does not know). The capture connection goes
+     * through the same [socketFactory] as a real connection — Tor included —
+     * so the captured certificate is the one lookups would actually see,
+     * sends nothing, and closes right after the handshake. Nothing becomes
+     * trusted: accepting the certificate still takes the user's explicit pin.
+     */
+    private fun captureUntrustedPeerCert(server: ElectrumxServer): CapturedPeerCert? =
+        runCatching {
+            val captured = AtomicReference<java.security.cert.X509Certificate?>()
+            val capturing =
+                arrayOf<TrustManager>(
+                    object : X509TrustManager {
+                        override fun checkClientTrusted(
+                            chain: Array<java.security.cert.X509Certificate>,
+                            authType: String,
+                        ) {}
+
+                        override fun checkServerTrusted(
+                            chain: Array<java.security.cert.X509Certificate>,
+                            authType: String,
+                        ) {
+                            captured.set(chain.firstOrNull())
+                        }
+
+                        override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
+                    },
+                )
+            val ctx =
+                try {
+                    SSLContext.getInstance("TLSv1.2")
+                } catch (_: Exception) {
+                    SSLContext.getInstance("TLS")
+                }
+            ctx.init(null, capturing, SecureRandom())
+
+            val baseSocket =
+                socketFactory().createSocket().apply {
+                    // Bounds the handshake reads, as in createSocket.
+                    soTimeout = readTimeoutMs.toInt()
+                    connect(InetSocketAddress(server.host, server.port), connectTimeoutMs.toInt())
+                }
+            val sslSocket = ctx.socketFactory.createSocket(baseSocket, server.host, server.port, true)
+            try {
+                (sslSocket as? javax.net.ssl.SSLSocket)?.let { ssl ->
+                    val modern = ssl.supportedProtocols.filter { it == "TLSv1.2" || it == "TLSv1.3" }
+                    if (modern.isNotEmpty()) ssl.enabledProtocols = modern.toTypedArray()
+                    ssl.soTimeout = readTimeoutMs.toInt()
+                    ssl.startHandshake()
+                }
+                val leaf = captured.get() ?: return null
+                val encoded =
+                    java.util.Base64
+                        .getMimeEncoder(76, "\n".toByteArray())
+                        .encodeToString(leaf.encoded)
+                val fingerprint =
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(leaf.encoded)
+                        .joinToString(":") { "%02X".format(it) }
+                CapturedPeerCert("-----BEGIN CERTIFICATE-----\n$encoded-----END CERTIFICATE-----", fingerprint)
+            } finally {
+                runCatching { sslSocket.close() }
+            }
+        }.getOrNull()
 
     // ── internals ──────────────────────────────────────────────────────
 
@@ -913,7 +1003,9 @@ class ElectrumXClient(
      * - its own [ElectrumxServer.pinnedCertsPem] plus the system CAs, when it has pins;
      * - the deprecated shared store, for `usePinnedTrustStore` and for unpinned
      *   `.onion` hosts (which always used it), until 3.0.0;
-     * - the system CAs otherwise.
+     * - the system and user-installed CAs otherwise.
+     *
+     * Every store includes the user-installed CAs (see [cachedDefaultSslFactory]).
      */
     @Suppress("DEPRECATION")
     private fun sslFactoryFor(server: ElectrumxServer): SSLSocketFactory =
@@ -922,8 +1014,33 @@ class ElectrumXClient(
         } else if (server.usePinnedTrustStore || server.host.endsWith(".onion")) {
             cachedLegacyPinnedSslFactory()
         } else {
-            SSLSocketFactory.getDefault() as SSLSocketFactory
+            cachedDefaultSslFactory()
         }
+
+    /** Lazy-cached default SSLSocketFactory. Thread-safe via volatile + DCL. */
+    @Volatile
+    private var defaultFactory: SSLSocketFactory? = null
+
+    /**
+     * The trust store for unpinned servers: the system CAs plus the
+     * user-installed CAs of the device.
+     *
+     * Since Android 7 (API 24) an app's default trust decisions exclude the
+     * user store, so [SSLSocketFactory.getDefault] rejects a server whose
+     * certificate chains to a CA the user deliberately trusted on the device —
+     * a self-hosted ElectrumX behind a home CA, or a StartOS server whose TLS
+     * the StartOS root CA signs. Merging the user store here scopes that trust
+     * to these ElectrumX connections instead of opting the whole app in
+     * through its manifest. Off Android there is no separate user store and
+     * this is the system store alone.
+     */
+    private fun cachedDefaultSslFactory(): SSLSocketFactory {
+        defaultFactory?.let { return it }
+        synchronized(this) {
+            defaultFactory?.let { return it }
+            return buildPinnedSslFactory(emptyList()).also { defaultFactory = it }
+        }
+    }
 
     /** User-supplied PEM certificates for the deprecated shared trust store. */
     private val dynamicCerts = mutableListOf<String>()
@@ -973,7 +1090,7 @@ class ElectrumXClient(
 
     /**
      * Build an SSLSocketFactory that trusts the given PEM certificates plus
-     * the system CA store.
+     * the system CA store and the user-installed CA store.
      *
      * Previous versions used a "trust-all" TrustManager, but Samsung
      * devices running One UI 7 (Android 16) silently reject connections
@@ -1022,6 +1139,9 @@ class ElectrumXClient(
             }
         }
 
+        // And the user-installed CAs of the device (see cachedDefaultSslFactory).
+        loadUserInstalledCaCerts(ks)
+
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         tmf.init(ks)
 
@@ -1035,6 +1155,35 @@ class ElectrumXClient(
             }
         sslContext.init(null, tmf.trustManagers, SecureRandom())
         return sslContext.socketFactory
+    }
+
+    /**
+     * Adds every CA certificate from the Android user trust store to [ks].
+     *
+     * Since Android 7 (API 24) the platform excludes that store from an app's
+     * default trust decisions; loading it here scopes the user's own trust
+     * choices to these ElectrumX connections. A no-op where there is no
+     * AndroidCAStore (desktop JVM) or the store cannot be read — the system
+     * CAs the caller loaded still apply.
+     */
+    private fun loadUserInstalledCaCerts(ks: KeyStore) {
+        val store =
+            try {
+                KeyStore.getInstance("AndroidCAStore").apply { load(null) }
+            } catch (_: Exception) {
+                return
+            }
+        var index = 0
+        val aliases = store.aliases() ?: return
+        while (aliases.hasMoreElements()) {
+            val alias = aliases.nextElement()
+            if (!alias.startsWith("user:")) continue
+            try {
+                store.getCertificate(alias)?.let { ks.setCertificateEntry("user_ca_${index++}", it) }
+            } catch (_: Exception) {
+                // Skip entries that cannot be re-inserted; the rest may still work
+            }
+        }
     }
 
     /**
