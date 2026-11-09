@@ -169,15 +169,17 @@ internal class NamecoinImportResolver(
                 } else {
                     try {
                         val element = json.parseToJsonElement(raw)
-                        val obj =
-                            element as? JsonObject
-                                ?: return failure(
-                                    NamecoinResolveOutcome.MalformedRecord(
-                                        name = name,
-                                        error = "top-level value is " + element::class.simpleName + ", expected JSON object",
-                                    ),
-                                )
-                        NamecoinTraversalResult.Success(obj)
+                        val obj = element as? JsonObject
+                        if (obj == null) {
+                            failure(
+                                NamecoinResolveOutcome.MalformedRecord(
+                                    name = name,
+                                    error = "top-level value is " + element::class.simpleName + ", expected JSON object",
+                                ),
+                            )
+                        } else {
+                            NamecoinTraversalResult.Success(obj)
+                        }
                     } catch (e: Exception) {
                         failure(
                             NamecoinResolveOutcome.MalformedRecord(
@@ -408,10 +410,10 @@ internal class NamecoinImportResolver(
 
         return array.map { element ->
             val inner = element as? JsonArray ?: return null
-            if (inner.isEmpty()) return null
+            if (inner.size !in 1..2) return null
             val name = (inner[0] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
             val selector =
-                if (inner.size >= 2) {
+                if (inner.size == 2) {
                     (inner[1] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
                 } else {
                     ""

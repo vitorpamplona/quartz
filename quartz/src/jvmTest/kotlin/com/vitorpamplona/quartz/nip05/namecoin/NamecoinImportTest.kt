@@ -20,9 +20,11 @@
  */
 package com.vitorpamplona.quartz.nip05.namecoin
 
+import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinImportResolver
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinNameResolver
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinResolutionLimits
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinResolveOutcome
+import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinTraversalResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -152,6 +154,20 @@ class NamecoinImportTest {
         }
 
     @Test
+    fun `oversized nested import tuple fails closed without fetching target`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/target","","unexpected"]]}""")
+                    .register("dd/target", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals(listOf("d/example"), client.queriedNames)
+        }
+
+    @Test
     fun `valid imported record without nostr is no nostr field`() =
         runTest {
             val client =
@@ -216,6 +232,20 @@ class NamecoinImportTest {
             val client =
                 RecordingElectrumXClient()
                     .register("d/example", """{"delegate":["dd/a","dd/b"]}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals(listOf("d/example"), client.queriedNames)
+        }
+
+    @Test
+    fun `oversized nested delegate tuple fails closed without fetching target`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"delegate":[["dd/target","","unexpected"]]}""")
+                    .register("dd/target", """{"nostr":"$TEST_PUBKEY_A"}""")
 
             val outcome = resolver(client).resolveDomainDetailed("example.bit")
 
@@ -310,6 +340,31 @@ class NamecoinImportTest {
             assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
             assertEquals(listOf("d/example", "dd/a", "dd/shared", "dd/b"), client.queriedNames)
             assertEquals(1, client.queriedNames.count { it == "dd/shared" })
+        }
+
+    @Test
+    fun `non object lookup failure is memoized for repeated references`() =
+        runTest {
+            val client = RecordingElectrumXClient().register("dd/broken", "[]")
+            val traversal =
+                NamecoinImportResolver(NamecoinResolutionLimits()) { name ->
+                    client.nameShowWithFallback(name, emptyList())?.value
+                }
+
+            // Exercise the shared lookup memo directly. A public fail-closed
+            // resolution correctly stops at the first malformed reference.
+            val first = traversal.resolve("dd/broken")
+            val second = traversal.resolve("dd/broken")
+
+            assertTrue(
+                "expected MalformedRecord, got $first",
+                (first as? NamecoinTraversalResult.Failure)?.outcome is NamecoinResolveOutcome.MalformedRecord,
+            )
+            assertTrue(
+                "expected MalformedRecord, got $second",
+                (second as? NamecoinTraversalResult.Failure)?.outcome is NamecoinResolveOutcome.MalformedRecord,
+            )
+            assertEquals(listOf("dd/broken"), client.queriedNames)
         }
 
     @Test
