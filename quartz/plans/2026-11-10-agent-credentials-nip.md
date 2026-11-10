@@ -45,7 +45,7 @@ AI provider, so the Nostr clients they use can run tasks on their behalf.
 
 ## Event
 
-Kind `10777`, replaceable. `content` is a NIP-44 ciphertext, encrypted by the author to
+Kind `12000`, replaceable. `content` is a NIP-44 ciphertext, encrypted by the author to
 their own public key, of a JSON array of tags:
 
     [
@@ -127,7 +127,7 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 ### Quartz (this repo)
 
-- `nipXXAgentKey/AgentKeyEvent`: a `BaseReplaceableEvent`, kind 10777, the shape of
+- `nipXXAgentKey/AgentKeyEvent`: a `BaseReplaceableEvent`, kind 12000, the shape of
   `nip60Cashu/wallet/CashuWalletEvent.kt` (NIP-44 private tags through
   `PrivateTagsInContent`). `build(url, key, signer)`, `url(signer)`, `key(signer)`;
   rewrites keep unknown private tags.
@@ -148,7 +148,7 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 ### Brainstorm
 
-- `client/src/services/agentKey.ts`: read kind 10777 from the EventStore (ADR 0005),
+- `client/src/services/agentKey.ts`: read kind 12000 from the EventStore (ADR 0005),
   decrypt with the active account's NIP-44, write through `signAs()`; checks the shared
   vector.
 - **Settings › Assistants › AI model**, same flow, plus the OpenRouter callback route.
@@ -157,8 +157,8 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 ### Order
 
-1. Agree on the format and the kind number (10777 is a placeholder, free in the registry
-   and in Quartz today).
+1. Agree on the format. Kind 12000: not in the NIPs registry, not in Quartz, not seen in
+   the 2026-10-08 relay kind census, and no NIP PR or issue claims it (checked 2026-11-10).
 2. Quartz event + vector, in the next minor.
 3. Setup screens in both apps and `amy agent`. Nothing spends the key yet.
 4. The first task in each app.
