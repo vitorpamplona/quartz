@@ -11,7 +11,7 @@ Bring-your-own-key: the user pays the provider; the app pays nothing and keeps n
 on a server.
 
 The event carries the least that makes a key usable: **the key, and the URL to send it
-to**. Nothing else.
+to**, in one tag. Nothing else.
 
 ## Why the URL and not just the key
 
@@ -26,8 +26,8 @@ format at `{url}/chat/completions`, Anthropic and Gemini included through their
 OpenAI-compatible endpoints. So the event needs no "which API" field either.
 
 Everything else the first draft carried is left to each app: model choice, labels,
-several keys, per-task routing, extra headers. Clients must keep tags they don't know, so
-any of these can come back as an optional tag later without breaking anyone.
+per-task routing, extra headers. Clients must keep tags they don't know, so any of these
+can come back as an optional tag later without breaking anyone.
 
 ## The NIP (draft text)
 
@@ -49,14 +49,18 @@ Kind `12000`, replaceable. `content` is a NIP-44 ciphertext, encrypted by the au
 their own public key, of a JSON array of tags:
 
     [
-      ["url", "https://openrouter.ai/api/v1"],
-      ["key", "sk-or-v1-…"]
+      ["key", "sk-or-v1-…", "https://openrouter.ai/api/v1"]
     ]
 
-- `url` (required): the root of an OpenAI-compatible API. Clients call
-  `POST {url}/chat/completions` and list models with `GET {url}/models`.
-- `key` (optional): sent as `Authorization: Bearer <key>`. Absent when the endpoint
-  needs none.
+A `key` tag holds:
+
+1. the key, sent as `Authorization: Bearer <key>`. An empty string for an endpoint that
+   needs none (a local runner).
+2. the root of an OpenAI-compatible API. Clients call `POST {url}/chat/completions` and
+   list models with `GET {url}/models`.
+
+Clients use the first `key` tag. A user with more than one key MAY add more tags, in
+order of preference; clients that only use one keep the rest when rewriting.
 
 Public tags carry nothing secret:
 
@@ -66,10 +70,10 @@ Clients MAY add a NIP-70 `["-"]` tag so relays refuse to rebroadcast it.
 
 ## Client behaviour
 
-- To change the key, fetch the newest event, decrypt, replace the tags you changed, keep
-  every tag you don't recognise, re-encrypt and publish.
+- To change the key, fetch the newest event, decrypt, replace the tag you changed, keep
+  every other tag, re-encrypt and publish.
 - Keep the decrypted key in memory or the platform's secure storage. Never log it, never
-  send it anywhere but `url`.
+  send it anywhere but its URL.
 - Test the key before saving it (`GET {url}/models`), so a typo shows up at setup.
 - The user pays for every call: say which provider will be used before running a new kind
   of task, and on 401/403 report the key as rejected instead of retrying.
@@ -85,18 +89,18 @@ exists, its size and when it changes.
 
 Brainstorm's Assistant has its own key, held by Brainstorm's server. For it to run tasks
 while the user is offline, the user would publish a second event: addressable, `d` and
-`p` set to the delegate's pubkey, with the same two tags NIP-44 encrypted to the delegate
+`p` set to the delegate's pubkey, with the same `key` tag NIP-44 encrypted to the delegate
 instead of to the user. Revoking is deleting that event and rotating the key at the
 provider, since the delegate may have kept a copy. The main event stays readable by the
 user alone, and every grant stays visible and revocable.
 
 ## Providers
 
-These are app presets that fill in `url`; the event only ever stores `url` + `key`.
+These are app presets that fill in the URL; the event only ever stores the key and its URL.
 "Browser" is whether Brainstorm can call it directly from the page (CORS), probed on
 2026-11-10.
 
-| Preset | `url` | Browser | Getting the key |
+| Preset | URL | Browser | Getting the key |
 |---|---|---|---|
 | **OpenRouter** (recommended default) | `https://openrouter.ai/api/v1` | yes | **OAuth PKCE, no copy-paste**: redirect to `openrouter.ai/auth`, exchange the code at `/api/v1/auth/keys`. One key reaches every major model, and the user can cap its spend. |
 | **Anthropic** | `https://api.anthropic.com/v1` (its OpenAI-compatible endpoint) | yes, with the header `anthropic-dangerous-direct-browser-access: true` | Paste an API key. **Never** reuse Claude Pro/Max sign-in tokens: Anthropic's terms forbid it in third-party apps and accounts get blocked. |
@@ -129,8 +133,9 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 - `nipXXAgentKey/AgentKeyEvent`: a `BaseReplaceableEvent`, kind 12000, the shape of
   `nip60Cashu/wallet/CashuWalletEvent.kt` (NIP-44 private tags through
-  `PrivateTagsInContent`). `build(url, key, signer)`, `url(signer)`, `key(signer)`;
-  rewrites keep unknown private tags.
+  `PrivateTagsInContent`), with an `AgentKeyTag(key, url)` codec under `tags/`.
+  `build(keys, signer)`, `keys(signer)`, `preferredKey(signer)`; rewrites keep unknown
+  private tags.
 - Register in `EventFactory`. Not a `SearchableEvent`.
 - Tests, and a fixed-key test vector that Brainstorm's vitest also reads.
 
