@@ -18,10 +18,17 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nipXXAgentKeys
+package com.vitorpamplona.quartz.nipFAAgentKeys
 
-import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nipXXAgentKeys.tags.AgentKeyTag
+import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 
-/** Writes the keys in order of preference. Used for the private tags, which are encrypted. */
-fun TagArrayBuilder<AgentKeyEvent>.agentKeys(keys: List<AgentKeyTag>) = addAll(keys.map(AgentKeyTag::toTagArray))
+/** Every well-formed `key` tag, in the user's order of preference. */
+fun TagArray.agentKeys() = mapNotNull(AgentKeyTag::parse)
+
+/** The first well-formed `key` tag: the one clients use. */
+fun TagArray.preferredAgentKey() = fastFirstNotNullOfOrNull(AgentKeyTag::parse)
+
+/** Everything but the `key` tags, kept as-is when the keys are replaced. */
+fun TagArray.withoutAgentKeys() = filterNot(AgentKeyTag::isTag).toTypedArray()

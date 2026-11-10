@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nipXXAgentKeys
+package com.vitorpamplona.quartz.nipFAAgentKeys
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
@@ -28,7 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
-import com.vitorpamplona.quartz.nipXXAgentKeys.tags.AgentKeyTag
+import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals

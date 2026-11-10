@@ -18,7 +18,7 @@
  * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package com.vitorpamplona.quartz.nipXXAgentKeys
+package com.vitorpamplona.quartz.nipFAAgentKeys
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
@@ -35,11 +35,11 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
-import com.vitorpamplona.quartz.nipXXAgentKeys.tags.AgentKeyTag
+import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
- * AI agent keys (kind 12000, draft NIP): the keys a user gives the Nostr clients they use
+ * NIP-FA AI agent keys (kind 12000, draft): the keys a user gives the Nostr clients they use
  * to run AI tasks on their behalf, each with the root of the OpenAI-compatible API it
  * works against. Replaceable; the content is NIP-44 encrypted to the author, as a JSON
  * array of private tags:

@@ -1,6 +1,7 @@
 # Agent credentials: a NIP for the user's preferred AI agent
 
-Status: draft for discussion, 2026-11-10. Owners: Quartz (event class), Amethyst and
+Status: draft for discussion, 2026-11-10. The spec is now NIP-FA, `FA.md` on
+branch `claude/nip-fa-ai-agent-keys` of vitorpamplona/nips; the text below is the earlier copy. Owners: Quartz (event class), Amethyst and
 Brainstorm (setup screens, then the clients that use it).
 
 ## What we want
@@ -32,7 +33,7 @@ can come back as an optional tag later without breaking anyone.
 ## The NIP (draft text)
 
 ```
-NIP-XX
+NIP-FA
 ======
 
 AI Agent Key
@@ -131,7 +132,7 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 ### Quartz (this repo): done
 
-- `nipXXAgentKeys/AgentKeyEvent` (kind 12000): extends `PrivateTagArrayEvent`, like the
+- `nipFAAgentKeys/AgentKeyEvent` (kind 12000): extends `PrivateTagArrayEvent`, like the
   NIP-51 private lists, so Amethyst's `PrivateTagArrayEventCache` decrypts it.
   `agentKeys(signer)`, `preferredKey(signer)`; builders `build(keys, signer)`,
   `replaceKeys`, `setPreferred`, `remove`, all keeping private tags they don't know.
