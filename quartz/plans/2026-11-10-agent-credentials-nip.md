@@ -129,15 +129,17 @@ Out: **Maple/OpenSecret**, which needs an attestation handshake rather than plai
 
 ## Implementation plan
 
-### Quartz (this repo)
+### Quartz (this repo): done
 
-- `nipXXAgentKey/AgentKeyEvent`: a `BaseReplaceableEvent`, kind 12000, the shape of
-  `nip60Cashu/wallet/CashuWalletEvent.kt` (NIP-44 private tags through
-  `PrivateTagsInContent`), with an `AgentKeyTag(key, url)` codec under `tags/`.
-  `build(keys, signer)`, `keys(signer)`, `preferredKey(signer)`; rewrites keep unknown
-  private tags.
-- Register in `EventFactory`. Not a `SearchableEvent`.
-- Tests, and a fixed-key test vector that Brainstorm's vitest also reads.
+- `nipXXAgentKeys/AgentKeyEvent` (kind 12000): extends `PrivateTagArrayEvent`, like the
+  NIP-51 private lists, so Amethyst's `PrivateTagArrayEventCache` decrypts it.
+  `agentKeys(signer)`, `preferredKey(signer)`; builders `build(keys, signer)`,
+  `replaceKeys`, `setPreferred`, `remove`, all keeping private tags they don't know.
+  Content is always encrypted JSON, `[]` included, because NIP-44 refuses an empty string.
+- `tags/AgentKeyTag(key, url)`; its `toString()` redacts the key.
+- Registered in `EventFactory` and `KindNames`. Not searchable (all encrypted).
+- `AgentKeyVectorTest` holds a fixed event signed by the test key `0x…01`: Brainstorm's
+  vitest should verify and decrypt the same JSON.
 
 ### Amethyst
 

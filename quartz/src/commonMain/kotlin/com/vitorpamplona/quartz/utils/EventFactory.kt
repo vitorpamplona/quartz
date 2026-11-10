@@ -511,6 +511,7 @@ import com.vitorpamplona.quartz.nipF4Podcasts.authored.AuthoredPodcastsEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
+import com.vitorpamplona.quartz.nipXXAgentKeys.AgentKeyEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
@@ -579,6 +580,7 @@ class EventFactory {
                 AgentTurnMetricEvent.KIND -> AgentTurnMetricEvent(id, pubKey, createdAt, tags, content, sig)
                 EngramEvent.KIND -> EngramEvent(id, pubKey, createdAt, tags, content, sig)
                 AgentProfileEvent.KIND -> AgentProfileEvent(id, pubKey, createdAt, tags, content, sig)
+                AgentKeyEvent.KIND -> AgentKeyEvent(id, pubKey, createdAt, tags, content, sig)
                 ObserverFrameEvent.KIND -> ObserverFrameEvent(id, pubKey, createdAt, tags, content, sig)
                 PersonaEvent.KIND -> PersonaEvent(id, pubKey, createdAt, tags, content, sig)
                 ArtifactEvent.KIND -> ArtifactEvent(id, pubKey, createdAt, tags, content, sig)

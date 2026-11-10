@@ -483,6 +483,7 @@ import com.vitorpamplona.quartz.nipF4Podcasts.authored.AuthoredPodcastsEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
+import com.vitorpamplona.quartz.nipXXAgentKeys.AgentKeyEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
 import com.vitorpamplona.quartz.nipXXPrivateNoteStorage.PnsEvent
@@ -522,6 +523,7 @@ object KindNames {
             AppDefinitionEvent.KIND to KindName("Apps", "89"),
             AppRecommendationEvent.KIND to KindName("App Recommendations", "89"),
             AppSpecificDataEvent.KIND to KindName("User Settings", "78"),
+            AgentKeyEvent.KIND to KindName("AI Agent Keys", null),
             AudioHeaderEvent.KIND to KindName("Audio Header", null),
             AudioTrackEvent.KIND to KindName("Audio Track", null),
             MusicTrackEvent.KIND to KindName("Music Track", null),
