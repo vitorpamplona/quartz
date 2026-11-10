@@ -58,6 +58,6 @@ class AgentKeyVectorTest {
     companion object {
         const val TEST_PRIVATE_KEY = "0000000000000000000000000000000000000000000000000000000000000001"
 
-        const val VECTOR = """{"id":"b58135caffa23430671f695d85268ac5a2c0858e431f0143aa42d64edf6eea96","pubkey":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","created_at":1794268800,"kind":12000,"tags":[["alt","AI agent keys (encrypted)"]],"content":"AjqAxU3ZRggimbtgKdX9GpN4Vmyxzoaqqp7Psxc7uG2OGDXb2wSGdS/ei2TaHSBmrepE9X3eTB5mIlOPK//4MLyVAdgWDbzb8OSoEfLZ7dzFx9eKtvVKEP07VxLf2RSGA6fipPPSOUclij1tWAy+6qsKaEa59udZ3eqYahHXjX1yMsCS50Bz17AgJ440o2X385+mfT9AT6es6FaNHtrv70FIihIlp4CtsARuW2Nk1qO+4W717CZpRrdTlCc9ieH1FG8A","sig":"acf3db20b3b0c5b8f19dfbda35e11b9f16f903aac806fc7be7d14d27484a324b1d539f6715ea31db59be6d50e95dd9933ab06c98cf3b9b54e628f24d5e43a756"}"""
+        const val VECTOR = """{"id":"c537202a5eddcfda27fbc08a35c4e3a58bb5fcc92bdae3aa755937c1c06dea9f","pubkey":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","created_at":1794268800,"kind":12000,"tags":[],"content":"AocRCX76hiVQkrvxAkl1KTue2UXLl47wPFc3b2EKrGASx724fGgVynMNpMGesy2sxZ3PWbxeb+kL2GFMotOTF9kAjWHvPf0drJYFXatYdSvagXi4VbsUJYaZBZ+vb1iVPRDsgSbBVdIfoSNH7JEYiqGP6vYsp8NCaJQ4zgGowCsAgvyirwCRD90EYYkGql7921doW1Qel6u/UX44S5ea+Yyf/VPEsLwkWbUk4dPBcwsuvXBIcF090noeyXW1nN+H4MmU","sig":"248807f9e11a6651ca4af9bf2689fc2f4520b9f690977d555df71df8e4733c60b4ba9e18e37fb72064f0604a7f6749c968beb96eb96779d0f14ed4b697c67a42"}"""
     }
 }

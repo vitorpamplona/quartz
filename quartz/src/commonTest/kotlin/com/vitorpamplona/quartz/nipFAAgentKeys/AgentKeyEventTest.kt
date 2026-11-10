@@ -26,7 +26,6 @@ import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
-import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 import kotlinx.coroutines.test.runTest
@@ -57,7 +56,8 @@ class AgentKeyEventTest {
             assertEquals(12000, event.kind)
             assertTrue(event.kind.isReplaceable())
             assertEquals(AgentKeyEvent.createAddress(signer.pubKey), event.address())
-            assertEquals(AgentKeyEvent.ALT_DESCRIPTION, event.alt())
+            // NIP-31 alt is unrecommended: no public tags at all.
+            assertTrue(event.tags.isEmpty())
             assertEquals(listOf(openRouter, ollama), event.agentKeys(signer))
             assertEquals(openRouter, event.preferredKey(signer))
         }
@@ -117,7 +117,6 @@ class AgentKeyEventTest {
             assertEquals(listOf(anthropic), replaced.agentKeys(signer))
             assertTrue(replaced.privateTags(signer)!!.any { it.contentEquals(model) })
             assertTrue(replaced.tags.any { it.contentEquals(arrayOf("-")) })
-            assertEquals(AgentKeyEvent.ALT_DESCRIPTION, replaced.alt())
         }
 
     @Test

@@ -32,7 +32,6 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
-import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
@@ -49,8 +48,8 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * ```
  *
  * Clients use the first `key` tag; any others follow in order of preference. Rewrites
- * keep every private tag they don't know ([replaceKeys]). Public tags carry nothing
- * secret: an `alt`, and optionally a NIP-70 `["-"]`.
+ * keep every private tag they don't know ([replaceKeys]). It needs no public tags; a
+ * NIP-70 `["-"]` is optional (pass it through the builder's initializer).
  *
  * Not searchable: everything it holds is encrypted. Design notes:
  * `quartz/plans/2026-11-10-agent-credentials-nip.md`.
@@ -81,7 +80,6 @@ class AgentKeyEvent(
     companion object {
         const val KIND = 12000
         const val FIXED_D_TAG = ""
-        const val ALT_DESCRIPTION = "AI agent keys (encrypted)"
 
         fun createAddress(pubKey: HexKey) = Address(KIND, pubKey, FIXED_D_TAG)
 
@@ -106,10 +104,7 @@ class AgentKeyEvent(
             initializer: TagArrayBuilder<AgentKeyEvent>.() -> Unit = {},
         ): EventTemplate<AgentKeyEvent> {
             val privateTags = tagArray<AgentKeyEvent> { agentKeys(keys) }
-            return eventTemplate(KIND, encrypt(privateTags, signer), createdAt) {
-                alt(ALT_DESCRIPTION)
-                initializer()
-            }
+            return eventTemplate(KIND, encrypt(privateTags, signer), createdAt, initializer)
         }
 
         /**
