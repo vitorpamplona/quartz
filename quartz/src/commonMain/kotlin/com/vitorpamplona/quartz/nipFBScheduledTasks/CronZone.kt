@@ -29,6 +29,12 @@ fun interface CronZone {
     /** The offset from UTC, in seconds, at the instant [epochSec]. */
     fun offsetSecondsAt(epochSec: Long): Int
 
+    /** The wall clock at [epochSec], as seconds since the epoch read as if it were UTC. */
+    fun wallSeconds(epochSec: Long): Long = epochSec + offsetSecondsAt(epochSec)
+
+    /** The calendar day [epochSec] falls on in this zone, as days since 1970-01-01. */
+    fun dayOf(epochSec: Long): Long = wallSeconds(epochSec).floorDiv(86_400L)
+
     companion object {
         val UTC = CronZone { 0 }
 

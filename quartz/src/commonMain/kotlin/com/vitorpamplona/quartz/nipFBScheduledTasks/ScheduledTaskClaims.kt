@@ -31,8 +31,10 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
  * 1. wait a random 0 to [MAX_JITTER_SECONDS];
  * 2. read the newest event from the write relays ([hasQuorum] of them must answer; none, or a
  *    content that doesn't decrypt, never runs);
- *    [decide] says whether to stop, skip (the result exists: [skipped] writes the claim and `ran`)
- *    or claim;
+ *    [decide] says whether to stop or claim. When the result already exists, NIP-FB lets a client
+ *    write the claim and `ran` together ([skipped]); a client can instead claim and settle as for
+ *    a run, then write only `ran` ([finished]) when its claim won, so a skip can never take an
+ *    occurrence from a device that is running it;
  * 3. subscribe to the event, publish [claimed] ([hasQuorum] of the relays must accept it);
  * 4. after [SETTLE_SECONDS], [settle] on the [winner] of everything seen: run if it holds this
  *    device's claim, stop if it holds another's, and go back to 2 (at most [MAX_ROUNDS] times,
@@ -120,17 +122,24 @@ object ScheduledTaskClaims {
 
     /**
      * The read's verdict for [occurrence] on [task], the newest event's tags. [taskName] is the
-     * job this client runs: a task without it, or without a readable `cron`, is never run.
+     * job this client runs: a task without it, or without a readable `cron` and zone, is never run.
+     *
+     * [installId] is this installation's: its own unfinished claim on [occurrence] is its to take
+     * up again (the app was stopped mid-run, or the process died), not someone else's.
      */
     fun decide(
         task: ScheduledTask,
         taskName: String,
         occurrence: Long,
         now: Long,
+        installId: String? = null,
     ): Decision {
-        if (task.paused || task.expression() == null || task.task != taskName) return Decision.NOT_RUNNABLE
+        if (task.paused || !task.isReadable() || task.task != taskName) return Decision.NOT_RUNNABLE
         val claim = task.claim
-        if (claim != null && claim.due == occurrence && !takeoverAllowed(task, now)) return Decision.ALREADY_CLAIMED
+        if (claim != null && claim.due == occurrence && !takeoverAllowed(task, now)) {
+            val resumable = installId != null && claim.id == installId && !isFinished(task)
+            if (!resumable) return Decision.ALREADY_CLAIMED
+        }
         return Decision.CLAIM
     }
 

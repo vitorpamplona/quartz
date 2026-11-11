@@ -74,47 +74,83 @@ class CronExpression private constructor(
         minute: Int,
     ): Boolean = hours[hour] && minutes[minute]
 
-    /** The first occurrence strictly after [epochSec] in [zone]; null when there is none in the next [SEARCH_DAYS] days. */
+    /**
+     * The first occurrence strictly after [epochSec] in [zone]; null when there is none in the next
+     * [SEARCH_DAYS] days.
+     *
+     * [resolve] never runs a later wall time earlier (a repeated time is its first reading, a
+     * skipped one the jump), so every wall time before the one [epochSec] reads resolves at or
+     * before it: the search starts at that minute, and passes over an hour whose last match
+     * resolves at or before [epochSec] with one look.
+     */
     fun nextAfter(
         epochSec: Long,
         zone: CronZone,
     ): Long? {
-        val firstDay = Civil.dayOf(epochSec + zone.offsetSecondsAt(epochSec)) - 1
-        for (i in 0..SEARCH_DAYS) {
-            val day = firstDay + i
-            if (!runsOn(day)) continue
-            for (hour in hourList) {
-                for (minute in minuteList) {
-                    val at = resolve(day * DAY + hour * 3_600L + minute * 60L, zone)
-                    if (at > epochSec) return at
+        val local = zone.wallSeconds(epochSec)
+        val firstDay = Civil.dayOf(local)
+        val fromMinute = ((local - firstDay * DAY) / 60).toInt()
+        val lastMinute = minuteList.last()
+        var day = firstDay
+        while (day <= firstDay + SEARCH_DAYS) {
+            val (year, month, date) = Civil.fromDay(day)
+            if (!months[month]) {
+                day = Civil.toDay(if (month == 12) year + 1 else year, if (month == 12) 1 else month + 1, 1)
+                continue
+            }
+            if (runsOnDay(year, month, date, Civil.dayOfWeek(day))) {
+                val dayStart = day * DAY
+                for (hour in hourList) {
+                    if (day == firstDay && hour * 60 + lastMinute < fromMinute) continue
+                    if (resolve(dayStart + hour * 3_600L + lastMinute * 60L, zone) <= epochSec) continue
+                    for (minute in minuteList) {
+                        val at = resolve(dayStart + hour * 3_600L + minute * 60L, zone)
+                        if (at > epochSec) return at
+                    }
                 }
             }
+            day++
         }
         return null
     }
 
-    /** The last occurrence at or before [epochSec] in [zone]; null when there is none in the [SEARCH_DAYS] days before. */
+    /**
+     * The last occurrence at or before [epochSec] in [zone]; null when there is none in the
+     * [SEARCH_DAYS] days before.
+     *
+     * After a clock goes back, a wall time later than the one [epochSec] reads may already have
+     * passed (its first reading), so the search starts at the latest wall time the hours before
+     * [epochSec] read, and passes over an hour whose first match resolves after [epochSec].
+     */
     fun lastAtOrBefore(
         epochSec: Long,
         zone: CronZone,
     ): Long? {
-        val lastDay = Civil.dayOf(epochSec + zone.offsetSecondsAt(epochSec)) + 1
-        for (i in 0..SEARCH_DAYS) {
-            val day = lastDay - i
-            if (!runsOn(day)) continue
-            for (hour in hourList.asReversed()) {
-                for (minute in minuteList.asReversed()) {
-                    val at = resolve(day * DAY + hour * 3_600L + minute * 60L, zone)
-                    if (at <= epochSec) return at
+        val top = epochSec + maxOf(zone.offsetSecondsAt(epochSec), zone.offsetSecondsAt(epochSec - DAY), zone.offsetSecondsAt(epochSec - 2 * DAY))
+        val topDay = Civil.dayOf(top)
+        val toMinute = ((top - topDay * DAY) / 60).toInt()
+        val firstMinute = minuteList.first()
+        var day = topDay
+        while (day >= topDay - SEARCH_DAYS) {
+            val (year, month, date) = Civil.fromDay(day)
+            if (!months[month]) {
+                day = Civil.toDay(year, month, 1) - 1
+                continue
+            }
+            if (runsOnDay(year, month, date, Civil.dayOfWeek(day))) {
+                val dayStart = day * DAY
+                for (hour in hourList.asReversed()) {
+                    if (day == topDay && hour * 60 + firstMinute > toMinute) continue
+                    if (resolve(dayStart + hour * 3_600L + firstMinute * 60L, zone) > epochSec) continue
+                    for (minute in minuteList.asReversed()) {
+                        val at = resolve(dayStart + hour * 3_600L + minute * 60L, zone)
+                        if (at <= epochSec) return at
+                    }
                 }
             }
+            day--
         }
         return null
-    }
-
-    private fun runsOn(day: Long): Boolean {
-        val (year, month, date) = Civil.fromDay(day)
-        return runsOnDay(year, month, date, Civil.dayOfWeek(day))
     }
 
     override fun equals(other: Any?) = other is CronExpression && other.text == text
@@ -256,8 +292,84 @@ data class SimpleCron(
         return "$minute $hour * * $dow"
     }
 
+    /**
+     * The next run after [after], read in [zone], whose wall clock there reads [hour]:[minute]: a
+     * run no daylight-saving change moved (a skipped time runs at the jump, which isn't the time
+     * this schedule says). Null when none of the next few runs is one.
+     */
+    fun unmovedRun(
+        after: Long,
+        zone: CronZone,
+    ): Long? {
+        val expression = CronExpression.parse(toCron()) ?: return null
+        val wall = hour * 3_600L + minute * 60L
+        var from = after
+        repeat(UNMOVED_TRIES) {
+            val at = expression.nextAfter(from, zone) ?: return null
+            if (zone.wallSeconds(at).mod(DAY) == wall) return at
+            from = at
+        }
+        return null
+    }
+
+    /**
+     * This schedule, read in [zone], as another clock ([viewer]) sees it: the time one run
+     * ([unmovedRun] after [now]) reads there, and the weekdays it falls on there (06:00 on
+     * Monday in New York is 00:00 on Tuesday in Auckland). Null when there is no such run.
+     */
+    fun seenFrom(
+        zone: CronZone,
+        viewer: CronZone,
+        now: Long,
+    ): SimpleCron? {
+        val at = unmovedRun(now, zone) ?: return null
+        val wall = viewer.wallSeconds(at).mod(DAY)
+        return SimpleCron((wall / 3_600L).toInt(), ((wall % 3_600L) / 60L).toInt(), shifted(weekdays, (viewer.dayOf(at) - zone.dayOf(at)).toInt()))
+    }
+
+    /**
+     * The schedule, still read in [zone], that runs at [hour]:[minute] on [viewer]'s clock on the
+     * days [seenFrom] shows there: the run [seenFrom] reads moves to that time on its calendar
+     * day on [viewer]'s clock, and the expression follows it in [zone], weekdays moved with it
+     * when it crosses midnight there. So the schedule keeps its zone, and the clock changes it
+     * follows, while the reader picks the time on their own clock.
+     *
+     * Moving to the time [seenFrom] shows gives this schedule back. Null when there is no such
+     * run, or when the new time can't be said as one time in [zone] (a time [viewer]'s clocks
+     * skip that day, or one [zone] reads twice).
+     */
+    fun movedTo(
+        hour: Int,
+        minute: Int,
+        zone: CronZone,
+        viewer: CronZone,
+        now: Long,
+    ): SimpleCron? {
+        if (hour !in 0..23 || minute !in 0..59) return null
+        val at = unmovedRun(now, zone) ?: return null
+        val local = viewer.dayOf(at) * DAY + hour * 3_600L + minute * 60L
+        val moved = CronExpression.resolve(local, viewer)
+        if (viewer.wallSeconds(moved) != local) return null
+        val wall = zone.wallSeconds(moved)
+        val there = SimpleCron((wall.mod(DAY) / 3_600L).toInt(), ((wall.mod(DAY) % 3_600L) / 60L).toInt(), shifted(weekdays, (zone.dayOf(moved) - zone.dayOf(at)).toInt()))
+        // One reading of that wall time in [zone], the one the schedule would run at.
+        if (CronExpression.resolve(wall - wall.mod(60L), zone) != moved) return null
+        return there
+    }
+
     companion object {
+        private const val DAY = 86_400L
+
+        /** How many runs [unmovedRun] looks at: past any week of clock changes. */
+        private const val UNMOVED_TRIES = 16
+
         private val single = Regex("^\\d{1,9}$")
+
+        /** ISO weekdays moved by [days] (1 = the next day); null (every day) stays null. */
+        private fun shifted(
+            weekdays: Set<Int>?,
+            days: Int,
+        ): Set<Int>? = weekdays?.map { (it - 1 + days).mod(7) + 1 }?.toSet()
 
         /** The editor's shape of [cron], or null when the editor couldn't show it again. */
         fun parse(cron: String): SimpleCron? {
@@ -293,6 +405,21 @@ internal object Civil {
 
     /** 0 = Sunday … 6 = Saturday; 1970-01-01 was a Thursday. */
     fun dayOfWeek(day: Long): Int = (day + 4).mod(7L).toInt()
+
+    /** Days since 1970-01-01 of [year]-[month]-[day]. */
+    fun toDay(
+        year: Int,
+        month: Int,
+        day: Int,
+    ): Long {
+        val y = (if (month <= 2) year - 1 else year).toLong()
+        val era = y.floorDiv(400L)
+        val yoe = y - era * 400L
+        val mp = (month + 9) % 12
+        val doy = (153L * mp + 2L) / 5L + day - 1L
+        val doe = yoe * 365L + yoe / 4L - yoe / 100L + doy
+        return era * 146_097L + doe - 719_468L
+    }
 
     fun fromDay(day: Long): Triple<Int, Int, Int> {
         val z = day + 719_468L

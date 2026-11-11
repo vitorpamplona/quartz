@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -31,8 +32,8 @@ import com.vitorpamplona.quartz.utils.TimeUtils
 /**
  * The morning Observer edition as a NIP-FB scheduled task (`quartz/plans/2026-11-11-observer-site.md`,
  * "The morning schedule, synced"): kind 34817 with the fixed `d` = [D_TAG], so two apps setting it
- * up at once edit one event, and `task` = [TASK]. Whether today's edition already exists, the
- * check before a scheduled print, is [ObserverSite.alreadyPrintedToday]. The claim race is
+ * up at once edit one event, and `task` = [TASK]. Whether an occurrence's edition already exists,
+ * the check before a scheduled print, is [ObserverSite.alreadyPrinted]. The claim race is
  * NIP-FB's ([com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims]), and so is the
  * missed-run warning ([ScheduledTask.missedRun]).
  */
@@ -47,27 +48,27 @@ object ObserverSchedule {
 
     fun isObserverSchedule(event: Event) = event is ScheduledTaskEvent && event.dTag() == D_TAG
 
-    /** The newest morning schedule of [author] among [events]; null when there is none. */
-    fun newest(
-        events: List<Event?>,
-        author: HexKey,
-    ): ScheduledTaskEvent? =
-        events
-            .filterIsInstance<ScheduledTaskEvent>()
-            .filter { it.pubKey == author && it.dTag() == D_TAG }
-            .maxByOrNull { it.createdAt }
-
     /** A new schedule, paused, at the default time in [zone], set at [now]: what an app writes when none exists. */
     fun new(
         zone: String,
         now: Long = TimeUtils.now(),
     ): ScheduledTask = ScheduledTask.create(D_TAG, TASK, zone = zone, setAt = now, paused = true)
 
-    /** The unsigned schedule event for [task], encrypted to [signer], replacing [previous]. */
+    /**
+     * The unsigned schedule event for [task], encrypted to [signer], replacing [previous]. A public
+     * `client` tag is dropped (it tells anyone which app the reader schedules with; a private one
+     * stays): the one exception to keeping every tag where it was. Sign it with a signer that adds
+     * no `client` tag of its own.
+     */
     suspend fun build(
         task: ScheduledTask,
         signer: NostrSigner,
         previous: Event?,
         now: Long = TimeUtils.now(),
-    ) = ScheduledTaskEvent.update(task, signer, D_TAG, ScheduledTaskEvent.nextCreatedAt(previous, now))
+    ) = ScheduledTaskEvent.update(withoutPublicClient(task), signer, D_TAG, ScheduledTaskEvent.nextCreatedAt(previous, now))
+
+    /** [task] without a public `client` tag; a private one is kept. */
+    fun withoutPublicClient(task: ScheduledTask): ScheduledTask = if (task.publicTags.any(::isClientTag)) ScheduledTask(task.publicTags.filterNot(::isClientTag).toTypedArray(), task.privateTags) else task
+
+    private fun isClientTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == ClientTag.TAG_NAME
 }

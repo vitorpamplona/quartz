@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nipFBScheduledTasks
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 
 /** A [CronZone] over `java.time`'s zone rules. */
 class ZoneIdCronZone(
@@ -33,13 +34,26 @@ class ZoneIdCronZone(
     override fun offsetSecondsAt(epochSec: Long): Int = rules.getOffset(Instant.ofEpochSecond(epochSec)).totalSeconds
 
     companion object {
-        /** The zone named [id] (IANA), or null when this platform doesn't know it. */
-        fun of(id: String): ZoneIdCronZone? =
-            try {
-                ZoneIdCronZone(ZoneId.of(id))
-            } catch (e: DateTimeException) {
-                null
-            }
+        /**
+         * The zone named [id] (IANA, such as `America/New_York` or `UTC`), or null when this
+         * platform doesn't know it, or when it is an offset (`+05:00`, `UTC+5`, `GMT-3`) rather
+         * than a name in the IANA tz database, though `java.time` takes those: NIP-FB reads a
+         * `cron` in an IANA zone, and anything else is unreadable. `Etc/GMT+5` is a tzdb name.
+         */
+        fun of(id: String): ZoneIdCronZone? {
+            if (offsetLike.containsMatchIn(id)) return null
+            val zone =
+                try {
+                    ZoneId.of(id)
+                } catch (e: DateTimeException) {
+                    return null
+                }
+            if (zone is ZoneOffset || ':' in zone.id) return null
+            return ZoneIdCronZone(zone)
+        }
+
+        /** `+05:00`, `-3`, `UTC+5`, `GMT-03:00`, `UT+1`: offsets, not zone names. */
+        private val offsetLike = Regex("^([+-]|(UTC|GMT|UT)[+-])", RegexOption.IGNORE_CASE)
 
         fun systemDefault() = ZoneIdCronZone(ZoneId.systemDefault())
     }

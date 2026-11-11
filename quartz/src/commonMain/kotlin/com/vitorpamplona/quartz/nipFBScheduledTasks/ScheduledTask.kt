@@ -38,7 +38,8 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
  *
  * What to run ([task]), when ([cron] on the wall clock of [tz]; never while [paused]), the
  * latest [claim] and when that claimed occurrence finished ([ran]). A [cron] this client can't
- * read ([expression] null) is kept as written and never run.
+ * read ([expression] null), or one without a zone ([tz] null; one this platform doesn't know is the
+ * client's to check), is kept as written and never run.
  */
 @Immutable
 class ScheduledTask(
@@ -46,6 +47,9 @@ class ScheduledTask(
     val privateTags: TagArray = emptyArray(),
 ) {
     private val merged: TagArray = privateTags + publicTags
+
+    /** Parsed once: the screens, the claim and the timers all ask. */
+    private val parsed: CronExpression? by lazy { cron?.let(CronExpression::parse) }
 
     /** The job, e.g. `observer` for the morning Observer edition. */
     val task: String? get() = merged.taskName()
@@ -63,7 +67,10 @@ class ScheduledTask(
     val ran: Long? get() = merged.ran()
 
     /** The schedule, or null when [cron] is absent or outside NIP-FB's subset: then it never runs. */
-    fun expression(): CronExpression? = cron?.let(CronExpression::parse)
+    fun expression(): CronExpression? = parsed
+
+    /** Whether the schedule can be read at all: an expression in NIP-FB's subset and a zone. Whether the zone is one the platform knows is the caller's to add. */
+    fun isReadable(): Boolean = parsed != null && tz != null
 
     /** The schedule as a simple editor shows it (a time, some weekdays), or null when it can't. */
     fun simple(): SimpleCron? = cron?.let(SimpleCron::parse)

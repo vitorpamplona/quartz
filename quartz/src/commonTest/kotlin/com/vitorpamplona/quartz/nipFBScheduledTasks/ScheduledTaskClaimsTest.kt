@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims.Decision
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -206,5 +207,27 @@ class ScheduledTaskClaimsTest {
         assertNull(hourly.missedRun(newYork, six + 3 * hour - 1))
         assertNull(hourly.missedRun(newYork, six + 3 * hour))
         assertEquals(six + hour, hourly.missedRun(newYork, six + 4 * hour))
+    }
+
+    @Test
+    fun anInstallTakesUpItsOwnUnfinishedClaim() {
+        val claimedAt = six + 30
+        val claimed = ScheduledTaskClaims.claimed(daily, six, "desk", "Desktop (Linux)", claimedAt)
+        // The app died mid-run: its own claim on this occurrence is its to run again, at once.
+        assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "desk"))
+        // Nobody else's.
+        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "phone"))
+        // Finished: not even its own.
+        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(ScheduledTaskClaims.finished(claimed, six + 600), "observer", six, claimedAt + 60, installId = "desk"))
+    }
+
+    @Test
+    fun aCronWithoutAZoneIsNeverRun() {
+        val noZone = daily.replacing(CronTag::isTag, arrayOf("cron", "0 6 * * *"))
+        assertNull(noZone.tz)
+        assertFalse(noZone.isReadable())
+        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(noZone, "observer", six, six))
+        val blankZone = daily.replacing(CronTag::isTag, arrayOf("cron", "0 6 * * *", "", "0"))
+        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(blankZone, "observer", six, six))
     }
 }

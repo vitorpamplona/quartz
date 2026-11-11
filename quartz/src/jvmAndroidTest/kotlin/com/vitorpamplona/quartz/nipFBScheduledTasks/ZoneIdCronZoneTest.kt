@@ -130,4 +130,22 @@ class ZoneIdCronZoneTest {
         assertEquals("2026-09-27T03:45", localIn(cht, skipped))
         assertEquals(1_790_431_200L, skipped)
     }
+
+    @Test
+    fun onlyNamedZonesAreZones() {
+        assertNull(ZoneIdCronZone.of("Mars/Olympus_Mons"))
+        assertNull(ZoneIdCronZone.of(""))
+        assertNull(ZoneIdCronZone.of("+05:00"))
+        assertNull(ZoneIdCronZone.of("GMT+5"))
+        assertNull(ZoneIdCronZone.of("GMT-3"))
+        assertNull(ZoneIdCronZone.of("UTC+5"))
+        assertNull(ZoneIdCronZone.of("UTC-03:30"))
+        assertNull(ZoneIdCronZone.of("UT+1"))
+        assertNull(ZoneIdCronZone.of("-03:00"))
+        assertNull(ZoneIdCronZone.of("Z"))
+        assertEquals(0, ZoneIdCronZone.of("UTC")!!.offsetSecondsAt(0))
+        assertEquals(0, ZoneIdCronZone.of("Etc/UTC")!!.offsetSecondsAt(0))
+        assertEquals(0, ZoneIdCronZone.of("GMT")!!.offsetSecondsAt(0))
+        assertEquals(-5 * 3_600, ZoneIdCronZone.of("Etc/GMT+5")!!.offsetSecondsAt(0))
+    }
 }

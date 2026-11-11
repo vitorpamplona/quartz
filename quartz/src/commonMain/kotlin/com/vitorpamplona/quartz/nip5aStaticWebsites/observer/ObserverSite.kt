@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip5aStaticWebsites.NamedSiteEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.CronZone
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -57,9 +58,6 @@ object ObserverSite {
     const val DEFAULT_MAX_TAGS = 100
 
     const val DEFAULT_TITLE = "The Nostr Observer"
-
-    /** A scheduled print skips when an edition was printed this recently ([alreadyPrintedToday]). */
-    const val PRINTED_RECENTLY_SECONDS = 20 * 3_600L
 
     private val dayPattern = Regex("^\\d{4}-\\d{2}-\\d{2}$")
     private val dayPathPattern = Regex("^/(\\d{4}-\\d{2}-\\d{2})\\.html$")
@@ -122,31 +120,33 @@ object ObserverSite {
 
     /**
      * Whether an edition printed at [printedAt] (unix seconds), or, when that is unknown, dated
-     * [day] (UTC), is today's as far as a scheduled print is concerned: printed in the
-     * [PRINTED_RECENTLY_SECONDS] before [now], or with no print time and [day] = today's UTC date.
-     * A print time up to a day after [now] counts too (another device's clock running ahead);
-     * a later one is bad data.
+     * [day] (UTC), is the result of the scheduled occurrence due at [occurrence]: printed on the
+     * same calendar day as that due time on [zone]'s clock (the schedule's zone), or, with no
+     * print time, dated the occurrence's UTC date. A paper from the evening before, or from a
+     * catch-up the day before, is not this morning's; a manual print an hour before it is.
      */
-    fun printedToday(
+    fun printedFor(
         printedAt: Long?,
         day: String?,
-        now: Long = TimeUtils.now(),
+        occurrence: Long,
+        zone: CronZone,
     ): Boolean =
         if (printedAt != null) {
-            printedAt > now - PRINTED_RECENTLY_SECONDS && printedAt <= now + 86_400L
+            zone.dayOf(printedAt) == zone.dayOf(occurrence)
         } else {
-            day != null && day == utcDay(now)
+            day != null && day == utcDay(occurrence)
         }
 
     /**
-     * The check before any scheduled print: true when [editions] (the reader's Observer site, or
-     * a device's own store described the same way) already hold today's edition ([printedToday]).
-     * Manual prints never ask.
+     * The check before a scheduled print of the occurrence due at [occurrence] in [zone]: true when
+     * [editions] (the reader's Observer site, or a device's own store described the same way)
+     * already hold its result ([printedFor]). Manual prints never ask.
      */
-    fun alreadyPrintedToday(
+    fun alreadyPrinted(
         editions: List<ObserverEdition>,
-        now: Long = TimeUtils.now(),
-    ): Boolean = editions.any { printedToday(it.printedAt, it.day, now) }
+        occurrence: Long,
+        zone: CronZone,
+    ): Boolean = editions.any { printedFor(it.printedAt, it.day, occurrence, zone) }
 
     /** Newest day first; days are ISO dates, so text order is date order. */
     fun newestFirst(editions: List<ObserverEdition>) = editions.sortedByDescending { it.day }
