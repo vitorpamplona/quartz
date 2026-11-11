@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip5aStaticWebsites.NamedSiteEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -52,6 +53,9 @@ object ObserverSite {
     /** Room left for the `["EVENT", …]` envelope around the signed event. */
     const val ENVELOPE_BYTES = 1_024
 
+    /** The tag-count budget when no write relay publishes a `max_event_tags`. */
+    const val DEFAULT_MAX_TAGS = 100
+
     const val DEFAULT_TITLE = "The Nostr Observer"
 
     private val dayPattern = Regex("^\\d{4}-\\d{2}-\\d{2}$")
@@ -65,12 +69,38 @@ object ObserverSite {
         displayName?.trim()?.takeIf { it.isNotEmpty() }?.let { "A daily front page from $it's web of trust" }
             ?: "A daily front page from a web of trust"
 
-    fun isDay(day: String) = dayPattern.matches(day)
+    /** A `YYYY-MM-DD` that is a real calendar date: not `2026-13-45`, not `2026-02-30`. */
+    fun isDay(day: String): Boolean {
+        if (!dayPattern.matches(day)) return false
+        val year = day.substring(0, 4).toInt()
+        val month = day.substring(5, 7).toInt()
+        val date = day.substring(8, 10).toInt()
+        if (month !in 1..12 || date < 1) return false
+        val leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+        val length =
+            when (month) {
+                2 -> if (leap) 29 else 28
+                4, 6, 9, 11 -> 30
+                else -> 31
+            }
+        return date <= length
+    }
+
+    /**
+     * The newest day a real edition can carry at [now]: tomorrow in UTC, for a producer whose
+     * clock runs ahead. A later day is somebody's bad data and never takes `/index.html`.
+     */
+    fun latestDay(now: Long = TimeUtils.now()) = utcDay(now + 86_400L)
 
     fun dayPath(day: String) = "/$day.html"
 
     /** The day an edition's dated path names, or null for any other path. */
-    fun dayOfPath(path: String): String? = dayPathPattern.matchEntire(path)?.groupValues?.get(1)
+    fun dayOfPath(path: String): String? =
+        dayPathPattern
+            .matchEntire(path)
+            ?.groupValues
+            ?.get(1)
+            ?.takeIf(::isDay)
 
     /** The UTC calendar date of [epochSeconds], `YYYY-MM-DD`: an edition's day. */
     fun utcDay(epochSeconds: Long = TimeUtils.now()): String {
@@ -97,9 +127,36 @@ object ObserverSite {
     fun editionsFromPaths(paths: List<PathTag>): List<ObserverEdition> =
         newestFirst(
             paths
-                .mapNotNull { tag -> dayOfPath(tag.path)?.let { ObserverEdition(it, tag.path, tag.hash.lowercase()) } }
-                .distinctBy { it.day },
+                .mapNotNull { tag ->
+                    val day = dayOfPath(tag.path) ?: return@mapNotNull null
+                    val hash = tag.hash.lowercase()
+                    if (Hex.isHex64(hash)) ObserverEdition(day, dayPath(day), hash) else null
+                }.distinctBy { it.day },
         )
+
+    /**
+     * The editions a site serves: one per dated `path` tag ([fromPaths], see [editionsFromPaths]),
+     * described by the `/editions.json` entry ([indexed]) for that day when it names the same
+     * bytes. A day the index lists but no path serves is gone (rolled off by a racing producer);
+     * a day a path serves that the index misses, or lists under another hash, still shows, with
+     * only its day and hash.
+     */
+    fun mergeEditions(
+        indexed: List<ObserverEdition>,
+        fromPaths: List<ObserverEdition>,
+    ): List<ObserverEdition> {
+        val byDay = indexed.associateBy { it.day }
+        return newestFirst(
+            fromPaths.map { served ->
+                val described = byDay[served.day]
+                if (described != null && described.sha256.equals(served.sha256, ignoreCase = true)) {
+                    described.copy(path = dayPath(served.day), sha256 = served.sha256.lowercase())
+                } else {
+                    served
+                }
+            },
+        )
+    }
 
     /** [editions] with [edition] in it, replacing any edition of the same day; newest first. */
     fun upsert(
@@ -115,34 +172,47 @@ object ObserverSite {
             .minOrNull()
             ?.let { it - ENVELOPE_BYTES } ?: DEFAULT_BUDGET_BYTES
 
+    /** The tag budget from the write relays' NIP-11 `max_event_tags` (null = unknown). */
+    fun tagBudget(maxEventTags: List<Int?>): Int = maxEventTags.filterNotNull().filter { it > 0 }.minOrNull() ?: DEFAULT_MAX_TAGS
+
     /**
      * What the site keeps: the newest [keep], then the oldest dropped one at a time until
-     * [fits] says the manifest for the rest fits the byte budget. The newest edition is never
-     * dropped, so a site always has an `/index.html`.
+     * [fits] says the manifest for the rest fits. The [protect]ed day (today's edition) is never
+     * dropped, even when a later-dated edition is listed, and neither is the last one left, so
+     * a site always has an `/index.html`.
      */
     fun rollOff(
         editions: List<ObserverEdition>,
         keep: Int = KEEP,
+        protect: String? = null,
         fits: (List<ObserverEdition>) -> Boolean,
     ): List<ObserverEdition> {
-        var kept = newestFirst(editions).take(keep)
-        while (kept.size > 1 && !fits(kept)) kept = kept.dropLast(1)
+        val sorted = newestFirst(editions)
+        val guarded = protect?.let { day -> sorted.firstOrNull { it.day == day } }
+        val others = sorted.filter { it !== guarded }.take(maxOf(0, maxOf(1, keep) - (if (guarded != null) 1 else 0)))
+        var kept = newestFirst(listOfNotNull(guarded) + others)
+        while (kept.size > 1 && !fits(kept)) {
+            val oldest = kept.lastOrNull { it !== guarded } ?: break
+            kept = kept.filter { it !== oldest }
+        }
         return kept
     }
 
     /**
      * The manifest's files for [editions] (newest first): `/index.html` serving the newest
-     * edition's blob, every dated file, the archive and the index.
+     * edition up to [maxDay] (see [latestDay]; every day when null), every dated file, the
+     * archive and the index. Dated paths are named from the day, never from the entry.
      */
     fun paths(
         editions: List<ObserverEdition>,
         archiveSha256: HexKey,
         editionsSha256: HexKey,
+        maxDay: String? = null,
     ): List<PathTag> {
         val sorted = newestFirst(editions)
         return buildList {
-            sorted.firstOrNull()?.let { add(PathTag(INDEX_PATH, it.sha256)) }
-            sorted.forEach { add(PathTag(it.path, it.sha256)) }
+            sorted.firstOrNull { maxDay == null || it.day <= maxDay }?.let { add(PathTag(INDEX_PATH, it.sha256)) }
+            sorted.forEach { add(PathTag(dayPath(it.day), it.sha256)) }
             add(PathTag(ARCHIVE_PATH, archiveSha256))
             add(PathTag(EDITIONS_PATH, editionsSha256))
         }
@@ -159,8 +229,9 @@ object ObserverSite {
         displayName: String?,
         servers: List<String>,
         createdAt: Long = TimeUtils.now(),
+        maxDay: String? = latestDay(createdAt),
     ): EventTemplate<NamedSiteEvent> {
-        val paths = paths(editions, archiveSha256, editionsSha256)
+        val paths = paths(editions, archiveSha256, editionsSha256, maxDay)
         return NamedSiteEvent.build(
             identifier = D_TAG,
             paths = paths,
@@ -193,9 +264,9 @@ object ObserverSite {
             .size
 
     /**
-     * [rollOff] against [budgetBytes], measuring each candidate manifest as signed. The archive
-     * and index hashes don't change the size (all hashes are 64 hex), so placeholders stand in
-     * for files not built yet.
+     * [rollOff] against [budgetBytes] and [maxTags], measuring each candidate manifest as
+     * signed. The archive and index hashes don't change the size (all hashes are 64 hex), so
+     * placeholders stand in for files not built yet.
      */
     fun keepWithinBudget(
         editions: List<ObserverEdition>,
@@ -203,10 +274,14 @@ object ObserverSite {
         displayName: String?,
         servers: List<String>,
         budgetBytes: Int,
+        maxTags: Int = DEFAULT_MAX_TAGS,
         keep: Int = KEEP,
+        protect: String? = null,
+        createdAt: Long = TimeUtils.now(),
     ): List<ObserverEdition> =
-        rollOff(editions, keep) { candidate ->
-            signedSize(build(candidate, PLACEHOLDER_HASH, PLACEHOLDER_HASH, displayName, servers, createdAt = TimeUtils.now()), author) <= budgetBytes
+        rollOff(editions, keep, protect) { candidate ->
+            val template = build(candidate, PLACEHOLDER_HASH, PLACEHOLDER_HASH, displayName, servers, createdAt)
+            template.tags.size <= maxTags && signedSize(template, author) <= budgetBytes
         }
 
     private val PLACEHOLDER_HASH = "0".repeat(64)

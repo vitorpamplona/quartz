@@ -40,9 +40,9 @@ object ObserverArchive {
                         edition.quotesVerified?.let { "$it quotes verified" },
                         edition.code?.let { "No. ${escape(it)}" },
                     ).joinToString(" · ")
-                // The path is checked to be /YYYY-MM-DD.html before it gets here; the link drops the slash
-                // so the archive works from any base the site is served under.
-                val href = escape(edition.path.removePrefix("/"))
+                // Named from the day, never from the entry's path; relative, so the archive works
+                // from any base the site is served under.
+                val href = escape(ObserverSite.dayPath(edition.day).removePrefix("/"))
                 buildString {
                     append("      <li><a href=\"")
                         .append(href)
@@ -54,42 +54,43 @@ object ObserverArchive {
                     append("</li>")
                 }
             }
-        return """
-            |<!doctype html>
-            |<html lang="en">
-            |<head>
-            |  <meta charset="utf-8">
-            |  <meta name="viewport" content="width=device-width, initial-scale=1">
-            |  <title>$name — Archive</title>
-            |  <style>
-            |    :root { color-scheme: light; }
-            |    body { margin: 0; background: #faf8f3; color: #1a1a1a; font-family: Georgia, 'Times New Roman', serif; }
-            |    main { max-width: 720px; margin: 0 auto; padding: 32px 22px 72px; }
-            |    h1 { font-size: 40px; letter-spacing: -0.01em; margin: 0 0 4px; text-align: center; }
-            |    p.sub { text-align: center; font: 13px/1.4 system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #555; margin: 0 0 24px; border-bottom: 3px double #1a1a1a; padding-bottom: 14px; }
-            |    ol { list-style: none; padding: 0; margin: 0; }
-            |    li { border-bottom: 1px solid #ddd8cc; padding: 14px 0; }
-            |    a { color: inherit; text-decoration: none; display: block; }
-            |    a:hover .h { text-decoration: underline; }
-            |    time { display: block; font: 12px/1.4 system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: #666; }
-            |    .h { display: block; font-size: 22px; line-height: 1.25; margin-top: 2px; }
-            |    .f { display: block; font: 13px/1.4 system-ui, sans-serif; color: #666; margin-top: 4px; }
-            |    nav { text-align: center; margin-top: 28px; font: 14px system-ui, sans-serif; }
-            |  </style>
-            |</head>
-            |<body>
-            |  <main>
-            |    <h1>$name</h1>
-            |    <p class="sub">Archive</p>
-            |    <ol>
-            |$items
-            |    </ol>
-            |    <nav><a href="index.html">Today's edition</a></nav>
-            |  </main>
-            |</body>
-            |</html>
-            |
-            """.trimMargin()
+        // Not a trimMargin template: a headline with a line break followed by `|` would lose text.
+        return buildString {
+            append("<!doctype html>\n")
+            append("<html lang=\"en\">\n")
+            append("<head>\n")
+            append("  <meta charset=\"utf-8\">\n")
+            append("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
+            append("  <title>").append(name).append(" — Archive</title>\n")
+            append("  <style>\n")
+            append("    :root { color-scheme: light; }\n")
+            append("    body { margin: 0; background: #faf8f3; color: #1a1a1a; font-family: Georgia, 'Times New Roman', serif; }\n")
+            append("    main { max-width: 720px; margin: 0 auto; padding: 32px 22px 72px; }\n")
+            append("    h1 { font-size: 40px; letter-spacing: -0.01em; margin: 0 0 4px; text-align: center; }\n")
+            append("    p.sub { text-align: center; font: 13px/1.4 system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #555; margin: 0 0 24px; border-bottom: 3px double #1a1a1a; padding-bottom: 14px; }\n")
+            append("    ol { list-style: none; padding: 0; margin: 0; }\n")
+            append("    li { border-bottom: 1px solid #ddd8cc; padding: 14px 0; }\n")
+            append("    a { color: inherit; text-decoration: none; display: block; }\n")
+            append("    a:hover .h { text-decoration: underline; }\n")
+            append("    time { display: block; font: 12px/1.4 system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: #666; }\n")
+            append("    .h { display: block; font-size: 22px; line-height: 1.25; margin-top: 2px; }\n")
+            append("    .f { display: block; font: 13px/1.4 system-ui, sans-serif; color: #666; margin-top: 4px; }\n")
+            append("    nav { text-align: center; margin-top: 28px; font: 14px system-ui, sans-serif; }\n")
+            append("  </style>\n")
+            append("</head>\n")
+            append("<body>\n")
+            append("  <main>\n")
+            append("    <h1>").append(name).append("</h1>\n")
+            append("    <p class=\"sub\">Archive</p>\n")
+            append("    <ol>\n")
+            append(items)
+            append("\n")
+            append("    </ol>\n")
+            append("    <nav><a href=\"index.html\">Today's edition</a></nav>\n")
+            append("  </main>\n")
+            append("</body>\n")
+            append("</html>\n")
+        }
     }
 
     fun escape(text: String): String =

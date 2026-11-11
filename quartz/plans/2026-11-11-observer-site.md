@@ -78,9 +78,10 @@ Any producer, after a clean print:
    auth). At least one server must accept it; the rest are best effort.
 3. **Upsert** today's entry (replacing the same day).
 4. **Roll off.** Keep the newest **90** editions. Then, while the signed event would exceed the
-   size budget, drop the oldest edition. Budget: the smallest NIP-11
-   `limitation.max_message_length` among the write relays that publish one, minus 1 KB of
-   envelope; **60,000 bytes** when none does.
+   size budget or the tag budget, drop the oldest edition (never today's). Size budget: the
+   smallest NIP-11 `limitation.max_message_length` among the write relays that publish one,
+   minus 1 KB of envelope; **60,000 bytes** when none does. Tag budget: the smallest
+   `limitation.max_event_tags`; **100** when none does.
 5. **Regenerate** `archive.html` and `editions.json` from the kept entries and upload them.
 6. **Assemble** the manifest: `/index.html` → the newest edition's hash, every dated file,
    `/archive.html`, `/editions.json`, the `x` aggregate hash, `server`, `title`,
@@ -88,8 +89,32 @@ Any producer, after a clean print:
 7. **Publish.** `created_at = max(now, previous.created_at + 1)`, so a manifest built from an
    older read never loses to it by a clock skew. Send to the write relays.
 
-Two producers printing at once can still race (last write wins and may drop the other's
-day); the next print re-reads and repairs the index from the path tags it finds.
+Two producers printing at once can still race: the last write wins, and the day the other
+one added is gone from the manifest. Nothing repairs it later: the next print starts from the
+manifest that won, which no longer names that day. Its page stays on Blossom, unlisted, and the
+producer that printed it still has it locally, so it can publish it again. Producers narrow the
+window by reading right before they write, and refuse to write when no write relay answered
+the read (starting from nothing would drop every other edition).
+
+### Rules every producer follows (settled 2026-11-11, Brainstorm and Amethyst)
+
+- **Read before write.** The newest manifest across every write relay, read to EOSE, and the
+  client's cached copy; if no relay answered and nothing is cached, don't publish.
+- **Only servers the reader chose.** No kind 10063 means no publish ("Add a Blossom server"),
+  never a fallback server. One upload auth per file (a single `x` tag), uploaded to every
+  server in parallel; at least one must accept it.
+- **Ask first.** The first publish waits for a confirm that the site is public (Publish / Not
+  now). A scheduled print never publishes before that.
+- **Hashes.** Downloads are verified by hashing the raw bytes; hashes compare lower-case.
+- **Editions** are the dated `path` tags, described by the `editions.json` entry naming the same
+  bytes (`ObserverSite.mergeEditions`).
+- **Days** are real calendar dates. A day after tomorrow (UTC) is never `/index.html`
+  (`ObserverSite.latestDay`), and today's edition is never rolled off.
+- **Budgets.** Bytes from NIP-11 `max_message_length` (−1 KB), tags from `max_event_tags`;
+  defaults 60,000 bytes and 100 tags.
+- **Archive links** are built from the day, never from an entry's `path`.
+- **Script barrier.** Published and downloaded pages get the app's CSP `<meta>` as the first
+  child of `<head>`; the model may not write its own (`2026-11-11-paper-boundary-v2.md`).
 
 ## Reading
 

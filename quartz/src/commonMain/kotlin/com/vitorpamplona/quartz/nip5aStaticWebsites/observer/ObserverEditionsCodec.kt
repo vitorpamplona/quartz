@@ -24,10 +24,12 @@ import com.vitorpamplona.quartz.utils.Hex
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Reads and writes an Observer site's `/editions.json`. Lenient on the way in: unknown fields
@@ -53,27 +55,37 @@ object ObserverEditionsCodec {
             } catch (e: SerializationException) {
                 null
             } ?: return null
-        val version = (root["v"] as? JsonPrimitive)?.intOrNull ?: return null
-        if (version != ObserverSite.FORMAT_VERSION) return null
-        val title = (root["title"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        val entries = root["editions"] as? JsonArray ?: return ObserverEditions(version, title, emptyList())
-        val editions =
-            entries.mapNotNull { element ->
-                try {
-                    json.decodeFromJsonElement<ObserverEdition>(element).takeIf(::isWellFormed)
-                } catch (e: SerializationException) {
-                    null
-                } catch (e: IllegalArgumentException) {
-                    null
-                }
-            }
-        return ObserverEditions(version, title, ObserverSite.newestFirst(editions))
+        // `1` or `1.0`: a JSON number, whatever the writer's float formatting.
+        val version = (root["v"] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull ?: return null
+        if (version != ObserverSite.FORMAT_VERSION.toDouble()) return null
+        val title = root.string("title")
+        val entries = root["editions"] as? JsonArray ?: return ObserverEditions(ObserverSite.FORMAT_VERSION, title, emptyList())
+        val editions = entries.mapNotNull { (it as? JsonObject)?.let(::entry) }.distinctBy { it.day }
+        return ObserverEditions(ObserverSite.FORMAT_VERSION, title, ObserverSite.newestFirst(editions))
     }
 
-    private fun isWellFormed(edition: ObserverEdition) =
-        ObserverSite.isDay(edition.day) &&
-            edition.path == ObserverSite.dayPath(edition.day) &&
-            edition.sha256.length == 64 &&
-            edition.sha256 == edition.sha256.lowercase() &&
-            Hex.isHex64(edition.sha256)
+    /**
+     * One entry, field by field: the required ones must be well formed or the entry is dropped;
+     * an optional field of the wrong type is just absent, so one odd field never hides an edition.
+     */
+    private fun entry(obj: JsonObject): ObserverEdition? {
+        val day = obj.string("day")?.takeIf(ObserverSite::isDay) ?: return null
+        if (obj.string("path") != ObserverSite.dayPath(day)) return null
+        val sha256 = obj.string("sha256")?.lowercase()?.takeIf(Hex::isHex64) ?: return null
+        return ObserverEdition(
+            day = day,
+            path = ObserverSite.dayPath(day),
+            sha256 = sha256,
+            headline = obj.string("headline"),
+            code = obj.string("code"),
+            printedAt = obj.number("printedAt")?.longOrNull,
+            posts = obj.number("posts")?.intOrNull,
+            quotesVerified = obj.number("quotesVerified")?.intOrNull,
+            model = obj.string("model"),
+        )
+    }
+
+    private fun JsonObject.string(key: String) = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun JsonObject.number(key: String) = (this[key] as? JsonPrimitive)?.takeIf { !it.isString && it !is JsonNull }
 }

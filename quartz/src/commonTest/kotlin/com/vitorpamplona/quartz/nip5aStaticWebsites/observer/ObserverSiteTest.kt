@@ -188,4 +188,100 @@ class ObserverSiteTest {
         assertEquals(ObserverSite.DEFAULT_TITLE, ObserverSite.title("  "))
         assertEquals("Vitor's Observer", ObserverSite.title("Vitor"))
     }
+
+    @Test
+    fun onlyRealCalendarDatesAreDays() {
+        assertTrue(ObserverSite.isDay("2026-11-11"))
+        assertTrue(ObserverSite.isDay("2024-02-29"))
+        assertTrue(ObserverSite.isDay("2000-02-29"))
+        assertFalse(ObserverSite.isDay("2026-13-45"))
+        assertFalse(ObserverSite.isDay("2026-02-29"))
+        assertFalse(ObserverSite.isDay("1900-02-29"))
+        assertFalse(ObserverSite.isDay("2026-04-31"))
+        assertFalse(ObserverSite.isDay("2026-00-10"))
+        assertFalse(ObserverSite.isDay("2026-11-00"))
+        assertNull(ObserverSite.dayOfPath("/2026-13-45.html"))
+        assertEquals(emptyList(), ObserverSite.editionsFromPaths(listOf(PathTag("/2026-02-30.html", hash(1)))))
+        assertNull(ObserverEditionsCodec.decode("""{"v":1,"editions":[{"day":"2026-02-30","path":"/2026-02-30.html","sha256":"${hash(1)}"}]}""")!!.editions.firstOrNull())
+    }
+
+    @Test
+    fun aFutureDayNeverBecomesTheIndex() {
+        val now = 1_794_355_200L // 2026-11-11T00:00Z
+        val editions = listOf(edition("2026-11-11", 1), edition("2027-01-01", 2))
+        val template = ObserverSite.build(editions, hash(8), hash(9), null, emptyList(), createdAt = now)
+        val index = template.tags.first { it[0] == "path" && it[1] == ObserverSite.INDEX_PATH }
+        assertEquals(hash(1), index[2])
+        // Tomorrow is allowed, for a producer whose clock runs ahead.
+        assertEquals("2026-11-12", ObserverSite.latestDay(now))
+    }
+
+    @Test
+    fun todaysEditionSurvivesRollOffEvenBehindAFutureDay() {
+        val all = days(120) + edition("2099-01-01", 999)
+        val today = days(120).first().day
+        val kept = ObserverSite.rollOff(all, keep = 10, protect = today) { it.size <= 3 }
+        assertTrue(kept.any { it.day == today })
+        assertEquals(3, kept.size)
+    }
+
+    @Test
+    fun theTagBudgetDropsTheOldestFirst() {
+        val author = "a".repeat(64)
+        val servers = (1..5).map { "https://blossom$it.example" }
+        val kept = ObserverSite.keepWithinBudget(days(90), author, "Vitor", servers, budgetBytes = 1_000_000, maxTags = 40)
+        val template = ObserverSite.build(kept, hash(98), hash(99), "Vitor", servers)
+        assertTrue(template.tags.size <= 40)
+        assertEquals(days(90).maxOf { it.day }, kept.first().day)
+        assertEquals(40, ObserverSite.tagBudget(listOf(null, 50, 40)))
+        assertEquals(ObserverSite.DEFAULT_MAX_TAGS, ObserverSite.tagBudget(listOf(null, 0)))
+    }
+
+    @Test
+    fun indexEntriesDescribeOnlyTheBytesThePathsServe() {
+        val paths =
+            listOf(
+                PathTag("/2026-11-11.html", hash(2).uppercase()),
+                PathTag("/2026-11-10.html", hash(1)),
+            )
+        val indexed =
+            listOf(
+                edition("2026-11-11", 2, "Matches"),
+                edition("2026-11-10", 7, "Other bytes"),
+                edition("2026-11-09", 3, "Rolled off by a racing producer"),
+            )
+        val merged = ObserverSite.mergeEditions(indexed, ObserverSite.editionsFromPaths(paths))
+        assertEquals(listOf("2026-11-11", "2026-11-10"), merged.map { it.day })
+        assertEquals("Matches", merged[0].headline)
+        assertEquals(hash(2), merged[0].sha256)
+        assertNull(merged[1].headline)
+        assertEquals(hash(1), merged[1].sha256)
+    }
+
+    @Test
+    fun decodeIsLenientPerFieldAndAcceptsAFloatVersion() {
+        val text =
+            """{"v":1.0,"title":7,"editions":[
+              {"day":"2026-11-11","path":"/2026-11-11.html","sha256":"${hash(2).uppercase()}","posts":"412","headline":{"x":1},"quotesVerified":3},
+              {"day":"2026-11-11","path":"/2026-11-11.html","sha256":"${hash(5)}"}
+            ]}"""
+        val index = ObserverEditionsCodec.decode(text)!!
+        assertNull(index.title)
+        assertEquals(1, index.editions.size)
+        val only = index.editions.single()
+        assertEquals(hash(2), only.sha256)
+        assertNull(only.posts)
+        assertNull(only.headline)
+        assertEquals(3, only.quotesVerified)
+        assertNull(ObserverEditionsCodec.decode("""{"v":"1","editions":[]}"""))
+    }
+
+    @Test
+    fun theArchiveLinksFromTheDayAndKeepsMultilineHeadlines() {
+        val odd = ObserverEdition("2026-11-11", "/elsewhere.html", hash(2), headline = "Line one\n|Line two")
+        val html = ObserverArchive.html("T", listOf(odd))
+        assertTrue(html.contains("href=\"2026-11-11.html\""))
+        assertFalse(html.contains("elsewhere"))
+        assertTrue(html.contains("Line one\n|Line two"))
+    }
 }
