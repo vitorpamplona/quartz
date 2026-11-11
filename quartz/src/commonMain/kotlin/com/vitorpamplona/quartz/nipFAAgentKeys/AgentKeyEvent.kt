@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 import com.vitorpamplona.quartz.utils.TimeUtils
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * NIP-FA AI agent keys (kind 12000, draft): the keys a user gives the Nostr clients they use
@@ -47,8 +48,9 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * [["key", "sk-or-v1-…", "https://openrouter.ai/api/v1"]]
  * ```
  *
- * Clients use the first `key` tag; any others follow in order of preference. Rewrites
- * keep every private tag they don't know ([replaceKeys]). It needs no public tags; a
+ * Clients use the first `key` tag that has a URL; any others follow in order of preference. Rewrites
+ * reorder and remove the tag arrays they read and keep every private tag they don't know
+ * ([replaceKeys]), and never write over content they couldn't read. It needs no public tags; a
  * NIP-70 `["-"]` is optional (pass it through the builder's initializer).
  *
  * Not searchable: everything it holds is encrypted. Design notes:
@@ -108,26 +110,42 @@ class AgentKeyEvent(
         }
 
         /**
-         * [earlierVersion] with its keys replaced by [keys], keeping its public tags and every
-         * private tag that isn't a `key`, so data another client added survives.
+         * The private tags of [earlierVersion], for a rewrite. Unlike [privateTags], never null:
+         * a rewrite that started from an empty list would delete the user's keys.
          *
-         * @throws SignerExceptions.UnauthorizedDecryptionException when [signer] can't read [earlierVersion].
+         * @throws SignerExceptions.UnauthorizedDecryptionException when [signer] isn't the author.
+         * @throws SignerExceptions the signer's own failure to decrypt (refused, timed out, …).
+         * @throws UnreadableAgentKeysException when it decrypts to something that isn't a tag array.
+         */
+        suspend fun readForRewrite(
+            earlierVersion: AgentKeyEvent,
+            signer: NostrSigner,
+        ): TagArray {
+            if (signer.pubKey != earlierVersion.pubKey) throw SignerExceptions.UnauthorizedDecryptionException()
+            if (earlierVersion.content.isBlank()) return emptyArray()
+            val json = signer.decrypt(earlierVersion.content, signer.pubKey)
+            return try {
+                PrivateTagsInContent.decode(json)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                throw UnreadableAgentKeysException()
+            }
+        }
+
+        /**
+         * [earlierVersion] with its keys replaced by [keys], keeping its public tags and its
+         * private tag arrays as they were: a key it already had keeps its array (extra values
+         * included), `key` tags this client can't read and every other private tag survive.
+         *
+         * @throws SignerExceptions when [signer] can't read [earlierVersion]; see [readForRewrite].
+         * @throws UnreadableAgentKeysException when [earlierVersion] decrypts to something unreadable.
          */
         suspend fun replaceKeys(
             earlierVersion: AgentKeyEvent,
             keys: List<AgentKeyTag>,
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
-        ): EventTemplate<AgentKeyEvent> {
-            val earlierPrivate = earlierVersion.privateTags(signer) ?: throw SignerExceptions.UnauthorizedDecryptionException()
-            val privateTags = tagArray<AgentKeyEvent> { agentKeys(keys) } + earlierPrivate.withoutAgentKeys()
-            return EventTemplate(
-                createdAt,
-                KIND,
-                earlierVersion.tags,
-                encrypt(privateTags, signer),
-            )
-        }
+        ): EventTemplate<AgentKeyEvent> = rewrite(earlierVersion, readForRewrite(earlierVersion, signer), keys, signer, createdAt)
 
         /** [earlierVersion] with [key] made the preferred one: moved to the front, or added there if new. */
         suspend fun setPreferred(
@@ -136,8 +154,9 @@ class AgentKeyEvent(
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
         ): EventTemplate<AgentKeyEvent> {
-            val current = earlierVersion.agentKeys(signer) ?: throw SignerExceptions.UnauthorizedDecryptionException()
-            return replaceKeys(earlierVersion, listOf(key) + current.filter { it != key }, signer, createdAt)
+            val earlierPrivate = readForRewrite(earlierVersion, signer)
+            val current = earlierPrivate.agentKeys()
+            return rewrite(earlierVersion, earlierPrivate, listOf(key) + current.filter { it != key }, signer, createdAt)
         }
 
         /** [earlierVersion] without [key]. */
@@ -147,8 +166,27 @@ class AgentKeyEvent(
             signer: NostrSigner,
             createdAt: Long = TimeUtils.now(),
         ): EventTemplate<AgentKeyEvent> {
-            val current = earlierVersion.agentKeys(signer) ?: throw SignerExceptions.UnauthorizedDecryptionException()
-            return replaceKeys(earlierVersion, current.filter { it != key }, signer, createdAt)
+            val earlierPrivate = readForRewrite(earlierVersion, signer)
+            return rewrite(earlierVersion, earlierPrivate, earlierPrivate.agentKeys().filter { it != key }, signer, createdAt)
         }
+
+        private suspend fun rewrite(
+            earlierVersion: AgentKeyEvent,
+            earlierPrivate: TagArray,
+            keys: List<AgentKeyTag>,
+            signer: NostrSigner,
+            createdAt: Long,
+        ) = EventTemplate<AgentKeyEvent>(
+            createdAt,
+            KIND,
+            earlierVersion.tags,
+            encrypt(earlierPrivate.withAgentKeys(keys), signer),
+        )
     }
 }
+
+/**
+ * The agent keys decrypted, but not to a tag array this client can read. Rewriting would
+ * replace whatever is there, so nothing is written.
+ */
+class UnreadableAgentKeysException : IllegalStateException("The agent keys event holds content this client can't read; not overwriting it")

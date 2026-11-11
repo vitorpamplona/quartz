@@ -60,19 +60,22 @@ A `key` tag holds:
 2. the root of an OpenAI-compatible API. Clients call `POST {url}/chat/completions` and
    list models with `GET {url}/models`.
 
-Clients use the first `key` tag. A user with more than one key MAY add more tags, in
-order of preference; clients that only use one keep the rest when rewriting.
+Clients use the first `key` tag that has a URL. A user with more than one key MAY add more
+tags, in order of preference; clients that only use one keep the rest when rewriting. The
+URL is `https`, except for a loopback host or an empty key; readers strip one trailing `/`.
 
-Public tags carry nothing secret:
+The event needs no public tags (NIP-31 `alt` is no longer recommended):
 
-    "tags": [["alt", "AI agent key (encrypted)"]]
+    "tags": []
 
 Clients MAY add a NIP-70 `["-"]` tag so relays refuse to rebroadcast it.
 
 ## Client behaviour
 
-- To change the key, fetch the newest event, decrypt, replace the tag you changed, keep
-  every other tag, re-encrypt and publish.
+- To change the key, fetch the newest event, decrypt, reorder or remove the tag arrays you
+  read (so extra values and `key` tags you can't read survive), keep every other tag,
+  re-encrypt and publish. If the relays couldn't be read, or the content doesn't decrypt to
+  a tag array, don't write.
 - Keep the decrypted key in memory or the platform's secure storage. Never log it, never
   send it anywhere but its URL.
 - Test the key before saving it (`GET {url}/models`), so a typo shows up at setup.

@@ -24,7 +24,14 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.diff.ContentChange
 import com.vitorpamplona.quartz.nip01Core.diff.EventDiff
 
-/** Changes to the agent keys. They are encrypted, so they can only be compared as a whole. */
+/**
+ * Changes to the agent keys. They are encrypted, so they can only be compared as a whole.
+ *
+ * [removesData] is in practice never true: the content is always a ciphertext, `[]` included
+ * (NIP-44 can't encrypt an empty string), so it is never [ContentChange.CLEARED]. Removing a key
+ * reads as a plain change. A client that must know whether a rewrite drops keys decrypts both
+ * versions and compares their [AgentKeyEvent.agentKeys].
+ */
 @Immutable
 class AgentKeyDiff(
     val keys: ContentChange,

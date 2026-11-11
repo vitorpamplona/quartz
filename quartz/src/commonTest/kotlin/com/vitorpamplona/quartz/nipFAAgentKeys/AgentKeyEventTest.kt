@@ -24,9 +24,11 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip01Core.signers.SignerExceptions
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
+import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
 import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -167,4 +169,121 @@ class AgentKeyEventTest {
             assertFalse(newer.diffFrom(older)!!.removesData())
             assertNull(newer.diffFrom(strangers))
         }
+
+    private suspend fun withPrivate(
+        base: AgentKeyEvent,
+        privateTags: Array<Array<String>>,
+    ) = roundTrip(EventTemplate(base.createdAt, AgentKeyEvent.KIND, base.tags, signer.nip44Encrypt(PrivateTagsInContent.encode(privateTags), signer.pubKey)))
+
+    @Test
+    fun rewritesKeepTheOriginalTagArraysAndUnreadableKeyTags() =
+        runTest {
+            val withExtra = arrayOf("key", "sk-or-v1-abc", "https://openrouter.ai/api/v1", "budget=5")
+            val noUrl = arrayOf("key", "sk-someone-elses")
+            val event = withPrivate(roundTrip(AgentKeyEvent.build(emptyList(), signer)), arrayOf(noUrl, withExtra, AgentKeyTag.assemble(anthropic)))
+
+            val moved = roundTrip(AgentKeyEvent.setPreferred(event, anthropic, signer)).privateTags(signer)!!
+            assertContentEquals(AgentKeyTag.assemble(anthropic), moved[0])
+            assertContentEquals(withExtra, moved[1])
+            assertTrue(moved.any { it.contentEquals(noUrl) })
+
+            val removed = roundTrip(AgentKeyEvent.remove(event, anthropic, signer)).privateTags(signer)!!
+            assertContentEquals(withExtra, removed[0])
+            assertTrue(removed.any { it.contentEquals(noUrl) })
+            assertEquals(2, removed.size)
+
+            val replaced = roundTrip(AgentKeyEvent.replaceKeys(event, listOf(openRouter, ollama), signer)).privateTags(signer)!!
+            assertContentEquals(withExtra, replaced[0])
+            assertContentEquals(AgentKeyTag.assemble(ollama), replaced[1])
+            assertTrue(replaced.any { it.contentEquals(noUrl) })
+        }
+
+    @Test
+    fun rewritesDecryptOnce() =
+        runTest {
+            val event = roundTrip(AgentKeyEvent.build(listOf(openRouter, ollama), signer))
+            var decrypts = 0
+            val counting =
+                object : NostrSigner(signer.pubKey) {
+                    override fun isWriteable() = true
+
+                    override suspend fun <T : Event> sign(
+                        createdAt: Long,
+                        kind: Int,
+                        tags: Array<Array<String>>,
+                        content: String,
+                    ): T = signer.sign(createdAt, kind, tags, content)
+
+                    override suspend fun nip04Encrypt(
+                        plaintext: String,
+                        toPublicKey: String,
+                    ) = signer.nip04Encrypt(plaintext, toPublicKey)
+
+                    override suspend fun nip04Decrypt(
+                        ciphertext: String,
+                        fromPublicKey: String,
+                    ) = signer.nip04Decrypt(ciphertext, fromPublicKey).also { decrypts++ }
+
+                    override suspend fun nip44Encrypt(
+                        plaintext: String,
+                        toPublicKey: String,
+                    ) = signer.nip44Encrypt(plaintext, toPublicKey)
+
+                    override suspend fun nip44Decrypt(
+                        ciphertext: String,
+                        fromPublicKey: String,
+                    ) = signer.nip44Decrypt(ciphertext, fromPublicKey).also { decrypts++ }
+
+                    override suspend fun decryptZapEvent(event: ZapRequestEvent) = signer.decryptZapEvent(event)
+
+                    override suspend fun signPsbt(psbtHex: String) = signer.signPsbt(psbtHex)
+
+                    override suspend fun deriveKey(nonce: String) = signer.deriveKey(nonce)
+
+                    override fun hasForegroundSupport() = false
+                }
+            AgentKeyEvent.setPreferred(event, ollama, counting)
+            assertEquals(1, decrypts)
+            AgentKeyEvent.remove(event, ollama, counting)
+            assertEquals(2, decrypts)
+        }
+
+    @Test
+    fun anUnreadableEventIsNeverOverwritten() =
+        runTest {
+            val base = roundTrip(AgentKeyEvent.build(listOf(openRouter), signer))
+            val garbage = roundTrip(EventTemplate(base.createdAt, AgentKeyEvent.KIND, base.tags, signer.nip44Encrypt("{\"not\":\"tags\"}", signer.pubKey)))
+
+            assertFailsWith<UnreadableAgentKeysException> { AgentKeyEvent.replaceKeys(garbage, listOf(anthropic), signer) }
+            assertFailsWith<UnreadableAgentKeysException> { AgentKeyEvent.setPreferred(garbage, anthropic, signer) }
+            assertFailsWith<UnreadableAgentKeysException> { AgentKeyEvent.remove(garbage, openRouter, signer) }
+        }
+
+    @Test
+    fun thePreferredKeyIsTheFirstWithAUrl() {
+        val tags = arrayOf(arrayOf("key", "sk-no-url"), AgentKeyTag.assemble(anthropic), AgentKeyTag.assemble(openRouter))
+        assertEquals(anthropic, tags.preferredAgentKey())
+    }
+
+    @Test
+    fun urlRules() {
+        assertEquals("https://api.example.com/v1", AgentKeyTag("k", "https://api.example.com/v1/").apiRoot())
+        assertEquals("https://api.example.com/v1/", AgentKeyTag("k", "https://api.example.com/v1//").apiRoot())
+
+        assertTrue(AgentKeyTag("k", "https://api.example.com/v1").isUrlAllowed())
+        assertTrue(AgentKeyTag("k", "http://localhost:11434/v1").isUrlAllowed())
+        assertTrue(AgentKeyTag("k", "http://127.0.0.1:1234/v1").isUrlAllowed())
+        assertTrue(AgentKeyTag("k", "http://127.10.2.3/v1").isUrlAllowed())
+        assertTrue(AgentKeyTag("k", "http://[::1]:8080/v1").isUrlAllowed())
+        assertTrue(AgentKeyTag("", "http://192.168.1.5:11434/v1").isUrlAllowed())
+
+        assertFalse(AgentKeyTag("k", "http://api.example.com/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "http://localhost@evil.example/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "http://localhost.evil.example/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "http://127.0.0.1.evil.example/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "http://128.0.0.1/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "ftp://localhost/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("k", "https://exa mple.com/v1").isUrlAllowed())
+        assertFalse(AgentKeyTag("", "javascript://x").isUrlAllowed())
+    }
 }

@@ -27,8 +27,31 @@ import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 /** Every well-formed `key` tag, in the user's order of preference. */
 fun TagArray.agentKeys() = mapNotNull(AgentKeyTag::parse)
 
-/** The first well-formed `key` tag: the one clients use. */
+/** The first `key` tag that has a URL: the preferred key, the one clients use (NIP-FA). */
 fun TagArray.preferredAgentKey() = fastFirstNotNullOfOrNull(AgentKeyTag::parse)
 
 /** Everything but the `key` tags, kept as-is when the keys are replaced. */
 fun TagArray.withoutAgentKeys() = filterNot(AgentKeyTag::isTag).toTypedArray()
+
+/**
+ * These private tags with their keys set to [keys], in that order, as NIP-FA's Editing asks:
+ * a key already here keeps its original tag array (extra values included), a new one is
+ * written fresh, `key` tags this client can't read stay (after the keys), and every other tag
+ * stays as it was. Keys not in [keys] are removed.
+ */
+fun TagArray.withAgentKeys(keys: List<AgentKeyTag>): TagArray {
+    val used = BooleanArray(size)
+    val result = ArrayList<Array<String>>(size + keys.size)
+    keys.forEach { key ->
+        val index = indices.firstOrNull { !used[it] && AgentKeyTag.parse(this[it]) == key }
+        if (index != null) {
+            used[index] = true
+            result.add(this[index])
+        } else {
+            result.add(key.toTagArray())
+        }
+    }
+    forEach { tag -> if (AgentKeyTag.isTag(tag) && AgentKeyTag.parse(tag) == null) result.add(tag) }
+    forEach { tag -> if (!AgentKeyTag.isTag(tag)) result.add(tag) }
+    return result.toTypedArray()
+}

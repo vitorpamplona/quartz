@@ -40,6 +40,15 @@ data class AgentKeyTag(
 
     fun toTagArray() = assemble(key, url)
 
+    /** [url] without one trailing `/`: what NIP-FA readers append `/chat/completions` and `/models` to. */
+    fun apiRoot() = apiRoot(url)
+
+    /**
+     * Whether NIP-FA lets this key be sent to its [url]: `https`, or `http` to a loopback host,
+     * or any `http(s)` when there is no key to leak. A client never sends a key that fails this.
+     */
+    fun isUrlAllowed() = isUrlAllowed(key, url)
+
     /** Keeps the key out of logs and crash reports. */
     override fun toString() = "AgentKeyTag(url=$url, key=${if (hasKey()) "<redacted>" else "<none>"})"
 
@@ -61,5 +70,54 @@ data class AgentKeyTag(
         ) = arrayOf(TAG_NAME, key, url)
 
         fun assemble(tag: AgentKeyTag) = assemble(tag.key, tag.url)
+
+        /** [url] trimmed, without one trailing `/`. */
+        fun apiRoot(url: String) = url.trim().removeSuffix("/")
+
+        /** See [AgentKeyTag.isUrlAllowed]. */
+        fun isUrlAllowed(
+            key: String,
+            url: String,
+        ): Boolean {
+            val trimmed = url.trim()
+            if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() || it.code < 0x20 }) return false
+            val scheme = trimmed.substringBefore("://", "").lowercase()
+            val authority = authorityOf(trimmed) ?: return false
+            return when (scheme) {
+                "https" -> true
+                "http" -> key.isEmpty() || isLoopbackAuthority(authority)
+                else -> false
+            }
+        }
+
+        /** A loopback host (`localhost`, `127.0.0.0/8`, `[::1]`) in an `http(s)` URL. */
+        fun isLoopback(url: String): Boolean = authorityOf(url.trim())?.let(::isLoopbackAuthority) ?: false
+
+        private fun authorityOf(url: String): String? {
+            if (!url.contains("://")) return null
+            val authority =
+                url
+                    .substringAfter("://")
+                    .substringBefore('/')
+                    .substringBefore('?')
+                    .substringBefore('#')
+            return authority.ifEmpty { null }
+        }
+
+        private fun isLoopbackAuthority(authority: String): Boolean {
+            // `http://localhost@evil.example` is evil.example: refuse any userinfo outright.
+            if (authority.contains('@')) return false
+            val host =
+                if (authority.startsWith("[")) {
+                    authority.substringBefore(']', "") + "]"
+                } else {
+                    authority.substringBefore(':')
+                }.lowercase()
+            if (host == "localhost" || host == "[::1]") return true
+            val octets = host.split('.')
+            return octets.size == 4 &&
+                octets[0] == "127" &&
+                octets.all { part -> part.isNotEmpty() && part.length <= 3 && part.all { it in '0'..'9' } && part.toInt() <= 255 }
+        }
     }
 }
