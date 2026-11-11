@@ -159,7 +159,7 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
 ```json
 [
   ["task", "observer"],
-  ["cron", "0 6 * * *", "America/New_York"],
+  ["cron", "0 6 * * *", "America/New_York", "1794300000"],
   ["claim", "1794394800", "3f1c9a0e5b7d4c21", "Desktop (Linux)", "1794394831"],
   ["ran", "1794394860"]
 ]
@@ -170,6 +170,9 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
   zone. Amethyst's editor writes only the shape `M H * * <days or *>` (a time, optionally
   weekdays) and shows any other expression as written, read-only. A `cron` it can't parse is
   kept and never run.
+- `cron`'s fourth value is when the schedule was last set (unix seconds, 0 when absent):
+  changing `cron` or removing `["paused"]` sets it to now, and nothing due before it is ever
+  claimed, caught up or reported missed.
 - `["paused"]` stops it for every device. Other tags are kept as they are.
 - `claim` is the latest claimed occurrence: its due time (the exact instant the cron runs it,
   compared for equality), the claiming install's random id, its name, and when it was claimed;
@@ -177,9 +180,11 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
   due time. A duplicate single tag reads private first, then first. A task without `task` =
   `observer` and a readable `cron` is never run.
 - An install's id is random per install and per account, kept in that install's settings.
-- Editing is read-modify-write of the newest event (relays to EOSE and the local cache),
-  `created_at = max(now, prev + 1)`; when no relay answers and nothing is cached, nothing is
-  written. An event that exists but can't be decrypted is never overwritten either.
+- Every edit, claims and `ran` included, is read-modify-write on the reader's NIP-65 write
+  relays only (never a default, bootstrap or indexer relay): the newest event read to EOSE,
+  `created_at = max(now, prev + 1)`, written to the same relays. More than half of them must
+  answer the read and accept the write; too few answers is not "no schedule". An event that
+  exists but can't be decrypted is never overwritten.
 - Quartz: the event (`ScheduledTaskEvent` on `PrivateTagArrayEvent`), its tag codecs (`task`,
   `cron`, `paused`, `claim`, `ran`), the merged model (`ScheduledTask`), cron (`CronExpression`,
   `SimpleCron`, `CronZone`; `ZoneIdCronZone` over `java.time` on JVM and Android, since
@@ -209,9 +214,10 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
   nothing, so its claim goes stale after an hour.
 - A missed occurrence (the device was off or the app closed) may be claimed on waking until the
   next one is due; Amethyst tries once when an account loads.
-- Migration: an install that had a local schedule (`on|7|30`, now `30 7 * * *` in its zone)
-  and finds no synced one (the relays answered and hold none) publishes it; the local on/off
-  stays as this device's "Print from this device".
+- Migration: an install that had a local schedule (`on|7|30`, now `30 7 * * *` in its zone,
+  set at the migration's time) and finds no synced one (more than half of the write relays
+  answered and hold none) publishes it; the local on/off stays as this device's "Print from
+  this device".
 - Brainstorm reads and edits the schedule (pause, `cron`) and shows who printed last; it never
   claims, since it can't print with nobody there. It writes only `d` publicly and signs without
   a `client` tag; Amethyst's signer adds its `client` tag publicly (when the reader keeps that

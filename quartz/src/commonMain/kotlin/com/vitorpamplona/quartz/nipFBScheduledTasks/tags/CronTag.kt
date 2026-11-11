@@ -25,16 +25,19 @@ import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
 /**
- * `["cron", <five fields>, <IANA zone>]`: when a scheduled task runs, read on the zone's wall
- * clock. The expression is kept as written; whether this client can read it is
+ * `["cron", <five fields>, <IANA zone>, <set at>]`: when a scheduled task runs, read on the
+ * zone's wall clock, and when the schedule was last set (unix seconds; 0 when absent). Nothing
+ * due before [setAt] is ever claimed, caught up or reported missed. The expression is kept as
+ * written; whether this client can read it is
  * [com.vitorpamplona.quartz.nipFBScheduledTasks.CronExpression.parse]'s question.
  */
 @Immutable
 data class CronTag(
     val expression: String,
     val zone: String?,
+    val setAt: Long = 0,
 ) {
-    fun toTagArray() = assemble(expression, zone)
+    fun toTagArray() = assemble(expression, zone, setAt)
 
     companion object {
         const val TAG_NAME = "cron"
@@ -45,12 +48,13 @@ data class CronTag(
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotBlank()) { return null }
-            return CronTag(tag[1], tag.getOrNull(2)?.takeIf { it.isNotBlank() })
+            return CronTag(tag[1], tag.getOrNull(2)?.takeIf { it.isNotBlank() }, tag.getOrNull(3)?.toLongOrNull() ?: 0)
         }
 
         fun assemble(
             expression: String,
             zone: String?,
-        ) = if (zone != null) arrayOf(TAG_NAME, expression, zone) else arrayOf(TAG_NAME, expression)
+            setAt: Long,
+        ) = arrayOf(TAG_NAME, expression, zone.orEmpty(), setAt.toString())
     }
 }

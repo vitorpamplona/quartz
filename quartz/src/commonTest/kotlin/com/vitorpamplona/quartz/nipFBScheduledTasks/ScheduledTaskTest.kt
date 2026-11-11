@@ -75,20 +75,20 @@ class ScheduledTaskTest {
         val split = ScheduledTask(arrayOf(arrayOf("d", "observer"), arrayOf("cron", "0 9 * * *", "UTC"), arrayOf("x", "public option")), arrayOf(arrayOf("task", "observer"), arrayOf("y", "private option")))
         val edited =
             split
-                .withCron("30 6 * * *", "Europe/Lisbon")
+                .withCron("30 6 * * *", "Europe/Lisbon", 0)
                 .withClaim(ClaimTag(5, "id", "Pixel 8"))
                 .withRan(9)
-                .withEnabled(false)
+                .withEnabled(false, 0)
         // The public cron changed in place; claim, ran and paused are new, so private.
-        assertContentEquals(arrayOf("cron", "30 6 * * *", "Europe/Lisbon"), edited.publicTags[1])
+        assertContentEquals(arrayOf("cron", "30 6 * * *", "Europe/Lisbon", "0"), edited.publicTags[1])
         assertEquals(3, edited.publicTags.size)
         assertEquals(listOf("task", "y", "claim", "ran", "paused"), edited.privateTags.map { it[0] })
         // Unknown options survive on both sides.
         assertEquals("public option", edited.publicTags[2][1])
         assertEquals("private option", edited.privateTags[1][1])
         // Resuming removes `paused` wherever it is.
-        assertFalse(edited.withEnabled(true).paused)
-        assertFalse(ScheduledTask(arrayOf(arrayOf("paused")), arrayOf(arrayOf("paused"))).withEnabled(true).paused)
+        assertFalse(edited.withEnabled(true, 0).paused)
+        assertFalse(ScheduledTask(arrayOf(arrayOf("paused")), arrayOf(arrayOf("paused"))).withEnabled(true, 0).paused)
         // A second claim replaces the first, it doesn't stack.
         assertEquals(1, edited.withClaim(ClaimTag(6, "id2")).privateTags.count { it[0] == "claim" })
     }
@@ -102,12 +102,12 @@ class ScheduledTaskTest {
         assertNull(odd.claim)
         assertNull(odd.ran)
         assertNull(odd.task)
-        assertEquals(4, odd.withEnabled(true).privateTags.size)
+        assertEquals(4, odd.withEnabled(true, 0).privateTags.size)
     }
 
     @Test
     fun aNewScheduleChangesTheZoneWithIt() {
-        val moved = ScheduledTask.create("observer", "observer", zone = "UTC").withCron(SimpleCron(7, 30).toCron(), "Europe/Lisbon")
+        val moved = ScheduledTask.create("observer", "observer", zone = "UTC", setAt = 0).withCron(SimpleCron(7, 30).toCron(), "Europe/Lisbon", 0)
         assertEquals("30 7 * * *", moved.cron)
         assertEquals("Europe/Lisbon", moved.tz)
         assertEquals(SimpleCron(7, 30), moved.simple())

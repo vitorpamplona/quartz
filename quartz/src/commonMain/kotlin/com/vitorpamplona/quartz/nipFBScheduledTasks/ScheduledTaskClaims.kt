@@ -87,12 +87,15 @@ object ScheduledTaskClaims {
     /** The newest event: the highest `created_at`, then the lowest `id`. */
     fun <T : Event> winner(events: Collection<T>): T? = events.minWithOrNull(compareByDescending<T> { it.createdAt }.thenBy { it.id })
 
-    /** The occurrence to run at [now]: the last one due, which stays claimable until the next comes. */
+    /**
+     * The occurrence to run at [now]: the last one due, which stays claimable until the next
+     * comes. Never one due before the schedule was set or resumed ([ScheduledTask.cronSetAt]).
+     */
     fun occurrence(
         task: ScheduledTask,
         zone: CronZone,
         now: Long,
-    ): Long? = task.expression()?.lastAtOrBefore(now, zone)
+    ): Long? = task.expression()?.lastAtOrBefore(now, zone)?.takeIf { it >= task.cronSetAt }
 
     /** Whether [task]'s claim is finished: `ran` at or after its due time. */
     fun isFinished(task: ScheduledTask): Boolean {

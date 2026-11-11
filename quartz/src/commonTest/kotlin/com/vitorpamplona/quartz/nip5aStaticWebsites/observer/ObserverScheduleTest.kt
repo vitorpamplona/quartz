@@ -44,7 +44,7 @@ class ObserverScheduleTest {
             // Only `d` is public.
             assertEquals(1, fresh.publicTags.size)
             val older: ScheduledTaskEvent = signer.sign(ObserverSchedule.build(fresh, signer, previous = null, now = 100))
-            val newer: ScheduledTaskEvent = signer.sign(ObserverSchedule.build(fresh.withEnabled(true), signer, previous = older, now = 50))
+            val newer: ScheduledTaskEvent = signer.sign(ObserverSchedule.build(fresh.withEnabled(true, 0), signer, previous = older, now = 50))
             assertEquals(101, newer.createdAt)
             assertEquals(ObserverSchedule.D_TAG, newer.dTag())
             assertTrue(ObserverSchedule.isObserverSchedule(newer))

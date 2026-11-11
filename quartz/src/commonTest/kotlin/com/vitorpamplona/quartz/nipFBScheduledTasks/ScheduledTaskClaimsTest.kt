@@ -41,7 +41,7 @@ class ScheduledTaskClaimsTest {
     // 2026-11-11T11:00:00Z = 06:00 in New York, a Wednesday.
     private val six = 1_794_394_800L
 
-    private val daily = ScheduledTask.create("observer", "observer", "0 6 * * *", "America/New_York")
+    private val daily = ScheduledTask.create("observer", "observer", "0 6 * * *", "America/New_York", setAt = 0)
 
     @Test
     fun aQuorumIsMoreThanHalf() {
@@ -68,7 +68,7 @@ class ScheduledTaskClaimsTest {
         assertEquals(six, ScheduledTaskClaims.occurrence(daily, newYork, six))
         assertEquals(six, ScheduledTaskClaims.occurrence(daily, newYork, six + 23 * hour))
         assertEquals(six + day, ScheduledTaskClaims.occurrence(daily, newYork, six + day))
-        assertNull(ScheduledTaskClaims.occurrence(daily.withCron("@daily", "UTC"), newYork, six))
+        assertNull(ScheduledTaskClaims.occurrence(daily.withCron("@daily", "UTC", 0), newYork, six))
     }
 
     @Test
@@ -92,10 +92,10 @@ class ScheduledTaskClaimsTest {
         assertFalse(ScheduledTaskClaims.isFinished(claimed.withRan(six - day)))
         assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed.withRan(six - day), "observer", six, claimedAt + hour))
         // Paused, someone else's task, no task at all, or a cron this client can't read: never run.
-        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.withEnabled(false), "observer", six, six))
+        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.withEnabled(false, 0), "observer", six, six))
         assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.replacing(TaskTag::isTag, TaskTag.assemble("digest")), "observer", six, six))
         assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.without(TaskTag::isTag), "observer", six, six))
-        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.withCron("0 6 * * MON", "UTC"), "observer", six, six))
+        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(daily.withCron("0 6 * * MON", "UTC", 0), "observer", six, six))
     }
 
     @Test
@@ -114,7 +114,7 @@ class ScheduledTaskClaimsTest {
         assertEquals(ScheduledTaskClaims.Settled.OURS, ScheduledTaskClaims.settle(ours, six, "desk"))
         assertEquals(ScheduledTaskClaims.Settled.LOST, ScheduledTaskClaims.settle(ours, six, "phone"))
         // An edit that didn't see the claim (no claim, or yesterday's): back to the read.
-        assertEquals(ScheduledTaskClaims.Settled.AGAIN, ScheduledTaskClaims.settle(daily.withCron("0 6 * * *", "UTC"), six, "desk"))
+        assertEquals(ScheduledTaskClaims.Settled.AGAIN, ScheduledTaskClaims.settle(daily.withCron("0 6 * * *", "UTC", 0), six, "desk"))
         assertEquals(ScheduledTaskClaims.Settled.AGAIN, ScheduledTaskClaims.settle(ours, six + day, "desk"))
     }
 
@@ -144,8 +144,40 @@ class ScheduledTaskClaimsTest {
     }
 
     @Test
+    fun nothingDueBeforeTheScheduleWasSetRunsOrIsMissed() {
+        // Set at 07:00 today, after today's 06:00: today's isn't claimable, tomorrow's is.
+        val setLate = daily.withCron("0 6 * * *", "America/New_York", six + hour)
+        assertNull(ScheduledTaskClaims.occurrence(setLate, newYork, six + 2 * hour))
+        assertEquals(six + day, ScheduledTaskClaims.occurrence(setLate, newYork, six + day + 60))
+        // Nor reported missed, even with an old `ran`.
+        assertNull(setLate.withRan(six - 5 * day).missedRun(newYork, six + 10 * hour))
+        assertEquals(six + day, setLate.withRan(six - 5 * day).missedRun(newYork, six + day + 4 * hour))
+        // A missing fourth value reads as 0.
+        assertEquals(0L, ScheduledTask(emptyArray(), arrayOf(arrayOf("cron", "0 6 * * *", "UTC"))).cronSetAt)
+    }
+
+    @Test
+    fun resumingRestartsTheSchedule() {
+        val paused = daily.withEnabled(false, six - day)
+        assertTrue(paused.paused)
+        // Paused: never claimed, never missed.
+        assertEquals(Decision.NOT_RUNNABLE, ScheduledTaskClaims.decide(paused, "observer", six, six))
+        assertNull(paused.withRan(six - 5 * day).missedRun(newYork, six + 10 * hour))
+        // Resumed at 08:00: this morning's 06:00 is not anyone's to catch up.
+        val resumed = paused.withEnabled(true, six + 2 * hour)
+        assertFalse(resumed.paused)
+        assertEquals(six + 2 * hour, resumed.cronSetAt)
+        assertNull(ScheduledTaskClaims.occurrence(resumed, newYork, six + 3 * hour))
+        // Enabling what isn't paused changes nothing.
+        assertEquals(daily, daily.withEnabled(true, six))
+    }
+
+    @Test
     fun cronFieldsAreWhitespaceSeparated() {
         assertEquals("0 6 * * *", CronExpression.parse(" 0\t6  * *\t* ")?.text)
+        // Leading zeros are numbers too.
+        assertEquals(daily.withCron("0 6 * * *", "UTC", 0).expression()!!.nextAfter(six, newYork), CronExpression.parse("000 006 * * *")!!.nextAfter(six, newYork))
+        assertEquals(SimpleCron(6, 0), SimpleCron.parse("00 06 * * *"))
     }
 
     @Test
@@ -153,7 +185,7 @@ class ScheduledTaskClaimsTest {
         assertEquals(six - day, daily.lastDue(newYork, six + 3 * hour - 1))
         assertEquals(six, daily.lastDue(newYork, six + 3 * hour))
         // Weekdays only, read on Sunday evening: Friday's.
-        assertEquals(six + 2 * day, daily.withCron("0 6 * * 1-5", "America/New_York").lastDue(newYork, six + 4 * day + 12 * hour))
+        assertEquals(six + 2 * day, daily.withCron("0 6 * * 1-5", "America/New_York", 0).lastDue(newYork, six + 4 * day + 12 * hour))
     }
 
     @Test
@@ -164,13 +196,13 @@ class ScheduledTaskClaimsTest {
         assertNull(daily.withRan(six + 60).missedRun(newYork, six + 10 * hour))
         // No `ran` yet, off, or an unreadable cron: no warning.
         assertNull(daily.missedRun(newYork, six + 10 * day))
-        assertNull(ranYesterday.withEnabled(false).missedRun(newYork, six + 10 * hour))
-        assertNull(ranYesterday.withCron("0 6 * MON *", "UTC").missedRun(newYork, six + 10 * hour))
+        assertNull(ranYesterday.withEnabled(false, 0).missedRun(newYork, six + 10 * hour))
+        assertNull(ranYesterday.withCron("0 6 * MON *", "UTC", 0).missedRun(newYork, six + 10 * hour))
     }
 
     @Test
     fun anHourlyTaskIsMissedThreeHoursAfterItsLastRun() {
-        val hourly = daily.withCron("0 * * * *", "America/New_York").withRan(six + 5)
+        val hourly = daily.withCron("0 * * * *", "America/New_York", 0).withRan(six + 5)
         assertNull(hourly.missedRun(newYork, six + 3 * hour - 1))
         assertNull(hourly.missedRun(newYork, six + 3 * hour))
         assertEquals(six + hour, hourly.missedRun(newYork, six + 4 * hour))

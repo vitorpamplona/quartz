@@ -57,8 +57,11 @@ object ObserverSchedule {
             .filter { it.pubKey == author && it.dTag() == D_TAG }
             .maxByOrNull { it.createdAt }
 
-    /** A new schedule, paused, at the default time in [zone]: what an app writes when none exists. */
-    fun new(zone: String): ScheduledTask = ScheduledTask.create(D_TAG, TASK, zone = zone, paused = true)
+    /** A new schedule, paused, at the default time in [zone], set at [now]: what an app writes when none exists. */
+    fun new(
+        zone: String,
+        now: Long = TimeUtils.now(),
+    ): ScheduledTask = ScheduledTask.create(D_TAG, TASK, zone = zone, setAt = now, paused = true)
 
     /** The unsigned schedule event for [task], encrypted to [signer], replacing [previous]. */
     suspend fun build(

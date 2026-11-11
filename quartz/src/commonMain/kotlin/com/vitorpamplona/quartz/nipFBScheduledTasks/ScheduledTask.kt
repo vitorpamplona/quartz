@@ -54,6 +54,9 @@ class ScheduledTask(
     val cronTag: CronTag? get() = merged.cron()
     val cron: String? get() = cronTag?.expression
     val tz: String? get() = cronTag?.zone
+
+    /** When the schedule was last set or resumed: nothing due before it is claimed, caught up or missed. */
+    val cronSetAt: Long get() = cronTag?.setAt ?: 0
     val claim: ClaimTag? get() = merged.claim()
 
     /** Unix seconds: when the claimed occurrence finished (ran, or skipped as already done). */
@@ -65,13 +68,27 @@ class ScheduledTask(
     /** The schedule as a simple editor shows it (a time, some weekdays), or null when it can't. */
     fun simple(): SimpleCron? = cron?.let(SimpleCron::parse)
 
-    fun withEnabled(on: Boolean) = if (on) without(PausedTag::isTag) else replacing(PausedTag::isTag, PausedTag.assemble())
+    /**
+     * Paused, or resumed at [now]: resuming a paused task restarts its schedule from [now], so the
+     * occurrences it slept through are nobody's to run or report.
+     */
+    fun withEnabled(
+        on: Boolean,
+        now: Long,
+    ): ScheduledTask {
+        if (!on) return replacing(PausedTag::isTag, PausedTag.assemble())
+        if (!paused) return this
+        val resumed = without(PausedTag::isTag)
+        val cron = cronTag ?: return resumed
+        return resumed.replacing(CronTag::isTag, cron.copy(setAt = now).toTagArray())
+    }
 
-    /** A new schedule, in the editor's [zone]: the expression and the zone always change together. */
+    /** A new schedule, set at [now] in the editor's [zone]: the expression, the zone and the time it was set change together. */
     fun withCron(
         cron: String,
         zone: String,
-    ) = replacing(CronTag::isTag, CronTag.assemble(cron, zone))
+        now: Long,
+    ) = replacing(CronTag::isTag, CronTag.assemble(cron, zone, now))
 
     fun withClaim(claim: ClaimTag) = replacing(ClaimTag::isTag, claim.toTagArray())
 
@@ -123,11 +140,12 @@ class ScheduledTask(
     fun lastDue(
         zone: CronZone,
         now: Long,
-    ): Long? = expression()?.lastAtOrBefore(now - GRACE_SECONDS, zone)
+    ): Long? = expression()?.lastAtOrBefore(now - GRACE_SECONDS, zone)?.takeIf { it >= cronSetAt }
 
     /**
-     * The occurrence that didn't run: the last one due ([lastDue]) when `ran` is older. Null when
-     * the task is paused, nothing was due, or it has never run (no `ran`: nothing to compare with).
+     * The occurrence that didn't run: the last one due ([lastDue], never one before the schedule
+     * was set) when `ran` is older. Null when the task is paused, nothing was due, or it has never
+     * run (no `ran`: nothing to compare with).
      */
     fun missedRun(
         zone: CronZone,
@@ -158,10 +176,11 @@ class ScheduledTask(
             task: String,
             cron: String = DEFAULT_CRON,
             zone: String,
+            setAt: Long,
             paused: Boolean = false,
         ) = ScheduledTask(
             publicTags = arrayOf(DTag.assemble(dTag)),
-            privateTags = listOfNotNull(TaskTag.assemble(task), CronTag.assemble(cron, zone), if (paused) PausedTag.assemble() else null).toTypedArray(),
+            privateTags = listOfNotNull(TaskTag.assemble(task), CronTag.assemble(cron, zone, setAt), if (paused) PausedTag.assemble() else null).toTypedArray(),
         )
     }
 }

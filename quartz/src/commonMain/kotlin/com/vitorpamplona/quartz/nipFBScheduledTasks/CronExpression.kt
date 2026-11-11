@@ -176,7 +176,8 @@ class CronExpression private constructor(
 
         fun isValid(text: String) = parse(text) != null
 
-        private val number = Regex("^\\d{1,2}$")
+        // Any number of digits (`001` is 1); the range check below bounds the value.
+        private val number = Regex("^\\d{1,9}$")
         private val whitespace = Regex("\\s+")
 
         /** One field as a membership array indexed by value (size [max] + 1); null when malformed or out of range. */
@@ -256,7 +257,7 @@ data class SimpleCron(
     }
 
     companion object {
-        private val single = Regex("^\\d{1,2}$")
+        private val single = Regex("^\\d{1,9}$")
 
         /** The editor's shape of [cron], or null when the editor couldn't show it again. */
         fun parse(cron: String): SimpleCron? {
