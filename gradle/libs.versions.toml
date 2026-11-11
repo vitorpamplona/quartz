@@ -11,12 +11,17 @@ coreKtx = "1.19.1"
 cryptoKmp = "2.1.0"
 # Pure-Kotlin BIP-340 Schnorr on secp256k1 (vitorpamplona/libschnorr256k1-kotlin).
 # From JitPack until 1.0.1 is on Maven Central: the release is tagged and tested, but Maven Central
-# blocks the organization's uploads until its monthly limit resets (2026-12-01). 1d851c2 is 1.0.1's
-# code; JitPack builds it on Linux for every target, with a pure-Kotlin multiply-high on
-# Kotlin/Native in place of the release's hardware cinterop (slower there, the same results).
-# Once 1.0.1 is published: set "1.0.1", use the com.vitorpamplona.schnorr256k1 module below and
-# drop jitpack.io from settings.gradle.kts. Quartz releases depend on whatever this names.
-schnorr256k1Kotlin = "1d851c2"
+# blocks the organization's uploads until its monthly limit resets (2026-12-01). 867bb13 is main
+# @ 2026-11-09 (the #12 merge), 23 commits over 1d851c2 (1.0.1's code): BIP-340 signing with no aux
+# randomness, field compares on unreduced values and FieldP.add's double carry fixed; branch-free
+# field carries, mixed-addition batch tables and tagged hashes from a midstate. Its published POM
+# names only kotlin-stdlib and crypto-kmp; the JitPack libschnorr256k1-kmp it now compares against
+# is a test dependency. JitPack builds it on Linux for every target, with a pure-Kotlin
+# multiply-high on Kotlin/Native in place of the release's hardware cinterop (slower there, the
+# same results). The fixes postdate the v1.0.1 tag: once a release carrying them is on Central,
+# set it, use the com.vitorpamplona.schnorr256k1 module below and drop jitpack.io from
+# settings.gradle.kts. Quartz releases depend on whatever this names.
+schnorr256k1Kotlin = "867bb13"
 espressoCore = "3.7.0"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
