@@ -29,6 +29,8 @@ import kotlinx.coroutines.CancellationException
 
 class PrivateTagsInContent {
     companion object {
+        private const val TAG = "PrivateTagsInContent"
+
         fun decode(content: String) = OptimizedJsonMapper.fromJsonToTagArray(content)
 
         fun encode(privateTags: Array<Array<String>>): String = OptimizedJsonMapper.toJson(privateTags)
@@ -43,7 +45,9 @@ class PrivateTagsInContent {
                 decode(json)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.w("DraftEvent") { "Unable to parse inner event of a draft: $json" }
+                // Never the plaintext, nor the parser's message (it may quote it): private tags hold
+                // secrets (NIP-FA agent keys, NIP-51 private items).
+                Log.w(TAG) { "Unable to parse decrypted private tags (${json.length} chars, ${e::class.simpleName})" }
                 throw e
             }
         }
