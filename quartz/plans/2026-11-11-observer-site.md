@@ -139,3 +139,57 @@ the read (starting from nothing would drop every other edition).
 - Amethyst `commons`: the publisher (Blossom upload, relay read/write through the existing
   uploader and client) and the history reader; `commonsUI`: the settings and actions.
 - Brainstorm: the same in TypeScript, `client/src/lib/frontPage/observerSite.ts` and service.
+
+## The morning schedule, synced (2026-11-11)
+
+Each Amethyst install used to keep its own schedule, so a phone and a desktop both set to
+6:00 printed (and billed) twice, and Brainstorm could not show or change it. The schedule is
+now one encrypted setting per person, naming the one install that prints.
+
+### Event
+
+Kind `30078` (NIP-78 app data), `d` = `observer-schedule`, no other public tags. `content`
+is NIP-44 encrypted by the author to themselves:
+
+```json
+{
+  "v": 1,
+  "enabled": true,
+  "time": "06:00",
+  "tz": "America/New_York",
+  "printer": "3f1c…",
+  "installs": [
+    { "id": "3f1c…", "name": "Desktop (Linux)", "app": "amethyst-desktop", "unattended": true,  "seen": 1794355200 },
+    { "id": "9ab2…", "name": "Pixel 8",         "app": "amethyst-android", "unattended": false, "seen": 1794300000 }
+  ]
+}
+```
+
+- `time` is wall-clock in `tz` (an IANA zone, set by whoever last edited the time), so every
+  device agrees on the instant; each app displays it in its own zone.
+- `printer` is the `id` of the one install that runs the scheduled print. Absent or unknown:
+  nobody prints, and the apps say "Choose a printer".
+- `installs` lists the apps that can print: an install adds or refreshes itself (`seen`,
+  `unattended` = it holds the key on the device and can sign alone) when it opens the front
+  page and at most once a day. Web apps never list themselves: they can't print unattended.
+- An install `id` is random per install and per account, kept in that install's settings.
+- Unknown fields are kept on rewrite. Editing is read-modify-write of the newest event
+  (relays to EOSE and the local cache), `created_at = max(now, prev + 1)`; when no relay
+  answers and nothing is cached, nothing is written.
+
+### Rules
+
+- Only the install whose `id == printer` schedules the morning job; every other install
+  cancels its own and shows "Printed each morning by <name> at <time>" with "Print on this
+  device" (sets `printer` to itself; allowed only if this install is `unattended`).
+- Migration: an install that had a local schedule and finds no synced one publishes it with
+  itself as `printer`.
+- Brainstorm reads and edits `enabled`, `time`/`tz` and `printer` (choosing among the listed
+  installs) but never becomes the printer.
+
+### Before any scheduled print: already printed today?
+
+The printer skips the run when an edition already exists for today: one in its own store, or
+one listed on the reader's Observer site, printed in the last 20 hours (`printedAt`), or, for a
+site entry without `printedAt`, whose UTC `day` is today's UTC date. This covers a manual
+print earlier that morning, another device, and Brainstorm. Manual prints are never skipped.
