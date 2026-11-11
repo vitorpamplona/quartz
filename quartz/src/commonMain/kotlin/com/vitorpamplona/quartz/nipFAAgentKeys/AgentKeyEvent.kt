@@ -144,7 +144,7 @@ class AgentKeyEvent(
             earlierVersion: AgentKeyEvent,
             keys: List<AgentKeyTag>,
             signer: NostrSigner,
-            createdAt: Long = TimeUtils.now(),
+            createdAt: Long = nextCreatedAt(earlierVersion),
         ): EventTemplate<AgentKeyEvent> = rewrite(earlierVersion, readForRewrite(earlierVersion, signer), keys, signer, createdAt)
 
         /** [earlierVersion] with [key] made the preferred one: moved to the front, or added there if new. */
@@ -152,7 +152,7 @@ class AgentKeyEvent(
             earlierVersion: AgentKeyEvent,
             key: AgentKeyTag,
             signer: NostrSigner,
-            createdAt: Long = TimeUtils.now(),
+            createdAt: Long = nextCreatedAt(earlierVersion),
         ): EventTemplate<AgentKeyEvent> {
             val earlierPrivate = readForRewrite(earlierVersion, signer)
             val current = earlierPrivate.agentKeys()
@@ -164,18 +164,33 @@ class AgentKeyEvent(
             earlierVersion: AgentKeyEvent,
             key: AgentKeyTag,
             signer: NostrSigner,
-            createdAt: Long = TimeUtils.now(),
+            createdAt: Long = nextCreatedAt(earlierVersion),
         ): EventTemplate<AgentKeyEvent> {
             val earlierPrivate = readForRewrite(earlierVersion, signer)
             return rewrite(earlierVersion, earlierPrivate, earlierPrivate.agentKeys().filter { it != key }, signer, createdAt)
         }
 
-        private suspend fun rewrite(
+        /**
+         * `max(now, previous.createdAt + 1)`: a rewrite built from an older read never loses to
+         * it by clock skew (NIP-FA, Editing).
+         */
+        fun nextCreatedAt(
+            previous: Event?,
+            now: Long = TimeUtils.now(),
+        ) = if (previous == null) now else maxOf(now, previous.createdAt + 1)
+
+        /**
+         * [earlierVersion] with its keys set to [keys], from [earlierPrivate], its private tags
+         * as [readForRewrite] returned them: for a caller that already read them to decide the
+         * new order, so the signer is asked to decrypt once. Public tags and every private tag
+         * other than the keys stay as they were ([withAgentKeys]).
+         */
+        suspend fun rewrite(
             earlierVersion: AgentKeyEvent,
             earlierPrivate: TagArray,
             keys: List<AgentKeyTag>,
             signer: NostrSigner,
-            createdAt: Long,
+            createdAt: Long = nextCreatedAt(earlierVersion),
         ) = EventTemplate<AgentKeyEvent>(
             createdAt,
             KIND,

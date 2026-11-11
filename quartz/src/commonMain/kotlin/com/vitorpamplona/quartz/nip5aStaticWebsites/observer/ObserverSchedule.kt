@@ -22,9 +22,7 @@ package com.vitorpamplona.quartz.nip5aStaticWebsites.observer
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
-import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -44,7 +42,7 @@ object ObserverSchedule {
     fun address(author: HexKey) = ScheduledTaskEvent.createAddress(author, D_TAG)
 
     /** The author's morning schedule, for a relay read. */
-    fun filter(author: HexKey) = Filter(kinds = listOf(ScheduledTaskEvent.KIND), authors = listOf(author), tags = mapOf("d" to listOf(D_TAG)))
+    fun filter(author: HexKey) = ScheduledTaskEvent.filter(author, D_TAG)
 
     fun isObserverSchedule(event: Event) = event is ScheduledTaskEvent && event.dTag() == D_TAG
 
@@ -65,10 +63,8 @@ object ObserverSchedule {
         signer: NostrSigner,
         previous: Event?,
         now: Long = TimeUtils.now(),
-    ) = ScheduledTaskEvent.update(withoutPublicClient(task), signer, D_TAG, ScheduledTaskEvent.nextCreatedAt(previous, now))
+    ) = ScheduledTaskEvent.rewrite(task, signer, D_TAG, previous, now)
 
     /** [task] without a public `client` tag; a private one is kept. */
-    fun withoutPublicClient(task: ScheduledTask): ScheduledTask = if (task.publicTags.any(::isClientTag)) ScheduledTask(task.publicTags.filterNot(::isClientTag).toTypedArray(), task.privateTags) else task
-
-    private fun isClientTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == ClientTag.TAG_NAME
+    fun withoutPublicClient(task: ScheduledTask): ScheduledTask = task.withoutPublicClientTag()
 }

@@ -165,4 +165,28 @@ class ScheduledTaskTest {
             assertEquals(300, ScheduledTaskEvent.nextCreatedAt(previous, now = 300))
             assertEquals(50, ScheduledTaskEvent.nextCreatedAt(null, now = 50))
         }
+
+    @Test
+    fun anyTaskIsReadAndRewrittenUnderItsOwnD() =
+        runTest {
+            val signer = NostrSignerInternal(KeyPair())
+            val one = ScheduledTaskEvent.filter(signer.pubKey, "digest")
+            assertEquals(listOf(ScheduledTaskEvent.KIND), one.kinds)
+            assertEquals(listOf(signer.pubKey), one.authors)
+            assertEquals(listOf("digest"), one.tags?.get("d"))
+            assertNull(ScheduledTaskEvent.filter(signer.pubKey).tags)
+
+            val task = ScheduledTask(arrayOf(arrayOf("d", "digest"), arrayOf("client", "Amy"), arrayOf("x", "public")), arrayOf(arrayOf("task", "digest"), arrayOf("client", "Private")))
+            val older: ScheduledTaskEvent = signer.sign(ScheduledTaskEvent.rewrite(task, signer, "digest", previous = null, now = 100))
+            val newer: ScheduledTaskEvent = signer.sign(ScheduledTaskEvent.rewrite(task.withEnabled(false, 0), signer, "digest", previous = older, now = 50))
+            assertEquals(100, older.createdAt)
+            assertEquals(101, newer.createdAt)
+            assertEquals("digest", newer.dTag())
+            // The public client tag goes; every other tag stays where it was.
+            assertTrue(newer.tags.none { it[0] == "client" })
+            assertEquals("public", newer.tags.first { it[0] == "x" }[1])
+            val read = newer.task(signer)!!
+            assertEquals("Private", read.privateTags.first { it[0] == "client" }[1])
+            assertTrue(read.paused)
+        }
 }

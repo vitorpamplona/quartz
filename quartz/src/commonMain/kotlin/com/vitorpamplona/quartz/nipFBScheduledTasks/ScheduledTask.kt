@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nipFBScheduledTasks
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
+import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
@@ -119,6 +120,14 @@ class ScheduledTask(
             ScheduledTask(publicTags, privateTags + arrayOf(tag))
         }
     }
+
+    /**
+     * This task without a public `client` tag (it tells anyone which app the user schedules with);
+     * a private one stays. The one exception to keeping every tag where it was.
+     */
+    fun withoutPublicClientTag(): ScheduledTask = if (publicTags.any(::isPublicClientTag)) ScheduledTask(publicTags.filterNot(::isPublicClientTag).toTypedArray(), privateTags) else this
+
+    private fun isPublicClientTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == ClientTag.TAG_NAME
 
     /** This task without the tags [isTag] matches, on either side. */
     fun without(isTag: (Array<String>) -> Boolean) = ScheduledTask(publicTags.filterNot(isTag).toTypedArray(), privateTags.filterNot(isTag).toTypedArray())

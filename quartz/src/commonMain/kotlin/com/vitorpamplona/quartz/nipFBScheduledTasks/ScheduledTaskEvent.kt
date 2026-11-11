@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.tagArray
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -74,6 +75,12 @@ class ScheduledTaskEvent(
             pubKey: HexKey,
             dTag: String,
         ) = Address(KIND, pubKey, dTag)
+
+        /** [author]'s tasks, for a relay read: the one under [dTag], or every one when it is null. */
+        fun filter(
+            author: HexKey,
+            dTag: String? = null,
+        ) = Filter(kinds = listOf(KIND), authors = listOf(author), tags = dTag?.let { mapOf("d" to listOf(it)) })
 
         /**
          * `max(now, previous.createdAt + 1)`: a rewrite built from an older read never loses to
@@ -129,5 +136,18 @@ class ScheduledTaskEvent(
             val public = if (task.publicTags.any(DTag::isTag)) task.publicTags else arrayOf(DTag.assemble(dTag)) + task.publicTags
             return EventTemplate(createdAt, KIND, public, encrypt(task.privateTags, signer))
         }
+
+        /**
+         * The edit of [previous] (NIP-FB, Editing) that holds [task]: `created_at` =
+         * [nextCreatedAt], and no public `client` tag ([ScheduledTask.withoutPublicClientTag]).
+         * Sign it with a signer that adds no `client` tag of its own.
+         */
+        suspend fun rewrite(
+            task: ScheduledTask,
+            signer: NostrSigner,
+            dTag: String,
+            previous: Event?,
+            now: Long = TimeUtils.now(),
+        ): EventTemplate<ScheduledTaskEvent> = update(task.withoutPublicClientTag(), signer, dTag, nextCreatedAt(previous, now))
     }
 }

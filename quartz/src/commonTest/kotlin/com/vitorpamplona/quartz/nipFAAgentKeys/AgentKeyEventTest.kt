@@ -286,4 +286,21 @@ class AgentKeyEventTest {
         assertFalse(AgentKeyTag("k", "https://exa mple.com/v1").isUrlAllowed())
         assertFalse(AgentKeyTag("", "javascript://x").isUrlAllowed())
     }
+
+    @Test
+    fun aRewriteFromTagsAlreadyReadDecryptsOnceAndMovesTheClockOn() =
+        runTest {
+            val first = AgentKeyTag("sk-1", "https://a.example/v1")
+            val second = AgentKeyTag("", "http://localhost:11434/v1")
+            val earlier = roundTrip(AgentKeyEvent.build(listOf(first), signer, createdAt = 1_000) { add(arrayOf("x", "public")) })
+            val private = AgentKeyEvent.readForRewrite(earlier, signer) + arrayOf(arrayOf("note", "kept"))
+            // The clock behind the event's: still one second after it (NIP-FA, Editing).
+            val next = roundTrip(AgentKeyEvent.rewrite(earlier, private, listOf(second, first), signer, AgentKeyEvent.nextCreatedAt(earlier, now = 900)))
+            assertEquals(1_001, next.createdAt)
+            assertEquals(listOf(second, first), next.agentKeys(signer))
+            assertEquals("public", next.tags.first { it[0] == "x" }[1])
+            assertEquals("kept", next.privateTags(signer)!!.first { it[0] == "note" }[1])
+            assertEquals(2_000, AgentKeyEvent.nextCreatedAt(earlier, now = 2_000))
+            assertEquals(5, AgentKeyEvent.nextCreatedAt(null, now = 5))
+        }
 }
