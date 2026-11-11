@@ -144,48 +144,85 @@ the read (starting from nothing would drop every other edition).
 
 Each Amethyst install used to keep its own schedule, so a phone and a desktop both set to
 6:00 printed (and billed) twice, and Brainstorm could not show or change it. The schedule is
-now one encrypted setting per person, naming the one install that prints.
+now one encrypted setting per person, and any device where the reader turned printing on may
+print a morning: the first to claim it does. It is a NIP-FB scheduled task (kind 34817,
+`nips/FB.md`, the authority on the event, `cron`, claims, `ran` and editing); this section only
+fixes what the Observer adds to it.
 
 ### Event
 
-Kind `30078` (NIP-78 app data), `d` = `observer-schedule`, no other public tags. `content`
-is NIP-44 encrypted by the author to themselves:
+Kind `34817` (NIP-FB Scheduled Task), addressable, `d` = `observer` (fixed, so two apps setting
+it up at once edit one event). Like a NIP-51 list its tags may be public or private (the content,
+NIP-44 to self, a JSON tag array); readers merge both, writers keep each tag on the side they
+found it, and new tags go private. Amethyst keeps everything but `d` private:
 
 ```json
-{
-  "v": 1,
-  "enabled": true,
-  "time": "06:00",
-  "tz": "America/New_York",
-  "printer": "3f1c…",
-  "installs": [
-    { "id": "3f1c…", "name": "Desktop (Linux)", "app": "amethyst-desktop", "unattended": true,  "seen": 1794355200 },
-    { "id": "9ab2…", "name": "Pixel 8",         "app": "amethyst-android", "unattended": false, "seen": 1794300000 }
-  ]
-}
+[
+  ["task", "observer"],
+  ["cron", "0 6 * * *", "America/New_York"],
+  ["claim", "1794394800", "3f1c9a0e5b7d4c21", "Desktop (Linux)", "1794394831"],
+  ["ran", "1794394860"]
+]
 ```
 
-- `time` is wall-clock in `tz` (an IANA zone, set by whoever last edited the time), so every
-  device agrees on the instant; each app displays it in its own zone.
-- `printer` is the `id` of the one install that runs the scheduled print. Absent or unknown:
-  nobody prints, and the apps say "Choose a printer".
-- `installs` lists the apps that can print: an install adds or refreshes itself (`seen`,
-  `unattended` = it holds the key on the device and can sign alone) when it opens the front
-  page and at most once a day. Web apps never list themselves: they can't print unattended.
-- An install `id` is random per install and per account, kept in that install's settings.
-- Unknown fields are kept on rewrite. Editing is read-modify-write of the newest event
-  (relays to EOSE and the local cache), `created_at = max(now, prev + 1)`; when no relay
-  answers and nothing is cached, nothing is written.
+- `cron` (five POSIX fields) is read on the wall clock of its zone (IANA, set by whoever last
+  edited the schedule), so every device agrees on the instant; each app displays it in its own
+  zone. Amethyst's editor writes only the shape `M H * * <days or *>` (a time, optionally
+  weekdays) and shows any other expression as written, read-only. A `cron` it can't parse is
+  kept and never run.
+- `["paused"]` stops it for every device. Other tags are kept as they are.
+- `claim` is the latest claimed occurrence: its due time (the exact instant the cron runs it,
+  compared for equality), the claiming install's random id, its name, and when it was claimed;
+  `ran` is when that occurrence finished, and a claim is finished when `ran` is at or after its
+  due time. A duplicate single tag reads private first, then first. A task without `task` =
+  `observer` and a readable `cron` is never run.
+- An install's id is random per install and per account, kept in that install's settings.
+- Editing is read-modify-write of the newest event (relays to EOSE and the local cache),
+  `created_at = max(now, prev + 1)`; when no relay answers and nothing is cached, nothing is
+  written. An event that exists but can't be decrypted is never overwritten either.
+- Quartz: the event (`ScheduledTaskEvent` on `PrivateTagArrayEvent`), its tag codecs (`task`,
+  `cron`, `paused`, `claim`, `ran`), the merged model (`ScheduledTask`), cron (`CronExpression`,
+  `SimpleCron`, `CronZone`; `ZoneIdCronZone` over `java.time` on JVM and Android, since
+  `commonMain` has no zone database) and the claim protocol's decisions (`ScheduledTaskClaims`)
+  in `nipFBScheduledTasks/`; the Observer's `d`, `task` and the printed-today check in
+  `nip5aStaticWebsites/observer/` (`ObserverSchedule`, `ObserverSite.alreadyPrintedToday`).
 
 ### Rules
 
-- Only the install whose `id == printer` schedules the morning job; every other install
-  cancels its own and shows "Printed each morning by <name> at <time>" with "Print on this
-  device" (sets `printer` to itself; allowed only if this install is `unattended`).
-- Migration: an install that had a local schedule and finds no synced one publishes it with
-  itself as `printer`.
-- Brainstorm reads and edits `enabled`, `time`/`tz` and `printer` (choosing among the listed
-  installs) but never becomes the printer.
+- **Print from this device** is a per-account, per-install setting, off unless the reader turns
+  it on (it is the old local schedule's on/off). Only an install that can print alone (the key
+  on the device, a platform that can print) may turn it on. Turning the shared schedule on from
+  a device that can print also turns it on there.
+- At each due occurrence, on a device where it is on and the schedule isn't paused: wait a
+  random 0 to 60 s; read the newest event from the write relays (more than half must answer, or
+  don't run; no write relays, or a content that doesn't decrypt: never run, never write); stop
+  if `claim` holds this occurrence (unless it is unfinished and its claim time is an hour old);
+  if today's edition already exists (below), write the claim and `ran` in one event without
+  printing; otherwise subscribe to the event on every write relay, publish the claim (more
+  than half of the write relays must accept it, or don't run), and after 20 s
+  print only if the newest event seen (`created_at`, then lowest `id`) holds this device's
+  claim; when it holds no claim for this occurrence (another client's edit that didn't see
+  the claim), go back to the read, at most three rounds and only while it is still the same
+  occurrence. The subscription stays open during the print; a newer event claiming this occurrence
+  for another device stops it, before anything is published to the Observer site. A finished
+  print sets `ran` (a fresh read-modify-write that changes only `ran`). A failed print sets
+  nothing, so its claim goes stale after an hour.
+- A missed occurrence (the device was off or the app closed) may be claimed on waking until the
+  next one is due; Amethyst tries once when an account loads.
+- Migration: an install that had a local schedule (`on|7|30`, now `30 7 * * *` in its zone)
+  and finds no synced one (the relays answered and hold none) publishes it; the local on/off
+  stays as this device's "Print from this device".
+- Brainstorm reads and edits the schedule (pause, `cron`) and shows who printed last; it never
+  claims, since it can't print with nobody there. It writes only `d` publicly and signs without
+  a `client` tag; Amethyst's signer adds its `client` tag publicly (when the reader keeps that
+  setting on), which every writer keeps
+  where it found it.
+
+### What every app shows
+
+"Last printed by <claim's name>, <time ago>" from `claim` and `ran` ("Not printed yet" before
+the first), and, unless paused, a warning on every device, "Not printed since <day>", when
+`ran` is older than the newest `cron` occurrence that was due more than 3 hours ago.
 
 ### Before any scheduled print: already printed today?
 
@@ -193,3 +230,5 @@ The printer skips the run when an edition already exists for today: one in its o
 one listed on the reader's Observer site, printed in the last 20 hours (`printedAt`), or, for a
 site entry without `printedAt`, whose UTC `day` is today's UTC date. This covers a manual
 print earlier that morning, another device, and Brainstorm. Manual prints are never skipped.
+If the site can't be read, the printer decides from its own store alone (and prints). A skipped
+run writes the claim and `ran`, so it counts as done for every device.

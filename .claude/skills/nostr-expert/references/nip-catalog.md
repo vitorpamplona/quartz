@@ -112,6 +112,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nipCCGeocaching/` | GeocacheFoundLogEvent 7516, GeocacheVerificationEvent 7517, GeocacheListingEvent 37516, GeocacheCurationListEvent 37517 |
 | `nipF4Podcasts/` | PodcastEpisodeEvent 54, FavoritePodcastsListEvent 10054, AuthoredPodcastsEvent 10064, PodcastMetadataEvent 10154 |
 | `nipFAAgentKeys/` | AgentKeyEvent 12000 |
+| `nipFBScheduledTasks/` | ScheduledTaskEvent 34817 |
 | `nipFERelayOverHttp/` | (no event kinds: tags/utilities) |
 | `nipXXPodcasting20/` | Podcasting20EpisodeEvent 30054, Podcasting20TrailerEvent 30055 |
 | `nipXXPrivateNoteStorage/` | PnsEvent 1080 |

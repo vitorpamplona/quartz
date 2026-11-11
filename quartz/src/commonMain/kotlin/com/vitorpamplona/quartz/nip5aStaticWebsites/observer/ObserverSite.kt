@@ -58,6 +58,9 @@ object ObserverSite {
 
     const val DEFAULT_TITLE = "The Nostr Observer"
 
+    /** A scheduled print skips when an edition was printed this recently ([alreadyPrintedToday]). */
+    const val PRINTED_RECENTLY_SECONDS = 20 * 3_600L
+
     private val dayPattern = Regex("^\\d{4}-\\d{2}-\\d{2}$")
     private val dayPathPattern = Regex("^/(\\d{4}-\\d{2}-\\d{2})\\.html$")
 
@@ -116,6 +119,34 @@ object ObserverSite {
         val y = yoe + era * 400L + (if (m <= 2L) 1L else 0L)
         return y.toString().padStart(4, '0') + "-" + m.toString().padStart(2, '0') + "-" + d.toString().padStart(2, '0')
     }
+
+    /**
+     * Whether an edition printed at [printedAt] (unix seconds), or, when that is unknown, dated
+     * [day] (UTC), is today's as far as a scheduled print is concerned: printed in the
+     * [PRINTED_RECENTLY_SECONDS] before [now], or with no print time and [day] = today's UTC date.
+     * A print time up to a day after [now] counts too (another device's clock running ahead);
+     * a later one is bad data.
+     */
+    fun printedToday(
+        printedAt: Long?,
+        day: String?,
+        now: Long = TimeUtils.now(),
+    ): Boolean =
+        if (printedAt != null) {
+            printedAt > now - PRINTED_RECENTLY_SECONDS && printedAt <= now + 86_400L
+        } else {
+            day != null && day == utcDay(now)
+        }
+
+    /**
+     * The check before any scheduled print: true when [editions] (the reader's Observer site, or
+     * a device's own store described the same way) already hold today's edition ([printedToday]).
+     * Manual prints never ask.
+     */
+    fun alreadyPrintedToday(
+        editions: List<ObserverEdition>,
+        now: Long = TimeUtils.now(),
+    ): Boolean = editions.any { printedToday(it.printedAt, it.day, now) }
 
     /** Newest day first; days are ISO dates, so text order is date order. */
     fun newestFirst(editions: List<ObserverEdition>) = editions.sortedByDescending { it.day }
