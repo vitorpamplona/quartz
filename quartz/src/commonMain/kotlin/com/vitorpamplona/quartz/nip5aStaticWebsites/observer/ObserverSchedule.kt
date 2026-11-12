@@ -34,6 +34,15 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * the check before a scheduled print, is [ObserverSite.alreadyPrinted]. The claim race is
  * NIP-FB's ([com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims]), and so is the
  * missed-run warning ([ScheduledTask.missedRun]).
+ *
+ * The schedule also carries the Observer's settings as `param` tags ([ObserverParams]: `model`,
+ * `key`). A public `p` names a runner, the reader's Assistant, which prints for them
+ * ([ScheduledTask.withRunner]; the private tags are then encrypted to it): no device of the reader
+ * prints on schedule, the runner decides with
+ * [com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims.decideAsRunner] after
+ * [com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims.checkRunner], and publishes
+ * its own site for the reader ([ObserverSite.build] with `forReader`). The apps judge it from both
+ * sites ([ObserverSite.lastPrinted], [ObserverSite.missedRun]).
  */
 object ObserverSchedule {
     const val D_TAG = "observer"

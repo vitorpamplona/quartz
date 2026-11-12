@@ -363,6 +363,12 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
 - Quartz `nipFBScheduledTasks/`: the `param` and runner `p` tags on `ScheduledTaskEvent`,
   encrypting to the runner, and keeping params on edit. `nip5aStaticWebsites/observer/`: the
   param names and their readers, and finding a runner's site.
+  Built: `ParamTag`, `ScheduledTask.params`/`withParam`/`withAddedParam`/`withoutParam`,
+  `ScheduledTask.runner`/`hasRunnerConflict`/`withRunner` (the event built from it encrypts to the
+  runner through `PrivateTagArrayEvent.privateTagsPeers`), `ScheduledTaskClaims.Decision.RUNNER_NAMED`,
+  `ScheduledTaskClaims.decideAsRunner` and `checkRunner`; `ObserverParams` (`model`, `key`),
+  `ObserverSite.build(forReader)`, `runnerSiteFilter`/`isRunnerSiteFor`/`runnerSite`, and the
+  two-site `alreadyPrinted`, `lastPrinted` and `missedRun`.
 - Amethyst and Brainstorm-UI: the who-prints choice, settings read and written through the
   event, the two-site reader and the status line. The Give/Take back key screen is
   Brainstorm's, through the server endpoints, which answer only Brainstorm logins; Amethyst

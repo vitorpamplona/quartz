@@ -21,12 +21,18 @@
 package com.vitorpamplona.quartz.nip5aStaticWebsites.observer
 
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.people.firstTaggedUserId
+import com.vitorpamplona.quartz.nip01Core.tags.people.isTaggedUser
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
 import com.vitorpamplona.quartz.nip5aStaticWebsites.NamedSiteEvent
 import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
 import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.CronZone
+import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
 import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -37,6 +43,11 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  *
  * The rules every producer and reader shares live here: naming, upsert, roll-off and
  * manifest assembly. Uploading the files and signing the manifest are the client's.
+ *
+ * A runner the reader's schedule names (NIP-FB, Runner: the Assistant) publishes the reader's
+ * paper as its own site, the same layout signed by the runner with `["p", reader]`
+ * ([build]'s `forReader`); the reader's apps find it with [runnerSiteFilter] / [isRunnerSiteFor]
+ * and judge from both sites whether a morning printed ([alreadyPrinted], [lastPrinted], [missedRun]).
  */
 object ObserverSite {
     const val D_TAG = "observer"
@@ -148,6 +159,104 @@ object ObserverSite {
         zone: CronZone,
     ): Boolean = editions.any { printedFor(it.printedAt, it.day, occurrence, zone) }
 
+    /**
+     * [alreadyPrinted] over the reader's own site ([readerEditions], or a device's store) and the
+     * site of the runner their schedule names ([runnerEditions], see [isRunnerSiteFor]; empty when
+     * there is none): an edition on either is this occurrence's paper. What a device and the
+     * runner both call before a scheduled print.
+     */
+    fun alreadyPrinted(
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition>,
+        occurrence: Long,
+        zone: CronZone,
+    ): Boolean = alreadyPrinted(readerEditions, occurrence, zone) || alreadyPrinted(runnerEditions, occurrence, zone)
+
+    /** The newest print the sites show ([lastPrinted]): when, and whether the runner printed it. */
+    data class LastPrint(
+        /** Unix seconds: the edition's `printedAt`. */
+        val printedAt: Long,
+        /** True when it came from the runner's site, false from the reader's own. */
+        val byRunner: Boolean,
+        val edition: ObserverEdition,
+    )
+
+    /**
+     * The newest print across the reader's site and the runner's, by `printedAt` ("Last printed by
+     * your Assistant, <time> ago"); an edition without `printedAt` doesn't say when, so it isn't
+     * one. On a tie the reader's own wins. Null when neither site has a dated print.
+     */
+    fun lastPrinted(
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition> = emptyList(),
+    ): LastPrint? {
+        val own = readerEditions.filter { it.printedAt != null }.maxByOrNull { it.printedAt!! }
+        val runner = runnerEditions.filter { it.printedAt != null }.maxByOrNull { it.printedAt!! }
+        return when {
+            own == null && runner == null -> null
+            runner == null || (own != null && own.printedAt!! >= runner.printedAt!!) -> LastPrint(own!!.printedAt!!, false, own)
+            else -> LastPrint(runner.printedAt!!, true, runner)
+        }
+    }
+
+    /**
+     * The 3-hour missed-run warning ("Not printed since <day>"): the occurrence that didn't print,
+     * or null. Without a runner it is NIP-FB's, from `ran` ([ScheduledTask.missedRun]). With one
+     * (NIP-FB, Runner: it can't write `ran`), the newest occurrence due more than
+     * [ScheduledTask.GRACE_SECONDS] ago, never one before the schedule was set, is missed when no
+     * edition on either site is its paper ([alreadyPrinted]) and `ran` (a device's print from
+     * before the runner was named) isn't at or after it. Never while paused. A runner conflict
+     * runs nowhere, so it warns the same way.
+     */
+    fun missedRun(
+        task: ScheduledTask,
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition>,
+        zone: CronZone,
+        now: Long,
+    ): Long? {
+        if (!task.namesRunner) return task.missedRun(zone, now)
+        if (task.paused) return null
+        val due = task.lastDue(zone, now) ?: return null
+        val ran = task.ran
+        if (ran != null && ran >= due) return null
+        return if (alreadyPrinted(readerEditions, runnerEditions, due, zone)) null else due
+    }
+
+    /**
+     * The relay read for the Observer site [runner] publishes for [reader]: kind 35128, by
+     * [runner], `d` = [D_TAG], tagging [reader]. Check each answer with [isRunnerSiteFor].
+     */
+    fun runnerSiteFilter(
+        runner: HexKey,
+        reader: HexKey,
+    ) = Filter(kinds = listOf(NamedSiteEvent.KIND), authors = listOf(runner), tags = mapOf("d" to listOf(D_TAG), "p" to listOf(reader)))
+
+    /**
+     * Whether [event] is the Observer site [runner] publishes for [reader]: a kind 35128 named
+     * site by [runner] with `d` = [D_TAG] and a `p` naming [reader]. Only the runner the reader's
+     * own signed schedule names counts ([ScheduledTask.runner]): a site by any other key that tags
+     * the reader is ignored, and so is the runner's site for someone else.
+     */
+    fun isRunnerSiteFor(
+        event: Event,
+        runner: HexKey,
+        reader: HexKey,
+    ): Boolean = event is NamedSiteEvent && event.pubKey == runner && event.dTag() == D_TAG && event.isTaggedUser(reader)
+
+    /** The newest of [events] that [isRunnerSiteFor] accepts, or null. */
+    fun runnerSite(
+        events: Collection<Event>,
+        runner: HexKey,
+        reader: HexKey,
+    ): NamedSiteEvent? =
+        events
+            .filter { isRunnerSiteFor(it, runner, reader) }
+            .maxWithOrNull(compareBy<Event> { it.createdAt }.thenByDescending { it.id }) as NamedSiteEvent?
+
+    /** The reader a runner's Observer site is for: its first `p`, or null for a reader's own site. */
+    fun siteReader(event: NamedSiteEvent): HexKey? = event.firstTaggedUserId()
+
     /** Newest day first; days are ISO dates, so text order is date order. */
     fun newestFirst(editions: List<ObserverEdition>) = editions.sortedByDescending { it.day }
 
@@ -252,6 +361,10 @@ object ObserverSite {
     /**
      * The unsigned manifest. [createdAt] should be `max(now, previous.createdAt + 1)` so a
      * manifest built from an older read never loses to it by clock skew; see [nextCreatedAt].
+     *
+     * [forReader] is set when a runner (NIP-FB, Runner) publishes the reader's paper as its own
+     * site: signed by the runner, with `["p", forReader]` so the reader's apps find it
+     * ([runnerSiteFilter]). Null for the reader's own site.
      */
     fun build(
         editions: List<ObserverEdition>,
@@ -261,6 +374,7 @@ object ObserverSite {
         servers: List<String>,
         createdAt: Long = TimeUtils.now(),
         maxDay: String? = latestDay(createdAt),
+        forReader: HexKey? = null,
     ): EventTemplate<NamedSiteEvent> {
         val paths = paths(editions, archiveSha256, editionsSha256, maxDay)
         return NamedSiteEvent.build(
@@ -272,8 +386,20 @@ object ObserverSite {
             createdAt = createdAt,
         ) {
             siteAggregateHash(paths)
+            forReader?.let { pTag(it) }
         }
     }
+
+    @Deprecated("Kept for binary compatibility; use the overload with forReader.", level = DeprecationLevel.HIDDEN)
+    fun build(
+        editions: List<ObserverEdition>,
+        archiveSha256: HexKey,
+        editionsSha256: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        createdAt: Long = TimeUtils.now(),
+        maxDay: String? = latestDay(createdAt),
+    ): EventTemplate<NamedSiteEvent> = build(editions, archiveSha256, editionsSha256, displayName, servers, createdAt, maxDay, null)
 
     fun nextCreatedAt(
         previous: NamedSiteEvent?,
@@ -296,7 +422,7 @@ object ObserverSite {
 
     /**
      * [rollOff] against [budgetBytes] and [maxTags], measuring each candidate manifest as
-     * signed. The archive and index hashes don't change the size (all hashes are 64 hex), so
+     * signed (by [author], tagging [forReader] for a runner's site). The archive and index hashes don't change the size (all hashes are 64 hex), so
      * placeholders stand in for files not built yet.
      */
     fun keepWithinBudget(
@@ -309,11 +435,25 @@ object ObserverSite {
         keep: Int = KEEP,
         protect: String? = null,
         createdAt: Long = TimeUtils.now(),
+        forReader: HexKey? = null,
     ): List<ObserverEdition> =
         rollOff(editions, keep, protect) { candidate ->
-            val template = build(candidate, PLACEHOLDER_HASH, PLACEHOLDER_HASH, displayName, servers, createdAt)
+            val template = build(candidate, PLACEHOLDER_HASH, PLACEHOLDER_HASH, displayName, servers, createdAt, latestDay(createdAt), forReader)
             template.tags.size <= maxTags && signedSize(template, author) <= budgetBytes
         }
+
+    @Deprecated("Kept for binary compatibility; use the overload with forReader.", level = DeprecationLevel.HIDDEN)
+    fun keepWithinBudget(
+        editions: List<ObserverEdition>,
+        author: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        budgetBytes: Int,
+        maxTags: Int = DEFAULT_MAX_TAGS,
+        keep: Int = KEEP,
+        protect: String? = null,
+        createdAt: Long = TimeUtils.now(),
+    ): List<ObserverEdition> = keepWithinBudget(editions, author, displayName, servers, budgetBytes, maxTags, keep, protect, createdAt, null)
 
     private val PLACEHOLDER_HASH = "0".repeat(64)
     private val PLACEHOLDER_ID = "0".repeat(64)
