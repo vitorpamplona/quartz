@@ -328,15 +328,22 @@ data class SimpleCron(
     }
 
     /**
-     * The schedule, still read in [zone], that runs at [hour]:[minute] on [viewer]'s clock on the
-     * days [seenFrom] shows there: the run [seenFrom] reads moves to that time on its calendar
-     * day on [viewer]'s clock, and the expression follows it in [zone], weekdays moved with it
-     * when it crosses midnight there. So the schedule keeps its zone, and the clock changes it
-     * follows, while the reader picks the time on their own clock.
+     * The schedule, still read in [zone], whose next run [seenFrom] shows at [hour]:[minute] on
+     * [viewer]'s clock, on [days] there (ISO weekdays, null every day; by default the days
+     * [seenFrom] shows now). So the schedule keeps its zone, and the clock changes it follows,
+     * while the reader picks the time and days on their own clock, and the editor shows what
+     * they picked once it is saved.
      *
-     * Moving to the time [seenFrom] shows gives this schedule back. Null when there is no such
-     * run, or when the new time can't be said as one time in [zone] (a time [viewer]'s clocks
-     * skip that day, or one [zone] reads twice).
+     * Read in [zone], the new time is the picked one less how far [viewer]'s clock is ahead of
+     * [zone]'s. That gap changes when either clock does, so each gap the two zones have in the
+     * next weeks is tried, the soonest first, and the first schedule whose next run reads the
+     * picked time and days on [viewer]'s clock is the one. The gap at the old schedule's next run
+     * is not the answer: near a clock change the new schedule's next run may fall on the other
+     * side of it.
+     *
+     * The time [seenFrom] shows, on the days it shows, gives this schedule back. Null when no
+     * schedule in [zone] runs next at that time on those days (a time [viewer]'s clocks skip on
+     * the day it would next run), or the time is out of range.
      */
     fun movedTo(
         hour: Int,
@@ -344,17 +351,22 @@ data class SimpleCron(
         zone: CronZone,
         viewer: CronZone,
         now: Long,
+        days: Set<Int>? = seenFrom(zone, viewer, now)?.weekdays ?: weekdays,
     ): SimpleCron? {
         if (hour !in 0..23 || minute !in 0..59) return null
-        val at = unmovedRun(now, zone) ?: return null
-        val local = viewer.dayOf(at) * DAY + hour * 3_600L + minute * 60L
-        val moved = CronExpression.resolve(local, viewer)
-        if (viewer.wallSeconds(moved) != local) return null
-        val wall = zone.wallSeconds(moved)
-        val there = SimpleCron((wall.mod(DAY) / 3_600L).toInt(), ((wall.mod(DAY) % 3_600L) / 60L).toInt(), shifted(weekdays, (zone.dayOf(moved) - zone.dayOf(at)).toInt()))
-        // One reading of that wall time in [zone], the one the schedule would run at.
-        if (CronExpression.resolve(wall - wall.mod(60L), zone) != moved) return null
-        return there
+        if (days != null && (days.isEmpty() || days.any { it !in 1..7 })) return null
+        val picked = SimpleCron(hour, minute, days?.takeIf { it.size < 7 })
+        // Confirming what the editor shows changes nothing.
+        if (sameShape(seenFrom(zone, viewer, now), picked)) return this
+        val wall = hour * 3_600L + minute * 60L
+        for (gap in gaps(zone, viewer, now)) {
+            val there = wall - gap
+            if (there.mod(60L) != 0L) continue
+            val time = there.mod(DAY)
+            val candidate = SimpleCron((time / 3_600L).toInt(), ((time % 3_600L) / 60L).toInt(), shifted(picked.weekdays, there.floorDiv(DAY).toInt()))
+            if (sameShape(candidate.seenFrom(zone, viewer, now), picked)) return candidate
+        }
+        return null
     }
 
     companion object {
@@ -364,6 +376,38 @@ data class SimpleCron(
         private const val UNMOVED_TRIES = 16
 
         private val single = Regex("^\\d{1,9}$")
+
+        /** How far ahead of [zone]'s clock [viewer]'s may be in the [GAP_DAYS] after [now], in seconds, the soonest first. */
+        private fun gaps(
+            zone: CronZone,
+            viewer: CronZone,
+            now: Long,
+        ): List<Long> {
+            val found = LinkedHashSet<Long>()
+            var at = now
+            while (at <= now + GAP_DAYS * DAY) {
+                found += (viewer.offsetSecondsAt(at) - zone.offsetSecondsAt(at)).toLong()
+                at += GAP_STEP_SECONDS
+            }
+            return found.toList()
+        }
+
+        /** The same time on the same days; every day is every day however it is said. */
+        private fun sameShape(
+            a: SimpleCron?,
+            b: SimpleCron,
+        ): Boolean {
+            if (a == null || a.hour != b.hour || a.minute != b.minute) return false
+            val left = a.weekdays?.takeIf { it.size < 7 }
+            val right = b.weekdays?.takeIf { it.size < 7 }
+            return left == right
+        }
+
+        /** How far [gaps] looks: past [UNMOVED_TRIES] runs of a weekly schedule, and a week of clock changes. */
+        private const val GAP_DAYS = 7L * UNMOVED_TRIES / 5 + 8
+
+        /** A gap between two zones' clocks lasts far longer than this: weeks, between clock changes. */
+        private const val GAP_STEP_SECONDS = 6 * 3_600L
 
         /** ISO weekdays moved by [days] (1 = the next day); null (every day) stays null. */
         private fun shifted(
