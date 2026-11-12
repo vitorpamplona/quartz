@@ -265,11 +265,14 @@ class ScheduledTask(
             }.toTypedArray()
     }
 
-    /** The last occurrence due by [now] in [zone] whose grace ([GRACE_SECONDS]) has passed; null when none or the cron can't be read. */
+    /**
+     * The last occurrence due more than [GRACE_SECONDS] before [now] in [zone] (NIP-FB: "more than
+     * 3 hours ago", so not at exactly 3 hours); null when none or the cron can't be read.
+     */
     fun lastDue(
         zone: CronZone,
         now: Long,
-    ): Long? = expression()?.lastAtOrBefore(now - GRACE_SECONDS, zone)?.takeIf { it >= cronSetAt }
+    ): Long? = expression()?.lastAtOrBefore(now - GRACE_SECONDS - 1, zone)?.takeIf { it >= cronSetAt }
 
     /**
      * The occurrence that didn't run: the last one due ([lastDue], never one before the schedule

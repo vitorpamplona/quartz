@@ -184,8 +184,8 @@ class ScheduledTaskClaimsTest {
 
     @Test
     fun lastDueWaitsForTheGrace() {
-        assertEquals(six - day, daily.lastDue(newYork, six + 3 * hour - 1))
-        assertEquals(six, daily.lastDue(newYork, six + 3 * hour))
+        assertEquals(six - day, daily.lastDue(newYork, six + 3 * hour))
+        assertEquals(six, daily.lastDue(newYork, six + 3 * hour + 1))
         // Weekdays only, read on Sunday evening: Friday's.
         assertEquals(six + 2 * day, daily.withCron("0 6 * * 1-5", "America/New_York", 0).lastDue(newYork, six + 4 * day + 12 * hour))
     }
@@ -193,8 +193,8 @@ class ScheduledTaskClaimsTest {
     @Test
     fun aRunIsMissedOnlyAfterTheGrace() {
         val ranYesterday = daily.withRan(six - day + 600)
-        assertNull(ranYesterday.missedRun(newYork, six + 3 * hour - 1))
-        assertEquals(six, ranYesterday.missedRun(newYork, six + 3 * hour))
+        assertNull(ranYesterday.missedRun(newYork, six + 3 * hour))
+        assertEquals(six, ranYesterday.missedRun(newYork, six + 3 * hour + 1))
         assertNull(daily.withRan(six + 60).missedRun(newYork, six + 10 * hour))
         // No `ran` yet, off, or an unreadable cron: no warning.
         assertNull(daily.missedRun(newYork, six + 10 * day))
@@ -205,9 +205,9 @@ class ScheduledTaskClaimsTest {
     @Test
     fun anHourlyTaskIsMissedThreeHoursAfterItsLastRun() {
         val hourly = daily.withCron("0 * * * *", "America/New_York", 0).withRan(six + 5)
-        assertNull(hourly.missedRun(newYork, six + 3 * hour - 1))
         assertNull(hourly.missedRun(newYork, six + 3 * hour))
-        assertEquals(six + hour, hourly.missedRun(newYork, six + 4 * hour))
+        assertNull(hourly.missedRun(newYork, six + 4 * hour))
+        assertEquals(six + hour, hourly.missedRun(newYork, six + 4 * hour + 1))
     }
 
     @Test

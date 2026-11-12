@@ -141,23 +141,23 @@ class ObserverRunnerSiteTest {
         val yesterday = ObserverEdition("2026-11-10", "/2026-11-10.html", "a".repeat(64), printedAt = sixToday - 24 * hours + 60)
         val today = ObserverEdition("2026-11-11", "/2026-11-11.html", "b".repeat(64), printedAt = sixToday + 60)
 
-        // Within the grace: no warning yet.
-        assertNull(ObserverSite.missedRun(run, emptyList(), listOf(yesterday), newYork, sixToday + 3 * hours - 1))
-        // Three hours on, nothing on either site for this morning: missed, even with nothing ever printed.
-        assertEquals(sixToday, ObserverSite.missedRun(run, emptyList(), listOf(yesterday), newYork, sixToday + 3 * hours))
-        assertEquals(sixToday, ObserverSite.missedRun(run, emptyList(), emptyList(), newYork, sixToday + 3 * hours))
+        // Within the grace, up to exactly three hours: no warning yet.
+        assertNull(ObserverSite.missedRun(run, emptyList(), listOf(yesterday), newYork, sixToday + 3 * hours))
+        // More than three hours on, nothing on either site for this morning: missed, even with nothing ever printed.
+        assertEquals(sixToday, ObserverSite.missedRun(run, emptyList(), listOf(yesterday), newYork, sixToday + 3 * hours + 1))
+        assertEquals(sixToday, ObserverSite.missedRun(run, emptyList(), emptyList(), newYork, sixToday + 3 * hours + 1))
         // Printed on either site: fine.
-        assertNull(ObserverSite.missedRun(run, emptyList(), listOf(today), newYork, sixToday + 3 * hours))
-        assertNull(ObserverSite.missedRun(run, listOf(today), emptyList(), newYork, sixToday + 3 * hours))
+        assertNull(ObserverSite.missedRun(run, emptyList(), listOf(today), newYork, sixToday + 3 * hours + 1))
+        assertNull(ObserverSite.missedRun(run, listOf(today), emptyList(), newYork, sixToday + 3 * hours + 1))
         // A device's `ran` from before the runner was named still counts.
-        assertNull(ObserverSite.missedRun(run.withRan(sixToday + 60), emptyList(), emptyList(), newYork, sixToday + 3 * hours))
+        assertNull(ObserverSite.missedRun(run.withRan(sixToday + 60), emptyList(), emptyList(), newYork, sixToday + 3 * hours + 1))
         // Paused, or nothing due since the schedule was set: no warning.
-        assertNull(ObserverSite.missedRun(run.withEnabled(false, 0), emptyList(), emptyList(), newYork, sixToday + 3 * hours))
-        assertNull(ObserverSite.missedRun(run.withCron("0 6 * * *", "America/New_York", sixToday + 1), emptyList(), emptyList(), newYork, sixToday + 3 * hours))
+        assertNull(ObserverSite.missedRun(run.withEnabled(false, 0), emptyList(), emptyList(), newYork, sixToday + 3 * hours + 1))
+        assertNull(ObserverSite.missedRun(run.withCron("0 6 * * *", "America/New_York", sixToday + 1), emptyList(), emptyList(), newYork, sixToday + 3 * hours + 1))
 
         // Without a runner it is NIP-FB's, from `ran`, whatever the sites say.
         val ranYesterday = daily.withRan(sixToday - 24 * hours + 600)
-        assertEquals(sixToday, ObserverSite.missedRun(ranYesterday, listOf(today), listOf(today), newYork, sixToday + 3 * hours))
-        assertNull(ObserverSite.missedRun(daily, emptyList(), emptyList(), newYork, sixToday + 3 * hours))
+        assertEquals(sixToday, ObserverSite.missedRun(ranYesterday, listOf(today), listOf(today), newYork, sixToday + 3 * hours + 1))
+        assertNull(ObserverSite.missedRun(daily, emptyList(), emptyList(), newYork, sixToday + 3 * hours + 1))
     }
 }
