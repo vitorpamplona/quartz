@@ -137,7 +137,7 @@ class ObserverRunnerSiteTest {
     @Test
     fun theMissedRunWarningReadsTheSitesWhenARunnerIsNamed() {
         val daily = ScheduledTask.create("observer", "observer", "0 6 * * *", "America/New_York", setAt = 0)
-        val run = daily.withRunner(assistant.pubKey)
+        val run = daily.withRunner(assistant.pubKey, 0)
         val yesterday = ObserverEdition("2026-11-10", "/2026-11-10.html", "a".repeat(64), printedAt = sixToday - 24 * hours + 60)
         val today = ObserverEdition("2026-11-11", "/2026-11-11.html", "b".repeat(64), printedAt = sixToday + 60)
 

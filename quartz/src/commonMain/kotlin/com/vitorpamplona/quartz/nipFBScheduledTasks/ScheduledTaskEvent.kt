@@ -62,20 +62,28 @@ class ScheduledTaskEvent(
     /** The value of every public `p`: the task's runners (NIP-FB, Runner). More than one is a conflict. */
     fun runners(): List<String> = tags.runnerKeys()
 
-    /** The one runner the task names, or null (none, a conflict, or a `p` that isn't a key); see [ScheduledTask.runner]. */
-    fun runner(): HexKey? = ScheduledTask(tags).runner
+    /**
+     * The one runner the task names, or null: none, a conflict, or a `p` that isn't a lowercase
+     * hex key or is the author's own ([ScheduledTask.runnerFor]).
+     */
+    fun runner(): HexKey? = ScheduledTask(tags).runnerFor(pubKey)
 
     /**
      * The private tags are NIP-44 between the author and the runner when one is named, else the
-     * author's to themselves. The author tries each key in a public `p` (a conflict was encrypted
-     * by some client to one of them), then itself; a key in a public `p` reads with the author as
-     * peer; nobody else reads them.
+     * author's to themselves. The author tries first the peer NIP-FB's writers encrypt to
+     * ([ScheduledTask.privateTagsPeer]: the valid runner, else itself), then, for what other
+     * writers did with a conflict or an odd `p`, every other key in a public `p`, then itself. A
+     * key in a public `p` reads with the author as peer; nobody else reads them.
      */
     override fun privateTagsPeers(reader: HexKey): List<HexKey> {
-        val runners = tags.runnerKeys()
+        val task = ScheduledTask(tags)
+        val runners = task.runners
         if (runners.isEmpty()) return super.privateTagsPeers(reader)
         return when (reader) {
-            pubKey -> (runners.filter { it.length == 64 && Hex.isHex64(it) && it != pubKey } + pubKey).distinct()
+            pubKey -> {
+                val others = runners.filter { Hex.isHexKey(it) && it.lowercase() != pubKey }
+                (listOf(task.privateTagsPeer(pubKey)) + others + pubKey).distinct()
+            }
             in runners -> listOf(pubKey)
             else -> emptyList()
         }

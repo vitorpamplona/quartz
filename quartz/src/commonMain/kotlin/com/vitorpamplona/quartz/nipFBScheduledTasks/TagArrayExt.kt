@@ -49,7 +49,8 @@ fun TagArray.params(): List<ParamTag> = mapNotNull(ParamTag::parse)
 fun TagArray.params(name: String): List<ParamTag> = mapNotNull { tag -> if (ParamTag.isTag(tag, name)) ParamTag.parse(tag) else null }
 
 /**
- * The value of every `p` tag, well-formed or not: a NIP-FB task's runners, read from the PUBLIC
- * tags only. More than one is a conflict, and nobody runs the task.
+ * The value of every `p` tag with a value, well-formed or not (blank included): a NIP-FB task's
+ * runners, read from the PUBLIC tags only. Any of them stops the author's devices; more than one
+ * is a conflict, and nobody runs the task.
  */
-fun TagArray.runnerKeys(): List<String> = mapNotNull { tag -> if (tag.has(1) && tag[0] == PTag.TAG_NAME && tag[1].isNotBlank()) tag[1] else null }
+fun TagArray.runnerKeys(): List<String> = mapNotNull { tag -> if (tag.has(1) && tag[0] == PTag.TAG_NAME) tag[1] else null }

@@ -32,7 +32,7 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ParamTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.RanTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
-import com.vitorpamplona.quartz.utils.Hex
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * A person's recurring task (NIP-FB, [ScheduledTaskEvent]) as its two tag lists: [publicTags]
@@ -50,7 +50,8 @@ import com.vitorpamplona.quartz.utils.Hex
  * as read, the ones this client doesn't understand included. A public `p` names a [runner]:
  * another key that runs the task for the author, to which the private tags are encrypted, and
  * then no device of the author runs it on schedule. More than one `p` is a conflict
- * ([hasRunnerConflict]): nobody runs it.
+ * ([hasRunnerConflict]), and so is one that isn't a lowercase hex key of someone other than the
+ * author ([runnerFor]): the author's devices still stop, and nobody runs it.
  */
 @Immutable
 class ScheduledTask(
@@ -78,7 +79,7 @@ class ScheduledTask(
     val ran: Long? get() = merged.ran()
 
     /** Every `param`: the private ones first, then the public ones, each side in its order. */
-    val params: List<ParamTag> get() = merged.params()
+    val params: List<ParamTag> by lazy { merged.params() }
 
     /** The `param`s named [name], in order (private first). */
     fun params(name: String): List<ParamTag> = merged.params(name)
@@ -90,10 +91,10 @@ class ScheduledTask(
     fun paramValues(name: String): List<String>? = param(name)?.values
 
     /**
-     * The value of every public `p` tag. NIP-FB reads the runner from the public tags only; a
-     * private `p` is just a tag this client keeps.
+     * The value of every public `p` tag, valid or not. NIP-FB reads the runner from the public
+     * tags only; a private `p` is just a tag this client keeps.
      */
-    val runners: List<String> get() = publicTags.runnerKeys()
+    val runners: List<String> by lazy { publicTags.runnerKeys() }
 
     /** Whether the task names a runner at all (one `p` or more): then no device of the author runs it on schedule. */
     val namesRunner: Boolean get() = runners.isNotEmpty()
@@ -103,16 +104,21 @@ class ScheduledTask(
 
     /**
      * The one key that runs the task for its author, or null when it names none, more than one
-     * ([hasRunnerConflict]), or a `p` that isn't a key.
+     * ([hasRunnerConflict]), or a `p` that isn't a lowercase hex key ([isRunnerKey]). The tags
+     * don't say who the author is: [runnerFor] also refuses the author's own key.
      */
-    val runner: HexKey? get() = runners.singleOrNull()?.takeIf { it.length == 64 && Hex.isHex64(it) }
+    val runner: HexKey? by lazy { runners.singleOrNull()?.takeIf(::isRunnerKey) }
+
+    /** The [runner] of [author]'s task: null also when the only `p` is [author] itself, which names nobody who runs it. */
+    fun runnerFor(author: HexKey): HexKey? = runner?.takeIf { it != author }
 
     /**
      * The other key of the NIP-44 conversation the private tags are encrypted in, for [author]:
-     * the [runner] when there is one, else the author itself (NIP-51's encrypt-to-self). A task
-     * with a runner conflict is encrypted to self: nobody runs it, and only the author must read it.
+     * the runner ([runnerFor]) when there is one, else the author itself (NIP-51's
+     * encrypt-to-self). A task with a runner conflict, or a `p` that names nobody, is encrypted to
+     * self: nobody runs it, and only the author must read it. The author decrypts with the same key.
      */
-    fun privateTagsPeer(author: HexKey): HexKey = runner ?: author
+    fun privateTagsPeer(author: HexKey): HexKey = runnerFor(author) ?: author
 
     /** The schedule, or null when [cron] is absent or outside NIP-FB's subset: then it never runs. */
     fun expression(): CronExpression? = parsed
@@ -213,15 +219,30 @@ class ScheduledTask(
     fun withoutParam(name: String) = without { ParamTag.isTag(it, name) }
 
     /**
-     * This task run by [runner], or by the author's own devices when it is null: every public `p`
-     * goes and, for a runner, one public `["p", runner]` is added. A private `p` isn't a runner and
-     * stays. The event built from it ([ScheduledTaskEvent.update]) encrypts the private tags to the
-     * new peer ([privateTagsPeer]): the runner, or the author when cleared.
+     * This task run by [runner], or by the author's own devices when it is null, changed at [now]:
+     * every public `p` goes and, for a runner, one public `["p", runner]` is added. A private `p`
+     * isn't a runner and stays. The event built from it ([ScheduledTaskEvent.update]) encrypts the
+     * private tags to the new peer ([privateTagsPeer]): the runner, or the author when cleared.
+     *
+     * Adding, changing or removing the runner restarts the schedule from [now] (`cron`'s set
+     * time, as [withEnabled] does on resume): whoever runs it from now on never claims, runs or
+     * reports an occurrence that was due while the other one did. Without it, a device would print
+     * again the morning the runner just printed, and a runner would print the one a device has
+     * claimed. A task that already names exactly [runner] (or none, for null) comes back as is.
      */
-    fun withRunner(runner: HexKey?): ScheduledTask {
+    fun withRunner(
+        runner: HexKey?,
+        now: Long,
+    ): ScheduledTask {
+        if (if (runner == null) runners.isEmpty() else runners.size == 1 && runners[0] == runner) return this
         val public = publicTags.filterNot(::isPublicRunnerTag)
-        return ScheduledTask((if (runner != null) public + arrayOf(PTag.assemble(runner, null)) else public).toTypedArray(), privateTags)
+        val moved = ScheduledTask((if (runner != null) public + arrayOf(PTag.assemble(runner, null)) else public).toTypedArray(), privateTags)
+        val cron = cronTag ?: return moved
+        return moved.replacing(CronTag::isTag, cron.copy(setAt = now).toTagArray())
     }
+
+    @Deprecated("Use withRunner(runner, now): a runner change restarts the schedule.", ReplaceWith("withRunner(runner, now)"), level = DeprecationLevel.HIDDEN)
+    fun withRunner(runner: HexKey?): ScheduledTask = withRunner(runner, TimeUtils.now())
 
     private fun isPublicRunnerTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == PTag.TAG_NAME
 
@@ -296,6 +317,17 @@ class ScheduledTask(
     override fun toString() = "ScheduledTask(task=$task, paused=$paused, cron=$cron, tz=$tz, claim=$claim, ran=$ran, runners=${runners.size}, params=${params.map { it.name }})"
 
     companion object {
+        /**
+         * Whether a `p` can name a runner: a pubkey as NIP-01 writes it, 64 lowercase hex
+         * characters. Any other `p` (uppercase, an npub, junk) still stops the author's devices,
+         * and nobody runs the task.
+         */
+        fun isRunnerKey(value: String): Boolean {
+            if (value.length != 64) return false
+            for (c in value) if (c !in '0'..'9' && c !in 'a'..'f') return false
+            return true
+        }
+
         /** Every day at 7:00: only the suggestion. */
         const val DEFAULT_CRON = "0 7 * * *"
 

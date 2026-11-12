@@ -78,11 +78,25 @@ abstract class PrivateTagArrayEvent(
                 return PrivateTagsInContent.decrypt(content, signer, peer)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                // Only a failed decryption means "try the next peer". The signer's own answers
+                // (the user rejected it, it timed out, it needs the foreground, it's gone) hold
+                // for every peer: asking again would prompt the user once per peer.
+                if (!isWrongPeer(e)) throw e
                 failure = e
             }
         }
         throw failure ?: SignerExceptions.UnauthorizedDecryptionException()
     }
+
+    /**
+     * Whether [e], thrown while decrypting with one peer, may just mean the content was encrypted
+     * to another: the signer couldn't decrypt it ([SignerExceptions.CouldNotPerformException],
+     * what every signer answers to a MAC failure), or the result didn't parse.
+     */
+    private fun isWrongPeer(e: Exception): Boolean =
+        e !is SignerExceptions ||
+            e is SignerExceptions.CouldNotPerformException ||
+            e is SignerExceptions.UnauthorizedDecryptionException
 
     suspend fun privateTags(signer: NostrSigner): TagArray? {
         if (!canReadPrivateTags(signer.pubKey)) {

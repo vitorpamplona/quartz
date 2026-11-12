@@ -251,10 +251,24 @@ object ScheduledTaskClaims {
         /** No occurrence is due: none yet, or none since the schedule was set or resumed. */
         NOT_DUE,
 
-        /** The occurrence's result already exists (the task says how to tell): nothing to run. */
+        /**
+         * The occurrence's result already exists (the task says how to tell), or a device of the
+         * author finished its claim on it (`ran`): nothing to run.
+         */
         ALREADY_DONE,
 
-        /** This runner already ran the occurrence ([OwnRun.ENDED]): not again on its own. */
+        /**
+         * A device of the author claimed the occurrence less than [STALE_CLAIM_SECONDS] ago and
+         * hasn't finished it: it may be running it now. The runner doesn't run it too. A runner
+         * named after the claim normally sees [NOT_DUE] instead (naming it restarts the schedule,
+         * [ScheduledTask.withRunner]); this covers a writer that didn't.
+         */
+        CLAIMED_BY_DEVICE,
+
+        /**
+         * This runner already started the occurrence ([OwnRun.ENDED], or [OwnRun.DIED]: a run that
+         * never ended may have spent the author's money): not again on its own.
+         */
         ATTEMPTED_HERE,
 
         /** Run the occurrence. */
@@ -277,11 +291,15 @@ object ScheduledTaskClaims {
      * The occurrence is the device's ([occurrence]): the last one due, never one due before the
      * schedule was set or resumed, and only until the next one is due (a missed one isn't run
      * after that). It runs when the task names exactly this runner, isn't paused, is [taskName]
-     * with a readable `cron` and zone, the occurrence's result doesn't exist yet ([alreadyDone],
-     * e.g. the Observer's `ObserverSite.alreadyPrinted` over the reader's and the runner's
-     * sites), and this runner didn't already end a run of it ([ownRun], as for a device).
+     * with a readable `cron` and zone, this runner never started a run of it ([ownRun]: unlike a
+     * device, a runner doesn't resume one that died, since it can't tell whether that run already
+     * spent anything; a start that spent nothing is the caller's to record as [OwnRun.NONE]), no
+     * device of the author holds a live or finished claim on it ([RunnerVerdict.CLAIMED_BY_DEVICE],
+     * [RunnerVerdict.ALREADY_DONE]), and its result doesn't exist yet ([alreadyDone], e.g. the
+     * Observer's `ObserverSite.alreadyPrinted` over the reader's and the runner's sites).
      *
-     * Call [checkRunner] on the event first: being named in `p` is not enough.
+     * Call [checkRunner] on the event first: being named in `p` is not enough. [task] is the
+     * author's newest event, read right before spending.
      */
     fun decideAsRunner(
         task: ScheduledTask,
@@ -296,7 +314,12 @@ object ScheduledTaskClaims {
         if (task.runner != runner) return RunnerDecision(RunnerVerdict.NOT_THIS_RUNNER, null)
         if (task.paused || !task.isReadable() || task.task != taskName) return RunnerDecision(RunnerVerdict.NOT_RUNNABLE, null)
         val due = occurrence(task, zone, now) ?: return RunnerDecision(RunnerVerdict.NOT_DUE, null)
-        if (ownRun(due) == OwnRun.ENDED) return RunnerDecision(RunnerVerdict.ATTEMPTED_HERE, due)
+        if (ownRun(due) != OwnRun.NONE) return RunnerDecision(RunnerVerdict.ATTEMPTED_HERE, due)
+        val claim = task.claim
+        if (claim != null && claim.due == due) {
+            if (isFinished(task)) return RunnerDecision(RunnerVerdict.ALREADY_DONE, due)
+            if (!takeoverAllowed(task, now)) return RunnerDecision(RunnerVerdict.CLAIMED_BY_DEVICE, due)
+        }
         if (alreadyDone(due)) return RunnerDecision(RunnerVerdict.ALREADY_DONE, due)
         return RunnerDecision(RunnerVerdict.RUN, due)
     }
@@ -309,7 +332,7 @@ object ScheduledTaskClaims {
         /** Authored by someone other than the owner this runner serves: anyone can tag a runner. */
         NOT_OWNER,
 
-        /** Its public `p` isn't exactly this runner (another key, none, or more than one). */
+        /** Its public `p` isn't exactly this runner (another key, none, more than one, or the author's own). */
         NOT_THIS_RUNNER,
 
         /** Its id or signature doesn't verify. */
@@ -320,7 +343,8 @@ object ScheduledTaskClaims {
      * The check a runner makes before it reads or runs [event] (NIP-FB, Runner: "being named in
      * `p` is not enough, or anyone could spend its credentials"): its author is [expectedOwner],
      * the owner the runner serves by its own records; its public `p` tags are exactly one, this
-     * [runner]; and its id and signature verify. Only [RunnerCheck.OK] may run.
+     * [runner] (as [ScheduledTaskEvent.runner] reads it: lowercase hex, not the author); and its
+     * id and signature verify. Only [RunnerCheck.OK] may run.
      */
     fun checkRunner(
         event: ScheduledTaskEvent,
@@ -328,8 +352,7 @@ object ScheduledTaskClaims {
         expectedOwner: HexKey,
     ): RunnerCheck {
         if (event.pubKey != expectedOwner) return RunnerCheck.NOT_OWNER
-        val named = event.runners()
-        if (named.size != 1 || named[0] != runner) return RunnerCheck.NOT_THIS_RUNNER
+        if (event.runner() != runner) return RunnerCheck.NOT_THIS_RUNNER
         if (!event.verify()) return RunnerCheck.BAD_SIGNATURE
         return RunnerCheck.OK
     }

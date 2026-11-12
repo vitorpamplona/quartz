@@ -235,7 +235,7 @@ object ObserverSite {
     /**
      * Whether [event] is the Observer site [runner] publishes for [reader]: a kind 35128 named
      * site by [runner] with `d` = [D_TAG] and a `p` naming [reader]. Only the runner the reader's
-     * own signed schedule names counts ([ScheduledTask.runner]): a site by any other key that tags
+     * own signed schedule names counts ([com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent.runner]): a site by any other key that tags
      * the reader is ignored, and so is the runner's site for someone else.
      */
     fun isRunnerSiteFor(
