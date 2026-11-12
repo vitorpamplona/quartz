@@ -314,10 +314,15 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   ]) }
 ```
 
-- **Choosing it.** "Who prints: my devices / my Assistant" in the schedule settings of both
-  apps. Choosing the Assistant adds the public `p` and re-encrypts the private tags to it (NIP-44
-  between two keys: both read them); choosing devices removes `p` and encrypts to self. While
-  `p` is set no device claims or prints on schedule; manual prints still work everywhere.
+- **Choosing it (2026-11-12: only the provider's app).** A runner is named only in the app of
+  the provider that runs it, Brainstorm for its Assistant ("Who prints: my devices / my
+  Brainstorm Assistant", offered only when the reader has an Assistant there), because only the
+  provider knows whether its runner can print. Naming it adds the public `p` and re-encrypts the
+  private tags to it (NIP-44 between two keys: both read them). Every other client, Amethyst
+  included, never writes a runner: it shows "Printed by <runner>" and offers only "Print from
+  my devices instead", which removes `p` and encrypts to self (also the only fix it offers for
+  two `p` or one that isn't a key). While `p` is set no device claims or prints on schedule;
+  manual prints still work everywhere.
 - **Its keys.** The Assistant prints with its own NIP-FA list (kind 12000 signed by the
   Assistant, encrypted to itself), never the reader's. The reader gives it a key from the AI
   key screen ("Give to Assistant" / "Take back"), and the apps show which keys each holds.
@@ -335,6 +340,10 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   runner the reader's own signed event names counts.
 - **Already printed?** The runner reads the reader's site and its own before printing, with
   the rule above, so a manual print that morning still covers the run.
+- **Never twice.** The runner keeps its own record of the occurrences it started. A run that
+  started and never ended (the worker died, or the run failed partway) counts as done: the
+  runner can't tell whether it reached the model, so it never risks paying for that morning
+  again on its own. Only a start that spent nothing (the ranking wasn't ready) is tried again.
 - **Is it running?** The runner can't write `claim` or `ran` (it can't sign the reader's
   event). The apps judge from its site instead: "Last printed by your Assistant, <time> ago"
   from the newest `printedAt`, and the 3-hour missed-run warning when the newest due occurrence
@@ -369,9 +378,10 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   `ScheduledTaskClaims.decideAsRunner` and `checkRunner`; `ObserverParams` (`model`, `key`),
   `ObserverSite.build(forReader)`, `runnerSiteFilter`/`isRunnerSiteFor`/`runnerSite`, and the
   two-site `alreadyPrinted`, `lastPrinted` and `missedRun`.
-- Amethyst and Brainstorm-UI: the who-prints choice, settings read and written through the
-  event, the two-site reader and the status line. The Give/Take back key screen is
-  Brainstorm's, through the server endpoints, which answer only Brainstorm logins; Amethyst
-  can name the Assistant as runner and read its site, and sends the reader to Brainstorm to
-  give it a key.
-- brainstorm_server: the runner, the key endpoints, the owner checks and their tests.
+- Brainstorm-UI: the who-prints choice and the Give/Take back key screen, through the server
+  endpoints, which answer only Brainstorm logins. Amethyst: shows the runner and can only clear
+  it, and sends the reader to Brainstorm to name it or give it a key. Both: settings read and
+  written through the event, the two-site reader and the status line.
+- brainstorm_server: the key endpoints, the worker's internal sign/decrypt endpoints, the owner
+  checks and their tests. The worker itself is NosFabrica's the-nostr-observer `runner/`,
+  deployed beside brainstorm_server; it holds no nsec.
