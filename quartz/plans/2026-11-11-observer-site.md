@@ -181,8 +181,9 @@ found it, and new tags go private. Amethyst keeps everything but `d` (and a runn
   writes nothing (no new event, no new set time). A time that can't be said once in the
   schedule's zone that day (skipped on the device's clock, or repeated in the zone) is refused.
 - `cron`'s fourth value is when the schedule was last set (unix seconds, 0 when absent):
-  changing `cron` or removing `["paused"]` sets it to now, and nothing due before it is ever
-  claimed, caught up or reported missed.
+  changing `cron`, removing `["paused"]`, or adding, changing or removing the runner's `p`
+  (2026-11-12, below) sets it to now, and nothing due before it is ever claimed, caught up or
+  reported missed.
 - `["paused"]` stops it for every device. Other tags are kept as they are.
 - `claim` is the latest claimed occurrence: its due time (the exact instant the cron runs it,
   compared for equality), the claiming install's random id, its name, and when it was claimed;
@@ -318,11 +319,19 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   the provider that runs it, Brainstorm for its Assistant ("Who prints: my devices / my
   Brainstorm Assistant", offered only when the reader has an Assistant there), because only the
   provider knows whether its runner can print. Naming it adds the public `p` and re-encrypts the
-  private tags to it (NIP-44 between two keys: both read them). Every other client, Amethyst
+  private tags to it (NIP-44 between two keys: both read them). Naming, moving or clearing the
+  runner restarts the schedule (`cron`'s set time = now, as resuming does,
+  `ScheduledTask.withRunner(runner, now)`): otherwise clearing it at 10:00 hands the devices the
+  06:00 the Assistant already printed, and naming it while a device prints 06:00 hands the
+  Assistant that same morning. Every other client, Amethyst
   included, never writes a runner: it shows "Printed by <runner>" and offers only "Print from
   my devices instead", which removes `p` and encrypts to self (also the only fix it offers for
   two `p` or one that isn't a key). While `p` is set no device claims or prints on schedule;
-  manual prints still work everywhere.
+  manual prints still work everywhere. Only a public `p` counts. One that isn't a lowercase hex
+  key, or is the reader's own, stops the devices too and nobody prints (the missed-run warning
+  says so); the private tags then go to self, like a conflict's. The reader decrypts with the one
+  valid `p`, else self, and Quartz tries that peer first; a signer that refuses or times out is
+  asked once, not once per `p`.
 - **Its keys.** The Assistant prints with its own NIP-FA list (kind 12000 signed by the
   Assistant, encrypted to itself), never the reader's. The reader gives it a key from the AI
   key screen ("Give to Assistant" / "Take back"), and the apps show which keys each holds.
@@ -343,7 +352,15 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
 - **Never twice.** The runner keeps its own record of the occurrences it started. A run that
   started and never ended (the worker died, or the run failed partway) counts as done: the
   runner can't tell whether it reached the model, so it never risks paying for that morning
-  again on its own. Only a start that spent nothing (the ranking wasn't ready) is tried again.
+  again on its own (`decideAsRunner` treats `OwnRun.DIED` as `ATTEMPTED_HERE`). Only a start that
+  spent nothing (the ranking wasn't ready) is tried again, recorded as no start.
+- **The runner's binding rules (NIP-FB, Runner).** It reads the reader's newest event by the
+  same quorum as devices (more than half of the reader's NIP-65 write relays), by author and
+  `d`, never by `#p`, so a version that dropped `p` wins; and reads it again right before
+  spending. It prints only the latest due occurrence until the next is due, never one before
+  `cron` was set, never while paused, and never one a device holds a claim on that is under an
+  hour old and unfinished (`RunnerVerdict.CLAIMED_BY_DEVICE`) or finished (`ALREADY_DONE`). A
+  task naming it that it can't decrypt, it doesn't print.
 - **Is it running?** The runner can't write `claim` or `ran` (it can't sign the reader's
   event). The apps judge from its site instead: "Last printed by your Assistant, <time> ago"
   from the newest `printedAt`, and the 3-hour missed-run warning when the newest due occurrence
@@ -377,7 +394,16 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   runner through `PrivateTagArrayEvent.privateTagsPeers`), `ScheduledTaskClaims.Decision.RUNNER_NAMED`,
   `ScheduledTaskClaims.decideAsRunner` and `checkRunner`; `ObserverParams` (`model`, `key`),
   `ObserverSite.build(forReader)`, `runnerSiteFilter`/`isRunnerSiteFor`/`runnerSite`, and the
-  two-site `alreadyPrinted`, `lastPrinted` and `missedRun`.
+  two-site `alreadyPrinted`, `lastPrinted` and `missedRun`. After the 2026-11-12 audit:
+  `withRunner(runner, now)` restarts the schedule (the one-argument form is a hidden deprecated
+  overload); `ScheduledTask.runner` is a lowercase hex key only, `runnerFor(author)` also refuses
+  the author's own, `isRunnerKey`; `RunnerVerdict.CLAIMED_BY_DEVICE`; a runner never resumes a
+  run that died; `PrivateTagArrayEvent.decrypt` stops at the signer's first refusal or timeout,
+  and `ScheduledTaskEvent.privateTagsPeers` puts the writer's peer first; `runners`, `runner`
+  and `params` are computed once.
+  Release note: the new enum values `ScheduledTaskClaims.Decision.RUNNER_NAMED` and
+  `RunnerVerdict.CLAIMED_BY_DEVICE` break a dependent's exhaustive `when` over them at source
+  level (the-nostr-observer's runner has one over `RunnerVerdict`).
 - Brainstorm-UI: the who-prints choice and the Give/Take back key screen, through the server
   endpoints, which answer only Brainstorm logins. Amethyst: shows the runner and can only clear
   it, and sends the reader to Brainstorm to name it or give it a key. Both: settings read and
