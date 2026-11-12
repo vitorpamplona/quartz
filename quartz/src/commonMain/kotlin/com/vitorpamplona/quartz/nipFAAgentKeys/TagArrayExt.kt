@@ -24,11 +24,22 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nipFAAgentKeys.tags.AgentKeyTag
 
-/** Every well-formed `key` tag, in the user's order of preference. */
+/**
+ * Every well-formed `key` tag, in the user's order of preference, those NIP-FA's readers ignore
+ * (a URL that breaks its rule) included: what a rewrite reorders and keeps. To use a key, or to
+ * say which one is the default, read [usableAgentKeys].
+ */
 fun TagArray.agentKeys() = mapNotNull(AgentKeyTag::parse)
 
-/** The first `key` tag that has a URL: the preferred key, the one clients use (NIP-FA). */
-fun TagArray.preferredAgentKey() = fastFirstNotNullOfOrNull(AgentKeyTag::parse)
+/**
+ * The `key` tags NIP-FA's readers use, in order: the ones with a URL a key may be sent to
+ * ([AgentKeyTag.isUrlAllowed]: `https`, or `http` to a loopback host or with no key). The first
+ * is the default; a key over plain `http` to another machine is ignored, wherever it stands.
+ */
+fun TagArray.usableAgentKeys() = mapNotNull { tag -> AgentKeyTag.parse(tag)?.takeIf { it.isUrlAllowed() } }
+
+/** The first key NIP-FA's readers use ([usableAgentKeys]): the default, the one clients send. */
+fun TagArray.preferredAgentKey() = fastFirstNotNullOfOrNull { tag -> AgentKeyTag.parse(tag)?.takeIf { it.isUrlAllowed() } }
 
 /** Everything but the `key` tags, kept as-is when the keys are replaced. */
 fun TagArray.withoutAgentKeys() = filterNot(AgentKeyTag::isTag).toTypedArray()

@@ -266,6 +266,20 @@ class AgentKeyEventTest {
     }
 
     @Test
+    fun readersIgnoreAKeyWhoseUrlBreaksTheRule() {
+        // Written by another client: a key over plain http to another machine, first.
+        val cleartext = AgentKeyTag("sk-cleartext", "http://evil.example/v1")
+        val local = AgentKeyTag("", "http://localhost:11434/v1")
+        val tags = arrayOf(AgentKeyTag.assemble(cleartext), AgentKeyTag.assemble(local), AgentKeyTag.assemble(openRouter))
+        // The default is the first key a reader may use, never the cleartext one.
+        assertEquals(local, tags.preferredAgentKey())
+        assertEquals(listOf(local, openRouter), tags.usableAgentKeys())
+        // A rewrite still sees, and keeps, every tag as read.
+        assertEquals(listOf(cleartext, local, openRouter), tags.agentKeys())
+        assertNull(arrayOf(AgentKeyTag.assemble(cleartext)).preferredAgentKey())
+    }
+
+    @Test
     fun urlRules() {
         assertEquals("https://api.example.com/v1", AgentKeyTag("k", "https://api.example.com/v1/").apiRoot())
         assertEquals("https://api.example.com/v1/", AgentKeyTag("k", "https://api.example.com/v1//").apiRoot())

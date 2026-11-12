@@ -48,7 +48,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * [["key", "sk-or-v1-…", "https://openrouter.ai/api/v1"]]
  * ```
  *
- * Clients use the first `key` tag that has a URL; any others follow in order of preference. Rewrites
+ * Clients use the first `key` tag whose URL NIP-FA allows ([usableKeys]); any others follow in order
+ * of preference, and a key over plain `http` to another machine is ignored. Rewrites
  * reorder and remove the tag arrays they read and keep every private tag they don't know
  * ([replaceKeys]), and never write over content they couldn't read. It needs no public tags; a
  * NIP-70 `["-"]` is optional (pass it through the builder's initializer).
@@ -73,10 +74,16 @@ class AgentKeyEvent(
 
     override fun dTag() = FIXED_D_TAG
 
-    /** Every key, in the user's order of preference; `null` when [signer] can't decrypt (not the author, or refused). */
+    /**
+     * Every well-formed key, in the user's order of preference, the ones readers ignore included
+     * (see [usableKeys]); `null` when [signer] can't decrypt (not the author, or refused).
+     */
     suspend fun agentKeys(signer: NostrSigner): List<AgentKeyTag>? = privateTags(signer)?.agentKeys()
 
-    /** The key clients use; `null` when there is none or [signer] can't decrypt. */
+    /** The keys NIP-FA's readers use ([usableAgentKeys]), the default first; `null` when [signer] can't decrypt. */
+    suspend fun usableKeys(signer: NostrSigner): List<AgentKeyTag>? = privateTags(signer)?.usableAgentKeys()
+
+    /** The key clients use, the first [usableKeys]; `null` when there is none or [signer] can't decrypt. */
     suspend fun preferredKey(signer: NostrSigner): AgentKeyTag? = privateTags(signer)?.preferredAgentKey()
 
     companion object {
