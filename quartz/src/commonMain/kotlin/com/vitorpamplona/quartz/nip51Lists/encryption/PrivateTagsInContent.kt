@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip51Lists.encryption
 
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
@@ -38,9 +39,19 @@ class PrivateTagsInContent {
         suspend fun decrypt(
             content: String,
             signer: NostrSigner,
+        ): TagArray = decrypt(content, signer, signer.pubKey)
+
+        /**
+         * The private tags in [content], encrypted between [signer] and [peer]: the signer itself
+         * for a NIP-51 list, or the other key of a conversation, such as a NIP-FB task's runner.
+         */
+        suspend fun decrypt(
+            content: String,
+            signer: NostrSigner,
+            peer: HexKey,
         ): TagArray {
             if (content.isBlank()) return emptyArray()
-            val json = signer.decrypt(content, signer.pubKey)
+            val json = signer.decrypt(content, peer)
             return try {
                 decode(json)
             } catch (e: Exception) {

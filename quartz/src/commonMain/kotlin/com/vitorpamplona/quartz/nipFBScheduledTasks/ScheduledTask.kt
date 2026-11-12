@@ -21,14 +21,18 @@
 package com.vitorpamplona.quartz.nipFBScheduledTasks
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ParamTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.RanTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
+import com.vitorpamplona.quartz.utils.Hex
 
 /**
  * A person's recurring task (NIP-FB, [ScheduledTaskEvent]) as its two tag lists: [publicTags]
@@ -41,6 +45,12 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
  * latest [claim] and when that claimed occurrence finished ([ran]). A [cron] this client can't
  * read ([expression] null), or one without a zone ([tz] null; one this platform doesn't know is the
  * client's to check), is kept as written and never run.
+ *
+ * The task's options are its [params] (`["param", name, values…]`), ordered and repeatable, kept
+ * as read, the ones this client doesn't understand included. A public `p` names a [runner]:
+ * another key that runs the task for the author, to which the private tags are encrypted, and
+ * then no device of the author runs it on schedule. More than one `p` is a conflict
+ * ([hasRunnerConflict]): nobody runs it.
  */
 @Immutable
 class ScheduledTask(
@@ -66,6 +76,43 @@ class ScheduledTask(
 
     /** Unix seconds: when the claimed occurrence finished (ran, or skipped as already done). */
     val ran: Long? get() = merged.ran()
+
+    /** Every `param`: the private ones first, then the public ones, each side in its order. */
+    val params: List<ParamTag> get() = merged.params()
+
+    /** The `param`s named [name], in order (private first). */
+    fun params(name: String): List<ParamTag> = merged.params(name)
+
+    /** The first `param` named [name] (private first), or null. */
+    fun param(name: String): ParamTag? = params(name).firstOrNull()
+
+    /** The values of the first `param` named [name], or null when there is none. */
+    fun paramValues(name: String): List<String>? = param(name)?.values
+
+    /**
+     * The value of every public `p` tag. NIP-FB reads the runner from the public tags only; a
+     * private `p` is just a tag this client keeps.
+     */
+    val runners: List<String> get() = publicTags.runnerKeys()
+
+    /** Whether the task names a runner at all (one `p` or more): then no device of the author runs it on schedule. */
+    val namesRunner: Boolean get() = runners.isNotEmpty()
+
+    /** More than one public `p`: NIP-FB's runner conflict. Nobody runs the task. */
+    val hasRunnerConflict: Boolean get() = runners.size > 1
+
+    /**
+     * The one key that runs the task for its author, or null when it names none, more than one
+     * ([hasRunnerConflict]), or a `p` that isn't a key.
+     */
+    val runner: HexKey? get() = runners.singleOrNull()?.takeIf { it.length == 64 && Hex.isHex64(it) }
+
+    /**
+     * The other key of the NIP-44 conversation the private tags are encrypted in, for [author]:
+     * the [runner] when there is one, else the author itself (NIP-51's encrypt-to-self). A task
+     * with a runner conflict is encrypted to self: nobody runs it, and only the author must read it.
+     */
+    fun privateTagsPeer(author: HexKey): HexKey = runner ?: author
 
     /** The schedule, or null when [cron] is absent or outside NIP-FB's subset: then it never runs. */
     fun expression(): CronExpression? = parsed
@@ -119,6 +166,72 @@ class ScheduledTask(
         } else {
             ScheduledTask(publicTags, privateTags + arrayOf(tag))
         }
+    }
+
+    /**
+     * This task with the `param`s named [name] set to one `param` holding [values]: it takes the
+     * place of the first one (private side first, as readers see them) and every other one of
+     * that name goes, on either side. With none, it is added to the private side. Every other
+     * tag, unknown params included, stays where it was.
+     */
+    fun withParam(
+        name: String,
+        values: List<String>,
+    ): ScheduledTask {
+        val isName = { tag: Array<String> -> ParamTag.isTag(tag, name) }
+        val tag = ParamTag.assemble(name, values)
+        return when {
+            privateTags.any(isName) -> ScheduledTask(publicTags.filterNot(isName).toTypedArray(), swap(privateTags, isName, tag))
+            publicTags.any(isName) -> ScheduledTask(swap(publicTags, isName, tag), privateTags)
+            else -> ScheduledTask(publicTags, privateTags + arrayOf(tag))
+        }
+    }
+
+    fun withParam(
+        name: String,
+        vararg values: String,
+    ) = withParam(name, values.asList())
+
+    /**
+     * This task with one more `param` named [name], after the last one of that name as readers
+     * see them (private first, then public), on that side; with none, at the end of the private side.
+     */
+    fun withAddedParam(
+        name: String,
+        values: List<String>,
+    ): ScheduledTask {
+        val isName = { tag: Array<String> -> ParamTag.isTag(tag, name) }
+        val tag = ParamTag.assemble(name, values)
+        return when {
+            publicTags.any(isName) -> ScheduledTask(insertAfterLast(publicTags, isName, tag), privateTags)
+            privateTags.any(isName) -> ScheduledTask(publicTags, insertAfterLast(privateTags, isName, tag))
+            else -> ScheduledTask(publicTags, privateTags + arrayOf(tag))
+        }
+    }
+
+    /** This task without any `param` named [name], on either side. */
+    fun withoutParam(name: String) = without { ParamTag.isTag(it, name) }
+
+    /**
+     * This task run by [runner], or by the author's own devices when it is null: every public `p`
+     * goes and, for a runner, one public `["p", runner]` is added. A private `p` isn't a runner and
+     * stays. The event built from it ([ScheduledTaskEvent.update]) encrypts the private tags to the
+     * new peer ([privateTagsPeer]): the runner, or the author when cleared.
+     */
+    fun withRunner(runner: HexKey?): ScheduledTask {
+        val public = publicTags.filterNot(::isPublicRunnerTag)
+        return ScheduledTask((if (runner != null) public + arrayOf(PTag.assemble(runner, null)) else public).toTypedArray(), privateTags)
+    }
+
+    private fun isPublicRunnerTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == PTag.TAG_NAME
+
+    private fun insertAfterLast(
+        tags: TagArray,
+        isTag: (Array<String>) -> Boolean,
+        tag: Array<String>,
+    ): TagArray {
+        val at = tags.indexOfLast(isTag) + 1
+        return (tags.copyOfRange(0, at).asList() + listOf(tag) + tags.copyOfRange(at, tags.size).asList()).toTypedArray()
     }
 
     /**
@@ -177,7 +290,7 @@ class ScheduledTask(
 
     override fun hashCode() = 31 * publicTags.contentDeepHashCode() + privateTags.contentDeepHashCode()
 
-    override fun toString() = "ScheduledTask(task=$task, paused=$paused, cron=$cron, tz=$tz, claim=$claim, ran=$ran)"
+    override fun toString() = "ScheduledTask(task=$task, paused=$paused, cron=$cron, tz=$tz, claim=$claim, ran=$ran, runners=${runners.size}, params=${params.map { it.name }})"
 
     companion object {
         /** Every day at 7:00: only the suggestion. */

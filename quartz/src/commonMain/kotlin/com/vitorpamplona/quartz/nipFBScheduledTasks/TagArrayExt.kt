@@ -23,8 +23,11 @@ package com.vitorpamplona.quartz.nipFBScheduledTasks
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.core.has
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ParamTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.RanTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
@@ -38,3 +41,15 @@ fun TagArray.isPaused() = fastAny(PausedTag::isTag)
 fun TagArray.claim() = fastFirstNotNullOfOrNull(ClaimTag::parse)
 
 fun TagArray.ran() = fastFirstNotNullOfOrNull(RanTag::parse)
+
+/** Every `param`, in order; a name may repeat. */
+fun TagArray.params(): List<ParamTag> = mapNotNull(ParamTag::parse)
+
+/** The `param`s named [name], in order. */
+fun TagArray.params(name: String): List<ParamTag> = mapNotNull { tag -> if (ParamTag.isTag(tag, name)) ParamTag.parse(tag) else null }
+
+/**
+ * The value of every `p` tag, well-formed or not: a NIP-FB task's runners, read from the PUBLIC
+ * tags only. More than one is a conflict, and nobody runs the task.
+ */
+fun TagArray.runnerKeys(): List<String> = mapNotNull { tag -> if (tag.has(1) && tag[0] == PTag.TAG_NAME && tag[1].isNotBlank()) tag[1] else null }

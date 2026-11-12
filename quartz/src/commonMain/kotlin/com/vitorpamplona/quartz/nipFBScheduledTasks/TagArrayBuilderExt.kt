@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nipFBScheduledTasks
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ParamTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.RanTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
@@ -36,3 +37,11 @@ fun TagArrayBuilder<ScheduledTaskEvent>.paused() = addUnique(PausedTag.assemble(
 fun TagArrayBuilder<ScheduledTaskEvent>.claim(claim: ClaimTag) = addUnique(claim.toTagArray())
 
 fun TagArrayBuilder<ScheduledTaskEvent>.ran(at: Long) = addUnique(RanTag.assemble(at))
+
+/** Adds a `param`; a name may repeat, so earlier ones of the same name stay. */
+fun TagArrayBuilder<ScheduledTaskEvent>.param(param: ParamTag) = add(param.toTagArray())
+
+fun TagArrayBuilder<ScheduledTaskEvent>.param(
+    name: String,
+    vararg values: String,
+) = add(ParamTag.assemble(name, values.asList()))

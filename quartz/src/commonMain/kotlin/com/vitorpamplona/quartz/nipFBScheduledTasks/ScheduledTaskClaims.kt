@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nipFBScheduledTasks
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 
 /**
@@ -103,6 +105,13 @@ object ScheduledTaskClaims {
         /** The task is paused, or its cron or task can't be run here. */
         NOT_RUNNABLE,
 
+        /**
+         * The task names a runner (a public `p`, or several: a conflict). Only that runner runs it,
+         * and it doesn't claim: no device of the author claims or runs it on schedule. Running it
+         * by hand still works everywhere.
+         */
+        RUNNER_NAMED,
+
         /** Claim it. */
         CLAIM,
     }
@@ -150,6 +159,7 @@ object ScheduledTaskClaims {
     /**
      * The read's verdict for [occurrence] on [task], the newest event's tags. [taskName] is the
      * job this client runs: a task without it, or without a readable `cron` and zone, is never run.
+     * A task that names a runner is never claimed by the author's devices ([Decision.RUNNER_NAMED]).
      *
      * [ownRun] is what this installation ([installId]) recorded of its own run of [occurrence]:
      * - [OwnRun.ENDED]: [Decision.ATTEMPTED_HERE], whatever the relays hold, even once its claim
@@ -166,6 +176,7 @@ object ScheduledTaskClaims {
         installId: String? = null,
         ownRun: OwnRun = OwnRun.NONE,
     ): Decision {
+        if (task.namesRunner) return Decision.RUNNER_NAMED
         if (task.paused || !task.isReadable() || task.task != taskName) return Decision.NOT_RUNNABLE
         if (ownRun == OwnRun.ENDED) return Decision.ATTEMPTED_HERE
         val claim = task.claim
@@ -225,4 +236,108 @@ object ScheduledTaskClaims {
         occurrence: Long,
         installId: String,
     ): Boolean = task.claim?.let { it.due == occurrence && it.id != installId } ?: false
+
+    /** What a runner does with a task at one moment ([decideAsRunner]). It never claims. */
+    enum class RunnerVerdict {
+        /** The task names another key, or none: not this runner's. */
+        NOT_THIS_RUNNER,
+
+        /** The task names more than one runner: nobody runs it. */
+        RUNNER_CONFLICT,
+
+        /** The task is paused, or its task or cron can't be run. */
+        NOT_RUNNABLE,
+
+        /** No occurrence is due: none yet, or none since the schedule was set or resumed. */
+        NOT_DUE,
+
+        /** The occurrence's result already exists (the task says how to tell): nothing to run. */
+        ALREADY_DONE,
+
+        /** This runner already ran the occurrence ([OwnRun.ENDED]): not again on its own. */
+        ATTEMPTED_HERE,
+
+        /** Run the occurrence. */
+        RUN,
+    }
+
+    /** [verdict] on the occurrence due at [occurrence] (null when none is due). */
+    data class RunnerDecision(
+        val verdict: RunnerVerdict,
+        val occurrence: Long?,
+    ) {
+        val shouldRun: Boolean get() = verdict == RunnerVerdict.RUN
+    }
+
+    /**
+     * A runner's verdict (NIP-FB, Runner) on [task] at [now] in [zone], for the [runner] key. A
+     * runner can't sign the author's event, so it never claims and never writes `claim` or `ran`;
+     * its own records and the result it publishes are what keep it from running an occurrence twice.
+     *
+     * The occurrence is the device's ([occurrence]): the last one due, never one due before the
+     * schedule was set or resumed, and only until the next one is due (a missed one isn't run
+     * after that). It runs when the task names exactly this runner, isn't paused, is [taskName]
+     * with a readable `cron` and zone, the occurrence's result doesn't exist yet ([alreadyDone],
+     * e.g. the Observer's `ObserverSite.alreadyPrinted` over the reader's and the runner's
+     * sites), and this runner didn't already end a run of it ([ownRun], as for a device).
+     *
+     * Call [checkRunner] on the event first: being named in `p` is not enough.
+     */
+    fun decideAsRunner(
+        task: ScheduledTask,
+        taskName: String,
+        runner: HexKey,
+        zone: CronZone,
+        now: Long,
+        ownRun: (occurrence: Long) -> OwnRun = { OwnRun.NONE },
+        alreadyDone: (occurrence: Long) -> Boolean = { false },
+    ): RunnerDecision {
+        if (task.hasRunnerConflict) return RunnerDecision(RunnerVerdict.RUNNER_CONFLICT, null)
+        if (task.runner != runner) return RunnerDecision(RunnerVerdict.NOT_THIS_RUNNER, null)
+        if (task.paused || !task.isReadable() || task.task != taskName) return RunnerDecision(RunnerVerdict.NOT_RUNNABLE, null)
+        val due = occurrence(task, zone, now) ?: return RunnerDecision(RunnerVerdict.NOT_DUE, null)
+        if (ownRun(due) == OwnRun.ENDED) return RunnerDecision(RunnerVerdict.ATTEMPTED_HERE, due)
+        if (alreadyDone(due)) return RunnerDecision(RunnerVerdict.ALREADY_DONE, due)
+        return RunnerDecision(RunnerVerdict.RUN, due)
+    }
+
+    /** Why a runner may or may not act on a task event ([checkRunner]). */
+    enum class RunnerCheck {
+        /** Authored by the expected owner, naming exactly this runner, validly signed. */
+        OK,
+
+        /** Authored by someone other than the owner this runner serves: anyone can tag a runner. */
+        NOT_OWNER,
+
+        /** Its public `p` isn't exactly this runner (another key, none, or more than one). */
+        NOT_THIS_RUNNER,
+
+        /** Its id or signature doesn't verify. */
+        BAD_SIGNATURE,
+    }
+
+    /**
+     * The check a runner makes before it reads or runs [event] (NIP-FB, Runner: "being named in
+     * `p` is not enough, or anyone could spend its credentials"): its author is [expectedOwner],
+     * the owner the runner serves by its own records; its public `p` tags are exactly one, this
+     * [runner]; and its id and signature verify. Only [RunnerCheck.OK] may run.
+     */
+    fun checkRunner(
+        event: ScheduledTaskEvent,
+        runner: HexKey,
+        expectedOwner: HexKey,
+    ): RunnerCheck {
+        if (event.pubKey != expectedOwner) return RunnerCheck.NOT_OWNER
+        val named = event.runners()
+        if (named.size != 1 || named[0] != runner) return RunnerCheck.NOT_THIS_RUNNER
+        if (!event.verify()) return RunnerCheck.BAD_SIGNATURE
+        return RunnerCheck.OK
+    }
+
+    /** [checkRunner] is [RunnerCheck.OK]. */
+    fun isRunnableBy(
+        event: ScheduledTaskEvent,
+        runner: HexKey,
+        expectedOwner: HexKey,
+    ): Boolean = checkRunner(event, runner, expectedOwner) == RunnerCheck.OK
 }

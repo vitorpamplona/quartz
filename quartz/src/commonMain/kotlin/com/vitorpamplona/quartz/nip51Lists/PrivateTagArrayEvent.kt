@@ -56,19 +56,41 @@ abstract class PrivateTagArrayEvent(
      */
     fun privateItemsChangeFrom(older: PrivateTagArrayEvent) = ContentChange.between(older.content, content)
 
-    suspend fun decrypt(signer: NostrSigner): TagArray {
-        if (signer.pubKey != pubKey) throw SignerExceptions.UnauthorizedDecryptionException()
+    /**
+     * The keys [reader] decrypts the private tags with, as the other side of the NIP-44
+     * conversation, tried in this order; empty when [reader] can't read them. A NIP-51 list is
+     * encrypted by its author to themselves, so only the author reads it, with itself as peer.
+     * A kind whose private tags are shared with another key (a NIP-FB task's runner) overrides it.
+     */
+    open fun privateTagsPeers(reader: HexKey): List<HexKey> = if (reader == pubKey) listOf(pubKey) else emptyList()
 
-        return PrivateTagsInContent.decrypt(content, signer)
+    /** Whether [reader] is one of the keys the private tags may be encrypted to ([privateTagsPeers]). */
+    fun canReadPrivateTags(reader: HexKey): Boolean = privateTagsPeers(reader).isNotEmpty()
+
+    suspend fun decrypt(signer: NostrSigner): TagArray {
+        val peers = privateTagsPeers(signer.pubKey)
+        if (peers.isEmpty()) throw SignerExceptions.UnauthorizedDecryptionException()
+        if (peers.size == 1) return PrivateTagsInContent.decrypt(content, signer, peers[0])
+
+        var failure: Exception? = null
+        for (peer in peers) {
+            try {
+                return PrivateTagsInContent.decrypt(content, signer, peer)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                failure = e
+            }
+        }
+        throw failure ?: SignerExceptions.UnauthorizedDecryptionException()
     }
 
     suspend fun privateTags(signer: NostrSigner): TagArray? {
-        if (signer.pubKey != pubKey) {
+        if (!canReadPrivateTags(signer.pubKey)) {
             return null
         }
 
         return try {
-            PrivateTagsInContent.decrypt(content, signer)
+            decrypt(signer)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             null

@@ -36,13 +36,16 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip51Lists.PrivateTagArrayEvent
 import com.vitorpamplona.quartz.nip51Lists.encryption.PrivateTagsInContent
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
+import com.vitorpamplona.quartz.utils.Hex
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * NIP-FB Scheduled Tasks: one recurring job a person has their clients run, such as the morning
  * front page. Addressable; `d` is the task's id. Like a NIP-51 list, its tags may be public (the
  * event's tags) or private (the content: a NIP-44 ciphertext, by the author to themselves, of a
- * JSON tag array), and readers use both: read them with [task], write them with [update].
+ * JSON tag array), and readers use both: read them with [task], write them with [update]. A public
+ * `p` names a runner (NIP-FB, Runner): the private tags are then NIP-44 between the author and the
+ * runner, so both read them, and only the runner runs the task.
  *
  * Not searchable: its tags are times, ids and device names, nothing a person searches for. It
  * references nothing, so it provides no hints.
@@ -56,13 +59,36 @@ class ScheduledTaskEvent(
     content: String,
     sig: HexKey,
 ) : PrivateTagArrayEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
+    /** The value of every public `p`: the task's runners (NIP-FB, Runner). More than one is a conflict. */
+    fun runners(): List<String> = tags.runnerKeys()
+
+    /** The one runner the task names, or null (none, a conflict, or a `p` that isn't a key); see [ScheduledTask.runner]. */
+    fun runner(): HexKey? = ScheduledTask(tags).runner
+
     /**
-     * The task, its public tags merged with the private ones [signer] (the author) decrypts; null
-     * when the signer isn't the author or can't decrypt the content. A null for an event that
-     * exists means unreadable: never rewrite it from nothing.
+     * The private tags are NIP-44 between the author and the runner when one is named, else the
+     * author's to themselves. The author tries each key in a public `p` (a conflict was encrypted
+     * by some client to one of them), then itself; a key in a public `p` reads with the author as
+     * peer; nobody else reads them.
+     */
+    override fun privateTagsPeers(reader: HexKey): List<HexKey> {
+        val runners = tags.runnerKeys()
+        if (runners.isEmpty()) return super.privateTagsPeers(reader)
+        return when (reader) {
+            pubKey -> (runners.filter { it.length == 64 && Hex.isHex64(it) && it != pubKey } + pubKey).distinct()
+            in runners -> listOf(pubKey)
+            else -> emptyList()
+        }
+    }
+
+    /**
+     * The task, its public tags merged with the private ones [signer] decrypts; null when the
+     * signer is neither the author nor a runner the task names, or can't decrypt the content. A
+     * null for an event that exists means unreadable: never rewrite it from nothing. A runner reads
+     * the task to run it, never to rewrite it (it can't sign the author's event).
      */
     suspend fun task(signer: NostrSigner): ScheduledTask? {
-        if (signer.pubKey != pubKey) return null
+        if (!canReadPrivateTags(signer.pubKey)) return null
         if (content.isBlank()) return ScheduledTask(tags, emptyArray())
         val private = privateTags(signer) ?: return null
         return ScheduledTask(tags, private)
@@ -93,12 +119,14 @@ class ScheduledTaskEvent(
 
         /**
          * Always encrypts the JSON, `[]` included: NIP-44 can't encrypt an empty string, which is
-         * what [PrivateTagsInContent.encryptNip44] sends for an empty list.
+         * what [PrivateTagsInContent.encryptNip44] sends for an empty list. [peer] is the other
+         * key of the conversation: the runner, or the signer itself.
          */
         private suspend fun encrypt(
             privateTags: TagArray,
             signer: NostrSigner,
-        ) = signer.nip44Encrypt(PrivateTagsInContent.encode(privateTags), signer.pubKey)
+            peer: HexKey = signer.pubKey,
+        ) = signer.nip44Encrypt(PrivateTagsInContent.encode(privateTags), peer)
 
         /**
          * A new task under [dTag] running [task] on [cron]: `d` public, the rest private, as
@@ -125,7 +153,9 @@ class ScheduledTaskEvent(
 
         /**
          * The event for [task] as it stands: its public tags as they are (`d` added when
-         * missing), its private tags encrypted by [signer] to itself.
+         * missing), its private tags encrypted by [signer] to the task's runner when it names one
+         * ([ScheduledTask.runner]), else to itself. So setting or clearing the runner
+         * ([ScheduledTask.withRunner]) and building the event re-encrypts to the new peer.
          */
         suspend fun update(
             task: ScheduledTask,
@@ -134,7 +164,7 @@ class ScheduledTaskEvent(
             createdAt: Long = TimeUtils.now(),
         ): EventTemplate<ScheduledTaskEvent> {
             val public = if (task.publicTags.any(DTag::isTag)) task.publicTags else arrayOf(DTag.assemble(dTag)) + task.publicTags
-            return EventTemplate(createdAt, KIND, public, encrypt(task.privateTags, signer))
+            return EventTemplate(createdAt, KIND, public, encrypt(task.privateTags, signer, task.privateTagsPeer(signer.pubKey)))
         }
 
         /**
