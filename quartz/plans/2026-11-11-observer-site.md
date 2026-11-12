@@ -212,8 +212,9 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
   random 0 to 60 s; read the newest event from the write relays (more than half must answer, or
   don't run; no write relays, or a content that doesn't decrypt: never run, never write); stop
   if `claim` holds this occurrence (unless it is unfinished and its claim time is an hour old,
-  or it is this install's own unfinished claim: the app or the process died mid-print, and the
-  same install takes it up again); otherwise subscribe to the event on every write relay, wait
+  or it is this install's own unfinished claim on a run its process didn't live through, by the
+  install's own record (`ScheduledTaskClaims.OwnRun`): a run that ended, failed or cancelled, is
+  never run again by that install on its own, since it may have been paid for); otherwise subscribe to the event on every write relay, wait
   until each relay's REQ is out, publish the claim (more than half of the write relays must
   accept it, or don't run), and after 20 s go on only if the newest event seen (`created_at`,
   then lowest `id`) holds this device's claim; when it holds no claim for this occurrence
@@ -230,7 +231,8 @@ found it, and new tags go private. Amethyst keeps everything but `d` private:
   own copy of an event they didn't accept); the edit's `created_at` still beats that copy.
 - A missed occurrence (the device was off or the app closed) may be claimed on waking until the
   next one is due; Amethyst tries once when an account loads, and only when the schedule it
-  holds shows that occurrence unclaimed, its claim stale, or this install's own unfinished one.
+  holds shows that occurrence unclaimed, its claim stale, or this install's own unfinished one
+  whose run died mid-way (never one whose run ended: the reader prints that by hand).
   A change of schedule moves the waiting timer or job; it never stops a print that is running.
 - Migration: an install that had a local schedule (`on|7|30`, now `30 7 * * *` in its zone,
   set at the migration's time) and finds no synced one (more than half of the write relays

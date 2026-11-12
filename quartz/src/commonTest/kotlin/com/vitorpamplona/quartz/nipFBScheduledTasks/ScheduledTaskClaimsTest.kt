@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nipFBScheduledTasks
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims.Decision
+import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskClaims.OwnRun
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.CronTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
@@ -214,11 +215,25 @@ class ScheduledTaskClaimsTest {
         val claimedAt = six + 30
         val claimed = ScheduledTaskClaims.claimed(daily, six, "desk", "Desktop (Linux)", claimedAt)
         // The app died mid-run: its own claim on this occurrence is its to run again, at once.
-        assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "desk"))
+        assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "desk", ownRun = OwnRun.DIED))
         // Nobody else's.
-        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "phone"))
+        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "phone", ownRun = OwnRun.DIED))
         // Finished: not even its own.
-        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(ScheduledTaskClaims.finished(claimed, six + 600), "observer", six, claimedAt + 60, installId = "desk"))
+        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(ScheduledTaskClaims.finished(claimed, six + 600), "observer", six, claimedAt + 60, installId = "desk", ownRun = OwnRun.DIED))
+    }
+
+    @Test
+    fun aRunThatEndedIsNotRunAgainHere() {
+        val claimedAt = six + 30
+        // The run ended (it failed: no `ran`), and the app was launched again the same morning.
+        val claimed = ScheduledTaskClaims.claimed(daily, six, "desk", "Desktop (Linux)", claimedAt)
+        assertEquals(Decision.ATTEMPTED_HERE, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "desk", ownRun = OwnRun.ENDED))
+        // Not even once the claim is stale, which lets another device take it.
+        assertEquals(Decision.ATTEMPTED_HERE, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 2 * hour, installId = "desk", ownRun = OwnRun.ENDED))
+        assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 2 * hour, installId = "phone"))
+        // With no record, its own claim waits for the hour like anyone's: a failed run is never resumed by default.
+        assertEquals(Decision.ALREADY_CLAIMED, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + 60, installId = "desk"))
+        assertEquals(Decision.CLAIM, ScheduledTaskClaims.decide(claimed, "observer", six, claimedAt + hour, installId = "desk"))
     }
 
     @Test

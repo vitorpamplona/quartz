@@ -31,7 +31,8 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ClaimTag
  * 1. wait a random 0 to [MAX_JITTER_SECONDS];
  * 2. read the newest event from the write relays ([hasQuorum] of them must answer; none, or a
  *    content that doesn't decrypt, never runs);
- *    [decide] says whether to stop or claim. When the result already exists, NIP-FB lets a client
+ *    [decide] says whether to stop or claim, from the read and this installation's own record of
+ *    the occurrence ([OwnRun]: a run that died mid-way resumes, one that ended is never redone). When the result already exists, NIP-FB lets a client
  *    write the claim and `ran` together ([skipped]); a client can instead claim and settle as for
  *    a run, then write only `ran` ([finished]) when its claim won, so a skip can never take an
  *    occurrence from a device that is running it;
@@ -68,10 +69,36 @@ object ScheduledTaskClaims {
         AGAIN,
     }
 
+    /**
+     * What this installation's own record says of its run of one occurrence. The record is the
+     * client's, kept on the device (NIP-FB doesn't sync it): written as the run starts, and again
+     * however it ends.
+     */
+    enum class OwnRun {
+        /** No record: this installation never started a run of the occurrence, or doesn't remember one. */
+        NONE,
+
+        /**
+         * Started and never ended: the process died mid-run (killed, crashed, the device turned
+         * off). Its unfinished claim is its own to take up again, without the hour's wait.
+         */
+        DIED,
+
+        /**
+         * Ended, whatever the end was (printed, failed, cancelled, stopped by the platform). A run
+         * that failed may already have spent the user's money, so it is never run again here on
+         * its own; the user can still run it by hand.
+         */
+        ENDED,
+    }
+
     /** What to do with an occurrence after the read. */
     enum class Decision {
         /** Someone (maybe this device) already claimed this occurrence, and it isn't stale. */
         ALREADY_CLAIMED,
+
+        /** This installation already ran this occurrence ([OwnRun.ENDED]): not again on its own. */
+        ATTEMPTED_HERE,
 
         /** The task is paused, or its cron or task can't be run here. */
         NOT_RUNNABLE,
@@ -124,8 +151,12 @@ object ScheduledTaskClaims {
      * The read's verdict for [occurrence] on [task], the newest event's tags. [taskName] is the
      * job this client runs: a task without it, or without a readable `cron` and zone, is never run.
      *
-     * [installId] is this installation's: its own unfinished claim on [occurrence] is its to take
-     * up again (the app was stopped mid-run, or the process died), not someone else's.
+     * [ownRun] is what this installation ([installId]) recorded of its own run of [occurrence]:
+     * - [OwnRun.ENDED]: [Decision.ATTEMPTED_HERE], whatever the relays hold, even once its claim
+     *   is an hour old. A run that ended with a failure is not run again automatically: it may
+     *   have been paid for, and the next attempt would fail the same way.
+     * - [OwnRun.DIED]: its own unfinished claim is taken up again at once.
+     * - [OwnRun.NONE]: its own claim is like anyone's, claimable again only once stale.
      */
     fun decide(
         task: ScheduledTask,
@@ -133,11 +164,13 @@ object ScheduledTaskClaims {
         occurrence: Long,
         now: Long,
         installId: String? = null,
+        ownRun: OwnRun = OwnRun.NONE,
     ): Decision {
         if (task.paused || !task.isReadable() || task.task != taskName) return Decision.NOT_RUNNABLE
+        if (ownRun == OwnRun.ENDED) return Decision.ATTEMPTED_HERE
         val claim = task.claim
         if (claim != null && claim.due == occurrence && !takeoverAllowed(task, now)) {
-            val resumable = installId != null && claim.id == installId && !isFinished(task)
+            val resumable = ownRun == OwnRun.DIED && installId != null && claim.id == installId && !isFinished(task)
             if (!resumable) return Decision.ALREADY_CLAIMED
         }
         return Decision.CLAIM
