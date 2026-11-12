@@ -154,12 +154,13 @@ fixes what the Observer adds to it.
 Kind `34817` (NIP-FB Scheduled Task), addressable, `d` = `observer` (fixed, so two apps setting
 it up at once edit one event). Like a NIP-51 list its tags may be public or private (the content,
 NIP-44 to self, a JSON tag array); readers merge both, writers keep each tag on the side they
-found it, and new tags go private. Amethyst keeps everything but `d` private:
+found it, and new tags go private. Amethyst keeps everything but `d` (and a runner's `p`) private:
 
 ```json
 [
   ["task", "observer"],
   ["cron", "0 6 * * *", "America/New_York", "1794300000"],
+  ["param", "model", "anthropic/claude-sonnet-4.5"],
   ["claim", "1794394800", "3f1c9a0e5b7d4c21", "Desktop (Linux)", "1794394831"],
   ["ran", "1794394860"]
 ]
@@ -269,3 +270,102 @@ schedule's Sunday-evening catch-up does not cover Monday's run. This covers a ma
 that morning, another device, and Brainstorm. Manual prints are never skipped. If the site can't
 be read, the printer decides from its own store alone (and prints). A skip claims the occurrence
 like a print and, when the claim wins, writes `ran`, so it counts as done for every device.
+
+## The Observer's settings and the Assistant (2026-11-12)
+
+The schedule event also carries the Observer's settings, as NIP-FB `param` tags, so every app
+prints with the same choices and a hosted Assistant can print for the reader. FB defines only
+the `param` tag; the names below are the Observer's. Settings were per install until now (the
+model remembered per endpoint, `FrontPageModelMemory`), so the phone and the desktop could
+print with different models.
+
+### Params
+
+| param   | values | when missing |
+|---------|--------|--------------|
+| `key`   | the NIP-FA key to print with: its endpoint URL, then the key's last 4 characters | the first usable key (NIP-FA's default) |
+| `model` | the model id, as the key's endpoint takes it | the app's default for that endpoint |
+| `size`  | not defined yet: every app prints one size today. When a size choice is added, its values are fixed here first | |
+
+- `key` never holds the key itself. The last 4 characters only pick between two keys at one
+  endpoint; with no match by URL and suffix, the first key at that URL, else the default.
+- A printer that can't use the named model (the endpoint refuses it) fails the run and says
+  why. It never picks another model: the reader chose that price.
+- The event exists without a `cron`: then it holds only the settings, for manual prints, and
+  never runs. A manual print reads them and, when the reader changes the model in the print
+  view, writes them back (one shared choice, no longer per install).
+- Every writer keeps the `param` tags it doesn't know, as FB requires.
+- Migration: an install's remembered model is written as `model` the first time it edits
+  the event, unless the event already has one.
+
+### The Assistant as runner
+
+The Brainstorm Assistant (the key Brainstorm holds for each reader, `ta_pubkey`) can print the
+reader's Observer when no device of theirs is on. It is a NIP-FB runner:
+
+```json
+{ "kind": 34817, "pubkey": "<reader>",
+  "tags": [["d", "observer"], ["p", "<assistant>"]],
+  "content": nip44(reader → assistant, [
+    ["task", "observer"],
+    ["cron", "0 6 * * *", "America/New_York", "1794300000"],
+    ["param", "model", "anthropic/claude-sonnet-4.5"],
+    ["param", "key", "https://openrouter.ai/api/v1", "a3f9"]
+  ]) }
+```
+
+- **Choosing it.** "Who prints: my devices / my Assistant" in the schedule settings of both
+  apps. Choosing the Assistant adds the public `p` and re-encrypts the private tags to it (NIP-44
+  between two keys: both read them); choosing devices removes `p` and encrypts to self. While
+  `p` is set no device claims or prints on schedule; manual prints still work everywhere.
+- **Its keys.** The Assistant prints with its own NIP-FA list (kind 12000 signed by the
+  Assistant, encrypted to itself), never the reader's. The reader gives it a key from the AI
+  key screen ("Give to Assistant" / "Take back"), and the apps show which keys each holds.
+  Taking a key back doesn't erase older versions the server can still decrypt; the screen says
+  so and suggests a separate key with its own spending limit for the Assistant.
+- **Its paper.** The Assistant publishes the edition as its own Observer site: kind 35128,
+  `d` = `observer`, signed by the Assistant, with `["p", <reader>]`, same layout and rules as the
+  reader's (validated pages only, roll-off, `editions.json`). The reader's nsec never leaves
+  them. Its Blossom uploads go to the reader's own servers (their kind 10063), authorised by the
+  Assistant's key; a server that refuses it fails the publish, and the Assistant never falls
+  back to a server the reader didn't choose.
+- **Finding the paper.** The apps read the schedule; when it names a runner they read that
+  runner's Observer site as well as the reader's own, show today's edition from either, and
+  merge the two histories. A site from any other key that tags the reader is ignored: only the
+  runner the reader's own signed event names counts.
+- **Already printed?** The runner reads the reader's site and its own before printing, with
+  the rule above, so a manual print that morning still covers the run.
+- **Is it running?** The runner can't write `claim` or `ran` (it can't sign the reader's
+  event). The apps judge from its site instead: "Last printed by your Assistant, <time> ago"
+  from the newest `printedAt`, and the 3-hour missed-run warning when the newest due occurrence
+  has no edition on either site.
+
+### The server's rules (brainstorm_server)
+
+- **Prints only for its owner.** It runs a schedule only when the event's author is the owner
+  on record of the Assistant its `p` names (`select_brainstorm_nsec_by_pubkey_on_db` by the
+  author). Being tagged is not enough: anyone can tag any Assistant, and would otherwise print
+  on its owner's AI key.
+- **Key endpoints, the caller's own only.** `GET`/`POST /user/assistantAgentKeys` on the
+  authenticated router (not the public one, where `/user/{pubkey}` would answer them). They
+  resolve the Assistant from the login token only, never from a pubkey or id in the request.
+  - The GET encrypts the list (NIP-44, Assistant → owner on record) to the owner, not to
+    whoever asked, so a mix-up leaks only ciphertext.
+  - The POST takes the new list NIP-44 encrypted reader → Assistant, then edits the
+    Assistant's kind 12000 by NIP-FA's rules.
+  - Decrypted keys never appear in a log, an error or an admin endpoint (a count at most).
+- **Tests.** User A's token can't read or change B's keys, whatever the request names. No
+  token, no answer. The GET decrypts only with the owner's key. A schedule whose author isn't
+  the Assistant's owner is never run.
+
+### Where the code goes
+
+- Quartz `nipFBScheduledTasks/`: the `param` and runner `p` tags on `ScheduledTaskEvent`,
+  encrypting to the runner, and keeping params on edit. `nip5aStaticWebsites/observer/`: the
+  param names and their readers, and finding a runner's site.
+- Amethyst and Brainstorm-UI: the who-prints choice, settings read and written through the
+  event, the two-site reader and the status line. The Give/Take back key screen is
+  Brainstorm's, through the server endpoints, which answer only Brainstorm logins; Amethyst
+  can name the Assistant as runner and read its site, and sends the reader to Brainstorm to
+  give it a key.
+- brainstorm_server: the runner, the key endpoints, the owner checks and their tests.
