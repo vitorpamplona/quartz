@@ -46,28 +46,29 @@ fun passesMinRank(
  * Built for a few hundred thousand entries that must be queried on every feed row and every
  * push notification:
  *
- *  - **Keys** are the first 128 bits of the subject pubkey, two longs per entry, sorted
- *    unsigned (= the byte order of the hex). 64 bits would be grindable: matching *some* member
- *    of a 300k set takes about 2^46 key generations, which buys a spammer "known" status.
- *    128 bits cannot be ground and random collisions are effectively zero.
- *  - **Lookups** read the two longs straight from the hex ([Hex.readLong], no allocation) and
+ *  - **Keys** are the whole subject pubkey, four longs per entry, sorted unsigned (= the byte
+ *    order of the hex). Never a prefix: a card's subject is whatever hex its `d` tag says, and
+ *    putting a made-up "pubkey" in a follow list costs nothing, so a provider scores a key that
+ *    shares any prefix of a real one and has no owner. Keyed by 128 bits, the newer of the two
+ *    cards took the real person's place (Jameson Lopp at a fake key's rank 2).
+ *  - **Lookups** read the four longs straight from the hex ([Hex.readLong], no allocation) and
  *    binary-search: ~19 steps at 300k, a few hundred nanoseconds on a JVM.
  *  - **Values** sit in parallel arrays: rank (0..100 in practice, clamped to 0..127), hops
  *    (-1 = unknown) and follower count.
- *  - **Memory** is 22 bytes per entry: ~6.6 MB at 300k, against ~850 B per card as parsed
+ *  - **Memory** is 38 bytes per entry: ~11.4 MB at 300k, against ~850 B per card as parsed
  *    events.
  *
  * Instances are immutable; a sync builds a new one with [TrustNetworkBuilder] and swaps it in.
  */
 class TrustNetworkIndex(
-    /** 2 × [size] longs: (hi, lo) of each subject pubkey, sorted unsigned. */
+    /** [KEY_LONGS] × [size] longs: each subject pubkey, most significant long first, sorted unsigned. */
     val keys: LongArray,
     val rank: ByteArray,
     val hops: ByteArray,
     val followers: IntArray,
 ) {
     init {
-        require(keys.size == 2 * rank.size && hops.size == rank.size && followers.size == rank.size) {
+        require(keys.size == KEY_LONGS * rank.size && hops.size == rank.size && followers.size == rank.size) {
             "column sizes disagree"
         }
     }
@@ -83,18 +84,21 @@ class TrustNetworkIndex(
     /** Entry position of [pubkey], or -1 when the provider asserts nothing about it. */
     fun indexOf(pubkey: HexKey): Int {
         if (size == 0 || pubkey.length != 64 || !Hex.isHex64(pubkey)) return -1
-        return indexOf(Hex.readLong(pubkey, 0), Hex.readLong(pubkey, 16))
+        return indexOf(Hex.readLong(pubkey, 0), Hex.readLong(pubkey, 16), Hex.readLong(pubkey, 32), Hex.readLong(pubkey, 48))
     }
 
     fun indexOf(
-        hi: Long,
-        lo: Long,
+        k0: Long,
+        k1: Long,
+        k2: Long,
+        k3: Long,
     ): Int {
         var low = 0
         var high = size - 1
         while (low <= high) {
             val mid = (low + high) ushr 1
-            val c = compareKeys(keys[2 * mid], keys[2 * mid + 1], hi, lo)
+            val at = KEY_LONGS * mid
+            val c = compareKeys(keys[at], keys[at + 1], keys[at + 2], keys[at + 3], k0, k1, k2, k3)
             when {
                 c < 0 -> low = mid + 1
                 c > 0 -> high = mid - 1
@@ -144,15 +148,27 @@ class TrustNetworkIndex(
     companion object {
         val EMPTY = TrustNetworkIndex(LongArray(0), ByteArray(0), ByteArray(0), IntArray(0))
 
-        /** Unsigned (hi, lo) order: the byte order of the hex pubkey. */
+        /** Longs per key: the whole 256-bit pubkey. */
+        const val KEY_LONGS = 4
+
+        /** Unsigned order of two 256-bit keys, most significant long first: the byte order of the hex. */
         fun compareKeys(
-            aHi: Long,
-            aLo: Long,
-            bHi: Long,
-            bLo: Long,
+            a0: Long,
+            a1: Long,
+            a2: Long,
+            a3: Long,
+            b0: Long,
+            b1: Long,
+            b2: Long,
+            b3: Long,
         ): Int {
-            val c = aHi.toULong().compareTo(bHi.toULong())
-            return if (c != 0) c else aLo.toULong().compareTo(bLo.toULong())
+            var c = a0.toULong().compareTo(b0.toULong())
+            if (c != 0) return c
+            c = a1.toULong().compareTo(b1.toULong())
+            if (c != 0) return c
+            c = a2.toULong().compareTo(b2.toULong())
+            if (c != 0) return c
+            return a3.toULong().compareTo(b3.toULong())
         }
     }
 }
@@ -170,7 +186,7 @@ class TrustNetworkIds(
     /** 32 bytes per index entry. */
     val ids: ByteArray,
     val createdAt: LongArray,
-    /** 2 longs per tombstone: the subject's (hi, lo), like the index keys. */
+    /** [TrustNetworkIndex.KEY_LONGS] longs per tombstone: the subject's whole key, like the index keys. */
     val tombstoneKeys: LongArray = LongArray(0),
     /** 32 bytes per tombstone. */
     val tombstoneIds: ByteArray = ByteArray(0),
@@ -180,7 +196,7 @@ class TrustNetworkIds(
 ) {
     init {
         require(ids.size == 32 * createdAt.size) { "column sizes disagree" }
-        require(tombstoneKeys.size == 2 * tombstoneCreatedAt.size && tombstoneIds.size == 32 * tombstoneCreatedAt.size) { "tombstone sizes disagree" }
+        require(tombstoneKeys.size == TrustNetworkIndex.KEY_LONGS * tombstoneCreatedAt.size && tombstoneIds.size == 32 * tombstoneCreatedAt.size) { "tombstone sizes disagree" }
     }
 
     /** Index entries. */
