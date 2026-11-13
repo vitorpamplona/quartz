@@ -87,6 +87,19 @@ class ObserverParamsTest {
     }
 
     @Test
+    fun effortIsKnownAndStandardIsItsAbsence() {
+        val task = ScheduledTask.create("observer", "observer", "0 6 * * *", "America/New_York", setAt = 0)
+        assertFalse(ObserverParams.isDeep(task))
+        val deep = ObserverParams.withDeep(task, true)
+        assertTrue(ObserverParams.isDeep(deep))
+        assertTrue(ObserverParams.understands(deep))
+        assertEquals(emptyList(), ObserverParams.unknownParams(deep))
+        val standard = ObserverParams.withDeep(deep, false)
+        assertFalse(ObserverParams.isDeep(standard))
+        assertNull(standard.param(ObserverParams.EFFORT))
+    }
+
+    @Test
     fun settingsKeepTheParamsTheyDontKnow() {
         val other = ScheduledTask(schedule.publicTags, schedule.privateTags + arrayOf(arrayOf("param", "size", "big")))
         val edited = ObserverParams.withKey(ObserverParams.withModel(other, "m"), first)

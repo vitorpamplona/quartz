@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
  * |---------|--------|--------------|
  * | [KEY]   | the NIP-FA key's endpoint URL, then the key's last 4 characters | NIP-FA's default key |
  * | [MODEL] | the model id, as the endpoint takes it | the app's default for that endpoint |
+ * | [EFFORT] | [EFFORT_DEEP]: ask the provider for its high reasoning effort | Standard: nothing extra |
  *
  * `key` never holds the key itself. `size` is listed in the plan as not defined yet, so it isn't
  * one of [KNOWN]: a schedule carrying it is one this code doesn't understand, which NIP-FB says
@@ -43,12 +44,30 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
 object ObserverParams {
     const val MODEL = "model"
     const val KEY = "key"
+    const val EFFORT = "effort"
+
+    /** The one [EFFORT] value today. Standard is the param's absence, so apps that predate it still run the schedule. */
+    const val EFFORT_DEEP = "deep"
 
     /** How many of the key's last characters `key` holds. */
     const val KEY_SUFFIX_LENGTH = 4
 
     /** The params this code understands. */
-    val KNOWN: Set<String> = setOf(MODEL, KEY)
+    val KNOWN: Set<String> = setOf(MODEL, KEY, EFFORT)
+
+    /** Whether [task] asks for Deep writing; any other value, or none, is Standard. */
+    fun isDeep(task: ScheduledTask): Boolean =
+        task
+            .param(EFFORT)
+            ?.value()
+            ?.trim()
+            ?.lowercase() == EFFORT_DEEP
+
+    /** [task] printing Deep, or Standard (which removes the param). */
+    fun withDeep(
+        task: ScheduledTask,
+        deep: Boolean,
+    ): ScheduledTask = if (deep) task.withParam(EFFORT, EFFORT_DEEP) else task.withoutParam(EFFORT)
 
     /** The `key` param: which of the reader's NIP-FA keys to print with. */
     @Immutable
