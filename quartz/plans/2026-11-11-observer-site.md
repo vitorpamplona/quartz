@@ -286,6 +286,7 @@ print with different models.
 |---------|--------|--------------|
 | `key`   | the NIP-FA key to print with: its endpoint URL, then the key's last 4 characters | the first usable key (NIP-FA's default) |
 | `model` | the model id, as the key's endpoint takes it | the app's default for that endpoint |
+| `effort` | `deep`: ask the provider for its high reasoning effort (OpenRouter `reasoning.effort`, OpenAI-style `reasoning_effort`, Anthropic's thinking budget) | Standard: nothing extra |
 | `size`  | not defined yet: every app prints one size today. When a size choice is added, its values are fixed here first | |
 
 - `key` never holds the key itself. The last 4 characters only pick between two keys at one
