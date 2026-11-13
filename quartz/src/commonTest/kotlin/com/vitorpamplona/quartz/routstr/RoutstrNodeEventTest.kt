@@ -119,7 +119,7 @@ class RoutstrNodeEventTest {
                 "https://routstr.otrta.me" to Type.HTTPS,
                 "https://api.routstr.com/" to Type.HTTPS,
                 "https://ai.aliyun.dpdns.org/" to Type.HTTPS,
-                "https://bartly.eth64.de:17881" to Type.HTTPS,
+                "https://api.routstr.com:443/v1" to Type.HTTPS,
                 "https://fiscal-cancel-immune-finishing.trycloudflare.com" to Type.HTTPS,
                 "HTTPS://Node.Example.COM/v1" to Type.HTTPS,
                 "https://xn--80ak6aa92e.xn--p1ai" to Type.HTTPS,
@@ -146,6 +146,19 @@ class RoutstrNodeEventTest {
                 "https://paygate" to Type.OTHER,
                 "https://MacBook-Pro-2.local" to Type.OTHER,
                 "https://router.internal" to Type.OTHER,
+                // Kubernetes service names: a cluster's own hosts, never a public node.
+                "https://redis.default" to Type.OTHER,
+                "https://redis.default:6379" to Type.OTHER,
+                "https://x.default.svc" to Type.OTHER,
+                "https://x.default.svc.cluster" to Type.OTHER,
+                "https://x.default.svc.cluster.local" to Type.OTHER,
+                "https://api.kube-system" to Type.OTHER,
+                "https://pod.cluster" to Type.OTHER,
+                // A public name on a port other than https's: an announcement can't point a client
+                // at some other service (a database, an admin page) on that host.
+                "https://bartly.eth64.de:17881" to Type.OTHER,
+                "https://node.example.com:6379" to Type.OTHER,
+                "https://node.example.com:80" to Type.OTHER,
                 // Malformed.
                 "https://user:pass@node.example.com" to Type.OTHER,
                 "https://node.example.com:0" to Type.OTHER,
@@ -184,6 +197,20 @@ class RoutstrNodeEventTest {
         assertTrue(node.isFresh(now = node.createdAt + TimeUtils.ONE_WEEK))
         assertTrue(!node.isFresh(now = node.createdAt + TimeUtils.ONE_WEEK + 1))
         assertTrue(!node.isFresh(now = node.createdAt + TimeUtils.ONE_DAY * 2, maxAge = TimeUtils.ONE_DAY.toLong()))
+    }
+
+    @Test
+    fun aNodeIsListedForAMonthAndSeenThisWeekForAWeek() {
+        val node = parse(thefux)
+        assertEquals(30L * TimeUtils.ONE_DAY, RoutstrNodeEvent.LISTED_MAX_AGE)
+        val tenDaysLater = node.createdAt + 10L * TimeUtils.ONE_DAY
+        // Not seen this week, still listed (behind the picker's "not seen this week" control).
+        assertTrue(!node.isFresh(now = tenDaysLater))
+        assertTrue(node.isListed(now = tenDaysLater))
+        assertTrue(node.isListed(now = node.createdAt + RoutstrNodeEvent.LISTED_MAX_AGE))
+        assertTrue(!node.isListed(now = node.createdAt + RoutstrNodeEvent.LISTED_MAX_AGE + 1))
+        // The relay filter skips what is too old to list, not what wasn't seen this week.
+        assertEquals(tenDaysLater - RoutstrNodeEvent.LISTED_MAX_AGE, RoutstrDiscovery.listedFilter(now = tenDaysLater).since)
     }
 
     @Test

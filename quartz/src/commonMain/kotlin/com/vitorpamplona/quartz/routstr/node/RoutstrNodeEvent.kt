@@ -102,11 +102,18 @@ class RoutstrNodeEvent(
 
     fun about(): String? = nodeContent().about
 
-    /** Whether the node announced itself within [maxAge] seconds of [now]: nodes re-announce daily. */
+    /**
+     * Whether the node announced itself within [maxAge] seconds of [now], by default this week
+     * ([MAX_AGE]). Nodes re-announce daily, but live ones that still answer have been seen up to
+     * a week late, so a node that isn't fresh may still be listed ([isListed]).
+     */
     fun isFresh(
         now: Long = TimeUtils.now(),
         maxAge: Long = MAX_AGE,
     ): Boolean = createdAt >= now - maxAge
+
+    /** Whether a client still lists the node: announced within [LISTED_MAX_AGE] (a month) of [now]. */
+    fun isListed(now: Long = TimeUtils.now()): Boolean = isFresh(now, LISTED_MAX_AGE)
 
     override fun indexableContent() = listOfNotNull(name(), about()).joinToString("\n")
 
@@ -118,8 +125,17 @@ class RoutstrNodeEvent(
     companion object {
         const val KIND = 38421
 
-        /** Nodes not seen for longer than this are hidden by default: a week, in seconds. */
+        /**
+         * "Seen this week": a week, in seconds. A listed node older than this goes behind a
+         * "not seen this week" control rather than off the list ([LISTED_MAX_AGE]).
+         */
         const val MAX_AGE: Long = TimeUtils.ONE_WEEK.toLong()
+
+        /**
+         * Nodes are listed up to a month after their last announcement, in seconds; older ones are
+         * not listed at all. Those past [MAX_AGE] sit behind a "not seen this week" control.
+         */
+        const val LISTED_MAX_AGE: Long = 30L * TimeUtils.ONE_DAY
 
         /**
          * An announcement in the shape routstr-core publishes. Pass `dTag` as the first 12 hex

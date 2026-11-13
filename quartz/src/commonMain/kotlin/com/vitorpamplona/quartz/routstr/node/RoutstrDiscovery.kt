@@ -23,12 +23,16 @@ package com.vitorpamplona.quartz.routstr.node
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * Finding Routstr nodes: the relays Routstr's docs name, and the filter for their announcements.
  *
- * Ask [DEFAULT_RELAYS] with [filter], keep the newest [RoutstrNodeEvent] per address, hide the
- * ones that are not [RoutstrNodeEvent.isFresh], and call only [RoutstrNodeEvent.usableEndpoints].
+ * Ask [DEFAULT_RELAYS] with [listedFilter] (nothing older than [RoutstrNodeEvent.LISTED_MAX_AGE],
+ * a month), keep the newest [RoutstrNodeEvent] per address, list the ones seen this week
+ * ([RoutstrNodeEvent.isFresh]) and put the rest behind a "not seen this week" control, and call
+ * only [RoutstrNodeEvent.usableEndpoints], refusing private addresses when they resolve (see
+ * [RoutstrEndpoint]).
  */
 object RoutstrDiscovery {
     /** `wss://relay.routstr.com`, `wss://relay.damus.io` and `wss://nos.lol`, from Routstr's docs. */
@@ -41,11 +45,20 @@ object RoutstrDiscovery {
 
     /**
      * Node announcements (kind 38421), optionally only those published at or after [since]
-     * (Unix seconds). Pass `TimeUtils.now() - RoutstrNodeEvent.MAX_AGE` to skip stale nodes at
-     * the relay.
+     * (Unix seconds). [listedFilter] is the one a node list asks for.
      */
     fun filter(
         since: Long? = null,
         limit: Int? = null,
     ) = Filter(kinds = listOf(RoutstrNodeEvent.KIND), since = since, limit = limit)
+
+    /**
+     * The announcements a node list can show at [now]: since `now -`
+     * [RoutstrNodeEvent.LISTED_MAX_AGE], so the relay skips what is too old to list, but not the
+     * nodes that weren't seen this week ([RoutstrNodeEvent.MAX_AGE]), which still answer.
+     */
+    fun listedFilter(
+        now: Long = TimeUtils.now(),
+        limit: Int? = null,
+    ) = filter(since = now - RoutstrNodeEvent.LISTED_MAX_AGE, limit = limit)
 }

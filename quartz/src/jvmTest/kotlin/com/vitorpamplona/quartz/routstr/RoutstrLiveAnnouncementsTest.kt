@@ -97,6 +97,7 @@ class RoutstrLiveAnnouncementsTest {
                 "http://paygate:8000",
                 "http://test.onion",
                 "http://warus.hldns.ru:8000",
+                "https://bartly.eth64.de:17881",
                 "https://140.245.192.194",
             ),
             other,
