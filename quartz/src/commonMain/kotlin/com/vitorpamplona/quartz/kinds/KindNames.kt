@@ -494,6 +494,7 @@ import com.vitorpamplona.quartz.nipXXPushNotifications.registration.PushRegistra
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 
 /**
  * Human-readable label and defining NIP for a Nostr event kind.
@@ -938,6 +939,7 @@ object KindNames {
             AgentProfileEvent.KIND to KindName("Agent Profile", null),
             CvmServerAnnouncementEvent.KIND to KindName("CVM Server Announcement", null),
             CvmToolsListEvent.KIND to KindName("CVM Tools List", null),
+            RoutstrNodeEvent.KIND to KindName("Routstr Node", null),
             SnoAvatarEvent.KIND to KindName("SNO Avatar", null),
             DvmHeartbeatEvent.KIND to KindName("DVM Heartbeat", "90"),
             ArchivedIdentitiesListEvent.KIND to KindName("Archived Identities List", null),

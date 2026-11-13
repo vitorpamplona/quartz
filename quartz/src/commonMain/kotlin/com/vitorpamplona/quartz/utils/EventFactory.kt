@@ -523,6 +523,7 @@ import com.vitorpamplona.quartz.nipXXPushNotifications.registration.PushRegistra
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 
 interface EventBuilder {
     fun build(
@@ -1181,6 +1182,7 @@ class EventFactory {
                 ReportEvent.KIND -> ReportEvent(id, pubKey, createdAt, tags, content, sig)
                 RoadEventConfirmationEvent.KIND -> RoadEventConfirmationEvent(id, pubKey, createdAt, tags, content, sig)
                 RoadEventReportEvent.KIND -> RoadEventReportEvent(id, pubKey, createdAt, tags, content, sig)
+                RoutstrNodeEvent.KIND -> RoutstrNodeEvent(id, pubKey, createdAt, tags, content, sig)
                 RootSiteEvent.KIND -> RootSiteEvent(id, pubKey, createdAt, tags, content, sig)
                 SiteSnapshotEvent.KIND -> SiteSnapshotEvent(id, pubKey, createdAt, tags, content, sig)
                 RepostEvent.KIND -> RepostEvent(id, pubKey, createdAt, tags, content, sig)

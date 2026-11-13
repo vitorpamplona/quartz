@@ -158,6 +158,7 @@ import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEve
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 
 /**
  * Decomposes every [SearchableEvent] into [IndexableFields] by priority tier:
@@ -773,6 +774,11 @@ object SearchFieldExtractor {
             // trades are the keywords that qualify it, as on an order.
             is MostroInfoEvent -> {
                 tiers(event, listOf(event.instanceName()), event.fiatCurrenciesAccepted().orEmpty(), null)
+            }
+
+            // kind 38421 -- a Routstr AI node, named and described by its content JSON.
+            is RoutstrNodeEvent -> {
+                tiers(event, event.name(), event.about(), null)
             }
 
             // kinds 30301 / 30302 -- a Kanban board or card is found by its title; the description

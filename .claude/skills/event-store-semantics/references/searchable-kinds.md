@@ -4,7 +4,7 @@ Every concrete `SearchableEvent` implementor in Quartz, with the exact `indexabl
 expression. **Update this file in the same PR as any change to the searchable set or to an
 `indexableContent()` body** (see the maintenance list in this skill's SKILL.md). Verified against the code 2026-10-16.
 
-Counts: 216 concrete classes covering 216 kind values (`GitStatusEvent` spans 4 kinds;
+Counts: 217 concrete classes covering 217 kind values (`GitStatusEvent` spans 4 kinds;
 kind 30063 is shared by two NIPs, kind 38000 by three classes, kind 30301 by two, kind 38385 with other apps, kinds 30405 / 30406 with Shopstr, kind 30054 with drss.io's legacy listening progress, and drss.io's 30100, 30101, 30102, 30104 and 31985 with other apps — see the footnotes). The kind
 set is exactly `SearchableKinds.ALL` (`nip50Search/SearchableKinds.kt`). File paths are under
 `quartz/src/commonMain/kotlin/com/vitorpamplona/quartz/`.
@@ -199,6 +199,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 38192 | Ps1SaveEvent | experimental/ps1saves | `listOfNotNull(summary(), saveTitle(), region(), filename())` NL |
 | 38383 | P2POrderEvent | nip69P2pOrderEvents | `(listOfNotNull(makerName(), currency()) + paymentMethods().orEmpty()).joinToString(" ")` (SP) |
 | 38385 | MostroInfoEvent § | nip69P2pOrderEvents/mostroInfo | `(listOfNotNull(instanceName()) + fiatCurrenciesAccepted().orEmpty()).joinToString(" ")` (SP) |
+| 38421 | RoutstrNodeEvent | routstr/node | `listOfNotNull(name(), about())` NL (both from the content JSON) |
 | 39000 | GroupMetadataEvent | nip29RelayGroups/metadata | `(listOfNotNull(name(), about()) + hashtags())` NL |
 | 39003 | GroupRolesEvent | nip29RelayGroups/metadata | `roles().flatMap { listOfNotNull(it.name, it.description) }` NL |
 | 39089 | StarterPackEvent | nip51Lists/starterPack | `(listOfNotNull(title(), description()) + hashtags())` NL |

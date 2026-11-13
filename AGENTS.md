@@ -6,9 +6,10 @@ as `com.vitorpamplona.quartz:quartz`. It holds implementations of Nostr specific
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
 them: `marmot/` (MLS over Nostr, `mipXX`: event classes, tags and content codecs only),
 `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
-NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`, `drss/` (drss.io's reader). A new protocol over Nostr belongs here as a package. Every
-event class stays here, so any client or relay parses and stores every kind typed; a protocol's
-heavy engine does not. The MLS bindings' engines and clients are their own libraries,
+NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`, `drss/` (drss.io's reader), `routstr/` (Routstr's AI-node
+announcements). A new protocol over Nostr belongs here as a package. Every event class stays
+here, so any client or relay parses and stores every kind typed; a protocol's heavy engine does
+not. The MLS bindings' engines and clients are their own libraries,
 [marmot-kmp](https://github.com/vitorpamplona/marmot-kmp) (Marmot) and
 [cordn-kmp](https://github.com/vitorpamplona/cordn-kmp) (cordn, which has no event kinds), so
 Quartz carries no MLS engine: nothing here may import `com.vitorpamplona.mls`. Both depend on
