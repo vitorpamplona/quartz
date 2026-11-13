@@ -20,570 +20,374 @@
  */
 package com.vitorpamplona.quartz.nip05.namecoin
 
-import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.ElectrumxServer
-import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.IElectrumXClient
-import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NameShowResult
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinImportResolver
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinNameResolver
+import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinResolutionLimits
 import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinResolveOutcome
+import com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin.NamecoinTraversalResult
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Hermetic tests for [NamecoinImportResolver] and the import-aware
- * NIP-05 resolution path through [NamecoinNameResolver].
- *
- * Tests do NOT touch the network: every "imported" name is served by
- * an in-memory map keyed by Namecoin name.
- */
+/** Hermetic import/delegate traversal tests; no backend sockets are opened. */
 class NamecoinImportTest {
-    private val json =
-        Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-        }
-
-    // ── Pure unit tests (NamecoinImportResolver only) ─────────────────────
-
     @Test
-    fun `no import key returns object unchanged`() =
+    fun `import supplies root nostr identity`() =
         runTest {
-            val obj = parse("""{"ip":"1.2.3.4"}""")
-            val expanded = NamecoinImportResolver.expandImports(obj) { error("should not be called") }
-            assertEquals(obj, expanded)
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":"dd/shared"}""")
+                    .register("dd/shared", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertSuccessPubkey(outcome, TEST_PUBKEY_A)
+            assertEquals(listOf("d/example", "dd/shared"), client.queriedNames)
         }
 
     @Test
-    fun `string shorthand import merges imported items into importer`() =
+    fun `first import wins over later imports and local record wins over both`() =
         runTest {
-            // ifa-0001 §"import" canonical form is array-of-arrays, but the
-            // string form `"import": "d/foo"` is widely used in practice; we
-            // accept it as shorthand for `[["d/foo"]]`.
-            val obj = parse("""{"import":"d/lib","ip":"1.1.1.1"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> """{"ip":"9.9.9.9","nostr":{"names":{"_":"abc"}}}"""
-                        else -> null
-                    }
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/a"],["dd/b"]]}""")
+                    .register("dd/a", """{"nostr":"$TEST_PUBKEY_A"}""")
+                    .register("dd/b", """{"nostr":"$TEST_PUBKEY_B"}""")
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
+
+            val allStringClient =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":["dd/a","dd/b"]}""")
+                    .register("dd/a", """{"nostr":"$TEST_PUBKEY_A"}""")
+                    .register("dd/b", """{"nostr":"$TEST_PUBKEY_B"}""")
+            assertSuccessPubkey(resolver(allStringClient).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
+
+            val localClient =
+                RecordingElectrumXClient()
+                    .register(
+                        "d/example",
+                        """{"import":["dd/a","dd/b"],"nostr":"$TEST_PUBKEY_C"}""",
+                    ).register("dd/a", """{"nostr":"$TEST_PUBKEY_A"}""")
+                    .register("dd/b", """{"nostr":"$TEST_PUBKEY_B"}""")
+            assertSuccessPubkey(resolver(localClient).resolveDomainDetailed("example.bit"), TEST_PUBKEY_C)
+        }
+
+    @Test
+    fun `pair shorthand and imports before selector use DNS label order`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":["dd/lib","a.b"]}""")
+                    .register("dd/lib", """{"import":"dd/defaults"}""")
+                    .register(
+                        "dd/defaults",
+                        """{"map":{"b":{"map":{"a":{"nostr":"$TEST_PUBKEY_A"}}}}}""",
+                    )
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
+            assertEquals(listOf("d/example", "dd/lib", "dd/defaults"), client.queriedNames)
+        }
+
+    @Test
+    fun `selector falls back to wildcard but not unrelated default child`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/lib","ghost"]]}""")
+                    .register(
+                        "dd/lib",
+                        """{"map":{"*":{"nostr":"$TEST_PUBKEY_B"},"":{"nostr":"$TEST_PUBKEY_C"}}}""",
+                    )
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_B)
+        }
+
+    @Test
+    fun `failed import fails closed even when local nostr exists`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register(
+                        "d/example",
+                        """{"import":"dd/missing","nostr":"$TEST_PUBKEY_A"}""",
+                    )
+            val resolver = resolver(client)
+
+            val outcome = resolver.resolveDomainDetailed("example.bit")
+
+            assertTrue("expected ImportFailed, got $outcome", outcome is NamecoinResolveOutcome.ImportFailed)
+            outcome as NamecoinResolveOutcome.ImportFailed
+            assertEquals("d/example", outcome.name)
+            assertEquals("dd/missing", outcome.target)
+            assertTrue(outcome.cause is NamecoinResolveOutcome.NameNotFound)
+            assertNull(resolver.resolveDomain("example.bit"))
+        }
+
+    @Test
+    fun `malformed import target retains typed cause`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":"dd/broken"}""")
+                    .register("dd/broken", """{"nostr":""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected ImportFailed, got $outcome", outcome is NamecoinResolveOutcome.ImportFailed)
+            outcome as NamecoinResolveOutcome.ImportFailed
+            assertTrue(outcome.cause is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals("dd/broken", (outcome.cause as NamecoinResolveOutcome.MalformedRecord).name)
+        }
+
+    @Test
+    fun `malformed import shape is not no nostr field`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":42,"nostr":"$TEST_PUBKEY_A"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+        }
+
+    @Test
+    fun `oversized nested import tuple fails closed without fetching target`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/target","","unexpected"]]}""")
+                    .register("dd/target", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals(listOf("d/example"), client.queriedNames)
+        }
+
+    @Test
+    fun `valid imported record without nostr is no nostr field`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":"dd/empty"}""")
+                    .register("dd/empty", """{"info":"valid but no identity"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected NoNostrField, got $outcome", outcome is NamecoinResolveOutcome.NoNostrField)
+        }
+
+    @Test
+    fun `delegate exclusively replaces local nostr record`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register(
+                        "d/example",
+                        """{"delegate":"dd/target","nostr":"$TEST_PUBKEY_A"}""",
+                    ).register("dd/target", """{"nostr":"$TEST_PUBKEY_B"}""")
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_B)
+        }
+
+    @Test
+    fun `delegate without target nostr does not resurrect local nostr`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register(
+                        "d/example",
+                        """{"delegate":"dd/target","nostr":"$TEST_PUBKEY_A"}""",
+                    ).register("dd/target", """{"info":"no identity"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected NoNostrField, got $outcome", outcome is NamecoinResolveOutcome.NoNostrField)
+        }
+
+    @Test
+    fun `failed delegation fails closed without local fallback`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register(
+                        "d/example",
+                        """{"delegate":"dd/missing","nostr":"$TEST_PUBKEY_A"}""",
+                    )
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected DelegationFailed, got $outcome", outcome is NamecoinResolveOutcome.DelegationFailed)
+            outcome as NamecoinResolveOutcome.DelegationFailed
+            assertEquals("dd/missing", outcome.target)
+            assertTrue(outcome.cause is NamecoinResolveOutcome.NameNotFound)
+        }
+
+    @Test
+    fun `multiple delegate targets are rejected as ambiguous`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"delegate":["dd/a","dd/b"]}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals(listOf("d/example"), client.queriedNames)
+        }
+
+    @Test
+    fun `oversized nested delegate tuple fails closed without fetching target`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"delegate":[["dd/target","","unexpected"]]}""")
+                    .register("dd/target", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("example.bit")
+
+            assertTrue("expected MalformedRecord, got $outcome", outcome is NamecoinResolveOutcome.MalformedRecord)
+            assertEquals(listOf("d/example"), client.queriedNames)
+        }
+
+    @Test
+    fun `import cycle has a typed outcome and bounded lookups`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/loop", """{"import":"dd/a"}""")
+                    .register("dd/a", """{"import":"d/loop"}""")
+
+            val outcome = resolver(client).resolveDomainDetailed("loop.bit")
+
+            assertTrue("expected CyclicReference, got $outcome", outcome is NamecoinResolveOutcome.CyclicReference)
+            assertEquals(2, client.queriedNames.size)
+        }
+
+    @Test
+    fun `four import levels are supported by default`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":"dd/a"}""")
+                    .register("dd/a", """{"import":"dd/b"}""")
+                    .register("dd/b", """{"import":"dd/c"}""")
+                    .register("dd/c", """{"import":"dd/d"}""")
+                    .register("dd/d", """{"nostr":"$TEST_PUBKEY_D"}""")
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_D)
+        }
+
+    @Test
+    fun `depth exhaustion is typed and does not truncate into local success`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":"dd/a","nostr":"$TEST_PUBKEY_A"}""")
+                    .register("dd/a", """{"import":"dd/b"}""")
+                    .register("dd/b", """{"import":"dd/c"}""")
+                    .register("dd/c", """{"nostr":"$TEST_PUBKEY_C"}""")
+            val resolver =
+                resolver(
+                    client,
+                    NamecoinResolutionLimits(maxLookups = 16, maxDepth = 2),
+                )
+
+            val outcome = resolver.resolveDomainDetailed("example.bit")
+
+            assertTrue("expected DepthLimitExceeded, got $outcome", outcome is NamecoinResolveOutcome.DepthLimitExceeded)
+            outcome as NamecoinResolveOutcome.DepthLimitExceeded
+            assertEquals(2, outcome.limit)
+            assertEquals(listOf("d/example", "dd/a", "dd/b"), client.queriedNames)
+        }
+
+    @Test
+    fun `lookup budget is global across imports`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/a"],["dd/b"],["dd/c"]]}""")
+                    .register("dd/a", """{}""")
+                    .register("dd/b", """{}""")
+                    .register("dd/c", """{"nostr":"$TEST_PUBKEY_C"}""")
+            val resolver =
+                resolver(
+                    client,
+                    NamecoinResolutionLimits(maxLookups = 2, maxDepth = 16),
+                )
+
+            val outcome = resolver.resolveDomainDetailed("example.bit")
+
+            assertTrue("expected LookupBudgetExhausted, got $outcome", outcome is NamecoinResolveOutcome.LookupBudgetExhausted)
+            outcome as NamecoinResolveOutcome.LookupBudgetExhausted
+            assertEquals("dd/b", outcome.name)
+            assertEquals(listOf("d/example", "dd/a"), client.queriedNames)
+        }
+
+    @Test
+    fun `diamond imports memoize record and expanded resolution`() =
+        runTest {
+            val client =
+                RecordingElectrumXClient()
+                    .register("d/example", """{"import":[["dd/a"],["dd/b"]]}""")
+                    .register("dd/a", """{"import":"dd/shared"}""")
+                    .register("dd/b", """{"import":"dd/shared"}""")
+                    .register("dd/shared", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
+            assertEquals(listOf("d/example", "dd/a", "dd/shared", "dd/b"), client.queriedNames)
+            assertEquals(1, client.queriedNames.count { it == "dd/shared" })
+        }
+
+    @Test
+    fun `non object lookup failure is memoized for repeated references`() =
+        runTest {
+            val client = RecordingElectrumXClient().register("dd/broken", "[]")
+            val traversal =
+                NamecoinImportResolver(NamecoinResolutionLimits()) { name ->
+                    client.nameShowWithFallback(name, emptyList())?.value
                 }
-            // importer wins on `ip`, imports fill in `nostr.names`.
-            assertEquals("1.1.1.1", expanded["ip"]?.jsonPrimitive?.content)
-            assertEquals(
-                "abc",
-                expanded["nostr"]
-                    ?.jsonObject
-                    ?.get("names")
-                    ?.jsonObject
-                    ?.get("_")
-                    ?.jsonPrimitive
-                    ?.content,
-            )
-            assertFalse("import key must not survive expansion", expanded.containsKey("import"))
-        }
 
-    @Test
-    fun `canonical array of arrays form processes each in order`() =
-        runTest {
-            val obj = parse("""{"import":[["d/a"],["d/b"]]}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/a" -> """{"ip":"10.0.0.1","tag":"from-a"}"""
-                        "d/b" -> """{"ip":"10.0.0.2","extra":"from-b"}"""
-                        else -> null
-                    }
-                }
-            // d/b is processed AFTER d/a, so its `ip` (10.0.0.2) overrides d/a's.
-            // The importer itself has no `ip`, so the last imported one wins.
-            assertEquals("10.0.0.2", expanded["ip"]?.jsonPrimitive?.content)
-            assertEquals("from-a", expanded["tag"]?.jsonPrimitive?.content)
-            assertEquals("from-b", expanded["extra"]?.jsonPrimitive?.content)
-        }
+            // Exercise the shared lookup memo directly. A public fail-closed
+            // resolution correctly stops at the first malformed reference.
+            val first = traversal.resolve("dd/broken")
+            val second = traversal.resolve("dd/broken")
 
-    @Test
-    fun `pair-array shorthand uses subdomain selector`() =
-        runTest {
-            val obj = parse("""{"import":["d/lib","relay"]}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> {
-                            """
-                            {"ip":"1.1.1.1",
-                             "map":{"relay":{"ip":"7.7.7.7","tag":"selected"}}}
-                            """.trimIndent()
-                        }
-
-                        else -> {
-                            null
-                        }
-                    }
-                }
-            // We selected `map.relay` from d/lib, so its contents (ip=7.7.7.7,
-            // tag=selected) are merged at the top level of the importer.
-            // d/lib's top-level ip (1.1.1.1) is NOT seen because we descended.
-            assertEquals("7.7.7.7", expanded["ip"]?.jsonPrimitive?.content)
-            assertEquals("selected", expanded["tag"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `importer items take precedence over imported items`() =
-        runTest {
-            val obj = parse("""{"import":"d/lib","ip":"1.1.1.1","extra":"local"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> """{"ip":"9.9.9.9","extra":"remote","only-imported":"yes"}"""
-                        else -> null
-                    }
-                }
-            assertEquals("1.1.1.1", expanded["ip"]?.jsonPrimitive?.content)
-            assertEquals("local", expanded["extra"]?.jsonPrimitive?.content)
-            assertEquals("yes", expanded["only-imported"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `null in importer suppresses imported value`() =
-        runTest {
-            // ifa-0001: null is "present for precedence" — semantic
-            // suppression. The importer says ip=null, so imported ip is gone.
-            val obj = parse("""{"import":"d/lib","ip":null}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> """{"ip":"9.9.9.9","other":"keep"}"""
-                        else -> null
-                    }
-                }
-            // The merged object still has `ip` as a JsonNull, not removed.
-            // Downstream parsers ignore null as if absent (same outcome).
-            assertTrue(expanded.containsKey("ip"))
-            assertEquals(
-                kotlinx.serialization.json.JsonNull,
-                expanded["ip"],
-            )
-            assertEquals("keep", expanded["other"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `recursion depth four is supported`() =
-        runTest {
-            // ifa-0001 mandates implementations support a recursion degree
-            // of at least 4. Test pins the 4-deep happy path.
-            val obj = parse("""{"import":"d/a"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/a" -> """{"import":"d/b","layer":"a"}"""
-                        "d/b" -> """{"import":"d/c","layer":"b"}"""
-                        "d/c" -> """{"import":"d/d","layer":"c"}"""
-                        "d/d" -> """{"layer":"d","deep":"reached"}"""
-                        else -> null
-                    }
-                }
-            // Each layer overrides "layer" so the importer sees "a".
-            // "deep" only exists on d/d and survives to the top.
-            assertEquals("a", expanded["layer"]?.jsonPrimitive?.content)
-            assertEquals("reached", expanded["deep"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `recursion deeper than max-depth is silently truncated`() =
-        runTest {
-            // Anything past the depth limit is dropped, but the importing
-            // record's own items still apply.
-            val obj = parse("""{"import":"d/a","local":"keep"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(
-                    root = obj,
-                    maxDepth = 1, // only one level of imports
-                ) { name ->
-                    when (name) {
-                        "d/a" -> """{"import":"d/b","tag":"from-a"}"""
-                        "d/b" -> """{"tag":"from-b","leaf":"won't-show"}"""
-                        else -> null
-                    }
-                }
-            assertEquals("from-a", expanded["tag"]?.jsonPrimitive?.content)
-            assertEquals("keep", expanded["local"]?.jsonPrimitive?.content)
-            // d/b was never expanded so its keys are NOT present.
-            assertNull(expanded["leaf"])
-        }
-
-    @Test
-    fun `failed import lookup is treated as empty object`() =
-        runTest {
-            // Per our docs: spec says a failed import MAY fail the whole
-            // record; we choose the more lenient "empty object" semantics
-            // so transient ElectrumX hiccups don't kill resolution.
-            val obj = parse("""{"import":"d/missing","local":"survives"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { _ ->
-                    null // simulate name not found
-                }
-            assertEquals("survives", expanded["local"]?.jsonPrimitive?.content)
-            assertFalse(expanded.containsKey("import"))
-        }
-
-    @Test
-    fun `cycle in imports is broken without infinite recursion`() =
-        runTest {
-            // d/a imports d/b which imports d/a. A naive resolver would
-            // hang. The visited-set guard breaks the loop on the second
-            // appearance of d/a; importer's own items still apply.
-            val obj = parse("""{"import":"d/a","local":"top"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/a" -> """{"import":"d/b","fromA":"yes"}"""
-                        "d/b" -> """{"import":"d/a","fromB":"yes"}"""
-                        else -> null
-                    }
-                }
-            assertEquals("top", expanded["local"]?.jsonPrimitive?.content)
-            // At least one of fromA/fromB should have made it through —
-            // we don't pin which because the cycle break point is an
-            // implementation detail, but the call MUST terminate.
             assertTrue(
-                expanded.containsKey("fromA") || expanded.containsKey("fromB"),
+                "expected MalformedRecord, got $first",
+                (first as? NamecoinTraversalResult.Failure)?.outcome is NamecoinResolveOutcome.MalformedRecord,
             )
-        }
-
-    @Test
-    fun `malformed import value is skipped without throwing`() =
-        runTest {
-            val obj = parse("""{"import":42,"local":"keep"}""")
-            val expanded = NamecoinImportResolver.expandImports(obj) { _ -> null }
-            assertEquals("keep", expanded["local"]?.jsonPrimitive?.content)
-            assertFalse(expanded.containsKey("import"))
-        }
-
-    @Test
-    fun `import target with malformed JSON is skipped`() =
-        runTest {
-            val obj = parse("""{"import":"d/broken","local":"keep"}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/broken" -> """not valid json {{{"""
-                        else -> null
-                    }
-                }
-            assertEquals("keep", expanded["local"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `selector with multiple labels descends in DNS order`() =
-        runTest {
-            // selector "a.b" means: descend map.b, then map.a (DNS-rightmost
-            // first). The empty-key and "*" wildcard rules apply too.
-            val obj = parse("""{"import":[["d/lib","a.b"]]}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> {
-                            """
-                            {"map":{"b":{"map":{"a":{"value":"deep"}}}}}
-                            """.trimIndent()
-                        }
-
-                        else -> {
-                            null
-                        }
-                    }
-                }
-            assertEquals("deep", expanded["value"]?.jsonPrimitive?.content)
-        }
-
-    @Test
-    fun `selector falls back to wildcard star when exact label is missing`() =
-        runTest {
-            val obj = parse("""{"import":["d/lib","ghost"]}""")
-            val expanded =
-                NamecoinImportResolver.expandImports(obj) { name ->
-                    when (name) {
-                        "d/lib" -> """{"map":{"*":{"value":"wildcard"}}}"""
-                        else -> null
-                    }
-                }
-            assertEquals("wildcard", expanded["value"]?.jsonPrimitive?.content)
-        }
-
-    // ── Integration: NamecoinNameResolver (NIP-05) follows import ──────────
-
-    @Test
-    fun `NIP-05 lookup follows import for shared nostr names block`() =
-        runTest {
-            // The real-world `testls.bit` deployment: the apex record at
-            // `d/testls` is up against the 520-byte per-name limit and
-            // delegates its `nostr.names` block to a sibling name via
-            // `"import":"dd/testls"`. Without import support, NIP-05
-            // resolution sees no `nostr` field at d/testls and fails.
-            val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/testls",
-                        """{"import":"dd/testls","ip":"107.152.38.155"}""",
-                    )
-                    register(
-                        "dd/testls",
-                        """
-                        {"nostr":{"names":{
-                            "_":"460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-                            "m":"6cdebccabda1dfa058ab85352a79509b592b2bdfa0370325e28ec1cb4f18667d"
-                        }}}
-                        """.trimIndent(),
-                    )
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-
-            // Bare `.bit` resolves to root entry.
-            val rootResult = resolver.resolve("testls.bit")
-            assertNotNull("bare testls.bit should resolve via import", rootResult)
-            assertEquals(
-                "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-                rootResult?.pubkey,
-            )
-
-            // Named identity `m@testls.bit` resolves through the same import.
-            val mResult = resolver.resolve("m@testls.bit")
-            assertNotNull("m@testls.bit should resolve via import", mResult)
-            assertEquals(
-                "6cdebccabda1dfa058ab85352a79509b592b2bdfa0370325e28ec1cb4f18667d",
-                mResult?.pubkey,
-            )
-
-            // Both names must have been queried (parent + import target).
-            assertTrue("d/testls" in client.queriedNames)
-            assertTrue("dd/testls" in client.queriedNames)
-        }
-
-    @Test
-    fun `resolveDetailed returns Success when import supplies the names block`() =
-        runTest {
-            val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/testls",
-                        """{"import":"dd/testls"}""",
-                    )
-                    register(
-                        "dd/testls",
-                        """
-                        {"nostr":{"names":{
-                            "m":"6cdebccabda1dfa058ab85352a79509b592b2bdfa0370325e28ec1cb4f18667d"
-                        }}}
-                        """.trimIndent(),
-                    )
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val outcome = resolver.resolveDetailed("m@testls.bit")
-            assertTrue("expected Success, got $outcome", outcome is NamecoinResolveOutcome.Success)
-            outcome as NamecoinResolveOutcome.Success
-            assertEquals(
-                "6cdebccabda1dfa058ab85352a79509b592b2bdfa0370325e28ec1cb4f18667d",
-                outcome.result.pubkey,
-            )
-        }
-
-    @Test
-    fun `resolveDetailed returns NoNostrField when import target lacks nostr`() =
-        runTest {
-            val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/testls",
-                        """{"import":"dd/testls"}""",
-                    )
-                    register(
-                        "dd/testls",
-                        """{"ip":"1.2.3.4"}""", // no nostr field even after merge
-                    )
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val outcome = resolver.resolveDetailed("testls.bit")
             assertTrue(
-                "expected NoNostrField, got $outcome",
-                outcome is NamecoinResolveOutcome.NoNostrField,
+                "expected MalformedRecord, got $second",
+                (second as? NamecoinTraversalResult.Failure)?.outcome is NamecoinResolveOutcome.MalformedRecord,
             )
+            assertEquals(listOf("dd/broken"), client.queriedNames)
         }
 
     @Test
-    fun `record without import key skips import resolver entirely`() =
+    fun `record without import performs only apex lookup`() =
         runTest {
-            // Pure regression guard: ensure non-import records pay zero
-            // I/O cost (no extra ElectrumX queries beyond the parent).
             val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/plain",
-                        """
-                        {"nostr":{"names":{
-                            "_":"460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"
-                        }}}
-                        """.trimIndent(),
-                    )
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val result = resolver.resolve("plain.bit")
-            assertNotNull(result)
-            assertEquals(
-                "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-                result?.pubkey,
-            )
-            // Exactly one query: d/plain. No import means no extra fetches.
-            assertEquals(listOf("d/plain"), client.queriedNames)
+                RecordingElectrumXClient()
+                    .register("d/example", """{"nostr":"$TEST_PUBKEY_A"}""")
+
+            assertSuccessPubkey(resolver(client).resolveDomainDetailed("example.bit"), TEST_PUBKEY_A)
+            assertEquals(listOf("d/example"), client.queriedNames)
         }
 
-    @Test
-    fun `importer wins for nostr names so apex can override a named entry`() =
-        runTest {
-            // Importer declares its own `nostr.names.m`; imported value
-            // declares a different one. Importer wins on the whole `nostr`
-            // key (shallow merge per spec).
-            val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/testls",
-                        """
-                        {"import":"dd/testls",
-                         "nostr":{"names":{"m":"aaaa000000000000000000000000000000000000000000000000000000000001"}}}
-                        """.trimIndent(),
-                    )
-                    register(
-                        "dd/testls",
-                        """
-                        {"nostr":{"names":{"m":"bbbb000000000000000000000000000000000000000000000000000000000002"}}}
-                        """.trimIndent(),
-                    )
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val result = resolver.resolve("m@testls.bit")
-            assertNotNull(result)
-            assertEquals(
-                "aaaa000000000000000000000000000000000000000000000000000000000001",
-                result?.pubkey,
-            )
-        }
+    private fun resolver(
+        client: RecordingElectrumXClient,
+        limits: NamecoinResolutionLimits = NamecoinResolutionLimits(),
+    ) = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L, resolutionLimits = limits) { emptyList() }
 
-    @Test
-    fun `failed import does not break NIP-05 if names are local`() =
-        runTest {
-            // Importer has its own `nostr.names`; the imported
-            // boilerplate happens to be unreachable. Resolution still
-            // succeeds from the importer's own data.
-            val client =
-                FakeElectrumXClient().apply {
-                    register(
-                        "d/testls",
-                        """
-                        {"import":"dd/missing",
-                         "nostr":{"names":{"_":"460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"}}}
-                        """.trimIndent(),
-                    )
-                    // dd/missing is intentionally NOT registered.
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val result = resolver.resolve("testls.bit")
-            assertNotNull(result)
-            assertEquals(
-                "460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c",
-                result?.pubkey,
-            )
-        }
-
-    @Test
-    fun `NIP-05 lookup surfaces MalformedRecord with parser detail when value is broken JSON`() =
-        runTest {
-            // Real-world failure mode: a hand-built `name_update` with one
-            // closing brace short of balanced ends up published as broken
-            // JSON. The publisher then sees "name not found / no nostr
-            // field" and chases a phantom bug. Surface the parser's
-            // diagnostic so they know the value itself is the problem.
-            val truncated =
-                """{"ip":"1.2.3.4","nostr":{"names":{"_":"460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c"}}""".trimIndent()
-            val client =
-                FakeElectrumXClient().apply {
-                    register("d/broken", truncated)
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val outcome = resolver.resolveDetailed("_@broken.bit")
-            assertTrue(
-                "expected MalformedRecord, got $outcome",
-                outcome is NamecoinResolveOutcome.MalformedRecord,
-            )
-            outcome as NamecoinResolveOutcome.MalformedRecord
-            assertEquals("d/broken", outcome.name)
-            // Don't pin the exact parser text — different kotlinx.serialization
-            // versions phrase it differently. Just require it's a non-empty
-            // diagnostic.
-            assertTrue(
-                "error must be a non-empty diagnostic: ${outcome.error}",
-                outcome.error.isNotBlank(),
-            )
-        }
-
-    @Test
-    fun `NIP-05 lookup surfaces MalformedRecord when top-level value is a JSON array`() =
-        runTest {
-            // Top-level non-object values (arrays, primitives, null) are
-            // not valid Domain Name Objects per ifa-0001. They should be
-            // rejected with a useful diagnostic, not collapsed into
-            // NoNostrField (which implies the JSON parsed fine).
-            val client =
-                FakeElectrumXClient().apply {
-                    register("d/arr", """["not","an","object"]""")
-                }
-            val resolver = NamecoinNameResolver(client, lookupTimeoutMs = 1_000L) { emptyList() }
-            val outcome = resolver.resolveDetailed("_@arr.bit")
-            assertTrue(
-                "expected MalformedRecord, got $outcome",
-                outcome is NamecoinResolveOutcome.MalformedRecord,
-            )
-            outcome as NamecoinResolveOutcome.MalformedRecord
-            assertEquals("d/arr", outcome.name)
-            assertTrue(
-                "error must mention the unexpected top-level shape: ${outcome.error}",
-                outcome.error.contains("expected JSON object", ignoreCase = true),
-            )
-        }
-
-    // ── Helpers ──────────────────────────────────────────────────────────
-
-    private fun parse(s: String): JsonObject = json.parseToJsonElement(s).jsonObject
-
-    /**
-     * In-memory ElectrumX double. Lets each test register the records its
-     * lookup will see and asserts on the names actually queried.
-     */
-    private class FakeElectrumXClient : IElectrumXClient {
-        private val records = mutableMapOf<String, String>()
-        val queriedNames: MutableList<String> = mutableListOf()
-
-        fun register(
-            name: String,
-            value: String,
-        ) {
-            records[name] = value
-        }
-
-        override suspend fun nameShowWithFallback(
-            identifier: String,
-            servers: List<ElectrumxServer>,
-        ): NameShowResult? {
-            queriedNames += identifier
-            val value = records[identifier] ?: return null
-            return NameShowResult(name = identifier, value = value)
-        }
+    private fun assertSuccessPubkey(
+        outcome: NamecoinResolveOutcome,
+        expected: String,
+    ) {
+        assertTrue("expected Success, got $outcome", outcome is NamecoinResolveOutcome.Success)
+        assertEquals(expected, (outcome as NamecoinResolveOutcome.Success).result.pubkey)
     }
 }
