@@ -359,4 +359,94 @@ class TrustNetworkIndexTest {
         assertNull(TrustNetworkCodec.decodeIndex(idBytes))
         assertNull(TrustNetworkCodec.decodeIds(idBytes.copyOf(idBytes.size - 8)))
     }
+
+    // Two subjects that share their first 128 bits (49 hex characters, as found in the wild: a
+    // made-up key in a follow list, which a provider scored, imitating Jameson Lopp's).
+    private val real = "f728d9e6e7048358e70930f5ca64b097770d989ccd86854fe618eda9c8a38106"
+    private val lookalike = "f728d9e6e7048358e70930f5ca64b097770d989ccd86854fe322efe3f82f2104"
+
+    @Test
+    fun subjectsSharingAPrefixKeepTheirOwnCards() {
+        val builder = TrustNetworkBuilder(provider)
+        builder.add(card(real, rank = 89, createdAt = 1000, hops = 1, followers = 19415))
+        // Newer: keyed by a prefix, this one took the real subject's place.
+        builder.add(card(lookalike, rank = 2, createdAt = 1067, hops = 3, followers = 4))
+        val (index, ids) = builder.build()
+
+        assertEquals(2, index.size)
+        assertEquals(89, index.rankOf(real))
+        assertEquals(1, index.hopsOf(real))
+        assertEquals(19415, index.followersOf(real))
+        assertEquals(2, index.rankOf(lookalike))
+        assertEquals(3, index.hopsOf(lookalike))
+        assertEquals(1000, ids.createdAt[index.indexOf(real)])
+        assertEquals(1067, ids.createdAt[index.indexOf(lookalike)])
+    }
+
+    @Test
+    fun aDeletionRemovesOnlyTheSubjectItNames() {
+        val builder = TrustNetworkBuilder(provider)
+        builder.add(card(real, rank = 89, createdAt = 1000))
+        builder.add(card(lookalike, rank = 2, createdAt = 1000))
+        builder.add(deletion(2000, lookalike))
+        val (index, _) = builder.build()
+
+        assertEquals(89, index.rankOf(real))
+        assertNull(index.rankOf(lookalike))
+    }
+
+    @Test
+    fun anUpdateMergeKeepsSubjectsSharingAPrefixApart() {
+        val first = TrustNetworkBuilder(provider)
+        first.add(card(real, rank = 89, createdAt = 1000))
+        val (index, ids) = first.build()
+
+        val update = TrustNetworkBuilder(provider)
+        update.addAll(index, ids)
+        update.add(card(lookalike, rank = 2, createdAt = 1067))
+        val (merged, _) = update.build()
+
+        assertEquals(89, merged.rankOf(real))
+        assertEquals(2, merged.rankOf(lookalike))
+    }
+
+    @Test
+    fun theFilesKeepWholeKeys() {
+        val builder = TrustNetworkBuilder(provider)
+        builder.add(card(real, rank = 89, createdAt = 1000))
+        builder.add(card(lookalike, rank = 2, createdAt = 1000))
+        // A tombstone that shares the prefix too: its own key, not the live subject's.
+        val other = real.substring(0, 32) + "0".repeat(32)
+        builder.add(card(other, rank = 0, createdAt = 1000))
+        val (index, ids) = builder.build()
+        val header = TrustNetworkHeader(provider, "wss://relay.example/", syncCursor = 1000, lastFullCheck = 1000, lastUpdate = 1000)
+
+        val (_, readIndex) = assertNotNull(TrustNetworkCodec.decodeIndex(TrustNetworkCodec.encodeIndex(header, index)))
+        val readIds = assertNotNull(TrustNetworkCodec.decodeIds(TrustNetworkCodec.encodeIds(ids)))
+        assertEquals(89, readIndex.rankOf(real))
+        assertEquals(2, readIndex.rankOf(lookalike))
+        assertNull(readIndex.rankOf(other))
+        assertEquals(1, readIds.tombstones)
+
+        // Merged again after loading, the tombstone still removes only its own subject.
+        val update = TrustNetworkBuilder(provider)
+        update.addAll(readIndex, readIds)
+        val (merged, _) = update.build()
+        assertEquals(89, merged.rankOf(real))
+        assertEquals(2, merged.rankOf(lookalike))
+    }
+
+    @Test
+    fun aFileWithHalfKeysIsNotRead() {
+        val builder = TrustNetworkBuilder(provider)
+        builder.add(card(real, rank = 89))
+        val (index, _) = builder.build()
+        val header = TrustNetworkHeader(provider, "wss://relay.example/", syncCursor = 1000, lastFullCheck = 1000, lastUpdate = 1000)
+        val bytes = TrustNetworkCodec.encodeIndex(header, index)
+        // The version right after the 4-byte magic: 5 was the last one with 128-bit keys.
+        bytes[4] = 0
+        bytes[5] = 5
+        assertNull(TrustNetworkCodec.decodeIndex(bytes))
+        assertNull(TrustNetworkCodec.decodeHeader(bytes))
+    }
 }

@@ -7,6 +7,8 @@ install:
   # $MAVEN_CENTRAL_MIRROR, Google's mirror, which lags Central by days and had no crypto-kmp or mls-kmp
   # 1.0.0: every JitPack build of Quartz failed from the crypto-kmp split on. Without the variable the
   # script does nothing, and Gradle reads Central itself.
-  # The Android publication goes too: the multiplatform module names quartz-android as the variant
-  # for Android consumers, and without it an Android app could not resolve a JitPack build.
-  - env -u MAVEN_CENTRAL_MIRROR ./gradlew :quartz:publishKotlinMultiplatformPublicationToMavenLocal :quartz:publishJvmPublicationToMavenLocal :quartz:publishAndroidPublicationToMavenLocal --init-script nosign.init.gradle
+  # The Android and iOS publications go too: the multiplatform module names quartz-android and
+  # quartz-ios* as the variants for those consumers, so without them an Android app, or a KMP app's
+  # iOS (and metadata) compiles, could not resolve a JitPack build. Kotlin/Native builds the iOS klibs
+  # on JitPack's Linux host.
+  - env -u MAVEN_CENTRAL_MIRROR ./gradlew :quartz:publishKotlinMultiplatformPublicationToMavenLocal :quartz:publishJvmPublicationToMavenLocal :quartz:publishAndroidPublicationToMavenLocal :quartz:publishIosArm64PublicationToMavenLocal :quartz:publishIosSimulatorArm64PublicationToMavenLocal --init-script nosign.init.gradle

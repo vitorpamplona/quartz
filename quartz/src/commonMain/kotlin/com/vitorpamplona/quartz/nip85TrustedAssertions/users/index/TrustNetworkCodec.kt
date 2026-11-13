@@ -72,25 +72,37 @@ data class TrustNetworkHeader(
  * | i64 syncCursor | i64 lastFullCheck | i64 lastUpdate | i32 heldAtCursor (-1 unknown)
  * | i32 heldAfterCursor (-1 unknown, version 4+) | i32 heldTotal (-1 unknown, version 5+)
  * | i64 generation | i32 N
- * | keys N×16 | rank N×1 | hops N×1 | followers N×4
+ * | keys N×32 | rank N×1 | hops N×1 | followers N×4
  * ```
  * Ids file (`network-ids-v2.bin`), aligned with the index, then the tombstones:
  * ```
  * "AWID" | u16 version | i64 generation | i32 N | ids N×32 | createdAt N×8
- * | i32 T | keys T×16 | ids T×32 | createdAt T×8
+ * | i32 T | keys T×32 | ids T×32 | createdAt T×8
  * ```
  */
 object TrustNetworkCodec {
     /**
      * Version 2 added `heldAtCursor`, version 3 the `generation`, version 4 `heldAfterCursor`,
-     * version 5 `heldTotal`. Versions 3 and 4 still read (the counts they lack are unknown, so the
-     * next update reconciles once); older files are ignored (and downloaded again).
+     * version 5 `heldTotal`, version 6 whole 256-bit keys (they were the first 128 bits, and a
+     * made-up key sharing them took a real person's place). Older files are ignored, and
+     * downloaded again: the keys they hold are only halves.
      */
-    const val VERSION = 5
-    private const val OLDEST_READABLE_VERSION = 3
+    const val VERSION = 6
+    private const val OLDEST_READABLE_VERSION = 6
 
-    /** The ids file gained tombstones in version 2 and the `generation` in 3; older ones are ignored. */
-    const val IDS_VERSION = 3
+    /**
+     * The ids file gained tombstones in version 2, the `generation` in 3 and whole tombstone keys
+     * in 4; older ones are ignored.
+     */
+    const val IDS_VERSION = 4
+
+    private const val KEY_BYTES = 8 * TrustNetworkIndex.KEY_LONGS
+
+    /** Bytes per index entry: the key, rank, hops and followers. */
+    private const val ENTRY_BYTES = KEY_BYTES + 1 + 1 + 4
+
+    /** Bytes per tombstone: the key, the id and created_at. */
+    private const val TOMBSTONE_BYTES = KEY_BYTES + 32 + 8
     private val INDEX_MAGIC = "AWOT".encodeToByteArray()
     private val IDS_MAGIC = "AWID".encodeToByteArray()
 
@@ -100,7 +112,7 @@ object TrustNetworkCodec {
     ): ByteArray {
         val relay = header.relay.encodeToByteArray()
         val n = index.size
-        val out = Writer(4 + 2 + 32 + 2 + relay.size + 8 * 3 + 4 + 4 + 4 + 8 + 4 + n * 22)
+        val out = Writer(4 + 2 + 32 + 2 + relay.size + 8 * 3 + 4 + 4 + 4 + 8 + 4 + n * ENTRY_BYTES)
         out.bytes(INDEX_MAGIC)
         out.short(VERSION)
         out.bytes(Hex.decode(header.provider))
@@ -130,8 +142,8 @@ object TrustNetworkCodec {
             val reader = Reader(bytes)
             val header = reader.header()
             val n = reader.int()
-            require(n >= 0 && reader.remaining() == n * 22) { "truncated index" }
-            val keys = LongArray(2 * n) { reader.long() }
+            require(n >= 0 && reader.remaining() == n * ENTRY_BYTES) { "truncated index" }
+            val keys = LongArray(TrustNetworkIndex.KEY_LONGS * n) { reader.long() }
             val rank = reader.bytes(n)
             val hops = reader.bytes(n)
             val followers = IntArray(n) { reader.int() }
@@ -141,7 +153,7 @@ object TrustNetworkCodec {
     fun encodeIds(ids: TrustNetworkIds): ByteArray {
         val n = ids.size
         val t = ids.tombstones
-        val out = Writer(4 + 2 + 8 + 4 + n * 40 + 4 + t * 56)
+        val out = Writer(4 + 2 + 8 + 4 + n * 40 + 4 + t * TOMBSTONE_BYTES)
         out.bytes(IDS_MAGIC)
         out.short(IDS_VERSION)
         out.long(ids.generation)
@@ -166,8 +178,8 @@ object TrustNetworkCodec {
             val idBytes = reader.bytes(32 * n)
             val createdAt = LongArray(n) { reader.long() }
             val t = reader.int()
-            require(t >= 0 && reader.remaining() == t * 56) { "truncated tombstones" }
-            val graveKeys = LongArray(2 * t) { reader.long() }
+            require(t >= 0 && reader.remaining() == t * TOMBSTONE_BYTES) { "truncated tombstones" }
+            val graveKeys = LongArray(TrustNetworkIndex.KEY_LONGS * t) { reader.long() }
             val graveIds = reader.bytes(32 * t)
             val graveCreatedAt = LongArray(t) { reader.long() }
             TrustNetworkIds(idBytes, createdAt, graveKeys, graveIds, graveCreatedAt, generation)

@@ -58,8 +58,12 @@ class TrustNetworkBuilder(
     initialCapacity: Int = 1024,
 ) {
     private var size = 0
-    private var hi = LongArray(initialCapacity)
-    private var lo = LongArray(initialCapacity)
+
+    // The subject's whole key, four longs (see [TrustNetworkIndex.keys]).
+    private var k0 = LongArray(initialCapacity)
+    private var k1 = LongArray(initialCapacity)
+    private var k2 = LongArray(initialCapacity)
+    private var k3 = LongArray(initialCapacity)
     private var rank = ByteArray(initialCapacity)
     private var hops = ByteArray(initialCapacity)
     private var followers = IntArray(initialCapacity)
@@ -111,8 +115,7 @@ class TrustNetworkBuilder(
         val subject = event.tags.dTag()
         if (isSubject(subject)) {
             append(
-                hi = Hex.readLong(subject, 0),
-                lo = Hex.readLong(subject, 16),
+                key = subject,
                 rank = (event.tags.rank() ?: 0).coerceIn(0, 127).toByte(),
                 hops = (event.tags.hops() ?: -1).coerceIn(-1, 127).toByte(),
                 followers = (event.tags.followerCount() ?: 0).coerceAtLeast(0),
@@ -123,11 +126,10 @@ class TrustNetworkBuilder(
             )
         } else {
             // Not about a pubkey (an uppercase `d` is another address, not the pubkey's card), but
-            // the relay serves it for the filter: a rank-0 card under a key of its own (its id's
-            // first bits) keeps it a tombstone that can never supersede a real card.
+            // the relay serves it for the filter: a rank-0 card under a key of its own (its id)
+            // keeps it a tombstone that can never supersede a real card.
             append(
-                hi = Hex.readLong(event.id, 0),
-                lo = Hex.readLong(event.id, 16),
+                key = event.id,
                 rank = 0,
                 hops = -1,
                 followers = 0,
@@ -179,7 +181,7 @@ class TrustNetworkBuilder(
         subject: HexKey,
         asOf: Long,
     ) {
-        val key = Key(Hex.readLong(subject, 0), Hex.readLong(subject, 16))
+        val key = Key.of(subject)
         val previous = deletedSubjects[key]
         if (previous == null || previous < asOf) deletedSubjects[key] = asOf
     }
@@ -197,8 +199,8 @@ class TrustNetworkBuilder(
         require(index.size == idColumn.size) { "index and ids disagree" }
         for (i in 0 until index.size) {
             append(
-                hi = index.keys[2 * i],
-                lo = index.keys[2 * i + 1],
+                keys = index.keys,
+                keyOffset = KEY_LONGS * i,
                 rank = index.rank[i],
                 hops = index.hops[i],
                 followers = index.followers[i],
@@ -212,8 +214,8 @@ class TrustNetworkBuilder(
         // Tombstones come back as the rank-0 cards they are, so supersession still applies.
         for (i in 0 until idColumn.tombstones) {
             append(
-                hi = idColumn.tombstoneKeys[2 * i],
-                lo = idColumn.tombstoneKeys[2 * i + 1],
+                keys = idColumn.tombstoneKeys,
+                keyOffset = KEY_LONGS * i,
                 rank = 0,
                 hops = -1,
                 followers = 0,
@@ -232,9 +234,36 @@ class TrustNetworkBuilder(
             IdAndTime(createdAt[i], Hex.encode(ids.copyOfRange(32 * i, 32 * i + 32)))
         }
 
+    /** [append] for a key written as 64 hex characters. */
     private fun append(
-        hi: Long,
-        lo: Long,
+        key: HexKey,
+        rank: Byte,
+        hops: Byte,
+        followers: Int,
+        createdAt: Long,
+        id: ByteArray,
+        idOffset: Int,
+        held: Boolean,
+    ) = append(Hex.readLong(key, 0), Hex.readLong(key, 16), Hex.readLong(key, 32), Hex.readLong(key, 48), rank, hops, followers, createdAt, id, idOffset, held)
+
+    /** [append] for a key already held as four longs at [keyOffset] in [keys]. */
+    private fun append(
+        keys: LongArray,
+        keyOffset: Int,
+        rank: Byte,
+        hops: Byte,
+        followers: Int,
+        createdAt: Long,
+        id: ByteArray,
+        idOffset: Int,
+        held: Boolean,
+    ) = append(keys[keyOffset], keys[keyOffset + 1], keys[keyOffset + 2], keys[keyOffset + 3], rank, hops, followers, createdAt, id, idOffset, held)
+
+    private fun append(
+        k0: Long,
+        k1: Long,
+        k2: Long,
+        k3: Long,
         rank: Byte,
         hops: Byte,
         followers: Int,
@@ -243,9 +272,11 @@ class TrustNetworkBuilder(
         idOffset: Int,
         held: Boolean,
     ) {
-        if (size == this.hi.size) grow()
-        this.hi[size] = hi
-        this.lo[size] = lo
+        if (size == this.k0.size) grow()
+        this.k0[size] = k0
+        this.k1[size] = k1
+        this.k2[size] = k2
+        this.k3[size] = k3
         this.rank[size] = rank
         this.hops[size] = hops
         this.followers[size] = followers
@@ -256,9 +287,11 @@ class TrustNetworkBuilder(
     }
 
     private fun grow() {
-        val capacity = (hi.size * 2).coerceAtLeast(16)
-        hi = hi.copyOf(capacity)
-        lo = lo.copyOf(capacity)
+        val capacity = (k0.size * 2).coerceAtLeast(16)
+        k0 = k0.copyOf(capacity)
+        k1 = k1.copyOf(capacity)
+        k2 = k2.copyOf(capacity)
+        k3 = k3.copyOf(capacity)
         rank = rank.copyOf(capacity)
         hops = hops.copyOf(capacity)
         followers = followers.copyOf(capacity)
@@ -267,24 +300,19 @@ class TrustNetworkBuilder(
         held = held.copyOf(capacity)
     }
 
-    /** The first 128 bits of each id in [idSet], so [isIn] checks a card without allocating. */
-    private fun idPrefixes(idSet: Set<HexKey>): KeyTable =
+    /** Each id in [idSet] as a [Key], so [isIn] checks a card without allocating. */
+    private fun idKeys(idSet: Set<HexKey>): KeyTable =
         KeyTable.of(
             idSet.mapNotNull { id ->
-                if (Hex.isHex64(id)) Key(Hex.readLong(id, 0), Hex.readLong(id, 16)) to 0L else null
+                if (Hex.isHex64(id)) Key.of(id) to 0L else null
             },
         )
 
-    /** Whether the card at [i] has an id in [idSet], whose [prefixes] are given. */
+    /** Whether the card at [i] has an id in the set [idTable] was made from. */
     private fun isIn(
         i: Int,
-        prefixes: KeyTable,
-        idSet: Set<HexKey>,
-    ): Boolean {
-        if (prefixes.isEmpty() || !prefixes.contains(readLong(ids, 32 * i), readLong(ids, 32 * i + 8))) return false
-        // Rare: confirm the whole id.
-        return Hex.encode(ids.copyOfRange(32 * i, 32 * i + 32)) in idSet
-    }
+        idTable: KeyTable,
+    ): Boolean = !idTable.isEmpty() && idTable.contains(readLong(ids, 32 * i), readLong(ids, 32 * i + 8), readLong(ids, 32 * i + 16), readLong(ids, 32 * i + 24))
 
     /** Unsigned byte order of the ids at positions [a] and [b]. */
     private fun compareIds(
@@ -318,7 +346,7 @@ class TrustNetworkBuilder(
         // the lowest id first, the card NIP-01 keeps (as the relay does).
         val order = IntArray(size) { it }
         mergeSort(order) { a, b ->
-            val c = TrustNetworkIndex.compareKeys(hi[a], lo[a], hi[b], lo[b])
+            val c = TrustNetworkIndex.compareKeys(k0[a], k1[a], k2[a], k3[a], k0[b], k1[b], k2[b], k3[b])
             when {
                 c != 0 -> c
                 createdAt[a] != createdAt[b] -> createdAt[b].compareTo(createdAt[a])
@@ -326,8 +354,8 @@ class TrustNetworkBuilder(
             }
         }
 
-        val deletedPrefixes = idPrefixes(deletedIds)
-        val kind5Prefixes = idPrefixes(deletedByKind5)
+        val deletedIdTable = idKeys(deletedIds)
+        val kind5IdTable = idKeys(deletedByKind5)
         val deletedAtBySubject = KeyTable.of(deletedSubjects.map { (key, at) -> key to at })
         val duplicate = BooleanArray(size)
         val keep = IntArray(size)
@@ -338,12 +366,12 @@ class TrustNetworkBuilder(
         while (k < size) {
             val first = order[k]
             var next = k + 1
-            while (next < size && hi[order[next]] == hi[first] && lo[order[next]] == lo[first]) next++
+            while (next < size && sameKey(order[next], first)) next++
 
             // The subject's newest card the relay still has (a card removed by id falls back to
             // the one before it). A kind-5 deletion of the subject makes that card a tombstone:
             // out of the index, but remembered, so a relay that kept the card cannot bring it back.
-            var deletedAt = if (deletedAtBySubject.isEmpty()) KeyTable.MISSING else deletedAtBySubject.valueOf(hi[first], lo[first])
+            var deletedAt = if (deletedAtBySubject.isEmpty()) KeyTable.MISSING else deletedAtBySubject.valueOf(k0[first], k1[first], k2[first], k3[first])
             // The same card twice (an update re-fetching a card the index already holds): sorted
             // next to each other, so keep the first and carry over whether the relay holds it.
             // Otherwise the copy would be buried as an "older version" of itself.
@@ -358,17 +386,17 @@ class TrustNetworkBuilder(
                 }
             }
             // A card deleted by id deletes its subject as of its own time (see [deletedByKind5]).
-            if (!kind5Prefixes.isEmpty()) {
+            if (!kind5IdTable.isEmpty()) {
                 for (g in k until next) {
                     val i = order[g]
-                    if (!duplicate[i] && isIn(i, kind5Prefixes, deletedByKind5) && createdAt[i] > deletedAt) deletedAt = createdAt[i]
+                    if (!duplicate[i] && isIn(i, kind5IdTable) && createdAt[i] > deletedAt) deletedAt = createdAt[i]
                 }
             }
             var chosen = -1
             for (g in k until next) {
                 val i = order[g]
                 if (duplicate[i]) continue
-                if (isIn(i, deletedPrefixes, deletedIds)) continue
+                if (isIn(i, deletedIdTable)) continue
                 if (chosen < 0) {
                     chosen = i
                 } else if (held[i]) {
@@ -387,7 +415,7 @@ class TrustNetworkBuilder(
             }
         }
 
-        val keys = LongArray(2 * kept)
+        val keys = LongArray(KEY_LONGS * kept)
         val outRank = ByteArray(kept)
         val outHops = ByteArray(kept)
         val outFollowers = IntArray(kept)
@@ -395,28 +423,44 @@ class TrustNetworkBuilder(
         val outIds = ByteArray(32 * kept)
         for (j in 0 until kept) {
             val i = keep[j]
-            keys[2 * j] = hi[i]
-            keys[2 * j + 1] = lo[i]
+            copyKey(i, keys, KEY_LONGS * j)
             outRank[j] = rank[i]
             outHops[j] = hops[i]
             outFollowers[j] = followers[i]
             outCreatedAt[j] = createdAt[i]
             ids.copyInto(outIds, 32 * j, 32 * i, 32 * i + 32)
         }
-        val graveKeys = LongArray(2 * buried)
+        val graveKeys = LongArray(KEY_LONGS * buried)
         val graveIds = ByteArray(32 * buried)
         val graveCreatedAt = LongArray(buried)
         for (j in 0 until buried) {
             val i = graves[j]
-            graveKeys[2 * j] = hi[i]
-            graveKeys[2 * j + 1] = lo[i]
+            copyKey(i, graveKeys, KEY_LONGS * j)
             graveCreatedAt[j] = createdAt[i]
             ids.copyInto(graveIds, 32 * j, 32 * i, 32 * i + 32)
         }
         return TrustNetworkIndex(keys, outRank, outHops, outFollowers) to TrustNetworkIds(outIds, outCreatedAt, graveKeys, graveIds, graveCreatedAt)
     }
 
+    private fun sameKey(
+        a: Int,
+        b: Int,
+    ) = k0[a] == k0[b] && k1[a] == k1[b] && k2[a] == k2[b] && k3[a] == k3[b]
+
+    private fun copyKey(
+        i: Int,
+        into: LongArray,
+        offset: Int,
+    ) {
+        into[offset] = k0[i]
+        into[offset + 1] = k1[i]
+        into[offset + 2] = k2[i]
+        into[offset + 3] = k3[i]
+    }
+
     companion object {
+        private const val KEY_LONGS = TrustNetworkIndex.KEY_LONGS
+
         /** Stable merge sort of [array] by [compare], without boxing. */
         private inline fun mergeSort(
             array: IntArray,
@@ -451,46 +495,58 @@ class TrustNetworkBuilder(
     }
 }
 
-/** A subject or id prefix: the first 128 bits. */
+/** A whole subject pubkey or event id, as four longs. */
 private data class Key(
-    val hi: Long,
-    val lo: Long,
-)
+    val k0: Long,
+    val k1: Long,
+    val k2: Long,
+    val k3: Long,
+) {
+    companion object {
+        fun of(hex: HexKey) = Key(Hex.readLong(hex, 0), Hex.readLong(hex, 16), Hex.readLong(hex, 32), Hex.readLong(hex, 48))
+    }
+}
 
 /**
- * (hi, lo) keys sorted unsigned, each with a value: membership and lookups by binary search,
- * with no allocation per probe (a `Map<Key, Long>` boxes a key on every lookup).
+ * [Key]s sorted unsigned, each with a value: membership and lookups by binary search, with no
+ * allocation per probe (a `Map<Key, Long>` boxes a key on every lookup).
  */
 private class KeyTable(
-    private val hi: LongArray,
-    private val lo: LongArray,
+    private val keys: LongArray,
     private val values: LongArray,
 ) {
-    fun isEmpty() = hi.isEmpty()
+    fun isEmpty() = values.isEmpty()
 
     fun contains(
-        h: Long,
-        l: Long,
-    ) = find(h, l) >= 0
+        k0: Long,
+        k1: Long,
+        k2: Long,
+        k3: Long,
+    ) = find(k0, k1, k2, k3) >= 0
 
-    /** The value for (h, l), or [MISSING]. */
+    /** The value for the key, or [MISSING]. */
     fun valueOf(
-        h: Long,
-        l: Long,
+        k0: Long,
+        k1: Long,
+        k2: Long,
+        k3: Long,
     ): Long {
-        val i = find(h, l)
+        val i = find(k0, k1, k2, k3)
         return if (i < 0) MISSING else values[i]
     }
 
     private fun find(
-        h: Long,
-        l: Long,
+        k0: Long,
+        k1: Long,
+        k2: Long,
+        k3: Long,
     ): Int {
         var low = 0
-        var high = hi.size - 1
+        var high = values.size - 1
         while (low <= high) {
             val mid = (low + high) ushr 1
-            val c = TrustNetworkIndex.compareKeys(hi[mid], lo[mid], h, l)
+            val at = 4 * mid
+            val c = TrustNetworkIndex.compareKeys(keys[at], keys[at + 1], keys[at + 2], keys[at + 3], k0, k1, k2, k3)
             when {
                 c < 0 -> low = mid + 1
                 c > 0 -> high = mid - 1
@@ -504,12 +560,15 @@ private class KeyTable(
         const val MISSING = Long.MIN_VALUE
 
         fun of(entries: List<Pair<Key, Long>>): KeyTable {
-            val sorted = entries.sortedWith { a, b -> TrustNetworkIndex.compareKeys(a.first.hi, a.first.lo, b.first.hi, b.first.lo) }
-            return KeyTable(
-                LongArray(sorted.size) { sorted[it].first.hi },
-                LongArray(sorted.size) { sorted[it].first.lo },
-                LongArray(sorted.size) { sorted[it].second },
-            )
+            val sorted = entries.sortedWith { a, b -> TrustNetworkIndex.compareKeys(a.first.k0, a.first.k1, a.first.k2, a.first.k3, b.first.k0, b.first.k1, b.first.k2, b.first.k3) }
+            val keys = LongArray(4 * sorted.size)
+            for ((j, entry) in sorted.withIndex()) {
+                keys[4 * j] = entry.first.k0
+                keys[4 * j + 1] = entry.first.k1
+                keys[4 * j + 2] = entry.first.k2
+                keys[4 * j + 3] = entry.first.k3
+            }
+            return KeyTable(keys, LongArray(sorted.size) { sorted[it].second })
         }
     }
 }
