@@ -90,8 +90,11 @@ abstract class PrivateTagArrayEvent(
 
     /**
      * Whether [e], thrown while decrypting with one peer, may just mean the content was encrypted
-     * to another: the signer couldn't decrypt it ([SignerExceptions.CouldNotPerformException],
-     * what every signer answers to a MAC failure), or the result didn't parse.
+     * to another: the signer couldn't decrypt it ([SignerExceptions.CouldNotPerformException]), or
+     * the result didn't parse. A local key answers a MAC failure with `CouldNotPerform`, and so does
+     * a NIP-46 bunker whose error isn't a refusal (`BunkerDecryptError`). A signer that reports a
+     * failed decryption as a refusal (some NIP-55 apps and NIP-07 extensions can't tell the two
+     * apart) stops here: a refusal is final, so the remaining peers aren't tried.
      */
     private fun isWrongPeer(e: Exception): Boolean =
         e !is SignerExceptions ||

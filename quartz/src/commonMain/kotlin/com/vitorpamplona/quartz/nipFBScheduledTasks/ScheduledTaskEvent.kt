@@ -72,8 +72,10 @@ class ScheduledTaskEvent(
      * The private tags are NIP-44 between the author and the runner when one is named, else the
      * author's to themselves. The author tries first the peer NIP-FB's writers encrypt to
      * ([ScheduledTask.privateTagsPeer]: the valid runner, else itself), then, for what other
-     * writers did with a conflict or an odd `p`, every other key in a public `p`, then itself. A
-     * key in a public `p` reads with the author as peer; nobody else reads them.
+     * writers did with a conflict or an odd `p` (an older writer may have encrypted to one of them,
+     * an uppercase one included), every other key in a public `p`, then itself. Each key is tried
+     * once, whatever its case. A key in a public `p` reads with the author as peer; nobody else
+     * reads them.
      */
     override fun privateTagsPeers(reader: HexKey): List<HexKey> {
         val task = ScheduledTask(tags)
@@ -81,7 +83,7 @@ class ScheduledTaskEvent(
         if (runners.isEmpty()) return super.privateTagsPeers(reader)
         return when (reader) {
             pubKey -> {
-                val others = runners.filter { Hex.isHexKey(it) && it.lowercase() != pubKey }
+                val others = runners.filter(Hex::isHexKey).map { it.lowercase() }
                 (listOf(task.privateTagsPeer(pubKey)) + others + pubKey).distinct()
             }
             in runners -> listOf(pubKey)

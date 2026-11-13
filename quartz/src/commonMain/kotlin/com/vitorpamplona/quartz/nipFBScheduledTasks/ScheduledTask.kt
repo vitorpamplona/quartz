@@ -32,7 +32,6 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.ParamTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.PausedTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.RanTag
 import com.vitorpamplona.quartz.nipFBScheduledTasks.tags.TaskTag
-import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
  * A person's recurring task (NIP-FB, [ScheduledTaskEvent]) as its two tag lists: [publicTags]
@@ -91,8 +90,9 @@ class ScheduledTask(
     fun paramValues(name: String): List<String>? = param(name)?.values
 
     /**
-     * The value of every public `p` tag, valid or not. NIP-FB reads the runner from the public
-     * tags only; a private `p` is just a tag this client keeps.
+     * The value of every public `p` tag, valid or not: a blank `["p", ""]` counts (it stops the
+     * devices, and nobody runs the task), a `["p"]` with no value doesn't. NIP-FB reads the runner
+     * from the public tags only; a private `p` is just a tag this client keeps.
      */
     val runners: List<String> by lazy { publicTags.runnerKeys() }
 
@@ -240,9 +240,6 @@ class ScheduledTask(
         val cron = cronTag ?: return moved
         return moved.replacing(CronTag::isTag, cron.copy(setAt = now).toTagArray())
     }
-
-    @Deprecated("Use withRunner(runner, now): a runner change restarts the schedule.", ReplaceWith("withRunner(runner, now)"), level = DeprecationLevel.HIDDEN)
-    fun withRunner(runner: HexKey?): ScheduledTask = withRunner(runner, TimeUtils.now())
 
     private fun isPublicRunnerTag(tag: Array<String>) = tag.isNotEmpty() && tag[0] == PTag.TAG_NAME
 

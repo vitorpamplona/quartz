@@ -407,6 +407,21 @@ class ScheduledTaskRunnerTest {
         }
 
     @Test
+    fun theAuthorTriesEachKeyOnceWhateverItsCase() =
+        runTest {
+            val upper = assistant.pubKey.uppercase()
+            // Two `p`s for one key in two cases: a conflict, and one key to try besides self.
+            val both = ScheduledTask(daily.publicTags + arrayOf(arrayOf("p", assistant.pubKey), arrayOf("p", upper)), daily.privateTags)
+            val event = signed(ScheduledTaskEvent.update(both, reader, "observer"))
+            assertEquals(listOf(reader.pubKey, assistant.pubKey), event.privateTagsPeers(reader.pubKey))
+            // An old writer's uppercase `p`, encrypted to that key: read on the second try.
+            val old = ScheduledTask(daily.publicTags + arrayOf(arrayOf("p", upper)), daily.privateTags)
+            val theirs = signed(EventTemplate(1_000, ScheduledTaskEvent.KIND, old.publicTags, reader.nip44Encrypt(PrivateTagsInContent.encode(old.privateTags), assistant.pubKey)))
+            assertEquals(listOf(reader.pubKey, assistant.pubKey), theirs.privateTagsPeers(reader.pubKey))
+            assertEquals(old, theirs.task(RecordingSigner(reader)))
+        }
+
+    @Test
     fun aRejectedDecryptionIsAskedOnceNotOncePerPeer() =
         runTest {
             val two = ScheduledTask(daily.publicTags + arrayOf(arrayOf("p", stranger.pubKey), arrayOf("p", assistant.pubKey)), daily.privateTags)

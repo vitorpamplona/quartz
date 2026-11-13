@@ -395,15 +395,15 @@ reader's Observer when no device of theirs is on. It is a NIP-FB runner:
   `ScheduledTaskClaims.decideAsRunner` and `checkRunner`; `ObserverParams` (`model`, `key`),
   `ObserverSite.build(forReader)`, `runnerSiteFilter`/`isRunnerSiteFor`/`runnerSite`, and the
   two-site `alreadyPrinted`, `lastPrinted` and `missedRun`. After the 2026-11-12 audit:
-  `withRunner(runner, now)` restarts the schedule (the one-argument form is a hidden deprecated
-  overload); `ScheduledTask.runner` is a lowercase hex key only, `runnerFor(author)` also refuses
-  the author's own, `isRunnerKey`; `RunnerVerdict.CLAIMED_BY_DEVICE`; a runner never resumes a
-  run that died; `PrivateTagArrayEvent.decrypt` stops at the signer's first refusal or timeout,
-  and `ScheduledTaskEvent.privateTagsPeers` puts the writer's peer first; `runners`, `runner`
-  and `params` are computed once.
-  Release note: the new enum values `ScheduledTaskClaims.Decision.RUNNER_NAMED` and
-  `RunnerVerdict.CLAIMED_BY_DEVICE` break a dependent's exhaustive `when` over them at source
-  level (the-nostr-observer's runner has one over `RunnerVerdict`).
+  `withRunner(runner, now)` restarts the schedule; `ScheduledTask.runner` is a lowercase hex key
+  only, `runnerFor(author)` also refuses the author's own, `isRunnerKey`;
+  `RunnerVerdict.CLAIMED_BY_DEVICE`; a runner never resumes a run that died;
+  `PrivateTagArrayEvent.decrypt` stops at the signer's first refusal or timeout, and
+  `ScheduledTaskEvent.privateTagsPeers` puts the writer's peer first; `runners`, `runner` and
+  `params` are computed once. After the 2026-11-13 audit: a NIP-46 bunker's decrypt error that
+  isn't a refusal reads as a failed decryption (`CouldNotPerform`), so the author's next peer is
+  tried; `privateTagsPeers` tries each key once whatever its case; a `p` is a `p` tag with a
+  value (a blank value counts and stops the devices; a value-less `["p"]` doesn't).
 - Brainstorm-UI: the who-prints choice and the Give/Take back key screen, through the server
   endpoints, which answer only Brainstorm logins. Amethyst: shows the runner and can only clear
   it, and sends the reader to Brainstorm to name it or give it a key. Both: settings read and
