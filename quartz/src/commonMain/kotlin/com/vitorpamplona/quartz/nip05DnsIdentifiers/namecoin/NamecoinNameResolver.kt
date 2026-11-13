@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip05DnsIdentifiers.namecoin
 
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -119,7 +120,18 @@ data class NamecoinNostrResult(
  * Resolves Namecoin names to Nostr public keys without transport/UI policy.
  *
  * Browser callers should pass a URL-derived hostname to [resolveDomainDetailed].
- * Existing NIP-05 callers can continue to use [resolve] and [resolveDetailed].
+ * NIP-05 callers use [resolve] and [resolveDetailed].
+ *
+ * Each call walks one traversal: the apex record, then the `import`s, `delegate`s
+ * and `map` children on the selected path only, bounded by [NamecoinResolutionLimits]
+ * and the overall `lookupTimeoutMs`. Any failure along that path fails the whole
+ * resolution; local items are never used as a fallback for a failed import or delegate.
+ *
+ * Trust: the pubkey is whatever the ElectrumX servers return for each name on the path.
+ * A `delegate` hands the record to its target's owner (ncdns semantics: local items are
+ * ignored), and an `import` fills in any item the record lacks. If a referenced name
+ * expires and someone else registers it, they control what this name resolves to, as
+ * with a dangling DNS CNAME.
  */
 class NamecoinNameResolver private constructor(
     private val electrumxClient: IElectrumXClient,
@@ -180,7 +192,18 @@ class NamecoinNameResolver private constructor(
      */
     suspend fun resolveDomain(hostname: String): NamecoinNostrResult? = (resolveDomainDetailed(hostname) as? NamecoinResolveOutcome.Success)?.result
 
-    /** Resolve a .bit hostname with detailed failure and no-pubkey outcomes. */
+    /**
+     * Resolve a .bit hostname with detailed failure and no-pubkey outcomes.
+     *
+     * Pass the ASCII hostname already taken from the URL; one trailing dot and letter case
+     * are normalized. `www.example.bit` looks up `d/example` and walks `map.www`. Only a
+     * direct root pubkey (`"nostr": "<hex>"`, `nostr.pubkey`) or `nostr.names["_"]` of the
+     * selected record counts; a subdomain does not inherit its parent's pubkey.
+     *
+     * [NamecoinResolveOutcome.NoNostrField] is the only outcome meaning "the record resolved
+     * but names no pubkey". Every other non-[NamecoinResolveOutcome.Success] outcome is a
+     * resolution failure and must not be treated as a site without a pubkey.
+     */
     suspend fun resolveDomainDetailed(hostname: String): NamecoinResolveOutcome {
         val parsed = parseBitHostname(hostname) ?: return NamecoinResolveOutcome.InvalidIdentifier(hostname)
         return resolveWithTimeout(parsed)
@@ -256,7 +279,7 @@ class NamecoinNameResolver private constructor(
     ): ParsedIdentifier? {
         val trimmed = raw.trim()
         val input = trimmed.removeSuffix(".")
-        if (input.isEmpty() || input.length > 253 || trimmed == input && raw.endsWith("..")) return null
+        if (input.isEmpty() || input.length > 253) return null
         val labels = input.lowercase().split('.')
         if (labels.size < 2 || labels.last() != "bit") return null
 
@@ -401,13 +424,13 @@ class NamecoinNameResolver private constructor(
     ): List<String> {
         val relaysMap = nostrObj["relays"] as? JsonObject ?: return emptyList()
         val relayArray =
-            (relaysMap[pubkey.lowercase()] ?: relaysMap[pubkey]) as? kotlinx.serialization.json.JsonArray
+            (relaysMap[pubkey.lowercase()] ?: relaysMap[pubkey]) as? JsonArray
                 ?: return emptyList()
         return relayArray.mapNotNull { (it as? JsonPrimitive)?.content }
     }
 
     private fun extractRelayArray(nostrObj: JsonObject): List<String> =
-        (nostrObj["relays"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull {
+        (nostrObj["relays"] as? JsonArray)?.mapNotNull {
             (it as? JsonPrimitive)?.content
         } ?: emptyList()
 }

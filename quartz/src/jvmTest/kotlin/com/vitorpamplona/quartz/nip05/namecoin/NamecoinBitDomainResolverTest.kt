@@ -206,6 +206,9 @@ class NamecoinBitDomainResolverTest {
                     "123.bit",
                     "-bad.bit",
                     "bad..example.bit",
+                    "example.bit..",
+                    ".example.bit",
+                    "*.example.bit",
                     "",
                     "d/example",
                 )
