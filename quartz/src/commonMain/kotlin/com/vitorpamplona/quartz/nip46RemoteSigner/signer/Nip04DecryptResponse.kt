@@ -32,8 +32,9 @@ class Nip04DecryptResponse {
                     SignerResult.RequestAddressed.Successful(DecryptionResult(response.plaintext))
                 }
 
+                // A refusal stays final; a failed decryption reads as one (see BunkerDecryptError).
                 is BunkerResponseError -> {
-                    SignerResult.RequestAddressed.Rejected(response.error)
+                    BunkerDecryptError.parse(response.error)
                 }
 
                 else -> {

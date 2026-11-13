@@ -1054,3 +1054,9 @@ Classes the 2026-09-29 pass did not list. Batch 1 of the event-class cleanup rou
 |---|---|---|---|---|
 | 30405 | `ProductCollectionEvent` | a -> MEMBER (A); t -> HASHTAG (T) | itemAddressIds() (ATag::parseAddressId, any kind); products() keeps kind 30402 | NIP-99 product collection, the 30402 listings it groups (as 31924 groups calendar events). linkedAddressIds() keeps every non-empty `a` value, unvalidated. g and location are values. |
 | 39005 | `ThreadSummaryEvent` | e -> ROOT (E); content{participants} -> PARTICIPANT (U) | rootEventIds() (ETag::parseId), participantKeys() (ThreadSummaryContent, 64-hex only) | Buzz NIP-CW thread-summary overlay, relay-synthesized; d repeats the e (not a second link). h is the channel id (GROUP, T). Shares kind 39005 with NIP-29 `GroupPinnedEvent`. |
+
+### Rows added 2026-11-13 (Routstr)
+
+| Kind | Class | Links | Built from | Notes |
+|---|---|---|---|---|
+| 38421 | `RoutstrNodeEvent` | t -> HASHTAG (T) | topics() (HashtagTag) | Routstr AI node announcement (no NIP; read from live events). `u` endpoints are HTTP base URLs, `mint` Cashu mint URLs, `version`/`models` values: none is a Nostr reference. The node's npub in `GET /v1/info` is checked against the author, not linked. |

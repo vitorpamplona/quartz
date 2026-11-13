@@ -32,7 +32,7 @@ class PrivateTagArrayEventCache<T : PrivateTagArrayEvent>(
     private val decryptionCache =
         object : LruCache<T, PrivateTagArrayEventDecryptCache<T>>(cacheSize) {
             override fun create(key: T): PrivateTagArrayEventDecryptCache<T>? =
-                if (key.content.isNotBlank() && key.pubKey == signer.pubKey) {
+                if (key.content.isNotBlank() && key.canReadPrivateTags(signer.pubKey)) {
                     PrivateTagArrayEventDecryptCache<T>(signer)
                 } else {
                     null

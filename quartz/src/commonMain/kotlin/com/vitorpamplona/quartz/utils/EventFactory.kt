@@ -511,6 +511,8 @@ import com.vitorpamplona.quartz.nipF4Podcasts.authored.AuthoredPodcastsEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
+import com.vitorpamplona.quartz.nipFAAgentKeys.AgentKeyEvent
+import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
@@ -521,6 +523,7 @@ import com.vitorpamplona.quartz.nipXXPushNotifications.registration.PushRegistra
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 
 interface EventBuilder {
     fun build(
@@ -579,6 +582,7 @@ class EventFactory {
                 AgentTurnMetricEvent.KIND -> AgentTurnMetricEvent(id, pubKey, createdAt, tags, content, sig)
                 EngramEvent.KIND -> EngramEvent(id, pubKey, createdAt, tags, content, sig)
                 AgentProfileEvent.KIND -> AgentProfileEvent(id, pubKey, createdAt, tags, content, sig)
+                AgentKeyEvent.KIND -> AgentKeyEvent(id, pubKey, createdAt, tags, content, sig)
                 ObserverFrameEvent.KIND -> ObserverFrameEvent(id, pubKey, createdAt, tags, content, sig)
                 PersonaEvent.KIND -> PersonaEvent(id, pubKey, createdAt, tags, content, sig)
                 ArtifactEvent.KIND -> ArtifactEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1178,6 +1182,7 @@ class EventFactory {
                 ReportEvent.KIND -> ReportEvent(id, pubKey, createdAt, tags, content, sig)
                 RoadEventConfirmationEvent.KIND -> RoadEventConfirmationEvent(id, pubKey, createdAt, tags, content, sig)
                 RoadEventReportEvent.KIND -> RoadEventReportEvent(id, pubKey, createdAt, tags, content, sig)
+                RoutstrNodeEvent.KIND -> RoutstrNodeEvent(id, pubKey, createdAt, tags, content, sig)
                 RootSiteEvent.KIND -> RootSiteEvent(id, pubKey, createdAt, tags, content, sig)
                 SiteSnapshotEvent.KIND -> SiteSnapshotEvent(id, pubKey, createdAt, tags, content, sig)
                 RepostEvent.KIND -> RepostEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1225,6 +1230,7 @@ class EventFactory {
                 WorkoutRecordEvent.KIND -> WorkoutRecordEvent(id, pubKey, createdAt, tags, content, sig)
                 ExerciseTemplateEvent.KIND -> ExerciseTemplateEvent(id, pubKey, createdAt, tags, content, sig)
                 WorkoutTemplateEvent.KIND -> WorkoutTemplateEvent(id, pubKey, createdAt, tags, content, sig)
+                ScheduledTaskEvent.KIND -> ScheduledTaskEvent(id, pubKey, createdAt, tags, content, sig)
                 else -> null
             }
 

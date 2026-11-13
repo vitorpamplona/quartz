@@ -232,9 +232,18 @@ class ResponseParserTest {
 
     @Test
     fun nip04DecryptParseError() {
+        // The bunker tried and failed (a wrong key, a bad MAC): a failed decryption, not a refusal.
         val response = BunkerResponseError("req-5", "fail")
         val result = Nip04DecryptResponse.parse(response)
-        assertIs<SignerResult.RequestAddressed.Rejected<DecryptionResult>>(result)
+        assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotPerform<DecryptionResult>>(result)
+    }
+
+    @Test
+    fun nip04DecryptParseRefusal() {
+        for (refusal in listOf("unauthorized", "User rejected the request", "Permission denied", "", "  ")) {
+            val result = Nip04DecryptResponse.parse(BunkerResponseError("req-5", refusal))
+            assertIs<SignerResult.RequestAddressed.Rejected<DecryptionResult>>(result, refusal)
+        }
     }
 
     @Test
@@ -298,9 +307,19 @@ class ResponseParserTest {
 
     @Test
     fun nip44DecryptParseError() {
-        val response = BunkerResponseError("req-7", "fail")
-        val result = Nip44DecryptResponse.parse(response)
-        assertIs<SignerResult.RequestAddressed.Rejected<DecryptionResult>>(result)
+        // The bunker tried and failed (a wrong key, a bad MAC): a failed decryption, not a refusal.
+        for (failure in listOf("fail", "CouldNotPerformException: invalid MAC", "invalid padding")) {
+            val result = Nip44DecryptResponse.parse(BunkerResponseError("req-7", failure))
+            assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotPerform<DecryptionResult>>(result, failure)
+        }
+    }
+
+    @Test
+    fun nip44DecryptParseRefusal() {
+        for (refusal in listOf("unauthorized", "not connected", "account unavailable", "User rejected the request", "Permission denied", "not allowed", "")) {
+            val result = Nip44DecryptResponse.parse(BunkerResponseError("req-7", refusal))
+            assertIs<SignerResult.RequestAddressed.Rejected<DecryptionResult>>(result, refusal)
+        }
     }
 
     @Test

@@ -1,0 +1,461 @@
+/*
+ * Copyright (c) 2025 Vitor Pamplona
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+ * Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+ * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+package com.vitorpamplona.quartz.nip5aStaticWebsites.observer
+
+import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.tags.people.firstTaggedUserId
+import com.vitorpamplona.quartz.nip01Core.tags.people.isTaggedUser
+import com.vitorpamplona.quartz.nip01Core.tags.people.pTag
+import com.vitorpamplona.quartz.nip5aStaticWebsites.NamedSiteEvent
+import com.vitorpamplona.quartz.nip5aStaticWebsites.siteAggregateHash
+import com.vitorpamplona.quartz.nip5aStaticWebsites.tags.PathTag
+import com.vitorpamplona.quartz.nipFBScheduledTasks.CronZone
+import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
+import com.vitorpamplona.quartz.utils.Hex
+import com.vitorpamplona.quartz.utils.TimeUtils
+
+/**
+ * A person's front pages as one public NIP-5A named site (`quartz/plans/2026-11-11-observer-site.md`):
+ * kind 35128 with `d` = `observer`, `/index.html` = the newest edition, one `/YYYY-MM-DD.html`
+ * per edition, `/archive.html` and `/editions.json`.
+ *
+ * The rules every producer and reader shares live here: naming, upsert, roll-off and
+ * manifest assembly. Uploading the files and signing the manifest are the client's.
+ *
+ * A runner the reader's schedule names (NIP-FB, Runner: the Assistant) publishes the reader's
+ * paper as its own site, the same layout signed by the runner with `["p", reader]`
+ * ([build]'s `forReader`); the reader's apps find it with [runnerSiteFilter] / [isRunnerSiteFor]
+ * and judge from both sites whether a morning printed ([alreadyPrinted], [lastPrinted], [missedRun]).
+ */
+object ObserverSite {
+    const val D_TAG = "observer"
+    const val INDEX_PATH = "/index.html"
+    const val ARCHIVE_PATH = "/archive.html"
+    const val EDITIONS_PATH = "/editions.json"
+    const val FORMAT_VERSION = 1
+
+    /** Editions a site keeps before the byte budget is even considered. */
+    const val KEEP = 90
+
+    /** The event-size budget when no write relay publishes a `max_message_length`. */
+    const val DEFAULT_BUDGET_BYTES = 60_000
+
+    /** Room left for the `["EVENT", …]` envelope around the signed event. */
+    const val ENVELOPE_BYTES = 1_024
+
+    /** The tag-count budget when no write relay publishes a `max_event_tags`. */
+    const val DEFAULT_MAX_TAGS = 100
+
+    const val DEFAULT_TITLE = "The Nostr Observer"
+
+    private val dayPattern = Regex("^\\d{4}-\\d{2}-\\d{2}$")
+    private val dayPathPattern = Regex("^/(\\d{4}-\\d{2}-\\d{2})\\.html$")
+
+    fun address(author: HexKey) = Address(NamedSiteEvent.KIND, author, D_TAG)
+
+    fun title(displayName: String?) = displayName?.trim()?.takeIf { it.isNotEmpty() }?.let { "$it's Observer" } ?: DEFAULT_TITLE
+
+    fun description(displayName: String?) =
+        displayName?.trim()?.takeIf { it.isNotEmpty() }?.let { "A daily front page from $it's web of trust" }
+            ?: "A daily front page from a web of trust"
+
+    /** A `YYYY-MM-DD` that is a real calendar date: not `2026-13-45`, not `2026-02-30`. */
+    fun isDay(day: String): Boolean {
+        if (!dayPattern.matches(day)) return false
+        val year = day.substring(0, 4).toInt()
+        val month = day.substring(5, 7).toInt()
+        val date = day.substring(8, 10).toInt()
+        if (month !in 1..12 || date < 1) return false
+        val leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+        val length =
+            when (month) {
+                2 -> if (leap) 29 else 28
+                4, 6, 9, 11 -> 30
+                else -> 31
+            }
+        return date <= length
+    }
+
+    /**
+     * The newest day a real edition can carry at [now]: tomorrow in UTC, for a producer whose
+     * clock runs ahead. A later day is somebody's bad data and never takes `/index.html`.
+     */
+    fun latestDay(now: Long = TimeUtils.now()) = utcDay(now + 86_400L)
+
+    fun dayPath(day: String) = "/$day.html"
+
+    /** The day an edition's dated path names, or null for any other path. */
+    fun dayOfPath(path: String): String? =
+        dayPathPattern
+            .matchEntire(path)
+            ?.groupValues
+            ?.get(1)
+            ?.takeIf(::isDay)
+
+    /** The UTC calendar date of [epochSeconds], `YYYY-MM-DD`: an edition's day. */
+    fun utcDay(epochSeconds: Long = TimeUtils.now()): String {
+        // Howard Hinnant's days-to-civil: exact for the proleptic Gregorian calendar, no date library.
+        val z = epochSeconds.floorDiv(86_400L) + 719_468L
+        val era = z.floorDiv(146_097L)
+        val doe = z - era * 146_097L
+        val yoe = (doe - doe / 1_460L + doe / 36_524L - doe / 146_096L) / 365L
+        val doy = doe - (365L * yoe + yoe / 4L - yoe / 100L)
+        val mp = (5L * doy + 2L) / 153L
+        val d = doy - (153L * mp + 2L) / 5L + 1L
+        val m = if (mp < 10L) mp + 3L else mp - 9L
+        val y = yoe + era * 400L + (if (m <= 2L) 1L else 0L)
+        return y.toString().padStart(4, '0') + "-" + m.toString().padStart(2, '0') + "-" + d.toString().padStart(2, '0')
+    }
+
+    /**
+     * Whether an edition printed at [printedAt] (unix seconds), or, when that is unknown, dated
+     * [day] (UTC), is the result of the scheduled occurrence due at [occurrence]: printed on the
+     * same calendar day as that due time on [zone]'s clock (the schedule's zone), or, with no
+     * print time, dated the occurrence's UTC date. A paper from the evening before, or from a
+     * catch-up the day before, is not this morning's; a manual print an hour before it is.
+     */
+    fun printedFor(
+        printedAt: Long?,
+        day: String?,
+        occurrence: Long,
+        zone: CronZone,
+    ): Boolean =
+        if (printedAt != null) {
+            zone.dayOf(printedAt) == zone.dayOf(occurrence)
+        } else {
+            day != null && day == utcDay(occurrence)
+        }
+
+    /**
+     * The check before a scheduled print of the occurrence due at [occurrence] in [zone]: true when
+     * [editions] (the reader's Observer site, or a device's own store described the same way)
+     * already hold its result ([printedFor]). Manual prints never ask.
+     */
+    fun alreadyPrinted(
+        editions: List<ObserverEdition>,
+        occurrence: Long,
+        zone: CronZone,
+    ): Boolean = editions.any { printedFor(it.printedAt, it.day, occurrence, zone) }
+
+    /**
+     * [alreadyPrinted] over the reader's own site ([readerEditions], or a device's store) and the
+     * site of the runner their schedule names ([runnerEditions], see [isRunnerSiteFor]; empty when
+     * there is none): an edition on either is this occurrence's paper. What a device and the
+     * runner both call before a scheduled print.
+     */
+    fun alreadyPrinted(
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition>,
+        occurrence: Long,
+        zone: CronZone,
+    ): Boolean = alreadyPrinted(readerEditions, occurrence, zone) || alreadyPrinted(runnerEditions, occurrence, zone)
+
+    /** The newest print the sites show ([lastPrinted]): when, and whether the runner printed it. */
+    data class LastPrint(
+        /** Unix seconds: the edition's `printedAt`. */
+        val printedAt: Long,
+        /** True when it came from the runner's site, false from the reader's own. */
+        val byRunner: Boolean,
+        val edition: ObserverEdition,
+    )
+
+    /**
+     * The newest print across the reader's site and the runner's, by `printedAt` ("Last printed by
+     * your Assistant, <time> ago"); an edition without `printedAt` doesn't say when, so it isn't
+     * one. On a tie the reader's own wins. Null when neither site has a dated print.
+     */
+    fun lastPrinted(
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition> = emptyList(),
+    ): LastPrint? {
+        val own = readerEditions.filter { it.printedAt != null }.maxByOrNull { it.printedAt!! }
+        val runner = runnerEditions.filter { it.printedAt != null }.maxByOrNull { it.printedAt!! }
+        return when {
+            own == null && runner == null -> null
+            runner == null || (own != null && own.printedAt!! >= runner.printedAt!!) -> LastPrint(own!!.printedAt!!, false, own)
+            else -> LastPrint(runner.printedAt!!, true, runner)
+        }
+    }
+
+    /**
+     * The 3-hour missed-run warning ("Not printed since <day>"): the occurrence that didn't print,
+     * or null. Without a runner it is NIP-FB's, from `ran` ([ScheduledTask.missedRun]). With one
+     * (NIP-FB, Runner: it can't write `ran`), the newest occurrence due more than
+     * [ScheduledTask.GRACE_SECONDS] ago, never one before the schedule was set, is missed when no
+     * edition on either site is its paper ([alreadyPrinted]) and `ran` (a device's print from
+     * before the runner was named) isn't at or after it. Never while paused. A runner conflict
+     * runs nowhere, so it warns the same way.
+     */
+    fun missedRun(
+        task: ScheduledTask,
+        readerEditions: List<ObserverEdition>,
+        runnerEditions: List<ObserverEdition>,
+        zone: CronZone,
+        now: Long,
+    ): Long? {
+        if (!task.namesRunner) return task.missedRun(zone, now)
+        if (task.paused) return null
+        val due = task.lastDue(zone, now) ?: return null
+        val ran = task.ran
+        if (ran != null && ran >= due) return null
+        return if (alreadyPrinted(readerEditions, runnerEditions, due, zone)) null else due
+    }
+
+    /**
+     * The relay read for the Observer site [runner] publishes for [reader]: kind 35128, by
+     * [runner], `d` = [D_TAG], tagging [reader]. Check each answer with [isRunnerSiteFor].
+     */
+    fun runnerSiteFilter(
+        runner: HexKey,
+        reader: HexKey,
+    ) = Filter(kinds = listOf(NamedSiteEvent.KIND), authors = listOf(runner), tags = mapOf("d" to listOf(D_TAG), "p" to listOf(reader)))
+
+    /**
+     * Whether [event] is the Observer site [runner] publishes for [reader]: a kind 35128 named
+     * site by [runner] with `d` = [D_TAG] and a `p` naming [reader]. Only the runner the reader's
+     * own signed schedule names counts ([com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent.runner]): a site by any other key that tags
+     * the reader is ignored, and so is the runner's site for someone else.
+     */
+    fun isRunnerSiteFor(
+        event: Event,
+        runner: HexKey,
+        reader: HexKey,
+    ): Boolean = event is NamedSiteEvent && event.pubKey == runner && event.dTag() == D_TAG && event.isTaggedUser(reader)
+
+    /** The newest of [events] that [isRunnerSiteFor] accepts, or null. */
+    fun runnerSite(
+        events: Collection<Event>,
+        runner: HexKey,
+        reader: HexKey,
+    ): NamedSiteEvent? =
+        events
+            .filter { isRunnerSiteFor(it, runner, reader) }
+            .maxWithOrNull(compareBy<Event> { it.createdAt }.thenByDescending { it.id }) as NamedSiteEvent?
+
+    /** The reader a runner's Observer site is for: its first `p`, or null for a reader's own site. */
+    fun siteReader(event: NamedSiteEvent): HexKey? = event.firstTaggedUserId()
+
+    /** Newest day first; days are ISO dates, so text order is date order. */
+    fun newestFirst(editions: List<ObserverEdition>) = editions.sortedByDescending { it.day }
+
+    /**
+     * The editions a manifest lists when its `/editions.json` can't be read: one per dated
+     * `path` tag, with only `day`, `path` and `sha256`.
+     */
+    fun editionsFromPaths(paths: List<PathTag>): List<ObserverEdition> =
+        newestFirst(
+            paths
+                .mapNotNull { tag ->
+                    val day = dayOfPath(tag.path) ?: return@mapNotNull null
+                    val hash = tag.hash.lowercase()
+                    if (Hex.isHex64(hash)) ObserverEdition(day, dayPath(day), hash) else null
+                }.distinctBy { it.day },
+        )
+
+    /**
+     * The editions a site serves: one per dated `path` tag ([fromPaths], see [editionsFromPaths]),
+     * described by the `/editions.json` entry ([indexed]) for that day when it names the same
+     * bytes. A day the index lists but no path serves is gone (rolled off by a racing producer);
+     * a day a path serves that the index misses, or lists under another hash, still shows, with
+     * only its day and hash.
+     */
+    fun mergeEditions(
+        indexed: List<ObserverEdition>,
+        fromPaths: List<ObserverEdition>,
+    ): List<ObserverEdition> {
+        val byDay = indexed.associateBy { it.day }
+        return newestFirst(
+            fromPaths.map { served ->
+                val described = byDay[served.day]
+                if (described != null && described.sha256.equals(served.sha256, ignoreCase = true)) {
+                    described.copy(path = dayPath(served.day), sha256 = served.sha256.lowercase())
+                } else {
+                    served
+                }
+            },
+        )
+    }
+
+    /** [editions] with [edition] in it, replacing any edition of the same day; newest first. */
+    fun upsert(
+        editions: List<ObserverEdition>,
+        edition: ObserverEdition,
+    ): List<ObserverEdition> = newestFirst(editions.filter { it.day != edition.day } + edition)
+
+    /** The event-size budget from the write relays' NIP-11 `max_message_length`s (null = unknown). */
+    fun budget(maxMessageLengths: List<Int?>): Int =
+        maxMessageLengths
+            .filterNotNull()
+            .filter { it > ENVELOPE_BYTES }
+            .minOrNull()
+            ?.let { it - ENVELOPE_BYTES } ?: DEFAULT_BUDGET_BYTES
+
+    /** The tag budget from the write relays' NIP-11 `max_event_tags` (null = unknown). */
+    fun tagBudget(maxEventTags: List<Int?>): Int = maxEventTags.filterNotNull().filter { it > 0 }.minOrNull() ?: DEFAULT_MAX_TAGS
+
+    /**
+     * What the site keeps: the newest [keep], then the oldest dropped one at a time until
+     * [fits] says the manifest for the rest fits. The [protect]ed day (today's edition) is never
+     * dropped, even when a later-dated edition is listed, and neither is the last one left, so
+     * a site always has an `/index.html`.
+     */
+    fun rollOff(
+        editions: List<ObserverEdition>,
+        keep: Int = KEEP,
+        protect: String? = null,
+        fits: (List<ObserverEdition>) -> Boolean,
+    ): List<ObserverEdition> {
+        val sorted = newestFirst(editions)
+        val guarded = protect?.let { day -> sorted.firstOrNull { it.day == day } }
+        val others = sorted.filter { it !== guarded }.take(maxOf(0, maxOf(1, keep) - (if (guarded != null) 1 else 0)))
+        var kept = newestFirst(listOfNotNull(guarded) + others)
+        while (kept.size > 1 && !fits(kept)) {
+            val oldest = kept.lastOrNull { it !== guarded } ?: break
+            kept = kept.filter { it !== oldest }
+        }
+        return kept
+    }
+
+    /**
+     * The manifest's files for [editions] (newest first): `/index.html` serving the newest
+     * edition up to [maxDay] (see [latestDay]; every day when null), every dated file, the
+     * archive and the index. Dated paths are named from the day, never from the entry.
+     */
+    fun paths(
+        editions: List<ObserverEdition>,
+        archiveSha256: HexKey,
+        editionsSha256: HexKey,
+        maxDay: String? = null,
+    ): List<PathTag> {
+        val sorted = newestFirst(editions)
+        return buildList {
+            sorted.firstOrNull { maxDay == null || it.day <= maxDay }?.let { add(PathTag(INDEX_PATH, it.sha256)) }
+            sorted.forEach { add(PathTag(dayPath(it.day), it.sha256)) }
+            add(PathTag(ARCHIVE_PATH, archiveSha256))
+            add(PathTag(EDITIONS_PATH, editionsSha256))
+        }
+    }
+
+    /**
+     * The unsigned manifest. [createdAt] should be `max(now, previous.createdAt + 1)` so a
+     * manifest built from an older read never loses to it by clock skew; see [nextCreatedAt].
+     *
+     * [forReader] is set when a runner (NIP-FB, Runner) publishes the reader's paper as its own
+     * site: signed by the runner, with `["p", forReader]` so the reader's apps find it
+     * ([runnerSiteFilter]). Null for the reader's own site.
+     */
+    fun build(
+        editions: List<ObserverEdition>,
+        archiveSha256: HexKey,
+        editionsSha256: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        createdAt: Long = TimeUtils.now(),
+        maxDay: String? = latestDay(createdAt),
+        forReader: HexKey? = null,
+    ): EventTemplate<NamedSiteEvent> {
+        val paths = paths(editions, archiveSha256, editionsSha256, maxDay)
+        return NamedSiteEvent.build(
+            identifier = D_TAG,
+            paths = paths,
+            servers = servers,
+            title = title(displayName),
+            description = description(displayName),
+            createdAt = createdAt,
+        ) {
+            siteAggregateHash(paths)
+            forReader?.let { pTag(it) }
+        }
+    }
+
+    @Deprecated("Kept for binary compatibility; use the overload with forReader.", level = DeprecationLevel.HIDDEN)
+    fun build(
+        editions: List<ObserverEdition>,
+        archiveSha256: HexKey,
+        editionsSha256: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        createdAt: Long = TimeUtils.now(),
+        maxDay: String? = latestDay(createdAt),
+    ): EventTemplate<NamedSiteEvent> = build(editions, archiveSha256, editionsSha256, displayName, servers, createdAt, maxDay, null)
+
+    fun nextCreatedAt(
+        previous: NamedSiteEvent?,
+        now: Long = TimeUtils.now(),
+    ) = if (previous == null) now else maxOf(now, previous.createdAt + 1)
+
+    /**
+     * The size in bytes of [template] once signed by [author]: what a relay's
+     * `max_message_length` measures, less the envelope. Hashes and signatures have fixed
+     * lengths, so placeholders measure exactly.
+     */
+    fun signedSize(
+        template: EventTemplate<NamedSiteEvent>,
+        author: HexKey,
+    ): Int =
+        NamedSiteEvent(PLACEHOLDER_ID, author, template.createdAt, template.tags, template.content, PLACEHOLDER_SIG)
+            .toJson()
+            .encodeToByteArray()
+            .size
+
+    /**
+     * [rollOff] against [budgetBytes] and [maxTags], measuring each candidate manifest as
+     * signed (by [author], tagging [forReader] for a runner's site). The archive and index hashes don't change the size (all hashes are 64 hex), so
+     * placeholders stand in for files not built yet.
+     */
+    fun keepWithinBudget(
+        editions: List<ObserverEdition>,
+        author: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        budgetBytes: Int,
+        maxTags: Int = DEFAULT_MAX_TAGS,
+        keep: Int = KEEP,
+        protect: String? = null,
+        createdAt: Long = TimeUtils.now(),
+        forReader: HexKey? = null,
+    ): List<ObserverEdition> =
+        rollOff(editions, keep, protect) { candidate ->
+            val template = build(candidate, PLACEHOLDER_HASH, PLACEHOLDER_HASH, displayName, servers, createdAt, latestDay(createdAt), forReader)
+            template.tags.size <= maxTags && signedSize(template, author) <= budgetBytes
+        }
+
+    @Deprecated("Kept for binary compatibility; use the overload with forReader.", level = DeprecationLevel.HIDDEN)
+    fun keepWithinBudget(
+        editions: List<ObserverEdition>,
+        author: HexKey,
+        displayName: String?,
+        servers: List<String>,
+        budgetBytes: Int,
+        maxTags: Int = DEFAULT_MAX_TAGS,
+        keep: Int = KEEP,
+        protect: String? = null,
+        createdAt: Long = TimeUtils.now(),
+    ): List<ObserverEdition> = keepWithinBudget(editions, author, displayName, servers, budgetBytes, maxTags, keep, protect, createdAt, null)
+
+    private val PLACEHOLDER_HASH = "0".repeat(64)
+    private val PLACEHOLDER_ID = "0".repeat(64)
+    private val PLACEHOLDER_SIG = "0".repeat(128)
+}

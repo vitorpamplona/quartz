@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo.MostroInfoEvent
 import com.vitorpamplona.quartz.nip87Ecash.recommendation.MintRecommendationEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 import com.vitorpamplona.quartz.utils.EventFactory
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -53,7 +54,7 @@ class IndexableContentGoldenTest {
      * One event per kind, carrying every tag name the accessors read plus a content body, so the
      * recorded string exercises each field a kind joins rather than just its content.
      */
-    private fun sample(kind: Int) = drssSample(kind) ?: sharedSample(kind)
+    private fun sample(kind: Int) = drssSample(kind) ?: routstrSample(kind) ?: sharedSample(kind)
 
     /**
      * drss.io's feed lists (30100) and event lists (30102) are told apart from the other apps on
@@ -75,6 +76,22 @@ class IndexableContentGoldenTest {
                 "",
                 "",
             )
+        }
+
+    /** A Routstr node indexes its content JSON's name and about, which the shared prose body is not. */
+    private fun routstrSample(kind: Int) =
+        if (kind == RoutstrNodeEvent.KIND) {
+            EventFactory.create<Event>(
+                "9".repeat(64),
+                "a".repeat(64),
+                1700000000L,
+                kind,
+                arrayOf(arrayOf("d", "the-d-tag"), arrayOf("u", "https://node.example.com"), arrayOf("t", "hashtag1")),
+                """{"name":"The Name","about":"The About"}""",
+                "",
+            )
+        } else {
+            null
         }
 
     private fun sharedSample(kind: Int) =

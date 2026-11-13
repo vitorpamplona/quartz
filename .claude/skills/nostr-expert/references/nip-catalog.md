@@ -111,6 +111,8 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nipC7Chats/` | ChatEvent 9 |
 | `nipCCGeocaching/` | GeocacheFoundLogEvent 7516, GeocacheVerificationEvent 7517, GeocacheListingEvent 37516, GeocacheCurationListEvent 37517 |
 | `nipF4Podcasts/` | PodcastEpisodeEvent 54, FavoritePodcastsListEvent 10054, AuthoredPodcastsEvent 10064, PodcastMetadataEvent 10154 |
+| `nipFAAgentKeys/` | AgentKeyEvent 12000 |
+| `nipFBScheduledTasks/` | ScheduledTaskEvent 34817 |
 | `nipFERelayOverHttp/` | (no event kinds: tags/utilities) |
 | `nipXXPodcasting20/` | Podcasting20EpisodeEvent 30054, Podcasting20TrailerEvent 30055 |
 | `nipXXPrivateNoteStorage/` | PnsEvent 1080 |
@@ -131,6 +133,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `marmot/` | LegacyKeyPackageEvent 443, WelcomeEvent 444, GroupEvent 445, NotificationRequestEvent 446, TokenRequestEvent 447, TokenListEvent 448, TokenRemovalEvent 449, PushOwnerProof 451, KeyPackageRelayListEvent 10051, KeyPackageEvent 30443 |
 | `openagents/` | ExtensionReleaseEvent 3184, CapabilityDiscoveryEvent 30180, ExtensionListingEvent 30184 |
 | `podcasts/` | (no event kinds: tags/utilities) |
+| `routstr/` | RoutstrNodeEvent 38421 |
 
 ## `experimental/` (draft / unmerged NIPs)
 

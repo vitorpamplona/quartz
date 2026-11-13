@@ -483,6 +483,8 @@ import com.vitorpamplona.quartz.nipF4Podcasts.authored.AuthoredPodcastsEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.episode.PodcastEpisodeEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEvent
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
+import com.vitorpamplona.quartz.nipFAAgentKeys.AgentKeyEvent
+import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
 import com.vitorpamplona.quartz.nipXXPrivateNoteStorage.PnsEvent
@@ -492,6 +494,7 @@ import com.vitorpamplona.quartz.nipXXPushNotifications.registration.PushRegistra
 import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.CapabilityDiscoveryEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
+import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
 
 /**
  * Human-readable label and defining NIP for a Nostr event kind.
@@ -522,6 +525,8 @@ object KindNames {
             AppDefinitionEvent.KIND to KindName("Apps", "89"),
             AppRecommendationEvent.KIND to KindName("App Recommendations", "89"),
             AppSpecificDataEvent.KIND to KindName("User Settings", "78"),
+            AgentKeyEvent.KIND to KindName("AI Agent Keys", null),
+            ScheduledTaskEvent.KIND to KindName("Scheduled Task", null),
             AudioHeaderEvent.KIND to KindName("Audio Header", null),
             AudioTrackEvent.KIND to KindName("Audio Track", null),
             MusicTrackEvent.KIND to KindName("Music Track", null),
@@ -934,6 +939,7 @@ object KindNames {
             AgentProfileEvent.KIND to KindName("Agent Profile", null),
             CvmServerAnnouncementEvent.KIND to KindName("CVM Server Announcement", null),
             CvmToolsListEvent.KIND to KindName("CVM Tools List", null),
+            RoutstrNodeEvent.KIND to KindName("Routstr Node", null),
             SnoAvatarEvent.KIND to KindName("SNO Avatar", null),
             DvmHeartbeatEvent.KIND to KindName("DVM Heartbeat", "90"),
             ArchivedIdentitiesListEvent.KIND to KindName("Archived Identities List", null),

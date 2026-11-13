@@ -240,6 +240,7 @@ object SearchableKinds {
             38192, // Ps1SaveEvent
             38383, // P2POrderEvent
             38385, // MostroInfoEvent
+            38421, // RoutstrNodeEvent
             39000, // GroupMetadataEvent
             39003, // GroupRolesEvent
             39089, // StarterPackEvent
