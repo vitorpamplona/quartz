@@ -189,6 +189,24 @@ interface INostrClient : AutoCloseable {
      */
     fun getOrCreateRelay(url: NormalizedRelayUrl): IRelayClient = throw UnsupportedOperationException("This INostrClient does not expose relay clients")
 
+    /**
+     * The kinds [url] has said it will not serve (a CLOSED "kind not allowed: 30023"). The pool
+     * strips them from every REQ it sends that relay, and so from the filters
+     * [com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener.onEose] and
+     * `onEvent` report: a caller that plans its own requests (EOSE cursors that remember which
+     * kinds they covered) reads this to know those kinds were never asked there.
+     *
+     * Defaults to empty, for clients that keep no refusal memory. A delegating wrapper
+     * (`INostrClient by delegate`) forwards this automatically.
+     */
+    fun disallowedKinds(url: NormalizedRelayUrl): Set<Int> = emptySet()
+
+    /**
+     * The most filters [url] has said it accepts in one REQ, if it has said so. Past it the pool
+     * merges a REQ's filters, and drops the rest when merging is not enough. Defaults to null.
+     */
+    fun maxFilters(url: NormalizedRelayUrl): Int? = null
+
     fun getReqFiltersOrNull(subId: String): Map<NormalizedRelayUrl, List<Filter>>?
 
     fun getCountFiltersOrNull(subId: String): Map<NormalizedRelayUrl, List<Filter>>?
