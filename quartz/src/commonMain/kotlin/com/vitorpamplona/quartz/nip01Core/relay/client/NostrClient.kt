@@ -685,6 +685,10 @@ class NostrClient(
 
     override fun activeCounts(url: NormalizedRelayUrl): Map<String, List<Filter>> = activeCounts.activeFiltersFor(url)
 
+    override fun disallowedKinds(url: NormalizedRelayUrl): Set<Int> = activeRequests.relayRefusals.disallowedKinds(url)
+
+    override fun maxFilters(url: NormalizedRelayUrl): Int? = activeRequests.relayRefusals.maxFilters(url)
+
     override fun registrySizes() =
         RegistrySizes(
             liveRequests = activeRequests.activeSubscriptionCount(),

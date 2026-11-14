@@ -265,6 +265,16 @@ times running (`blocked:`, `restricted:`, `invalid:`, `unsupported:`, a non-time
 `rate-limited:` CLOSED with a stated back-off is retried once it passes. The callback subscriptions
 and `subscribeAsFlow` stay open through a CLOSED and come back with the next re-send.
 
+A relay that refuses a REQ over one kind it doesn't serve (`kind not allowed: 30023`) is sent every
+REQ after that without the kind, and one that names its cap on filters per REQ (`invalid number
+of filters: 10`) gets them merged to fit. What the pool learned is readable with
+`client.disallowedKinds(relay)` and `client.maxFilters(relay)`. The `forFilters` a listener's
+`onEose`, `onEvent` and `onClosed` receive are the REQ as that relay was sent it, so a caller that
+records which filters an EOSE covered (to ask only for what is newer next time) should leave
+`disallowedKinds` out when it compares: they were never asked there. Every callback about one REQ
+on one relay passes the same list, until another REQ goes out, so what a listener derives from it
+can be kept by identity.
+
 To read what one relay holds for a filter, once, use `client.fetchEvents(relay, filters)`, a
 `Flow<Event>` that completes at the relay's EOSE, or `client.fetch(relay, filters) { event -> … }`,
 which returns how many it handed over (`…client.accessories`). No subscription id, listener or

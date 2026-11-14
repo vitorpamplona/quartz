@@ -50,6 +50,17 @@ interface SubscriptionListener {
         filters: List<Filter>,
     ): List<Filter>? = null
 
+    /**
+     * [relay] sent everything it had for the REQ [forFilters] were sent in.
+     *
+     * [forFilters] here, in [onEvent] and in [onClosed] are the filters of the REQ the message
+     * answers, as that relay was sent them: kinds it refused stripped
+     * ([com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient.disallowedKinds]), merged or
+     * dropped to fit its cap on filters per REQ ([com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient.maxFilters]).
+     * Every callback about one REQ on one relay passes the same list instance, until another REQ
+     * goes out there: a listener can keep what it derives from them (their shapes, say) keyed by
+     * identity rather than work it out again for every event.
+     */
     fun onEose(
         relay: NormalizedRelayUrl,
         forFilters: List<Filter>?,
