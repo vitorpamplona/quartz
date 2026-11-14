@@ -784,6 +784,12 @@ fun main() = runBlocking {
 }
 ```
 
+## Namecoin `.bit` nSite targets
+
+`NamecoinNameResolver.resolveDomainNsiteDetailed(hostname)` resolves a validated browser hostname through the same bounded Namecoin import/map/delegate traversal as the legacy identity resolver. Its `NamecoinNsiteResolveOutcome.Success` contains a `NamecoinNsiteResult` whose target is `NamecoinNsiteTarget.Root`, `Named`, or `ExactEvent`. `NoNsiteMapping(name)` means the selected record has no nSite/legacy identity or the requested subdomain selector is missing; this is the only absence outcome suitable for an external-browser handoff. `MappingFailure(name, error)` means a selected mapping is present but malformed, invalid, or ambiguous and must remain a visible typed failure. Do not classify errors by message text. `NamecoinFailure(cause)` preserves the existing lookup or traversal outcome.
+
+Direct `nostr.nsite` NIP-19 pointers use a strict Namecoin-specific decoder and take precedence over legacy identities and the top-level `nsite` alias. This API selects a target only: relay retrieval and manifest validation remain in the client. In particular, exact-event consumers must enforce the returned event id, every author/kind/relay hint, and `ExactEvent.allowedKinds`, without replacing an exact replaceable event with its current coordinate.
+
 ## Key Source Files
 
 All client infrastructure lives in the `quartz` module:
