@@ -184,6 +184,12 @@ suspend fun post(client: NostrClient) {
 - **Resolve a user to a pubkey** from hex, npub, nprofile or a NIP-05 `name@domain`:
   `resolveUserHexOrNull(input, nip05Client)` in `nip05DnsIdentifiers`. Pass a
   `Nip05Client` to enable the NIP-05 lookup; without one only key formats resolve.
+- **Resolve a `.bit` browser hostname to an nSite**: `NamecoinNameResolver.resolveDomainNsiteDetailed(host)`
+  returns `NamecoinNsiteResolveOutcome`. A success carries a `NamecoinNsiteTarget.Root`, `.Named`,
+  or `.ExactEvent`. `NoNsiteMapping` is genuine absence (including a missing selector);
+  `MappingFailure` is a malformed/ambiguous mapping and must not trigger external handoff.
+  `NamecoinFailure(cause)` preserves lookup/traversal failures. Exact-event retrieval must
+  enforce the returned id, author/kind/relay hints, and `allowedKinds`.
 - **Find a remote signer for an address**: `Nip05Client.loadRemoteSigner(Nip05Id)` reads the
   domain's NIP-46 `nip46` field (both the `nip46[pubkey]` and the `name=_` shapes) into a
   `Nip05RemoteSigner`; connect to its `signerPubKey` on its `relays`, and check the account the
