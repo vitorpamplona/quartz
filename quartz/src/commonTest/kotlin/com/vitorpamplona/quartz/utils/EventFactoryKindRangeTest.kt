@@ -100,6 +100,26 @@ class EventFactoryKindRangeTest {
         assertEquals(emptyList(), violations)
     }
 
+    /**
+     * A typed replaceable kind that extends plain Event has no address: a cache keyed by address
+     * (Amethyst's LocalCache) can't store it, and nothing tells the newest version from older
+     * ones. Kinds 13194 (NWC info) and 13534 (NIP-43 membership list) were such cases.
+     */
+    @Test
+    fun plainReplaceableKindsHaveAnAddress() {
+        val violations =
+            (listOf(0, 3) + (10000 until 20000)).mapNotNull { kind ->
+                val event = probe(kind)
+                if (event::class != Event::class && event !is AddressableEvent) {
+                    "kind $kind (${event::class.simpleName}) does not implement AddressableEvent"
+                } else {
+                    null
+                }
+            }
+
+        assertEquals(emptyList(), violations)
+    }
+
     @Test
     fun plainReplaceableKindsIgnoreStrayDTags() {
         val violations =

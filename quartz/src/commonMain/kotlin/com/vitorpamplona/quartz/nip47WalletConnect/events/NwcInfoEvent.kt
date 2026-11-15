@@ -21,7 +21,7 @@
 package com.vitorpamplona.quartz.nip47WalletConnect.events
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -38,7 +38,7 @@ class NwcInfoEvent(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : Event(id, pubKey, createdAt, KIND, tags, content, sig) {
+) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
     fun capabilities(): List<String> = content.split(" ").filter { it.isNotBlank() }
 
     fun supportsMethod(method: String): Boolean = capabilities().contains(method)

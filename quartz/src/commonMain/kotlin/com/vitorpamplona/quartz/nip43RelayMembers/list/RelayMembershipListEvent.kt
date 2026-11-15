@@ -21,7 +21,7 @@
 package com.vitorpamplona.quartz.nip43RelayMembers.list
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -39,7 +39,7 @@ class RelayMembershipListEvent(
     tags: Array<Array<String>>,
     content: String,
     sig: HexKey,
-) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
+) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider {
     /** `member` tags carry no relay slot, so there is nothing to hint. */
     override fun pubKeyHints() = emptyList<PubKeyHint>()
