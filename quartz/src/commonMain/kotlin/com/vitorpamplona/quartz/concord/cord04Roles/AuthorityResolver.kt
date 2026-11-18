@@ -63,6 +63,8 @@ data class AuthorityResolver private constructor(
     private val banned: Set<String>,
     /** Each role-holder's honored Grant head, keyed by member — what a `vac` must pin. */
     private val grantHeads: Map<String, GrantHead>,
+    /** The Roles v2 Roster (CORD-04 §2) when the Community has switched to it; null on the legacy Roster. */
+    private val ranked: RankedRosterFold? = null,
 ) {
     // Derived from the constructor values, so deliberately outside the data class's equality.
     private val communityId: ByteArray by lazy { communityIdHex.hexToByteArray() }
@@ -76,6 +78,38 @@ data class AuthorityResolver private constructor(
         val version: Long,
         val hashHex: String,
     )
+
+    /** True once the Community is on Roles v2 (CORD-04 §2): `@everyone` stands on an owner-rooted vsk-13 fold. */
+    val isRolesV2: Boolean get() = ranked != null
+
+    /** The Roles v2 Roster this resolver folded, or null on the legacy Roster. */
+    fun rankedRoster(): RankedRosterFold? = ranked
+
+    /** `@everyone`'s bits (CORD-04 §2), or null on the legacy Roster. */
+    fun everyonePermissions(): ConcordPermissions? = ranked?.everyone
+
+    /**
+     * The Channels that stood before the switch to Roles v2 (CORD-04 §2), lowercase hex, or null
+     * on the legacy Roster or when the switch listed none. An unmarked Channel edition counts only
+     * for a listed Channel.
+     */
+    fun legacyChannels(): Set<String>? = ranked?.legacyChannels?.toSet()
+
+    /**
+     * The bits a Tenure seals for [author] over the edition [hashHex] (CORD-04 §9), from every
+     * standing ranked above [reach] (default: beneath every Role). Always empty on the legacy Roster.
+     */
+    fun sealedFor(
+        author: String,
+        hashHex: String,
+        reach: Long = RankedRoster.BENEATH_EVERY_ROLE,
+    ): ConcordPermissions = ranked?.sealOf(author, hashHex, reach) ?: ConcordPermissions.NONE
+
+    /** Whether some Tenure lists [hashHex] as [author]'s (CORD-04 §9): it stands without its `vac`. */
+    fun isTenureListed(
+        author: String,
+        hashHex: String,
+    ): Boolean = ranked?.isListed(author, hashHex) == true
 
     /** The resolved role definitions (authority-gated), keyed by role id. Safe for display. */
     fun roles(): Map<String, RoleEntity> = roles
@@ -122,8 +156,10 @@ data class AuthorityResolver private constructor(
     fun effectivePermissions(pubKey: String): ConcordPermissions {
         val m = pubKey.lowercase()
         if (m == ownerLower) return ConcordPermissions.ALL
-        val held = memberRoles[m] ?: return ConcordPermissions.NONE
-        var acc = ConcordPermissions.NONE
+        // On Roles v2 every member holds `@everyone`'s bits before any Role (CORD-04 §3).
+        val base = ranked?.everyone ?: ConcordPermissions.NONE
+        val held = memberRoles[m] ?: return base
+        var acc = base
         for (id in held) roles[id]?.let { acc = acc union it.permissionBits() }
         return acc
     }
@@ -224,8 +260,12 @@ data class AuthorityResolver private constructor(
     ): Boolean {
         if (!isWellFormed(edition)) return false
         if (isOwner(edition.author)) return true
-        if (bit == null || !hasPermission(edition.author, bit)) return false
-        return citationSatisfied(edition)
+        if (bit == null) return false
+        // A Tenure-sealed standing keeps what a reduced member decided (CORD-04 §9): the listed
+        // edition is judged on the stronger of the sealed bits and the Roster, and needs no `vac`.
+        val sealed = ranked != null && sealedFor(edition.author, edition.hashHex).has(bit)
+        if (!sealed && !hasPermission(edition.author, bit)) return false
+        return isTenureListed(edition.author, edition.hashHex) || citationSatisfied(edition)
     }
 
     companion object {
@@ -362,6 +402,12 @@ data class AuthorityResolver private constructor(
             communityId: ByteArray,
             ownerPubKey: String,
         ): AuthorityResolver {
+            // CORD-04 §1: a marked edition bound to another Community, and an unmarked edition of a
+            // kind no older client wrote, are refused before anything folds.
+            @Suppress("NAME_SHADOWING")
+            val editions = ControlEdition.admissibleIn(editions, communityId)
+            if (RankedRoster.isActivated(editions, communityId, ownerPubKey)) return resolveRanked(editions, communityId, ownerPubKey)
+
             val passA = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = emptySet())
             // A further pass costs a whole fold, so skip it unless it could change something. Nobody
             // banned, or nobody banned who ever wrote to the Control Plane — the overwhelmingly common
@@ -400,6 +446,106 @@ data class AuthorityResolver private constructor(
             }
             return result
         }
+
+        /**
+         * The Roles v2 resolution (CORD-04 §2–§4, §9), Armada's `foldControlState` for a reader
+         * holding no floor: fold the Roster, fold the Banlist on it, and when the Banlist names
+         * anyone, fold the Roster again with the banned members' editions refused except what a
+         * Tenure keeps. The Banlist itself is the one judged before the ban took anyone's support.
+         */
+        private fun resolveRanked(
+            editions: Collection<ControlEdition>,
+            communityId: ByteArray,
+            ownerPubKey: String,
+        ): AuthorityResolver {
+            val ownerLower = ownerPubKey.lowercase()
+            val communityIdHex = communityId.toHexKey()
+            val first = RankedRoster.fold(editions, communityId, ownerLower)
+            val banned = rankedBanlist(editions, communityId, ownerLower, first)
+            val roster = if (banned.isEmpty()) first else RankedRoster.fold(editions, communityId, ownerLower, excluded = banned)
+
+            val roles = LinkedHashMap<String, RoleEntity>()
+            for (r in roster.roles) {
+                roles[r.roleId] = RoleEntity(roleId = r.roleId, name = r.name, position = r.position, permissions = r.permissions.toWire(), color = r.color)
+            }
+            val memberRoles = roster.grants.associate { it.member to it.roleIds.toSet() }
+            val grantHeads = HashMap<String, GrantHead>()
+            for (g in roster.grants) {
+                val coordinate = grantCoordinateOrNull(communityId, g.member) ?: continue
+                roster.heads[coordinate]?.let { grantHeads[g.member] = GrantHead(it.version, it.hashHex) }
+            }
+            // A Grant that hands no standing Role still pins its member's citations (CORD-04 §5).
+            for ((eid, head) in roster.heads) {
+                if (head.vsk != ControlEntityKind.GRANT.wire) continue
+                val member = RankedRosterContent.parseGrant(head.content)?.member ?: continue
+                if (grantCoordinateOrNull(communityId, member) == eid) grantHeads.getOrPut(member) { GrantHead(head.version, head.hashHex) }
+            }
+            return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles, banned, grantHeads, roster)
+        }
+
+        /**
+         * The Roles v2 Banlist (CORD-04 §4): its head among the editions whose signer holds BAN
+         * through their Roles (`@everyone`'s bits author no Banlist) or a sealed standing, citing
+         * their Grant; then the head's list alone, each entry its author may name (BAN and a strict
+         * outrank, or a sealed standing above the target), the first 500 of them.
+         */
+        private fun rankedBanlist(
+            editions: Collection<ControlEdition>,
+            communityId: ByteArray,
+            ownerLower: String,
+            roster: RankedRosterFold,
+        ): Set<String> {
+            val banlistEid = banlistCoordinateHex(communityId)
+            val list = editions.filter { it.entityKind == ControlEntityKind.BANLIST && it.entityIdHex == banlistEid }
+            if (list.isEmpty()) return emptySet()
+            val grantHeads = HashMap<String, GrantHead>()
+            for ((eid, head) in roster.heads) if (head.vsk == ControlEntityKind.GRANT.wire) grantHeads[eid] = GrantHead(head.version, head.hashHex)
+
+            fun rankOf(member: String): Long? = if (member == ownerLower) OWNER_RANK else roster.highestPosition(member)
+
+            fun sealedBan(e: ControlEdition) = roster.sealOf(e.author, e.hashHex, RankedRoster.BENEATH_EVERY_ROLE).has(ConcordPermissions.BAN)
+
+            fun cited(e: ControlEdition): Boolean {
+                val author = e.author.lowercase()
+                if (author == ownerLower) return true
+                val coordinate = grantCoordinateOrNull(communityId, author) ?: return false
+                return citationMatches(e.authorityCitation, coordinate, grantHeads[coordinate])
+            }
+
+            fun admissible(e: ControlEdition): Boolean {
+                if (ConcordJson.decodeBanlist(e.content) == null) return false
+                val author = e.author.lowercase()
+                val bans = author == ownerLower || roster.permissionsAbove(author, RankedRoster.BENEATH_EVERY_ROLE).has(ConcordPermissions.BAN) || sealedBan(e)
+                return bans && (sealedBan(e) || cited(e))
+            }
+
+            fun entitled(
+                e: ControlEdition,
+                target: String,
+            ): Boolean {
+                if (target == ownerLower) return false
+                val author = e.author.lowercase()
+                if (author == ownerLower) return true
+                val targetRank = rankOf(target) ?: RankedRoster.BENEATH_EVERY_ROLE
+                val authorRank = rankOf(author)
+                val viaRoles =
+                    authorRank != null && authorRank < targetRank &&
+                        ((roster.everyone ?: ConcordPermissions.NONE) union roster.rolesOf(author).fold(ConcordPermissions.NONE) { acc, r -> acc union r.permissions }).has(ConcordPermissions.BAN)
+                return viaRoles || roster.sealOf(author, e.hashHex, targetRank).has(ConcordPermissions.BAN)
+            }
+
+            val head =
+                EditionFold.foldEntityGated(list, rank = { a -> rankOf(a.lowercase()) ?: Long.MAX_VALUE }, gate = ::admissible) ?: return emptySet()
+            return ConcordJson
+                .decodeBanlist(head.content)
+                ?.map { it.lowercase() }
+                ?.filter { entitled(head, it) }
+                ?.take(MAX_BANLIST)
+                ?.filterTo(HashSet()) { RankedRosterContent.isHex64(it) } ?: emptySet()
+        }
+
+        /** The Banlist entries a reader keeps (CORD-04 §4). */
+        private const val MAX_BANLIST = 500
 
         /**
          * One resolution pass. [bannedAuthors] are treated as holding no authority at all — their

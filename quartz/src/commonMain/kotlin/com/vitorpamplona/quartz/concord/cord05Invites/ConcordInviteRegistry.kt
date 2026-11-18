@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.concord.cord05Invites
 import com.vitorpamplona.quartz.concord.cord04Roles.AuthorityCitation
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEditionBuilder
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEntityKind
+import com.vitorpamplona.quartz.concord.cord04Roles.RankedRoster
 import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -156,7 +157,8 @@ object ConcordInviteRegistry {
      * An unsigned registry edition rumor for [creator] listing [linkSigners] (CORD-05 §5). Chain it
      * onto the creator's current authorized head ([version] = head + 1, [prevHash] = its hash; a
      * first registry is version 1 with no prev) and cite the Grant the creator acts under
-     * ([authorityCitation], null for the owner) like any authority edition (CORD-04 §5, `vac`).
+     * ([authorityCitation], null for the owner) like any authority edition (CORD-04 §5, `vac`). On a
+     * Community on Roles v2 pass its [binding] ([RankedRoster.bindingForWrite]) so the edition is marked.
      */
     fun rumor(
         creator: HexKey,
@@ -166,6 +168,7 @@ object ConcordInviteRegistry {
         prevHash: ByteArray?,
         createdAt: Long,
         authorityCitation: AuthorityCitation? = null,
+        binding: ByteArray? = null,
     ): Event =
         ControlEditionBuilder.rumor(
             authorPubKey = creator,
@@ -176,5 +179,17 @@ object ConcordInviteRegistry {
             content = encode(linkSigners),
             createdAt = createdAt,
             authorityCitation = authorityCitation,
+            binding = binding,
         )
+
+    @Deprecated("Use the overload with binding, marked on Roles v2. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    fun rumor(
+        creator: HexKey,
+        communityId: ByteArray,
+        linkSigners: Collection<HexKey>,
+        version: Long,
+        prevHash: ByteArray?,
+        createdAt: Long,
+        authorityCitation: AuthorityCitation? = null,
+    ): Event = rumor(creator, communityId, linkSigners, version, prevHash, createdAt, authorityCitation, null)
 }

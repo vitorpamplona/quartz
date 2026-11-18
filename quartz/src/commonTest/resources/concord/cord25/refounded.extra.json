@@ -1,0 +1,8 @@
+{
+  "epoch0": {
+    "control_pk": "58fd127fd354d104a60f0240555a83bd6406823e627a18be9d1a6d109ce1d7d9",
+    "root": "71fe4587f2308d47a5a42b1d41ead8e8ce0346cca193da69f12e17ef6235a251",
+    "root_epoch": 0
+  },
+  "owner_sk": "8fe467f2f59731f46dee723bbfc800411e3ab50791498e68a192388b0b13cb1d"
+}
