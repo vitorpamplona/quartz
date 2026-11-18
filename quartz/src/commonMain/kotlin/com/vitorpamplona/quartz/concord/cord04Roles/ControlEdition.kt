@@ -24,15 +24,20 @@ import com.vitorpamplona.quartz.concord.cord04Roles.control.ControlEditionEvent
 import com.vitorpamplona.quartz.concord.cord04Roles.control.eid
 import com.vitorpamplona.quartz.concord.cord04Roles.control.ev
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.CanonicalDecimal
+import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EbTag
+import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EhTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EidTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EpTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EvTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.VacTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.VskTag
+import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.EditionHash
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
 import com.vitorpamplona.quartz.concord.envelope.OpenedStreamEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
+import com.vitorpamplona.quartz.nip01Core.core.hexToByteArrayOrNull
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 
 /**
@@ -77,19 +82,80 @@ class ControlEdition(
     val createdAt: Long,
     /** The raw `vsk` sub-kind on the wire; [entityKind]'s wire value when it is modeled. */
     val vsk: String = entityKind?.wire ?: "",
+    /**
+     * The `edition_binding(community_id)` a **marked** edition names in its `eb` tag (CORD-04 §1),
+     * or null for an unmarked edition. A marked edition's [hash] covers its signer, and a reader
+     * refuses one bound to another Community ([isAdmissibleIn]).
+     */
+    val binding: ByteArray? = null,
 ) {
-    /** Domain-separated edition identity; the next edition's `ep` cites this. */
-    val hash: ByteArray by lazy { EditionHash.hash(entityId, version, prevHash, content) }
+    @Deprecated("Use the constructor with binding instead. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        entityKind: ControlEntityKind?,
+        entityId: ByteArray,
+        version: Long,
+        prevHash: ByteArray?,
+        authorityCitation: AuthorityCitation?,
+        content: String,
+        author: String,
+        rumorId: String,
+        createdAt: Long,
+        vsk: String,
+    ) : this(entityKind, entityId, version, prevHash, authorityCitation, content, author, rumorId, createdAt, vsk, null)
+
+    /** True when this edition is marked (`["eh","2"]`, CORD-04 §1). */
+    val isMarked: Boolean get() = binding != null
+
+    /**
+     * Domain-separated edition identity; the next edition's `ep` cites this. A marked edition's
+     * hash covers its signer too (CORD-04 §1), so a copy re-signed under another key is another
+     * edition.
+     */
+    val hash: ByteArray by lazy {
+        if (binding != null) {
+            EditionHash.markedHash(entityId, version, prevHash, content.encodeToByteArray(), author.hexToByteArray())
+        } else {
+            EditionHash.hash(entityId, version, prevHash, content)
+        }
+    }
+
+    /**
+     * Whether a reader of the Community whose `edition_binding` is [communityBinding] may fold this
+     * edition at all (CORD-04 §1): a marked edition must be bound to that Community, and an unmarked
+     * one must not be of a kind no older client wrote (vsk 13 and up, [ControlEntityKind.alwaysMarked]).
+     */
+    fun isAdmissibleIn(communityBinding: ByteArray): Boolean {
+        if (binding != null) return binding.contentEquals(communityBinding)
+        val number = vsk.toIntOrNull() ?: return true
+        return number < FIRST_ALWAYS_MARKED_VSK
+    }
 
     val entityIdHex: String get() = entityId.toHexKey()
     val hashHex: String get() = hash.toHexKey()
 
     /** This edition carrying [citation] as its `vac`. The hash does not cover it, so the chain is unchanged. */
-    fun withCitation(citation: AuthorityCitation?): ControlEdition = ControlEdition(entityKind, entityId, version, prevHash, citation, content, author, rumorId, createdAt, vsk)
+    fun withCitation(citation: AuthorityCitation?): ControlEdition = ControlEdition(entityKind, entityId, version, prevHash, citation, content, author, rumorId, createdAt, vsk, binding)
 
     companion object {
-        /** The machinery tags an edition may carry at most once each (Armada `parseEdition`). */
-        private val SINGLE_VALUED_TAGS = arrayOf(VskTag.TAG_NAME, EidTag.TAG_NAME, EvTag.TAG_NAME, EpTag.TAG_NAME, VacTag.TAG_NAME)
+        /** The lowest sub-kind no client before Roles v2 wrote: marked in every Community (CORD-04 §1). */
+        const val FIRST_ALWAYS_MARKED_VSK = 13
+
+        /** The machinery tags an edition may carry at most once each (CORD-04 §1, Armada `parseEdition`). */
+        private val SINGLE_VALUED_TAGS =
+            arrayOf(VskTag.TAG_NAME, EidTag.TAG_NAME, EvTag.TAG_NAME, EpTag.TAG_NAME, VacTag.TAG_NAME, EhTag.TAG_NAME, EbTag.TAG_NAME)
+
+        /**
+         * Drops the [editions] a reader of the Community [communityId] refuses outright (CORD-04 §1):
+         * a marked edition bound to another Community, and an unmarked edition of a kind that is
+         * always marked. Every fold of a Community's plane runs this first.
+         */
+        fun admissibleIn(
+            editions: Collection<ControlEdition>,
+            communityId: ByteArray,
+        ): List<ControlEdition> {
+            val binding = ConcordKeyDerivation.editionBinding(communityId)
+            return editions.filter { it.isAdmissibleIn(binding) }
+        }
 
         /**
          * Sub-kinds that are never Control Plane editions (CORD-02 Appendix B): 6 and 9 are
@@ -145,6 +211,20 @@ class ControlEdition(
             val epTag = rumor.tags.firstOrNull { it.size >= 2 && it[0] == EpTag.TAG_NAME && it[1].isNotBlank() }
             val prevHash = if (epTag == null) null else EpTag.parse(epTag) ?: return null
 
+            // A marked edition names its hash form and its Community (CORD-04 §1): an `eh` other than
+            // "2", or one without its `eb`, is refused; an `eb` without `eh` is ignored (unmarked).
+            val ehTag = rumor.tags.firstOrNull { it.size >= 2 && it[0] == EhTag.TAG_NAME }
+            val binding =
+                if (ehTag == null) {
+                    null
+                } else {
+                    if (ehTag[1] != EhTag.MARKED) return null
+                    val ebTag = rumor.tags.firstOrNull { it.size >= 2 && it[0] == EbTag.TAG_NAME } ?: return null
+                    EbTag.parse(ebTag) ?: return null
+                }
+            // A marked hash covers the signer's 32-byte key.
+            if (binding != null && author.hexToByteArrayOrNull()?.size != 32) return null
+
             // Likewise a present-but-malformed `vac` is rejected; absent means owner-authored.
             val vacTag = rumor.tags.firstOrNull { it.size >= 4 && it[0] == VacTag.TAG_NAME }
             val vac = if (vacTag == null) null else VacTag.parse(vacTag) ?: return null
@@ -160,6 +240,7 @@ class ControlEdition(
                 rumorId = rumor.id,
                 createdAt = rumor.createdAt,
                 vsk = vskWire,
+                binding = binding,
             )
         }
     }

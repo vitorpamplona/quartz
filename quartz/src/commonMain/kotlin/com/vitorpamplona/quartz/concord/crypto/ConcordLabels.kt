@@ -87,6 +87,45 @@ object ConcordLabels {
     /** community_root-scoped rekey pseudonym for Refoundings (CORD-06). */
     const val BASE_REKEY_PSEUDONYM = "concord/base-rekey-pseudonym"
 
+    /** The `@everyone` Role coordinate (CORD-04 §2, A.6). */
+    const val EVERYONE = "concord/everyone"
+
+    /** One channel-permission overwrite's coordinate (CORD-04 §8, A.6). */
+    const val ACL = "concord/acl"
+
+    /** A Channel's sync coordinate (CORD-04 §8, A.6). */
+    const val SYNC = "concord/sync"
+
+    /** A restricted Channel's Writers ledger coordinate (CORD-03 §1, A.6). */
+    const val WRITERS = "concord/writers"
+
+    /** A member's Tenure from one sealer (CORD-04 §9, A.6). */
+    const val TENURE = "concord/tenure"
+
+    /** What a marked Control edition names in its `eb` tag (CORD-04 §1, A.6). */
+    const val EDITION_BINDING = "concord/edition-binding"
+
+    /** A restricted Channel's writer address and wrap signer (CORD-03 §1, A.6). */
+    const val CHANNEL_WRITER = "concord/channel-writer"
+
+    /** A Channel's access plane, where keys are delivered (CORD-03 §5, A.6). */
+    const val CHANNEL_ACCESS = "concord/channel-access"
+
+    /** Appended raw, then the signer's key, to a marked edition's signing bytes (CORD-04 §1, A.7). Not an HKDF label. */
+    const val EDITION_SIGNER = "concord/edition-signer"
+
+    /** A restricted Channel's writer scope, `sha256(label ‖ channel_id)` (CORD-03 §1, A.7). Not an HKDF label. */
+    const val WRITER_SCOPE = "concord/writer-scope"
+
+    /** A restricted Channel's certifier scope, `sha256(label ‖ channel_id)` (CORD-03 §1, A.7). Not an HKDF label. */
+    const val CERTIFIER_SCOPE = "concord/certifier-scope"
+
+    /** A Channel's history scope, `sha256(label ‖ channel_id)` (CORD-03 §5, A.7). Not an HKDF label. */
+    const val HISTORY_SCOPE = "concord/history-scope"
+
+    /** A writer certificate's digest domain (CORD-03 §1, A.7). Not an HKDF label. */
+    const val WRITER_CERT = "concord/writer-cert"
+
     /** Epoch-key commitment prefix for a rekey's `prevcommit` (CORD-02 §A.5). Not an HKDF label. */
     const val EPOCH_KEY_COMMITMENT = "concord/epoch-key-commitment"
 }

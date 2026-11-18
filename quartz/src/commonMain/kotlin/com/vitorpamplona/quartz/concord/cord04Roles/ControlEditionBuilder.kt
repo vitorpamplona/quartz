@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.concord.cord04Roles
 
 import com.vitorpamplona.quartz.concord.cord04Roles.control.ControlEditionEvent
+import com.vitorpamplona.quartz.concord.cord04Roles.control.marked
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.RumorAssembler
@@ -36,7 +37,9 @@ object ControlEditionBuilder {
     /**
      * Assembles a control edition rumor for [entityKind]/[entityId] at [version].
      * Pass [prevHash] to chain onto the previous edition (null for genesis) and
-     * [authorityCitation] to pin the Grant the [authorPubKey] acts under.
+     * [authorityCitation] to pin the Grant the [authorPubKey] acts under. Pass [binding]
+     * (`edition_binding(community_id)`) to **mark** the edition (CORD-04 §1), as every edition of a
+     * Community on Roles v2, and every edition of vsk 13 and up anywhere, must be.
      */
     fun rumor(
         authorPubKey: HexKey,
@@ -47,9 +50,24 @@ object ControlEditionBuilder {
         content: String,
         createdAt: Long,
         authorityCitation: AuthorityCitation? = null,
+        binding: ByteArray? = null,
     ): Event =
         RumorAssembler.assembleRumor(
             authorPubKey,
-            ControlEditionEvent.build(entityKind, entityId, version, content, prevHash, authorityCitation, createdAt),
+            ControlEditionEvent.build(entityKind, entityId, version, content, prevHash, authorityCitation, createdAt) {
+                binding?.let { marked(it) }
+            },
         )
+
+    @Deprecated("Use the overload with binding instead. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    fun rumor(
+        authorPubKey: HexKey,
+        entityKind: ControlEntityKind,
+        entityId: ByteArray,
+        version: Long,
+        prevHash: ByteArray?,
+        content: String,
+        createdAt: Long,
+        authorityCitation: AuthorityCitation? = null,
+    ): Event = rumor(authorPubKey, entityKind, entityId, version, prevHash, content, createdAt, authorityCitation, null)
 }

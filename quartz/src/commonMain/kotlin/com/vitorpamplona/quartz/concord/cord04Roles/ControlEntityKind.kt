@@ -59,7 +59,28 @@ enum class ControlEntityKind(
 
     /** A Channel's Pin List (CORD-04 §7), gated by PIN_MESSAGES. */
     PIN_LIST("11"),
+
+    /** A Roles v2 Role or `@everyone` (CORD-04 §2), replacing [ROLE] once a Community activates it. */
+    RANKED_ROLE("13"),
+
+    /** A channel-permission overwrite (CORD-04 §8). */
+    ACL("14"),
+
+    /** A Category (CORD-03 §4). */
+    CATEGORY("15"),
+
+    /** A member's Tenure from one sealer (CORD-04 §9). */
+    TENURE("16"),
+
+    /** A Channel's sync to a Category's overwrites (CORD-04 §8). */
+    SYNC("17"),
+
+    /** A restricted Channel's Writers ledger (CORD-03 §1). */
+    WRITERS("18"),
     ;
+
+    /** True for the kinds no client before Roles v2 wrote: always marked, in every Community (CORD-04 §1). */
+    val alwaysMarked: Boolean get() = wire.toInt() >= 13
 
     companion object {
         private val byWire = entries.associateBy { it.wire }
