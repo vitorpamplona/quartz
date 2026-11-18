@@ -46,15 +46,13 @@ import com.vitorpamplona.quartz.experimental.decentralizedLists.tags.JsonTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
-import com.vitorpamplona.quartz.nip31Alts.AltTag
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.METADATA_TAG_NAMES
 import com.vitorpamplona.quartz.nip50Search.isMachineValue
 import com.vitorpamplona.quartz.nip50Search.isNaturalLanguageValue
 import com.vitorpamplona.quartz.nip50Search.isNostrReference
 import com.vitorpamplona.quartz.nip50Search.isUrlValue
-import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
-import com.vitorpamplona.quartz.nip92IMeta.IMetaTag
 
 /**
  * The human-authored text of any kind in the family: first, in a fixed order, the header's `names`
@@ -109,13 +107,13 @@ fun TagArray.forEachSearchableListField(visitor: IndexableFieldVisitor): Boolean
 }
 
 /**
- * The tags whose values are never the author's own data, though their names are longer than one
- * letter: this NIP's own tags (the fixed-order fields the first pass of
- * [forEachSearchableListField] owns, and the schema, concept and curation tags that describe the
- * list rather than the item), and the NIP-wide metadata any event may carry. Single-letter tags
- * never reach this check: they are NIP-01's indexable tags, already reachable by `#x` filters.
+ * This NIP's own tags, whose values are never the author's own data: the fixed-order fields the
+ * first pass of [forEachSearchableListField] owns, and the schema, concept and curation tags that
+ * describe the list rather than the item. The NIP-wide metadata any event may carry is
+ * [METADATA_TAG_NAMES]; single-letter tags never reach either check: they are NIP-01's indexable
+ * tags, already reachable by `#x` filters.
  */
-private val NOT_AUTHORED_TAG_NAMES =
+private val LIST_VOCABULARY_TAG_NAMES =
     hashSetOf(
         // the fixed-order fields
         NamesTag.TAG_NAME,
@@ -139,24 +137,6 @@ private val NOT_AUTHORED_TAG_NAMES =
         JsonTag.TAG_NAME,
         CurationMethodTag.TAG_NAME,
         PolarityTag.TAG_NAME,
-        // NIP-wide metadata
-        AltTag.TAG_NAME, // NIP-31: restates title and artist behind a fixed "Song: … by …" prefix
-        ClientTag.TAG_NAME, // NIP-89
-        IMetaTag.TAG_NAME, // NIP-92: `key value` pairs of URLs and hashes
-        "expiration", // NIP-40
-        "emoji", // NIP-30
-        "nonce", // NIP-13
-        "proxy", // NIP-48
-        "published_at", // NIP-23
-        "content-warning", // NIP-36
-        "relay", // NIP-42
-        "relays", // NIP-57
-        "zap", // NIP-57 splits
-        "image", // NIP-23, NIP-52, NIP-58: media URLs, often content hashes
-        "thumb",
-        "picture",
-        "banner",
-        "icon",
     )
 
 /** Whether [value], ignoring leading whitespace, starts with `{`: a JSON object, not text to search. */
@@ -169,7 +149,7 @@ private fun isJsonObject(value: String): Boolean {
 }
 
 /** Whether [name] is a tag whose values are the author's own data rather than NIP structure. */
-private fun isAuthoredTagName(name: String) = name.length > 1 && name !in NOT_AUTHORED_TAG_NAMES
+private fun isAuthoredTagName(name: String) = name.length > 1 && name !in LIST_VOCABULARY_TAG_NAMES && name !in METADATA_TAG_NAMES
 
 private const val ROLE_HASHTAG = 0
 private const val ROLE_TEXT = 1

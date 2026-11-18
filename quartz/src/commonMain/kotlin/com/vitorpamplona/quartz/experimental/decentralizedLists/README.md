@@ -100,7 +100,8 @@ then by one narrow value test:
   is indexed, not its namespace mark; this NIP's own vocabulary (the fields above, `slug(s)`,
   `required`/`allowed`/`recommended`/`optional`/`disallowed`, `field-type`,
   `display`, `item-kind`, `concept-graph`, `json`, `curation-method`,
-  `polarity`); and NIP-wide metadata (`alt`, `client`, `imeta`, `expiration`,
+  `polarity`); and NIP-wide metadata (`nip50Search.METADATA_TAG_NAMES`, shared
+  with `EventSearchMatcher`'s fallback: `alt`, `client`, `imeta`, `expiration`,
   `emoji`, `nonce`, `proxy`, `published_at`, `content-warning`, `relay(s)`,
   `zap`, and the media URLs `image`, `thumb`, `picture`, `banner`, `icon`).
 - **By value**: Nostr's own references (`isNostrReference`): 64-hex ids,
