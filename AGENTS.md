@@ -49,11 +49,11 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
   source sets). Amethyst keeps the same file for `commons`/`commonsUI`: change both.
 
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
-crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp is released on Nostr + Blossom, not Maven
-Central: the Magpie settings plugin (`settings.gradle.kts`) resolves its group, and
+crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp is released on Nostr + Blossom,
+not Maven Central: the Magpie settings plugin (`settings.gradle.kts`) resolves its group, and
 `gradle/magpie.lock` pins its release key and files. Commit the lock's changes with a version bump;
-a lock failure means a key or a release changed, so ask before editing it. secp256k1 is libsecp256k1 through
-ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the pure-Kotlin
+a lock failure means a key or a release changed, so ask before editing it. secp256k1 is libsecp256k1
+through ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the pure-Kotlin
 [libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin)
 (`libs.schnorr256k1.kotlin`, `com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1`: Cashu's public
 points, `Secp256k1InstanceKotlin`); benchmarks of both are in
