@@ -6,8 +6,8 @@ pluginManagement {
     }
 }
 
-// crypto-kmp (vitorpamplona/crypto-kmp) and libschnorr256k1-kotlin (vitorpamplona/libschnorr256k1-kotlin)
-// are released on Nostr + Blossom: Magpie serves their groups, trusting only the release key
+// crypto-kmp (vitorpamplona/crypto-kmp), libschnorr256k1-kotlin (vitorpamplona/libschnorr256k1-kotlin)
+// and negentropy-kmp (vitorpamplona/negentropy-kmp) are released on Nostr + Blossom: Magpie serves their groups, trusting only the release key
 // vitorpamplona.com names as `releases`, and gradle/magpie.lock pins that key and every resolved
 // version's files.
 plugins {
@@ -17,6 +17,7 @@ plugins {
 magpie {
     group("com.vitorpamplona.crypto")
     group("com.vitorpamplona.schnorr256k1")
+    group("com.vitorpamplona.negentropy")
 }
 
 dependencyResolutionManagement {

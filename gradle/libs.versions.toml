@@ -10,9 +10,9 @@ coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
 cryptoKmp = "2.1.1"
 # Pure-Kotlin BIP-340 Schnorr on secp256k1 (vitorpamplona/libschnorr256k1-kotlin), released on
-# Nostr + Blossom through Magpie (settings.gradle.kts). 1.0.2 is its first published release: the
-# fixes Quartz took from JitPack (867bb13) and everything after them on main.
-schnorr256k1Kotlin = "1.0.2"
+# Nostr + Blossom through Magpie (settings.gradle.kts). 1.0.3 takes crypto-kmp 2.1.1 from Nostr too;
+# 1.0.2 pointed at crypto-kmp 2.1.0 on Maven Central.
+schnorr256k1Kotlin = "1.0.3"
 espressoCore = "3.7.0"
 kotlin = "2.4.21"
 kotlinx-coroutines-test = "1.11.0"
@@ -20,7 +20,9 @@ kotlinxCollectionsImmutable = "0.5.2"
 kotlinxCoroutinesCore = "1.11.0"
 kotlinxSerialization = "1.12.0"
 mavenPublish = "0.37.0"
-negentropyKmp = "v1.2.1"
+# NIP-77's set reconciliation (vitorpamplona/negentropy-kmp), on Nostr + Blossom through Magpie since
+# v1.2.2 (the same sources as v1.2.1). Its versions keep the tag's `v`.
+negentropyKmp = "v1.2.2"
 okhttp = "5.5.1"
 runner = "1.7.0"
 secp256k1Kmp = "0.24.0"
