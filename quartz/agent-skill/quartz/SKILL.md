@@ -34,8 +34,9 @@ Two references beside this file go deeper, read them when the task touches them:
 implementation("com.vitorpamplona.quartz:quartz:<version>")
 ```
 
-Since 2.19.0, Quartz and its crypto-kmp dependency are released on Nostr + Blossom, not Maven
-Central, so the build needs Magpie's settings plugin, in `settings.gradle.kts`:
+Since 2.19.0, Quartz and its crypto-kmp and libschnorr256k1-kotlin dependencies are released on
+Nostr + Blossom, not Maven Central, so the build needs Magpie's settings plugin, in
+`settings.gradle.kts`:
 
 ```kotlin
 plugins {
@@ -44,6 +45,7 @@ plugins {
 
 magpie {
     group("com.vitorpamplona.crypto")
+    group("com.vitorpamplona.schnorr256k1")
     group("com.vitorpamplona.quartz")
 }
 ```
