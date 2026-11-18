@@ -20,10 +20,12 @@ dependencies {
 }
 ```
 
-Releases are on Maven Central and, through [Magpie](https://github.com/vitorpamplona/magpie), on
-Nostr + Blossom. Since 2.19.0, Quartz depends on [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp)
-2.1.1 or newer, which is released only through Magpie, so add Magpie's settings plugin. It trusts
-only the release key `releases@vitorpamplona.com` names, and serves Quartz itself too:
+Since 2.19.0, releases go to Nostr + Blossom through [Magpie](https://github.com/vitorpamplona/magpie)
+instead of Maven Central (2.18.0 and older are on Central), and so do
+[crypto-kmp](https://github.com/vitorpamplona/crypto-kmp) and
+[libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin), which Quartz
+depends on. Add Magpie's settings plugin: it serves all three, trusting only the key
+`releases@vitorpamplona.com` names:
 
 ```kotlin settings.gradle.kts
 plugins {
@@ -32,13 +34,14 @@ plugins {
 
 magpie {
     group("com.vitorpamplona.crypto")
-    // optional: take Quartz from Nostr + Blossom too, instead of Maven Central
+    group("com.vitorpamplona.schnorr256k1")
     group("com.vitorpamplona.quartz")
 }
 ```
 
 Commit the `gradle/magpie.lock` it writes. Magpie verifies signatures inside the Gradle daemon,
-so Gradle has to run on Java 21 or newer.
+so Gradle has to run on Java 21 or newer. Projects on 2.18.0 or older keep using Maven Central and
+need none of this.
 
 | Requirement | |
 |---|---|
@@ -69,7 +72,7 @@ release after 2.3.0.
 
 ### Snapshots (JitPack)
 
-Tagged releases go to Maven Central and Nostr + Blossom. To test an unreleased fix straight from `main` or a branch, use
+Tagged releases go to Nostr + Blossom. To test an unreleased fix straight from `main` or a branch, use
 [JitPack](https://jitpack.io/#vitorpamplona/quartz), which builds the library on demand from any git
 ref:
 
@@ -84,7 +87,7 @@ dependencies {
 }
 ```
 
-Prefer a Maven Central release for anything shipping to production; JitPack snapshots are not
+Prefer a tagged release for anything shipping to production; JitPack snapshots are not
 guaranteed stable.
 
 ## Guides

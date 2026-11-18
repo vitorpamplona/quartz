@@ -6,47 +6,23 @@ pluginManagement {
     }
 }
 
-// crypto-kmp (vitorpamplona/crypto-kmp) is released on Nostr + Blossom, not Maven Central: Magpie
-// serves its group, trusting only the release key vitorpamplona.com names as `releases`, and
-// gradle/magpie.lock pins that key and every resolved version's files.
+// crypto-kmp (vitorpamplona/crypto-kmp) and libschnorr256k1-kotlin (vitorpamplona/libschnorr256k1-kotlin)
+// are released on Nostr + Blossom: Magpie serves their groups, trusting only the release key
+// vitorpamplona.com names as `releases`, and gradle/magpie.lock pins that key and every resolved
+// version's files.
 plugins {
     id("com.vitorpamplona.magpie") version "0.1.1"
 }
 
 magpie {
     group("com.vitorpamplona.crypto")
+    group("com.vitorpamplona.schnorr256k1")
 }
 
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // libschnorr256k1-kotlin from JitPack until 1.0.1 is on Maven Central (the catalog says why).
-        // That group resolves only here (no requests to Central for it), and nothing else does.
-        // Remove when the catalog moves to the Maven Central coordinates.
-        exclusiveContent {
-            forRepository { maven("https://jitpack.io") }
-            filter { includeGroup("com.github.vitorpamplona.libschnorr256k1-kotlin") }
-        }
-    }
-    // JitPack rewrites every Gradle module file it serves, and its rewrite drops the classifier
-    // from the file names: an Apple target's metadata variant lists <module>-<version>.jar, which
-    // doesn't exist, instead of the <module>-<version>-metadata.jar beside it, and the common and
-    // Apple metadata compiles fail to resolve it. Point those variants back at the real file.
-    // Remove with the JitPack repository above.
-    components {
-        listOf("iosArm64", "iosSimulatorArm64", "macosArm64").forEach { target ->
-            val module = "schnorr256k1-kotlin-${target.lowercase()}"
-            withModule("com.github.vitorpamplona.libschnorr256k1-kotlin:$module") {
-                val file = "$module-${id.version}-metadata.jar"
-                withVariant("${target}MetadataElements-published") {
-                    withFiles {
-                        removeAllFiles()
-                        addFile(file)
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -74,8 +50,6 @@ providers.gradleProperty("schnorr256k1KotlinDir").orNull?.takeUnless { isInclude
     includeBuild(dir) {
         dependencySubstitution {
             substitute(module("com.vitorpamplona.schnorr256k1:schnorr256k1-kotlin")).using(project(":schnorr256k1-kotlin"))
-            // the JitPack coordinates, while the catalog uses them
-            substitute(module("com.github.vitorpamplona.libschnorr256k1-kotlin:schnorr256k1-kotlin")).using(project(":schnorr256k1-kotlin"))
         }
     }
 }

@@ -1,8 +1,9 @@
 # Quartz
 
 Quartz is the Nostr protocol library behind [Amethyst](https://github.com/vitorpamplona/amethyst),
-a Kotlin Multiplatform library for JVM, Android, iOS, macOS and Linux, published to Maven Central
-as `com.vitorpamplona.quartz:quartz`. It holds implementations of Nostr specifications and the
+a Kotlin Multiplatform library for JVM, Android, iOS, macOS and Linux, published as
+`com.vitorpamplona.quartz:quartz` on Nostr + Blossom through [Magpie](https://github.com/vitorpamplona/magpie)
+(Maven Central up to 2.18.0). It holds implementations of Nostr specifications and the
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
 them: `marmot/` (MLS over Nostr, `mipXX`: event classes, tags and content codecs only),
 `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
@@ -49,12 +50,12 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
   source sets). Amethyst keeps the same file for `commons`/`commonsUI`: change both.
 
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
-crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp is released on Nostr + Blossom,
-not Maven Central: the Magpie settings plugin (`settings.gradle.kts`) resolves its group, and
-`gradle/magpie.lock` pins its release key and files. Commit the lock's changes with a version bump;
-a lock failure means a key or a release changed, so ask before editing it. secp256k1 is libsecp256k1
-through ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the pure-Kotlin
-[libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin)
+crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp and libschnorr256k1-kotlin are
+released on Nostr + Blossom: the Magpie settings plugin (`settings.gradle.kts`) resolves their
+groups, and `gradle/magpie.lock` pins their release key and files. Commit the lock's changes with a
+version bump; a lock failure means a key or a release changed, so ask before editing it. secp256k1
+is libsecp256k1 through ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the
+pure-Kotlin [libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin)
 (`libs.schnorr256k1.kotlin`, `com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1`: Cashu's public
 points, `Secp256k1InstanceKotlin`); benchmarks of both are in
 [libschnorr256k1-bench](https://github.com/vitorpamplona/libschnorr256k1-bench). To change either
@@ -222,15 +223,12 @@ in its own macOS job and combines them into the XCFramework, waits for `Test/Bui
 to pass on the same commit (it runs no tests of its own), commits `Package.swift` (and
 `VERSION_NAME`) with `tools/release/prepare-release.sh` on that commit, tags it `v<version>`,
 opens the GitHub release with the zip, merges that commit into `main` (which may have moved
-meanwhile) and publishes to Maven Central, reusing the build job's build cache. If `Test/Build`
+meanwhile) and publishes to Nostr + Blossom, reusing the build job's build cache. If `Test/Build`
 failed or was cancelled on that commit, re-run it, then re-run the release's `tested` job. Only one
 release waits behind a running one: a third version bump in that window cancels the waiting run,
 so that version is never released by its push; run it from the Actions tab if it should exist.
-GitHub Actions must be allowed to push to `main`. Beside the `maven` job, the `nostr` job publishes
-the same files to Nostr + Blossom with Magpie's `publishToNostr`; each publishes from the tag on
-its own, so if one fails, re-run only that one. `maven` needs `SONATYPE_USERNAME`,
-`SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and `SIGNING_PASSWORD`, the same secrets as crypto-kmp
-and quic-kmp; `nostr` needs the two signing secrets and `MAGPIE_BUNKER`, a NIP-46 `bunker://` URI
-for the release key that `vitorpamplona.com/.well-known/nostr.json` names as `releases` (the
-signer approves each release, and the job waits for it). A Nostr release is immutable: a version
-already published there fails the job.
+GitHub Actions must be allowed to push to `main`. The `nostr` job publishes with Magpie's
+`publishToNostr` from the tag; if only it fails, re-run it. It needs `MAGPIE_BUNKER`, a NIP-46
+`bunker://` URI for the release key that `vitorpamplona.com/.well-known/nostr.json` names as
+`releases` (the signer approves each release, and the job waits for it). A Nostr release is
+immutable: a version already published there fails the job.
