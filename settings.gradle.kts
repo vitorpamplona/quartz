@@ -6,6 +6,17 @@ pluginManagement {
     }
 }
 
+// crypto-kmp (vitorpamplona/crypto-kmp) is released on Nostr + Blossom, not Maven Central: Magpie
+// serves its group, trusting only the release key vitorpamplona.com names as `releases`, and
+// gradle/magpie.lock pins that key and every resolved version's files.
+plugins {
+    id("com.vitorpamplona.magpie") version "0.1.1"
+}
+
+magpie {
+    group("com.vitorpamplona.crypto")
+}
+
 dependencyResolutionManagement {
     repositories {
         google()
@@ -42,8 +53,8 @@ dependencyResolutionManagement {
 rootProject.name = "quartz"
 include(":quartz")
 
-// crypto-kmp (vitorpamplona/crypto-kmp) comes from Maven Central. To change it alongside quartz,
-// point Gradle at a local checkout and it builds that checkout instead of the published artifact:
+// To change crypto-kmp alongside quartz, point Gradle at a local checkout and it builds that
+// checkout instead of the published artifact:
 //   ./gradlew -PcryptoKmpDir=../crypto-kmp :quartz:jvmTest
 // When quartz is itself an included build (Amethyst's -PquartzDir), the same -P flags reach this
 // file too; the outer build includes those checkouts once for the whole composite, so skip them.
