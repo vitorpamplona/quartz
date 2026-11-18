@@ -477,9 +477,10 @@ class SearchFieldExtractorTest {
     }
 
     @Test
-    fun decentralizedListItemExtraTagsAreTheTextTier() {
-        // Deployment tags rank below what the item is called and what it is about; machine
-        // values and the NIP-31 alt text are not indexed at all.
+    fun decentralizedListItemExtraTagsAreTheTextTierAndTheKeywords() {
+        // Deployment tags rank below what the item is called and what it is about: their prose is
+        // the text tier, their other values the keywords. The NIP's own `d` and the NIP-31 alt
+        // text are not indexed at all.
         val tags =
             arrayOf(
                 arrayOf("d", "ol-ol98624w"),
@@ -495,6 +496,57 @@ class SearchFieldExtractorTest {
             IndexableFields.Tiered(
                 primary = listOf("Waking with Enemies"),
                 text = "Christopher Pike\nHorror tales",
+                keywords = listOf("eng", "9781534445145"),
+            ),
+            fields,
+        )
+    }
+
+    @Test
+    fun decentralizedListItemSplitsKeywordsFromWebsitesAndKeepsNostrReferencesOut() {
+        val pubkey = "b83a28b7e4e5d20bd960c5faeb6625f95529166b8bdb045d42634a2f35919450"
+        val tags =
+            arrayOf(
+                arrayOf("d", "vcavallo-1i6dn0p"),
+                arrayOf("z", "39998:$pubkey:github-accounts"),
+                arrayOf("description", "Vinney Cavallo"),
+                arrayOf("github-username", "vcavallo"),
+                arrayOf("github-url", "https://github.com/vcavallo"),
+                arrayOf("isbn", "978-0-306-40615-7"),
+                arrayOf("maintainer", pubkey, "wss://relay.example.com"),
+                arrayOf("p", pubkey, "wss://relay.example.com", "Vinney"),
+            )
+        val fields = SearchFieldExtractor.extract(AddressableListItemEvent("3d".repeat(32), alice, 1L, tags, "", ""))
+        assertEquals(
+            IndexableFields.Tiered(
+                secondary = listOf("Vinney Cavallo"),
+                websites = listOf("https://github.com/vcavallo"),
+                keywords = listOf("vcavallo", "978-0-306-40615-7"),
+            ),
+            fields,
+        )
+    }
+
+    @Test
+    fun decentralizedListItemLabelsAreIndexedButNotTheirNamespaces() {
+        // A NIP-32 self-label is the item's own description, like a `t`; the namespace is not,
+        // whether in the `L` tag or as the label's mark.
+        val tags =
+            arrayOf(
+                arrayOf("d", "dune"),
+                arrayOf("title", "Dune"),
+                arrayOf("L", "com.example.genres"),
+                arrayOf("l", "Science Fiction", "com.example.genres"),
+                arrayOf("L", "ISO-639-1"),
+                arrayOf("l", "en", "ISO-639-1"),
+                arrayOf("l", "6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b", "pubkeys"),
+            )
+        val fields = SearchFieldExtractor.extract(AddressableListItemEvent("3e".repeat(32), alice, 1L, tags, "", ""))
+        assertEquals(
+            IndexableFields.Tiered(
+                primary = listOf("Dune"),
+                text = "Science Fiction",
+                keywords = listOf("en"),
             ),
             fields,
         )

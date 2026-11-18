@@ -347,10 +347,53 @@ class DecentralizedListsTest {
         )
 
     @Test
-    fun searchIndexesEveryNaturalLanguageTagValue() {
+    fun searchIndexesEveryValueOfTheAuthorsOwnTags() {
+        // Every tag the NIP does not define is indexed whatever its value looks like. The NIP's
+        // own tags (`d`, `z`, `json`, the single-letter
+        // `p`/`e` with their relay hints and petname) and the NIP-wide metadata (`alt`, `client`,
+        // `imeta`) are not, and neither are the 64-hex ids anywhere.
         assertEquals(
-            "Herfsttij der Middeleeuwen\nhistory\nJohan Huizinga\nMiddle Ages\nFiction\nCivilisation médiévale\nJohan Fan",
+            listOf(
+                "Herfsttij der Middeleeuwen",
+                "history",
+                "Johan Huizinga",
+                "Middle Ages",
+                "Fiction",
+                "Civilisation médiévale",
+                "OL1141875W",
+                "9780226360935",
+                "057507681X",
+                "1919",
+                "eng",
+                "openlibrary",
+                "https://covers.openlibrary.org/b/id/7245546-L.jpg",
+                "https://example.com/Cover Art.jpg",
+            ).joinToString("\n"),
             book.indexableContent(),
+        )
+    }
+
+    @Test
+    fun searchSkipsNostrReferencesAndJsonInTheAuthorsOwnTags() {
+        val item =
+            assertIs<ListItemEvent>(
+                event(
+                    9999,
+                    arrayOf(
+                        arrayOf("github-username", "vcavallo"),
+                        arrayOf("owner", author),
+                        arrayOf("owner-npub", "npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m"),
+                        arrayOf("source-list", "39998:$author:github-accounts"),
+                        arrayOf("home-relay", "wss://relay.example.com"),
+                        arrayOf("commit", "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+                        arrayOf("phone", "+1 (555) 123-4567"),
+                        arrayOf("metadata", " {\"pubkey\": \"$author\", \"name\": \"Uniqjson\"}"),
+                    ),
+                ),
+            )
+        assertEquals(
+            "vcavallo\nda39a3ee5e6b4b0d3255bfef95601890afd80709\n+1 (555) 123-4567",
+            item.indexableContent(),
         )
     }
 

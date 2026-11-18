@@ -261,7 +261,7 @@ class SearchTest : BaseDBTest() {
         }
 
     @Test
-    fun testDecentralizedListItemsAreSearchableByEveryNaturalLanguageTag() =
+    fun testDecentralizedListItemsAreSearchableByEveryValueOfTheirOwnTags() =
         forEachDB { db ->
             val item =
                 signer.sign<AddressableListItemEvent>(
@@ -273,7 +273,10 @@ class SearchTest : BaseDBTest() {
                         arrayOf("author", "Johan Uniqauthor"),
                         arrayOf("subject", "Uniqsubject"),
                         arrayOf("lang", "uniqlang"),
+                        arrayOf("github-username", "uniqhandle"),
+                        arrayOf("isbn", "9780306406157"),
                         arrayOf("alt", "Book: Uniqalt"),
+                        arrayOf("p", signer.pubKey, "wss://uniqrelay.example", "Uniqpetname"),
                     ),
                     "",
                 )
@@ -282,11 +285,17 @@ class SearchTest : BaseDBTest() {
             db.assertQuery(item, Filter(search = "uniqtitle"))
             db.assertQuery(item, Filter(search = "uniqauthor"))
             db.assertQuery(item, Filter(search = "uniqsubject"))
+            // values that are not prose are the author's data too
+            db.assertQuery(item, Filter(search = "uniqlang"))
+            db.assertQuery(item, Filter(search = "uniqhandle"))
+            db.assertQuery(item, Filter(search = "9780306406157"))
 
-            // the slug, a lowercase data label and the NIP-31 fallback text are not indexed
+            // the NIP's own tags are not: the `d` slug, the NIP-31 fallback text, and the `p`
+            // tag with its relay hint and petname
             db.assertQuery(null, Filter(search = "uniqbookslug"))
-            db.assertQuery(null, Filter(search = "uniqlang"))
             db.assertQuery(null, Filter(search = "uniqalt"))
+            db.assertQuery(null, Filter(search = "uniqrelay"))
+            db.assertQuery(null, Filter(search = "uniqpetname"))
         }
 
     @Test

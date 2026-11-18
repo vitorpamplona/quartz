@@ -47,8 +47,8 @@ import com.vitorpamplona.quartz.experimental.citations.CitationEvent
 import com.vitorpamplona.quartz.experimental.citations.HardcopyCitationEvent
 import com.vitorpamplona.quartz.experimental.citations.PromptCitationEvent
 import com.vitorpamplona.quartz.experimental.decentralizedLists.DecentralizedListEvent
+import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListAuthoredFields
 import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListDescriptions
-import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListExtraText
 import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListTitles
 import com.vitorpamplona.quartz.experimental.edits.TextNoteModificationEvent
 import com.vitorpamplona.quartz.experimental.fitness.workout.ExerciseTemplateEvent
@@ -921,10 +921,23 @@ object SearchFieldExtractor {
             // already, so -- as for 1111/1311/30382 -- they are not passed again, and
             // content is not part of the spec. One branch for all four: an item may
             // carry header tags (the spec's nonstandard method), and the tag helpers
-            // read whichever are present. Every other natural-language tag value
-            // (author, subject, artist, ...) is the text tier, below both.
+            // read whichever are present. Every tag the NIP does not define is the
+            // author's data: its prose values (author, subject, ...) are the text tier,
+            // below both; its other values (github-username, isbn, phone, ...) the
+            // keywords; its URLs the websites. Nostr's own
+            // references (ids, addresses, bech32, relay URLs) stay out of every role.
             is DecentralizedListEvent -> {
-                tiers(event, event.tags.searchableListTitles(), event.tags.searchableListDescriptions(), event.tags.searchableListExtraText())
+                val authored = event.tags.searchableListAuthoredFields()
+                tiers(
+                    event,
+                    event.tags.searchableListTitles(),
+                    event.tags.searchableListDescriptions(),
+                    authored.text,
+                    authored.websites,
+                ).let { tiered ->
+                    val keywords = cleanAll(authored.keywords).distinct()
+                    if (keywords.isEmpty()) tiered else tiered.copy(keywords = keywords)
+                }
             }
 
             // kind 1 LAST among the explicit branches, defensively: a future

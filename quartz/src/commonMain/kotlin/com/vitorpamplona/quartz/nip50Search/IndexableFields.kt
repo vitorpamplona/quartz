@@ -95,6 +95,12 @@ sealed interface IndexableFields {
      * [secondary] (summary/description-like values), [text] (the body — the
      * one inherently single-valued role), plus the raw [hashtags] and
      * [locations] tag values.
+     *
+     * [keywords] are values that are not prose but that people search for by
+     * typing them: usernames, codes, numbers. A backend should
+     * match them as whole tokens (or prefixes), unstemmed and weighted below
+     * [text], so `vcavallo` finds its item without competing with descriptions.
+     * Only kinds with an open tag set fill it today (the decentralized lists).
      */
     data class Tiered(
         val primary: List<String> = emptyList(),
@@ -103,7 +109,30 @@ sealed interface IndexableFields {
         val hashtags: List<String> = emptyList(),
         val locations: List<String> = emptyList(),
         val websites: List<String> = emptyList(),
+        val keywords: List<String> = emptyList(),
     ) : IndexableFields {
+        /** The constructor before [keywords], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+        constructor(
+            primary: List<String> = emptyList(),
+            secondary: List<String> = emptyList(),
+            text: String? = null,
+            hashtags: List<String> = emptyList(),
+            locations: List<String> = emptyList(),
+            websites: List<String> = emptyList(),
+        ) : this(primary, secondary, text, hashtags, locations, websites, emptyList())
+
+        /** The [copy] before [keywords], kept so code compiled against it still links. */
+        @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+        fun copy(
+            primary: List<String> = this.primary,
+            secondary: List<String> = this.secondary,
+            text: String? = this.text,
+            hashtags: List<String> = this.hashtags,
+            locations: List<String> = this.locations,
+            websites: List<String> = this.websites,
+        ): Tiered = Tiered(primary, secondary, text, hashtags, locations, websites, keywords)
+
         override fun isEmpty(): Boolean = this == EMPTY
 
         private companion object {

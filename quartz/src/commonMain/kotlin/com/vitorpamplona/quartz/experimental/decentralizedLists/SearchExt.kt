@@ -20,33 +20,45 @@
  */
 package com.vitorpamplona.quartz.experimental.decentralizedLists
 
+import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.decentralizedLists.header.names
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.ConceptGraphTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.DisplayHintTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.FieldTypeTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.ItemKindTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.NamesTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.SingularPlural
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.SlugsTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.TagRuleType
 import com.vitorpamplona.quartz.experimental.decentralizedLists.header.tags.TitlesTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.header.titles
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.comments
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.name
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.tags.CommentsTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.tags.NameTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.item.tags.SlugTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.tags.TitleTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.item.title
+import com.vitorpamplona.quartz.experimental.decentralizedLists.taggings.tags.CurationMethodTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.taggings.tags.PolarityTag
 import com.vitorpamplona.quartz.experimental.decentralizedLists.tags.DescriptionTag
+import com.vitorpamplona.quartz.experimental.decentralizedLists.tags.JsonTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
-import com.vitorpamplona.quartz.nip31Alts.AltTag
+import com.vitorpamplona.quartz.nip32Labeling.tags.LabelTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
+import com.vitorpamplona.quartz.nip50Search.METADATA_TAG_NAMES
 import com.vitorpamplona.quartz.nip50Search.isMachineValue
 import com.vitorpamplona.quartz.nip50Search.isNaturalLanguageValue
-import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
-import com.vitorpamplona.quartz.nip92IMeta.IMetaTag
+import com.vitorpamplona.quartz.nip50Search.isNostrReference
+import com.vitorpamplona.quartz.nip50Search.isUrlValue
 
 /**
  * The human-authored text of any kind in the family: first, in a fixed order, the header's `names`
  * and `titles` (singular, then plural), the item's `name` and `title`, `description` and
  * `comments`; then, in tag order, each `t` value that is not a machine value and every value of
- * every other tag that reads as natural language ([forEachOtherField]). Headers and items share
+ * every tag the author named that is not a Nostr reference ([forEachOtherValue]). Headers and items share
  * one walk because the spec's nonstandard method lets an item carry header tags; each kind simply
  * has fewer of them set.
  *
@@ -91,53 +103,113 @@ fun TagArray.forEachSearchableListField(visitor: IndexableFieldVisitor): Boolean
     title?.let { if (!visitor.visit(it)) return false }
     description?.let { if (!visitor.visit(it)) return false }
     comments?.let { if (!visitor.visit(it)) return false }
-    return forEachOtherField(visitor, withHashtags = true)
+    return forEachOtherValue(withHashtags = true) { value, _ -> visitor.visit(value) }
 }
 
 /**
- * Every tag the first pass of [forEachSearchableListField] does not own, in tag order: each `t`
- * value that is not [isMachineValue] (only [withHashtags]), and every value of every other tag
- * that [isNaturalLanguageValue]. The family's tag set is open — deployments add `author`,
- * `subject`, `artist`, `relationshipType` and tags nobody has named yet — so this decides by what
- * a value looks like rather than by the tag it sits in.
- *
- * Skips the NIP-defined metadata tags that are not the event's own text: `alt` (NIP-31 fallback
- * text, which here restates `title` and `artist` behind a fixed "Song: … by …" prefix), `client`
- * (NIP-89 app name) and `imeta` (NIP-92 `key value` pairs, whose space would otherwise pass every
- * URL and hash as text).
- *
- * @return false when the visitor stopped the walk.
+ * This NIP's own tags, whose values are never the author's own data: the fixed-order fields the
+ * first pass of [forEachSearchableListField] owns, and the schema, concept and curation tags that
+ * describe the list rather than the item. The NIP-wide metadata any event may carry is
+ * [METADATA_TAG_NAMES]; single-letter tags never reach either check: they are NIP-01's indexable
+ * tags, already reachable by `#x` filters.
  */
-private fun TagArray.forEachOtherField(
-    visitor: IndexableFieldVisitor,
+private val LIST_VOCABULARY_TAG_NAMES =
+    hashSetOf(
+        // the fixed-order fields
+        NamesTag.TAG_NAME,
+        TitlesTag.TAG_NAME,
+        NameTag.TAG_NAME,
+        TitleTag.TAG_NAME,
+        DescriptionTag.TAG_NAME,
+        CommentsTag.TAG_NAME,
+        // the rest of this NIP's own vocabulary
+        SlugsTag.TAG_NAME,
+        SlugTag.TAG_NAME,
+        TagRuleType.REQUIRED.code,
+        TagRuleType.ALLOWED.code,
+        TagRuleType.RECOMMENDED.code,
+        TagRuleType.DISALLOWED.code,
+        TagRuleType.OPTIONAL.code,
+        FieldTypeTag.TAG_NAME,
+        DisplayHintTag.TAG_NAME,
+        ItemKindTag.TAG_NAME,
+        ConceptGraphTag.TAG_NAME,
+        JsonTag.TAG_NAME,
+        CurationMethodTag.TAG_NAME,
+        PolarityTag.TAG_NAME,
+    )
+
+/** Whether [value], ignoring leading whitespace, starts with `{`: a JSON object, not text to search. */
+private fun isJsonObject(value: String): Boolean {
+    for (i in value.indices) {
+        val c = value[i]
+        if (!c.isWhitespace()) return c == '{'
+    }
+    return false
+}
+
+/** Whether [name] is a tag whose values are the author's own data rather than NIP structure. */
+private fun isAuthoredTagName(name: String) = name.length > 1 && name !in LIST_VOCABULARY_TAG_NAMES && name !in METADATA_TAG_NAMES
+
+private const val ROLE_HASHTAG = 0
+private const val ROLE_TEXT = 1
+private const val ROLE_KEYWORD = 2
+private const val ROLE_WEBSITE = 3
+
+/**
+ * Every value the first pass of [forEachSearchableListField] does not own, in tag order, with the
+ * role it plays: each `t` value that is not [isMachineValue] (only [withHashtags]), each NIP-32
+ * `l` label (not its namespace mark, and never the `L` tag), then every value of every tag the
+ * author named ([isAuthoredTagName]) that is not [isNostrReference] and
+ * does not start with `{` ([isJsonObject]: a JSON blob, whose ids and keys nobody searches for).
+ *
+ * The family's tag set is open — deployments add `author`, `isbn`, `github-username`, `phone`
+ * and tags nobody has named yet — so a tag this NIP does not define is the author's data and is
+ * indexed whatever its value looks like; only Nostr's own references (64-hex ids, addresses,
+ * bech32, relay URLs), reachable through tags and filters already, and JSON objects stay out. A value is a
+ * URL ([ROLE_WEBSITE]), prose ([isNaturalLanguageValue], [ROLE_TEXT]) or anything else
+ * ([ROLE_KEYWORD]: usernames, codes, numbers).
+ *
+ * @return false when [visit] stopped the walk.
+ */
+private inline fun TagArray.forEachOtherValue(
     withHashtags: Boolean,
+    visit: (value: String, role: Int) -> Boolean,
 ): Boolean {
     fastForEach { tag ->
         if (tag.size < 2) return@fastForEach
-        when (tag[0]) {
-            HashtagTag.TAG_NAME -> {
-                if (withHashtags && !isMachineValue(tag[1]) && !visitor.visit(tag[1])) return false
-            }
-
-            NamesTag.TAG_NAME,
-            TitlesTag.TAG_NAME,
-            NameTag.TAG_NAME,
-            TitleTag.TAG_NAME,
-            DescriptionTag.TAG_NAME,
-            CommentsTag.TAG_NAME,
-            AltTag.TAG_NAME,
-            ClientTag.TAG_NAME,
-            IMetaTag.TAG_NAME,
-            -> {}
-
-            else -> {
-                for (i in 1 until tag.size) {
-                    if (isNaturalLanguageValue(tag[i]) && !visitor.visit(tag[i])) return false
-                }
+        val tagName = tag[0]
+        if (tagName == HashtagTag.TAG_NAME) {
+            if (withHashtags && !isMachineValue(tag[1]) && !visit(tag[1], ROLE_HASHTAG)) return false
+        } else if (tagName == LabelTag.TAG_NAME) {
+            // A NIP-32 self-label says what the item is, like a `t`. Only the label itself: its
+            // mark (position 2) is the namespace, as machine as the `L` tag that declares it.
+            if (!visitAuthoredValue(tag[1], visit)) return false
+        } else if (isAuthoredTagName(tagName)) {
+            for (i in 1 until tag.size) {
+                if (!visitAuthoredValue(tag[i], visit)) return false
             }
         }
     }
     return true
+}
+
+/**
+ * Visits one value of the author's own data with its role, unless it is a [isNostrReference] or
+ * a [isJsonObject]. @return false when [visit] stopped the walk.
+ */
+private inline fun visitAuthoredValue(
+    value: String,
+    visit: (value: String, role: Int) -> Boolean,
+): Boolean {
+    if (isNostrReference(value) || isJsonObject(value)) return true
+    val role =
+        when {
+            isUrlValue(value) -> ROLE_WEBSITE
+            isNaturalLanguageValue(value) -> ROLE_TEXT
+            else -> ROLE_KEYWORD
+        }
+    return visit(value, role)
 }
 
 /**
@@ -155,11 +227,46 @@ fun TagArray.searchableListTitles(): List<String?> {
 fun TagArray.searchableListDescriptions(): List<String?> = listOf(description(), comments())
 
 /**
- * The TEXT role of [forEachSearchableListField]: the natural-language values of the tags the
- * fixed-order fields do not own, one per line, or null when the event has none. The `t` values
- * are not here; the search funnel carries them as hashtags.
+ * The roles of [forEachSearchableListField] that come from the tags the author named, for search
+ * engines that weight fields, in tag order and without repeats: [text] the natural-language
+ * values, one per line (null when there are none), [keywords] the values that are neither prose
+ * nor URLs (usernames, codes, numbers), [websites] the URLs. The `t` values are in none of them;
+ * the search funnel carries them as hashtags.
  */
-fun TagArray.searchableListExtraText(): String? = joinFields { forEachOtherField(it, withHashtags = false) }.ifEmpty { null }
+@Immutable
+data class SearchableListAuthoredFields(
+    val text: String?,
+    val keywords: List<String>,
+    val websites: List<String>,
+)
+
+/** All three [SearchableListAuthoredFields] roles from a single walk of the tags. */
+fun TagArray.searchableListAuthoredFields(): SearchableListAuthoredFields {
+    var text: LinkedHashSet<String>? = null
+    var keywords: LinkedHashSet<String>? = null
+    var websites: LinkedHashSet<String>? = null
+    forEachOtherValue(withHashtags = false) { value, role ->
+        when (role) {
+            ROLE_TEXT -> (text ?: LinkedHashSet<String>().also { text = it }).add(value)
+            ROLE_KEYWORD -> (keywords ?: LinkedHashSet<String>().also { keywords = it }).add(value)
+            ROLE_WEBSITE -> (websites ?: LinkedHashSet<String>().also { websites = it }).add(value)
+        }
+        true
+    }
+    return SearchableListAuthoredFields(
+        text = text?.joinToString("\n"),
+        keywords = keywords?.toList() ?: emptyList(),
+        websites = websites?.toList() ?: emptyList(),
+    )
+}
+
+/**
+ * The TEXT role of [forEachSearchableListField]: the natural-language values of the tags the
+ * author named, one per line, or null when the event has none. The `t` values are not here; the
+ * search funnel carries them as hashtags. [searchableListAuthoredFields] gives it with the other
+ * roles in one walk.
+ */
+fun TagArray.searchableListExtraText(): String? = searchableListAuthoredFields().text
 
 /** The write-path join of [forEachSearchableListField]: one field per line. */
 fun TagArray.searchableListContent() = joinFields { forEachSearchableListField(it) }

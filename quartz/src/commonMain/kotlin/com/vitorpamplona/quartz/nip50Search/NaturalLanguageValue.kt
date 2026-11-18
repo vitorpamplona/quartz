@@ -75,6 +75,55 @@ fun isMachineValue(value: String): Boolean {
     return isMachineToken(value, start, end)
 }
 
+/**
+ * Whether a tag value is one of Nostr's own references rather than data its author typed: a
+ * 64-hex event id or pubkey, an event address (`kind:pubkey:d`, even with spaces in `d`), a
+ * NIP-19 bech32 entity (`npub1…`, `nevent1…`, `nsec1…`, …) with or without a `nostr:` prefix, or
+ * a relay URL (`wss://…`, `ws://…`). Blank values count too: there is nothing in them to index.
+ *
+ * Narrower than [isMachineValue] on purpose. Search indexes over open tag sets drop these because
+ * they are reachable through tags and filters already and nobody types them into a search box;
+ * every other code a tag carries (a 40-hex git commit, a UUID, an ISBN, an Open Library id, a
+ * number) may be exactly what someone searches for, so it is not dropped here.
+ */
+fun isNostrReference(value: String): Boolean {
+    var start = 0
+    var end = value.length
+    while (start < end && value[start].isSpace()) start++
+    while (end > start && value[end - 1].isSpace()) end--
+    if (start == end) return true
+    if (isRelayUrl(value, start, end)) return true
+    if (value.startsWith(NOSTR_URI_PREFIX, start, ignoreCase = true)) start += NOSTR_URI_PREFIX.length
+    if (start == end) return false
+    if (isAddress(value, start, end)) return true
+    for (i in start until end) if (value[i].isSpace()) return false
+    return (end - start == 64 && isHexId(value, start, end)) || isBech32(value, start)
+}
+
+/** Whether [value], trimmed, is a URL (`scheme://…`, even with unescaped spaces in its path). */
+fun isUrlValue(value: String): Boolean {
+    var start = 0
+    var end = value.length
+    while (start < end && value[start].isSpace()) start++
+    while (end > start && value[end - 1].isSpace()) end--
+    return start < end && isUrl(value, start, end)
+}
+
+private const val NOSTR_URI_PREFIX = "nostr:"
+
+/** `wss://…` or `ws://…`, any letter case. */
+private fun isRelayUrl(
+    v: String,
+    start: Int,
+    end: Int,
+): Boolean {
+    val colon = schemeEnd(v, start, end)
+    if (colon < 0 || !isUrl(v, start, end)) return false
+    val scheme = colon - start
+    return (scheme == 2 && v.startsWith("ws", start, ignoreCase = true)) ||
+        (scheme == 3 && v.startsWith("wss", start, ignoreCase = true))
+}
+
 /** The machine shapes recognizable from their first characters, whitespace or not. */
 private fun isStructuredValue(
     v: String,
@@ -213,7 +262,7 @@ private fun isUuid(
     return true
 }
 
-private val BECH32_PREFIXES = arrayOf("npub1", "nsec1", "note1", "nevent1", "naddr1", "nprofile1", "nrelay1")
+private val BECH32_PREFIXES = arrayOf("npub1", "nsec1", "note1", "nevent1", "naddr1", "nprofile1", "nrelay1", "ncryptsec1")
 
 private fun isBech32(
     v: String,
