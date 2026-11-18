@@ -495,4 +495,53 @@ class ConcordListFragmentsTest {
         // An earlier removal never lowers the tombstone.
         assertEquals(residue, residue.withTombstone(entry.id, 10))
     }
+
+    // ---- CORD-02 §8: revisions ----------------------------------------------------------------
+
+    private fun doc(vararg currents: JsonObject): JsonObject =
+        buildJsonObject {
+            put(
+                "entries",
+                buildJsonArray {
+                    for (c in currents) {
+                        add(
+                            buildJsonObject {
+                                put("community_id", c["community_id"]!!)
+                                put("current", c)
+                                put("added_at", 1)
+                            },
+                        )
+                    }
+                },
+            )
+        }
+
+    private fun JsonObject.withRev(rev: Int) = JsonObject(this + ("rev" to JsonPrimitive(rev)))
+
+    private fun currentOf(d: JsonObject) = d["entries"]!!.jsonArray[0].jsonObject["current"]!!.jsonObject
+
+    @Test
+    fun aChangedSnapshotTakesTheRevisionOnePastTheOneRead() {
+        val cid = h("cid")
+        val read = doc(mat(cid, 1, 0, "Old", false).withRev(4))
+        val renamed = ConcordListFragments.reviseSnapshots(read, doc(mat(cid, 1, 0, "New", false).withRev(4)))
+        assertEquals(5, ConcordListFragments.revOf(currentOf(renamed)))
+        val unchanged = ConcordListFragments.reviseSnapshots(read, doc(mat(cid, 1, 0, "Old", false).withRev(4)))
+        assertEquals(4, ConcordListFragments.revOf(currentOf(unchanged)))
+        // Nobody revised it: it republishes without a `rev`.
+        val fresh = ConcordListFragments.reviseSnapshots(doc(mat(cid, 1, 0, "Old", false)), doc(mat(cid, 1, 0, "Old", false)))
+        assertFalse("rev" in currentOf(fresh))
+    }
+
+    @Test
+    fun withinAnEpochTheHigherRevisionWinsBeforeTheCanonicalBytes() {
+        val cid = h("cid")
+        // "A" sorts below "Z", so without revisions the stale "A" copy would win.
+        val stale = doc(mat(cid, 1, 0, "A", false))
+        val newer = doc(mat(cid, 1, 0, "Z", false).withRev(1))
+        assertEquals("Z", currentOf(ConcordListFragments.mergeDocs(stale, newer))["name"]!!.jsonPrimitive.content)
+        assertEquals("Z", currentOf(ConcordListFragments.mergeDocs(newer, stale))["name"]!!.jsonPrimitive.content)
+        // A rev past 2^53 - 1 reads as 0.
+        assertEquals(0, ConcordListFragments.revOf(JsonObject(mapOf("rev" to JsonPrimitive(1L shl 53)))))
+    }
 }

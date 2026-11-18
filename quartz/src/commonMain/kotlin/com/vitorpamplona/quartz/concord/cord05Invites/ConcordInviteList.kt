@@ -71,6 +71,29 @@ class ConcordInviteListEntry(
      * secret we kept. Refreshing or retiring a link means writing at exactly this author.
      */
     fun signerPubKeyHex(): HexKey = KeyPair(privKey = signerSk.hexToByteArray()).pubKey.toHexKey()
+
+    /**
+     * The root epoch the link was minted or last refreshed under (CORD-05 §4 `epoch`), 0 when the
+     * entry carries none. A Severing Refounding retires every link below the epoch it opens
+     * (CORD-06 §3). Carried in [residue] so older documents round-trip untouched.
+     */
+    fun epoch(): Long =
+        (residue[EPOCH] as? JsonPrimitive)
+            ?.takeIf { !it.isString }
+            ?.content
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0 } ?: 0L
+
+    /** This entry stamped with the root [epoch] it now serves (CORD-05 §4). */
+    fun withEpoch(epoch: Long): ConcordInviteListEntry = ConcordInviteListEntry(token, signerSk, communityId, url, label, createdAt, expiresAt, JsonObject(residue + (EPOCH to JsonPrimitive(epoch))))
+
+    /** Whether a Severing Refounding opening [newEpoch] retires this link (CORD-06 §3): it was minted under an older epoch. */
+    fun isSeveredBy(newEpoch: Long): Boolean = epoch() < newEpoch
+
+    companion object {
+        /** The Invite List entry key naming the root epoch a link serves (CORD-05 §4). */
+        const val EPOCH = "epoch"
+    }
 }
 
 /** A retired link: the creator's record that [token] is gone, kept so a merge cannot resurrect it. */

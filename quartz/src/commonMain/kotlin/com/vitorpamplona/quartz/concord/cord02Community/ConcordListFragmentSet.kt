@@ -120,6 +120,10 @@ class ConcordListFragmentSet private constructor(
     ): List<Write> {
         val out = ArrayList<Write>()
 
+        // A changed snapshot takes the revision one past the one this write read (CORD-02 §8).
+        @Suppress("NAME_SHADOWING")
+        val newDoc = ConcordListFragments.reviseSnapshots(doc, newDoc)
+
         fun stamp(index: Int) = maxOf(now, (createdAtFloor[index] ?: 0L) + 1)
 
         if (complete) {
