@@ -157,7 +157,7 @@ with these changes). Tested against the spec vectors (04.md §1 marked hash, 02.
 | S7 | **partial**: Tenures fold and lend sealed standing (roster, admits, Banlist). Writing a Tenure on our own reductions not done (bans of authors of Control editions should carry one) |
 | S8 | **done**: `ConcordCommunityState.honorsModerationHide`; Amethyst hides a target already in cache. A hide that arrives before its target is not yet applied, and offering the action to our moderators is not done |
 | S9 | **done**: `rev` read in the seed/current merges, `reviseSnapshots` bumps it in `planWrites`, channels ordered by raw id. Publishing the List to the stock relays not done |
-| S10 | **done (Quartz)**: `ConcordRootAuthentication.verify`. Not yet called from Amethyst's join gate |
+| S10 | **done**: `ConcordRootAuthentication.verify`; Amethyst's invite join refuses a bundle whose root fails it (empty plane defers) |
 | S11 | **done**: channel rotations union extension chunks, take the largest total, adopt from any chunk holding our blob, remove only on a complete set; `newepoch = prevepoch + 1` enforced (S22). Base rotations already adopted per chunk |
 | S12 | **done**: 80 blobs per Channel rotation, 60 per base rotation, 28,672-byte rumor; test checks every wrap ≤ 65,536 bytes |
-| S13 | **partial**: `sever` read (malformed refused, any chunk applies) and written (`buildBaseRekeyWraps(severed)`); Invite List `epoch` helpers. Amethyst does not yet retire or skip refreshing severed links |
+| S13 | **partial**: `sever` read (malformed refused, any chunk applies) and written (`buildBaseRekeyWraps(severed)`); Invite List `epoch` helpers; Amethyst stamps `epoch` on new links and, on a severed rotation, retires links minted under older epochs instead of refreshing them. Publishing the Invite List to stock and community relays not checked |
