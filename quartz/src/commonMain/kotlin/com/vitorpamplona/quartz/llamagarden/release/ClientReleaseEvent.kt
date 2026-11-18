@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.llamagarden.release
 
 import androidx.compose.runtime.Immutable
-import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseSha256Tag
 import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseVersionTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -30,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
+import com.vitorpamplona.quartz.nipA0VoiceMessages.tags.HashSha256Tag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -57,13 +57,22 @@ class ClientReleaseEvent(
     /** The version, as written (`22`). */
     fun version() = tags.version()
 
-    /** [version] as the viewer compares it, an integer; null when it is not one. */
-    fun versionNumber(): Long? = version()?.trim()?.toLongOrNull()
+    /**
+     * [version] as the viewer compares it, with JavaScript's `parseInt`: the leading digits (`22` for
+     * `22`, `22.1` or `22a`); null when it does not start with one.
+     */
+    fun versionNumber(): Long? =
+        version()
+            ?.trim()
+            ?.takeWhile { it.isDigit() }
+            ?.ifEmpty { null }
+            ?.toLongOrNull()
 
     /** SHA-256 (hex) the download must hash to. */
     fun sha256() = tags.sha256()
 
-    fun size() = tags.size()
+    /** Size in bytes of the released file. */
+    fun fileSize() = tags.fileSize()
 
     /** Blossom mirrors of the release file. */
     fun downloadUrls() = tags.downloadUrls()
@@ -75,7 +84,7 @@ class ClientReleaseEvent(
         const val WAIFU_MAGNET = "waifu-magnet"
 
         /** True for llama.garden's shape: a `version` and a `sha256`. */
-        fun isClientRelease(tags: TagArray): Boolean = tags.fastAny { ReleaseVersionTag.parse(it) != null } && tags.fastAny { ReleaseSha256Tag.parse(it) != null }
+        fun isClientRelease(tags: TagArray): Boolean = tags.fastAny { ReleaseVersionTag.parse(it) != null } && tags.fastAny { HashSha256Tag.parse(it) != null }
 
         fun build(
             version: String,
@@ -89,7 +98,7 @@ class ClientReleaseEvent(
             dTag(clientId)
             version(version)
             sha256(sha256)
-            size(size)
+            fileSize(size)
             downloadUrls(downloadUrls)
             initializer()
         }

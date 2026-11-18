@@ -11,7 +11,7 @@ nostr.mom held on 2026-11-18 (fixtures in `commonTest/.../llamagarden/LlamaGarde
 |---|---|---|
 | 30099 | `torrent/ModelTorrentEvent` | catalog listing: `d` = infohash, `magnet`, `name`, `size`, `pieces`, `piece_length`, `x` (sha256 of the `.torrent`), `url` (Blossom mirrors of it), `webseed`, `tracker`, `source`, model metadata (`display_name`, `file_class`, `model_kind`, `quant_*`, `lab`, `model_name`, `repo_id`, `base_model`, …). User submission: `d` = `user:<pubkey>:<sha256(url:name)>`, a `.torrent` `url`, `name`, optional `size`, `hf`, `file_class`, … |
 | 30100 | `release/ClientReleaseEvent` | `d` = `waifu-magnet`, `version`, `sha256`, `size`, `url` (Blossom) |
-| 30102 | `seederRequest/SeederRequestEvent` | `d` = `<pubkey>:<infohash>`, `e` = the listing, `i` = infohash, `name`, `client`, `nonce` |
+| 30102 | `seederRequest/SeederRequestEvent` | `d` = `<pubkey>:<listing d>`, `e` = the listing, `i` = the listing's `d` (its infohash, or `user:…` for a submission), `name` (the listing's title, not indexed), `client`, `nonce` |
 | 30103 | `modelRequest/ModelRequestEvent` | `d` = requester pubkey, `name`, `url` links, `type` (`all`/`base`/`quant`), `vram_gb`, `client`, `nonce` |
 | 1985 | `curation/LlamaGardenCuration` | NIP-32 labels `["L","llama.garden"]`, `["l","approve"\|"reject","llama.garden"]`, `e` = the listing |
 

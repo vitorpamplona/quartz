@@ -553,10 +553,10 @@ class DrssEventsTest {
 
     @Test
     fun theDrssShapesWithTextAreSearchableAndTheRestAreNot() {
-        listOf(feedlistDrss, folderRoot, evlistTitled, evlistWaifu, pfolderDrss, provDrss, show).forEach {
+        listOf(feedlistDrss, folderRoot, evlistTitled, pfolderDrss, provDrss, show).forEach {
             assertTrue(it is SearchableEvent, it.toJson())
         }
-        listOf(progressCompleted, progress78Completed, feedlistCi, folderRoom, pfolderRodada, provDitto).forEach {
+        listOf(progressCompleted, progress78Completed, feedlistCi, folderRoom, evlistWaifu, pfolderRodada, provDitto).forEach {
             assertTrue(it is AddressableEvent, it.toJson())
             assertFalse(it is SearchableEvent, it.toJson())
             assertEquals(IndexableFields.None, SearchFieldExtractor.extract(it), it.toJson())

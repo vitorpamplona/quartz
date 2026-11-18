@@ -172,7 +172,7 @@ object SearchableKinds {
             30099, // ModelTorrentEvent
             30100, // DrssFeedListEvent
             30101, // DrssListFolderEvent
-            30102, // DrssEventListEvent, SeederRequestEvent
+            30102, // DrssEventListEvent
             30103, // ModelRequestEvent
             30104, // DrssProvenanceFolderEvent
             30142, // LearningResourceEvent

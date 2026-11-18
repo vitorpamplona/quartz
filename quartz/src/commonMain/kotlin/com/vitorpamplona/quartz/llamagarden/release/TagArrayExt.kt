@@ -20,17 +20,17 @@
  */
 package com.vitorpamplona.quartz.llamagarden.release
 
-import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseSha256Tag
 import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseVersionTag
-import com.vitorpamplona.quartz.llamagarden.tags.ByteSizeTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
+import com.vitorpamplona.quartz.nipA0VoiceMessages.tags.HashSha256Tag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 
 fun TagArray.version() = fastFirstNotNullOfOrNull(ReleaseVersionTag::parse)
 
-fun TagArray.sha256() = fastFirstNotNullOfOrNull(ReleaseSha256Tag::parse)
+fun TagArray.sha256() = fastFirstNotNullOfOrNull(HashSha256Tag::parse)
 
-fun TagArray.size() = fastFirstNotNullOfOrNull(ByteSizeTag::parse)
+fun TagArray.fileSize() = fastFirstNotNullOfOrNull(BlossomSizeTag::parse)
 
 fun TagArray.downloadUrls() = mapNotNull(UrlTag::parse)

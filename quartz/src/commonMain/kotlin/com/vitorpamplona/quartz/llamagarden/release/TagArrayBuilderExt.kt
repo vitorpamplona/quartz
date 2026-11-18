@@ -20,16 +20,16 @@
  */
 package com.vitorpamplona.quartz.llamagarden.release
 
-import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseSha256Tag
 import com.vitorpamplona.quartz.llamagarden.release.tags.ReleaseVersionTag
-import com.vitorpamplona.quartz.llamagarden.tags.ByteSizeTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
+import com.vitorpamplona.quartz.nipA0VoiceMessages.tags.HashSha256Tag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 
 fun TagArrayBuilder<ClientReleaseEvent>.version(version: String) = addUnique(ReleaseVersionTag.assemble(version))
 
-fun TagArrayBuilder<ClientReleaseEvent>.sha256(sha256: String) = addUnique(ReleaseSha256Tag.assemble(sha256))
+fun TagArrayBuilder<ClientReleaseEvent>.sha256(sha256: String) = addUnique(HashSha256Tag.assemble(sha256))
 
-fun TagArrayBuilder<ClientReleaseEvent>.size(bytes: Long) = addUnique(ByteSizeTag.assemble(bytes))
+fun TagArrayBuilder<ClientReleaseEvent>.fileSize(bytes: Long) = addUnique(BlossomSizeTag.assemble(bytes))
 
 fun TagArrayBuilder<ClientReleaseEvent>.downloadUrls(urls: List<String>) = addAll(urls.map { UrlTag.assemble(it) })

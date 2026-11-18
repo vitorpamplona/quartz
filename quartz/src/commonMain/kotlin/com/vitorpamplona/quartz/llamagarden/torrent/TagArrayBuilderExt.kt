@@ -20,11 +20,9 @@
  */
 package com.vitorpamplona.quartz.llamagarden.torrent
 
-import com.vitorpamplona.quartz.llamagarden.tags.ByteSizeTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.BaseModelTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.CacheOnlyTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.CommitShaTag
-import com.vitorpamplona.quartz.llamagarden.torrent.tags.DisplayNameTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.FileClassTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.HfMatchTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.HuggingFaceTag
@@ -48,18 +46,20 @@ import com.vitorpamplona.quartz.llamagarden.torrent.tags.TorrentNameTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.TorrentToolTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.WebSeedTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.metadata.tags.DisplayNameTag
 import com.vitorpamplona.quartz.nip35Torrents.tags.TrackerTag
 import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.HashSha256Tag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.MagnetTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.MimeTypeTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 
 fun TagArrayBuilder<ModelTorrentEvent>.magnet(magnet: String) = addUnique(MagnetTag.assemble(magnet))
 
 fun TagArrayBuilder<ModelTorrentEvent>.name(name: String) = addUnique(NameTag.assemble(name))
 
-fun TagArrayBuilder<ModelTorrentEvent>.totalSize(bytes: Long) = addUnique(ByteSizeTag.assemble(bytes))
+fun TagArrayBuilder<ModelTorrentEvent>.totalSize(bytes: Long) = addUnique(BlossomSizeTag.assemble(bytes))
 
 fun TagArrayBuilder<ModelTorrentEvent>.pieces(count: Long) = addUnique(PiecesTag.assemble(count))
 

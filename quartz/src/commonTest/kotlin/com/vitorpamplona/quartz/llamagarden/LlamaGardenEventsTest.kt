@@ -242,7 +242,8 @@ class LlamaGardenEventsTest {
         assertEquals("Model Request", KindNames.nameFor(ModelRequestEvent.KIND))
         assertIs<ModelTorrentEvent>(EventFactory.probe(ModelTorrentEvent.KIND))
         assertIs<ModelRequestEvent>(EventFactory.probe(ModelRequestEvent.KIND))
-        assertIs<SearchableEvent>(Event.fromJson(seederRequestJson))
+        // A seeder request only copies its listing's title: not indexed.
+        assertFalse(Event.fromJson(seederRequestJson) is SearchableEvent)
     }
 
     @Test
@@ -365,7 +366,7 @@ class LlamaGardenEventsTest {
             assertEquals("22", release.version())
             assertEquals(22L, release.versionNumber())
             assertEquals("aa".repeat(32), release.sha256())
-            assertEquals(180_000L, release.size())
+            assertEquals(180_000L, release.fileSize())
             assertEquals(listOf("https://blossom.primal.net/" + "aa".repeat(32)), release.downloadUrls())
         }
 
@@ -380,8 +381,7 @@ class LlamaGardenEventsTest {
         assertEquals(listOf("DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"), request.primary)
         assertEquals(listOf("https://huggingface.co/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"), request.websites)
 
-        val seeders = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(Event.fromJson(seederRequestJson)))
-        assertEquals(listOf("Kimi-K3.1-Pro \u00b7 modelopt_mixed \u00b7 nvidia"), seeders.primary)
+        assertEquals(IndexableFields.None, SearchFieldExtractor.extract(Event.fromJson(seederRequestJson)))
 
         // The other apps' shapes and the release carry nothing to search.
         assertEquals(IndexableFields.None, SearchFieldExtractor.extract(Event.fromJson(usageCounterJson)))
@@ -389,4 +389,65 @@ class LlamaGardenEventsTest {
         assertIs<ClientReleaseEvent>(release)
         assertEquals(IndexableFields.None, SearchFieldExtractor.extract(release))
     }
+
+    @Test
+    fun theSignedHashDecidesWhatIsDownloaded() {
+        val hash = "17616834d44b4e2d1b35494d0b80ee61da3cea79"
+        val other = "ffffffffffffffffffffffffffffffffffffffff"
+
+        fun listing(vararg extra: Array<String>) = EventFactory.create<ModelTorrentEvent>("11".repeat(32), me, 1L, 30099, arrayOf(arrayOf("d", hash), arrayOf("name", "m"), *extra), "", "00".repeat(64))
+
+        assertEquals("magnet:?xt=urn:btih:$hash&dn=x", listing(arrayOf("magnet", "magnet:?xt=urn:btih:$hash&dn=x")).magnetLink())
+        // A magnet for another torrent, or something that is no magnet, gives way to one built from `d`.
+        assertEquals("magnet:?xt=urn:btih:$hash&dn=m", listing(arrayOf("magnet", "magnet:?xt=urn:btih:$other")).magnetLink())
+        assertEquals("magnet:?xt=urn:btih:$hash&dn=m", listing(arrayOf("magnet", "javascript:alert(1)")).magnetLink())
+        // v2 (64 hex) is not a btih: not taken as this listing's infohash.
+        assertNull(EventFactory.create<ModelTorrentEvent>("11".repeat(32), me, 1L, 30099, arrayOf(arrayOf("d", "ab".repeat(32)), arrayOf("name", "m"), arrayOf("url", "https://a/b")), "", "00".repeat(64)).infoHash())
+    }
+
+    @Test
+    fun readsOnlyHuggingFaceModelRepositories() {
+        assertEquals("Qwen/Qwen3", ModelTorrentEvent.repoIdFromUrl("huggingface.co/Qwen/Qwen3"))
+        assertEquals("Qwen/Qwen3", ModelTorrentEvent.repoIdFromUrl("https://www.huggingface.co/Qwen/Qwen3/tree/main?x=1"))
+        assertNull(ModelTorrentEvent.repoIdFromUrl("https://huggingface.co/datasets/org/x"))
+        assertNull(ModelTorrentEvent.repoIdFromUrl("https://huggingface.co/spaces/org/x"))
+        assertNull(ModelTorrentEvent.repoIdFromUrl("https://evilhuggingface.co/a/b"))
+        assertNull(ModelTorrentEvent.repoIdFromUrl("https://huggingface.co/Qwen"))
+    }
+
+    @Test
+    fun classifiersNeedTheWholeShape() {
+        // An `i` alone (NIP-73) is not a seeder request; a `type` outside the viewer's is not a request.
+        assertIs<UnrecognizedKind30102Event>(EventFactory.create<Event>("11".repeat(32), me, 1L, 30102, arrayOf(arrayOf("d", "x"), arrayOf("i", "isbn:9780"), arrayOf("name", "n")), "", "00".repeat(64)))
+        assertIs<UnrecognizedKind30103Event>(EventFactory.create<Event>("11".repeat(32), me, 1L, 30103, arrayOf(arrayOf("d", "x"), arrayOf("name", "n"), arrayOf("type", "note")), "", "00".repeat(64)))
+    }
+
+    @Test
+    fun aSeederRequestForASubmissionKeepsTheListingKey() =
+        runTest {
+            val submission = ModelTorrentEvent.buildSubmission(signer.pubKey, "https://a.example/x.torrent", "m").signAndParse() as ModelTorrentEvent
+            val request = SeederRequestEvent.build(EventHintBundle(submission, null), signer.pubKey).signAndParse()
+            assertIs<SeederRequestEvent>(request)
+            assertEquals(submission.dTag(), request.listingKey())
+            assertNull(request.infoHash())
+        }
+
+    @Test
+    fun readsTheReleaseVersionLikeParseInt() {
+        fun release(version: String) = EventFactory.create<ClientReleaseEvent>("11".repeat(32), me, 1L, 30100, arrayOf(arrayOf("d", "waifu-magnet"), arrayOf("version", version), arrayOf("sha256", "aa")), "", "00".repeat(64))
+        assertEquals(22L, release("22").versionNumber())
+        assertEquals(22L, release("22.1").versionNumber())
+        assertEquals(22L, release("22a").versionNumber())
+        assertNull(release("v22").versionNumber())
+    }
+
+    @Test
+    fun aSubmissionIsSearchedByItsNameOnce() =
+        runTest {
+            val submission = ModelTorrentEvent.buildSubmission(signer.pubKey, "https://a.example/x.torrent", "Qwen3", lab = "Qwen").signAndParse()
+            val fields = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(submission))
+            assertEquals(listOf("Qwen3"), fields.primary)
+            assertEquals(listOf("Qwen"), fields.secondary)
+            assertEquals("Qwen3\nQwen", (submission as ModelTorrentEvent).indexableContent())
+        }
 }

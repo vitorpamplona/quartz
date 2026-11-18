@@ -129,7 +129,6 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30100 | DrssFeedListEvent ‖ | drss/feedList | `(listOfNotNull(title()) + feedTitles())` NL |
 | 30101 | DrssListFolderEvent ‖ | drss/listFolder | `title() ?: ""` |
 | 30102 | DrssEventListEvent ‖ | drss/eventList | `title() ?: ""` |
-| 30102 | SeederRequestEvent ¶ | llamagarden/seederRequest | `name() ?: ""` (the listing's title) |
 | 30103 | ModelRequestEvent ¶ | llamagarden/modelRequest | `(listOfNotNull(name()) + links())` NL |
 | 30104 | DrssProvenanceFolderEvent ‖ | drss/provenance | `title() ?: ""` |
 | 30142 | LearningResourceEvent | experimental/library | `(listOfNotNull(title(), alternateTitle(), summary(), alternateSummary(), content, author()) + facetLabels())` NL — `facetLabels()` = resource types, educational levels, subjects, deduplicated |
@@ -277,7 +276,8 @@ as the drss class. Its listening progress, `DrssListenProgressAppDataEvent` (300
 `name` with a `magnet` or `url` (else `UnrecognizedKind30099Event`: nostr-golded's update manifests)
 and `ModelRequestEvent` (30103) for a `name` with a `type` (else `UnrecognizedKind30103Event`). On
 drss's 30100 and 30102, drss's stricter shape wins first, then llama.garden's `ClientReleaseEvent`
-(`version` + `sha256`, not searchable) and `SeederRequestEvent` (an `i` infohash). Kind-level probes
+(`version` + `sha256`) and `SeederRequestEvent` (an `i` with an `e`), neither searchable: the seeder
+request's `name` copies its listing's title. Kind-level probes
 answer as `ModelTorrentEvent` and `ModelRequestEvent`.
 
 ## Abstract bases (no kind of their own)

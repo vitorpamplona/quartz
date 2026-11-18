@@ -72,7 +72,6 @@ import com.vitorpamplona.quartz.experimental.walletScrutiny.verification.BuildVe
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
 import com.vitorpamplona.quartz.llamagarden.modelRequest.ModelRequestEvent
-import com.vitorpamplona.quartz.llamagarden.seederRequest.SeederRequestEvent
 import com.vitorpamplona.quartz.llamagarden.torrent.ModelTorrentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
@@ -576,15 +575,14 @@ object SearchFieldExtractor {
             }
 
             is ModelTorrentEvent -> {
-                tiers(event, listOf(event.title(), event.name()), listOf(event.modelName(), event.repoId(), event.baseModel(), event.lab(), event.quantDev(), event.quantDetail()).distinct(), null)
+                // A user submission's title is its name: list it once, and nothing twice across tiers.
+                val primary = listOfNotNull(event.title(), event.name()).distinct()
+                val secondary = listOfNotNull(event.modelName(), event.repoId(), event.baseModel(), event.lab(), event.quantDev(), event.quantDetail()).distinct() - primary.toSet()
+                tiers(event, primary, secondary, null)
             }
 
             is ModelRequestEvent -> {
                 tiers(event, listOf(event.name()), emptyList(), null, websites = event.links())
-            }
-
-            is SeederRequestEvent -> {
-                tiers(event, event.name(), null, null)
             }
 
             is DrssEventListEvent -> {

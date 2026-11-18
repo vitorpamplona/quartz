@@ -71,7 +71,10 @@ class ModelTorrentEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     SearchableEvent {
-    /** The BitTorrent infohash (lower-case hex): the `d` of a catalog listing, else the magnet's `btih`. */
+    /**
+     * The BitTorrent v1 infohash (lower-case hex): the `d` of a catalog listing, else the magnet's
+     * `btih`. Null for a user submission, whose `d` is not a hash.
+     */
     fun infoHash(): String? = dTag().takeIf(::isInfoHash)?.lowercase() ?: magnet()?.let(::infoHashFromMagnet)
 
     /** True for a catalog listing, whose `d` is the infohash; false for a user submission. */
@@ -179,8 +182,10 @@ class ModelTorrentEvent(
      * is read). Never carries `xs=`: add a verified `.torrent` URL with [magnetWithExactSource].
      */
     fun magnetLink(): String? {
-        magnet()?.let { return it }
         val hash = infoHash() ?: return null
+        // The signed `d` decides what is downloaded: a `magnet` for another hash (or not a magnet at
+        // all) is ignored in favour of one built from the listing's own fields.
+        magnet()?.let { if (it.startsWith(MAGNET_PREFIX, ignoreCase = true) && infoHashFromMagnet(it) == hash) return it }
         return buildString {
             append("magnet:?xt=urn:btih:")
             append(hash)
@@ -198,18 +203,38 @@ class ModelTorrentEvent(
      */
     fun magnetWithExactSource(verifiedTorrentUrl: String): String? = magnetLink()?.let { "$it&xs=${UrlEncoder.encode(verifiedTorrentUrl)}" }
 
-    override fun indexableContent() =
-        listOfNotNull(title(), name(), modelName(), lab(), repoId(), baseModel(), quantDetail(), quantDev())
-            .distinct()
-            .joinToString("\n")
-
-    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
-        var seen = emptyList<String>()
-        for (field in listOf(title(), name(), modelName(), lab(), repoId(), baseModel(), quantDetail(), quantDev())) {
-            if (field == null || field in seen) continue
-            seen = seen + field
-            if (!visitor.visit(field)) return
+    override fun indexableContent(): String {
+        val out = StringBuilder()
+        forEachIndexableField { field ->
+            if (field != null) {
+                if (out.isNotEmpty()) out.append('\n')
+                out.append(field)
+            }
+            true
         }
+        return out.toString()
+    }
+
+    // The read path: each field once, in order, skipping repeats (a quant's lab is often its
+    // quantizer), without the lists a joined string would build.
+    override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
+        val display = displayName()
+        val name = name()
+        val model = modelName()
+        val lab = lab()
+        val repo = repoId()
+        val base = baseModel()
+        val detail = quantDetail()
+        val dev = quantDev()
+        val title = display ?: name ?: infoHash()?.take(12)
+        if (!visitor.visit(title)) return
+        if (name != title && !visitor.visit(name)) return
+        if (model != title && model != name && !visitor.visit(model)) return
+        if (lab != null && lab != model && !visitor.visit(lab)) return
+        if (repo != null && !visitor.visit(repo)) return
+        if (base != null && base != repo && !visitor.visit(base)) return
+        if (detail != null && !visitor.visit(detail)) return
+        if (dev != null && dev != lab && !visitor.visit(dev)) return
     }
 
     companion object {
@@ -224,8 +249,13 @@ class ModelTorrentEvent(
             tags.fastAny { NameTag.parse(it) != null } &&
                 tags.fastAny { MagnetTag.parse(it) != null || UrlTag.isTag(it) }
 
-        /** A BitTorrent v1 (40 hex) or v2 (64 hex) infohash. */
-        fun isInfoHash(value: String): Boolean = (value.length == 40 || value.length == 64) && Hex.isHex(value)
+        private const val MAGNET_PREFIX = "magnet:?"
+
+        /**
+         * A BitTorrent v1 infohash (40 hex), what llama.garden's builders write. A v2 hash would need a
+         * `btmh` magnet, which nothing here writes.
+         */
+        fun isInfoHash(value: String): Boolean = value.length == 40 && Hex.isHex(value)
 
         /** The `btih` of a `magnet:?xt=urn:btih:<hash>` link, lower-cased, when it is hex. */
         fun infoHashFromMagnet(magnet: String): String? {
@@ -236,14 +266,21 @@ class ModelTorrentEvent(
             return magnet.substring(from, end).takeIf(::isInfoHash)?.lowercase()
         }
 
-        /** `org/repo` out of `huggingface.co/org/repo` or `https://huggingface.co/org/repo[/tree/...]`. */
+        /**
+         * `org/repo` out of `huggingface.co/org/repo`, `https://huggingface.co/org/repo/tree/main` or the `www.` host;
+         * null for another host (`evilhuggingface.co`) or a dataset or space (`/datasets/…`, `/spaces/…`).
+         */
         fun repoIdFromUrl(url: String): String? {
-            val host = url.indexOf("huggingface.co/", ignoreCase = true)
-            if (host < 0) return null
-            val parts = url.substring(host + "huggingface.co/".length).split('/', '?', '#').filter { it.isNotEmpty() }
-            if (parts.size < 2) return null
-            return "${parts[0]}/${parts[1]}"
+            val rest = url.trim().substringAfter("://").removePrefix("www.")
+            if (!rest.startsWith(HUGGING_FACE_HOST, ignoreCase = true)) return null
+            val path = rest.substring(HUGGING_FACE_HOST.length).substringBefore('?').substringBefore('#')
+            val org = path.substringBefore('/')
+            val repo = path.substringAfter('/', "").substringBefore('/')
+            if (org.isEmpty() || repo.isEmpty() || org == "datasets" || org == "spaces") return null
+            return "$org/$repo"
         }
+
+        private const val HUGGING_FACE_HOST = "huggingface.co/"
 
         /**
          * The `d` llama.garden's viewer gives a user submission: `user:<submitter>:<sha256 hex of "<url>:<name>">`,
@@ -328,12 +365,17 @@ class ModelTorrentEvent(
             initializer()
         }
 
+        /** The host, as the viewer's `new URL(...).hostname` reads it: no scheme, user info, port or `www.`. */
         private fun hostOf(url: String): String? =
             url
-                .substringAfter("://", url)
+                .substringAfter("://")
                 .substringBefore('/')
                 .substringBefore('?')
+                .substringBefore('#')
+                .substringAfterLast('@')
+                .substringBefore(':')
                 .removePrefix("www.")
+                .lowercase()
                 .ifBlank { null }
     }
 }

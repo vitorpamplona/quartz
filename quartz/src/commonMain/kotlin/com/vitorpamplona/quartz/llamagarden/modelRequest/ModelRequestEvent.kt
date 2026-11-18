@@ -27,11 +27,13 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.fastForEach
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
+import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -73,14 +75,14 @@ class ModelRequestEvent(
 
     override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
         if (!visitor.visit(name())) return
-        for (link in links()) if (!visitor.visit(link)) return
+        tags.fastForEach { tag -> UrlTag.parse(tag)?.let { if (!visitor.visit(it)) return } }
     }
 
     companion object {
         const val KIND = 30103
 
-        /** True for llama.garden's shape: a `name` and a request `type`. */
-        fun isModelRequest(tags: TagArray): Boolean = tags.fastAny { NameTag.parse(it) != null } && tags.fastAny { RequestTypeTag.parse(it) != null }
+        /** True for llama.garden's shape: a `name` and a `type` that is one of the viewer's (`all`, `base`, `quant`). */
+        fun isModelRequest(tags: TagArray): Boolean = tags.fastAny { NameTag.parse(it) != null } && tags.fastAny { RequestTypeTag.parse(it) in RequestTypeTag.ALL_TYPES }
 
         /**
          * A request by [requester] (the key that will sign it) for the model [name]. [dTag] defaults to

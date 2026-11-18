@@ -20,11 +20,9 @@
  */
 package com.vitorpamplona.quartz.llamagarden.torrent
 
-import com.vitorpamplona.quartz.llamagarden.tags.ByteSizeTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.BaseModelTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.CacheOnlyTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.CommitShaTag
-import com.vitorpamplona.quartz.llamagarden.torrent.tags.DisplayNameTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.FileClassTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.HfMatchTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.HuggingFaceTag
@@ -49,6 +47,7 @@ import com.vitorpamplona.quartz.llamagarden.torrent.tags.TorrentToolTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.WebSeedTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.metadata.tags.DisplayNameTag
 import com.vitorpamplona.quartz.nip35Torrents.tags.TrackerTag
 import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
 import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
@@ -56,12 +55,13 @@ import com.vitorpamplona.quartz.nip94FileMetadata.tags.HashSha256Tag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.MagnetTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.MimeTypeTag
 import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
+import com.vitorpamplona.quartz.nipB7Blossom.tags.BlossomSizeTag
 
 fun TagArray.magnet() = fastFirstNotNullOfOrNull(MagnetTag::parse)
 
 fun TagArray.name() = fastFirstNotNullOfOrNull(NameTag::parse)
 
-fun TagArray.totalSize() = fastFirstNotNullOfOrNull(ByteSizeTag::parse)
+fun TagArray.totalSize() = fastFirstNotNullOfOrNull(BlossomSizeTag::parse)
 
 fun TagArray.pieces() = fastFirstNotNullOfOrNull(PiecesTag::parse)
 
