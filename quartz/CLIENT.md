@@ -31,7 +31,7 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.1.1")
     implementation("io.ktor:ktor-client-websockets:3.1.1")
 
-    // Quartz from Maven Central (check the latest version there)
+    // Quartz, served by Magpie: see the README's Install section for the settings plugin
     implementation("com.vitorpamplona.quartz:quartz:<version>")
 }
 ```

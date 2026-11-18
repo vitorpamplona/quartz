@@ -382,11 +382,8 @@ mavenPublishing {
     // (GROUP, POM_ARTIFACT_ID, VERSION_NAME) so CI can override VERSION_NAME
     // via ORG_GRADLE_PROJECT_VERSION_NAME without conflicting with a hardcoded value.
 
-    // Configure publishing to Maven Central
-    publishToMavenCentral(automaticRelease = true)
-
-    // Enable GPG signing for all publications
-    signAllPublications()
+    // Releases go to Nostr + Blossom only, through Magpie's publishToNostr (the plugin above): its
+    // signed release event pins every file's hash, so the files carry no GPG signatures.
 
     pom {
         name = "Quartz: Nostr Library for Kotlin Multiplatform"

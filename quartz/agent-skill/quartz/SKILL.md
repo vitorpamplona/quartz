@@ -29,10 +29,26 @@ Two references beside this file go deeper, read them when the task touches them:
 ## Setup
 
 ```kotlin
-// commonMain, or a JVM/Android module. Take the latest version from Maven Central:
-// https://central.sonatype.com/search?q=com.vitorpamplona.quartz
+// commonMain, or a JVM/Android module. Take the latest version from the GitHub releases:
+// https://github.com/vitorpamplona/quartz/releases
 implementation("com.vitorpamplona.quartz:quartz:<version>")
 ```
+
+Since 2.19.0, Quartz and its crypto-kmp dependency are released on Nostr + Blossom, not Maven
+Central, so the build needs Magpie's settings plugin, in `settings.gradle.kts`:
+
+```kotlin
+plugins {
+    id("com.vitorpamplona.magpie") version "0.1.1"
+}
+
+magpie {
+    group("com.vitorpamplona.crypto")
+    group("com.vitorpamplona.quartz")
+}
+```
+
+Commit the `gradle/magpie.lock` it writes; Gradle has to run on Java 21 or newer.
 
 Targets: Android, JVM, iosArm64, iosSimulatorArm64, macosArm64, linuxX64 (per-target
 artifacts such as `quartz-jvm` and `quartz-android` exist for non-KMP builds). Ktor is not
