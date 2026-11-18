@@ -513,6 +513,8 @@ import com.vitorpamplona.quartz.nipF4Podcasts.favorites.FavoritePodcastsListEven
 import com.vitorpamplona.quartz.nipF4Podcasts.metadata.PodcastMetadataEvent
 import com.vitorpamplona.quartz.nipFAAgentKeys.AgentKeyEvent
 import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTaskEvent
+import com.vitorpamplona.quartz.nipFCMavenRepositories.release.MavenReleaseEvent
+import com.vitorpamplona.quartz.nipFCMavenRepositories.snapshot.MavenSnapshotEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.Podcasting20EpisodeEvent
 import com.vitorpamplona.quartz.nipXXPodcasting20.episode.UnrecognizedKind30054Event
 import com.vitorpamplona.quartz.nipXXPodcasting20.trailer.Podcasting20TrailerEvent
@@ -1231,6 +1233,8 @@ class EventFactory {
                 ExerciseTemplateEvent.KIND -> ExerciseTemplateEvent(id, pubKey, createdAt, tags, content, sig)
                 WorkoutTemplateEvent.KIND -> WorkoutTemplateEvent(id, pubKey, createdAt, tags, content, sig)
                 ScheduledTaskEvent.KIND -> ScheduledTaskEvent(id, pubKey, createdAt, tags, content, sig)
+                MavenReleaseEvent.KIND -> MavenReleaseEvent(id, pubKey, createdAt, tags, content, sig)
+                MavenSnapshotEvent.KIND -> MavenSnapshotEvent(id, pubKey, createdAt, tags, content, sig)
                 else -> null
             }
 

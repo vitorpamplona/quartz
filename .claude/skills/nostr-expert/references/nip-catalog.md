@@ -44,7 +44,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nip30CustomEmoji/` | EmojiListEvent 10030, EmojiPackEvent 30030, StickerPackEvent 30031 |
 | `nip31Alts/` | (no event kinds: tags/utilities) |
 | `nip32Labeling/` | LabelEvent 1985 |
-| `nip34Git/` | GitPatchEvent 1617, GitPullRequestEvent 1618, GitPullRequestUpdateEvent 1619, GitIssueEvent 1621, GitReplyEvent 1622, GitCoverNoteEvent 1624, CiManualTriggerEvent 9840, CiJobResultEvent 9841, CiWorkflowResultEvent 9842, CiServiceRequestEvent 9843, CiServiceStopEvent 9844, UserGraspListEvent 10317, CiCoordinatorAdvertisementEvent 19843, CiRequestReadinessListEvent 19844, CiSecretUpdateEvent 29846, GitRepositoryEvent 30617, GitRepositoryStateEvent 30618, CiWorkflowProgressEvent 39842, CiRepositoryStatusEvent 39844 |
+| `nip34Git/` | GitPatchEvent 1617, GitPullRequestEvent 1618, GitPullRequestUpdateEvent 1619, GitIssueEvent 1621, GitReplyEvent 1622, GitCoverNoteEvent 1624, GitReviewEvent 7321, CiManualTriggerEvent 9840, CiJobResultEvent 9841, CiWorkflowResultEvent 9842, CiServiceRequestEvent 9843, CiServiceStopEvent 9844, UserGraspListEvent 10317, CiCoordinatorAdvertisementEvent 19843, CiRequestReadinessListEvent 19844, CiSecretUpdateEvent 29846, GitRepositoryEvent 30617, GitRepositoryStateEvent 30618, CiWorkflowProgressEvent 39842, CiRepositoryStatusEvent 39844 |
 | `nip35Torrents/` | TorrentEvent 2003, TorrentCommentEvent 2004 |
 | `nip36SensitiveContent/` | (no event kinds: tags/utilities) |
 | `nip37Drafts/` | PrivateOutboxRelayListEvent 10013, DraftWrapEvent 31234 |
@@ -113,6 +113,7 @@ grep the class. `ls` of the package root stays the ground truth, and
 | `nipF4Podcasts/` | PodcastEpisodeEvent 54, FavoritePodcastsListEvent 10054, AuthoredPodcastsEvent 10064, PodcastMetadataEvent 10154 |
 | `nipFAAgentKeys/` | AgentKeyEvent 12000 |
 | `nipFBScheduledTasks/` | ScheduledTaskEvent 34817 |
+| `nipFCMavenRepositories/` | MavenReleaseEvent 3071, MavenSnapshotEvent 33071 |
 | `nipFERelayOverHttp/` | (no event kinds: tags/utilities) |
 | `nipXXPodcasting20/` | Podcasting20EpisodeEvent 30054, Podcasting20TrailerEvent 30055 |
 | `nipXXPrivateNoteStorage/` | PnsEvent 1080 |
