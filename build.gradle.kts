@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
@@ -46,4 +49,13 @@ tasks.register<Copy>("installGitHook") {
     from("git-hooks/pre-push")
     into(".git/hooks")
     filePermissions { unix("rwxrwxrwx") }
+}
+
+// Kotlin/Native and Kotlin/JS klibs record the path of every source file. Recording it relative to
+// this repository instead of the checkout's absolute path keeps a klib rebuilt in any folder
+// byte-identical to the released one.
+subprojects {
+    val klibPathBase = "-Xklib-relative-path-base=${rootDir.absolutePath}"
+    tasks.withType<KotlinNativeCompile>().configureEach { compilerOptions.freeCompilerArgs.add(klibPathBase) }
+    tasks.withType<Kotlin2JsCompile>().configureEach { compilerOptions.freeCompilerArgs.add(klibPathBase) }
 }
