@@ -9,6 +9,10 @@ plugins {
     alias(libs.plugins.androidKotlinMultiplatformLibrary)
     alias(libs.plugins.serialization)
     alias(libs.plugins.vanniktech.mavenPublish)
+    // Releases also go to Nostr + Blossom: publishToNostr. Its relays come from gradle.properties
+    // (magpie.*). No version: the Magpie settings plugin (settings.gradle.kts) already put this
+    // plugin on the classpath, and Gradle refuses a second version request for it.
+    id("com.vitorpamplona.magpie.publish")
 }
 
 kotlin {

@@ -226,7 +226,11 @@ meanwhile) and publishes to Maven Central, reusing the build job's build cache. 
 failed or was cancelled on that commit, re-run it, then re-run the release's `tested` job. Only one
 release waits behind a running one: a third version bump in that window cancels the waiting run,
 so that version is never released by its push; run it from the Actions tab if it should exist.
-GitHub Actions must be allowed to push to `main`. If only the `maven` job fails, re-run it: it
-publishes from the tag. It needs
-`SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and `SIGNING_PASSWORD`, the same
-secrets as crypto-kmp and quic-kmp.
+GitHub Actions must be allowed to push to `main`. Beside the `maven` job, the `nostr` job publishes
+the same files to Nostr + Blossom with Magpie's `publishToNostr`; each publishes from the tag on
+its own, so if one fails, re-run only that one. `maven` needs `SONATYPE_USERNAME`,
+`SONATYPE_PASSWORD`, `SIGNING_PRIVATE_KEY` and `SIGNING_PASSWORD`, the same secrets as crypto-kmp
+and quic-kmp; `nostr` needs the two signing secrets and `MAGPIE_BUNKER`, a NIP-46 `bunker://` URI
+for the release key that `vitorpamplona.com/.well-known/nostr.json` names as `releases` (the
+signer approves each release, and the job waits for it). A Nostr release is immutable: a version
+already published there fails the job.
