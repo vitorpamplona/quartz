@@ -372,7 +372,7 @@ jobs:
   # Publishes every publication to Nostr + Blossom, through Magpie's publishToNostr (the plugin version
   # is in settings.gradle.kts, the relays in gradle.properties): it uploads every file to the
   # release key's Blossom servers (kind 10063) and signs one release event (kind 3071) for all of
-  # them, sent to the key's own relays and magpie.archivalRelays. The key never reaches CI:
+  # them, sent to the key's own relays (its kind 10002 and nostr.json). The key never reaches CI:
   # MAGPIE_BUNKER is a NIP-46 bunker URI, so the signer approves the release (the job waits for
   # it), and vitorpamplona.com/.well-known/nostr.json must name the key as "releases" or Magpie
   # refuses to sign. A version already on Nostr fails the job: releases are immutable.
