@@ -76,7 +76,7 @@ class EventSearchMatcherTest {
     }
 
     @Test
-    fun aDecentralizedListItemMatchesItsNaturalLanguageTagsButNotItsData() {
+    fun aDecentralizedListItemMatchesEveryValueOfItsOwnTagsButNotTheNipsTags() {
         val book =
             note(
                 "",
@@ -87,14 +87,22 @@ class EventSearchMatcherTest {
                     arrayOf("subject", "Middle Ages"),
                     arrayOf("medium", "music"),
                     arrayOf("cover", "https://covers.openlibrary.org/b/id/7245546-L.jpg"),
+                    arrayOf("isbn", "0-306-40615-2"),
+                    arrayOf("p", "deadbeef".repeat(8), "wss://relay.example.com", "Johan Fan"),
                 ),
                 kind = 39999,
             )
         assertTrue(matches("huizinga", book))
         assertTrue(matches("middle ages", book))
-        assertFalse(matches("music", book))
-        assertFalse(matches("openlibrary", book))
+        assertTrue(matches("music", book))
+        assertTrue(matches("openlibrary", book))
+        // an ISBN is found by its digits in either form, however it was written
+        assertTrue(matches("0306406152", book))
+        assertTrue(matches("9780306406157", book))
+        // the `d` tag is the NIP's, and so is the `p` tag with its relay hint and petname
         assertFalse(matches("ol1141875w", book))
+        assertFalse(matches("fan", book))
+        assertFalse(matches("deadbeef", book))
     }
 
     @Test

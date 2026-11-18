@@ -477,9 +477,11 @@ class SearchFieldExtractorTest {
     }
 
     @Test
-    fun decentralizedListItemExtraTagsAreTheTextTier() {
-        // Deployment tags rank below what the item is called and what it is about; machine
-        // values and the NIP-31 alt text are not indexed at all.
+    fun decentralizedListItemExtraTagsAreTheTextTierAndTheKeywords() {
+        // Deployment tags rank below what the item is called and what it is about: their prose is
+        // the text tier, their other values the keywords. The NIP's own `d` and the NIP-31 alt
+        // text are not indexed at all. `9781534445145` fails the ISBN check digit, so it is a
+        // keyword with no other forms.
         val tags =
             arrayOf(
                 arrayOf("d", "ol-ol98624w"),
@@ -495,6 +497,32 @@ class SearchFieldExtractorTest {
             IndexableFields.Tiered(
                 primary = listOf("Waking with Enemies"),
                 text = "Christopher Pike\nHorror tales",
+                keywords = listOf("eng", "9781534445145"),
+            ),
+            fields,
+        )
+    }
+
+    @Test
+    fun decentralizedListItemSplitsKeywordsFromWebsitesAndKeepsNostrReferencesOut() {
+        val pubkey = "b83a28b7e4e5d20bd960c5faeb6625f95529166b8bdb045d42634a2f35919450"
+        val tags =
+            arrayOf(
+                arrayOf("d", "vcavallo-1i6dn0p"),
+                arrayOf("z", "39998:$pubkey:github-accounts"),
+                arrayOf("description", "Vinney Cavallo"),
+                arrayOf("github-username", "vcavallo"),
+                arrayOf("github-url", "https://github.com/vcavallo"),
+                arrayOf("isbn", "978-0-306-40615-7"),
+                arrayOf("maintainer", pubkey, "wss://relay.example.com"),
+                arrayOf("p", pubkey, "wss://relay.example.com", "Vinney"),
+            )
+        val fields = SearchFieldExtractor.extract(AddressableListItemEvent("3d".repeat(32), alice, 1L, tags, "", ""))
+        assertEquals(
+            IndexableFields.Tiered(
+                secondary = listOf("Vinney Cavallo"),
+                websites = listOf("https://github.com/vcavallo"),
+                keywords = listOf("vcavallo", "978-0-306-40615-7", "9780306406157", "0306406152"),
             ),
             fields,
         )

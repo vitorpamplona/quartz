@@ -60,8 +60,11 @@ instance per scan.
 A kind is searchable iff its class implements `SearchableEvent` and `EventFactory` builds it;
 the set is `SearchableKinds.ALL`. `indexableContent()` is the flat text (what SQLite's FTS
 indexes); `SearchFieldExtractor.extract(event)` gives the same text decomposed by role
-(`IndexableFields.Profile` or `Tiered`: primary / secondary / body, hashtags, websites) for a
-weighted engine. Diff
+(`IndexableFields.Profile` or `Tiered`: primary / secondary / body, hashtags, websites, keywords)
+for a weighted engine. `keywords` are values that are not prose but that people type (usernames,
+codes, numbers): match them as whole tokens, weighted below the body. The ISBNs and phone numbers
+among them come with their canonical digits (`searchIdentifierForms`); run a query term through
+the same function and match the term OR its forms, so `978-0-306-40615-7` finds `0306406152`. Diff
 [searchable-kinds.md](https://github.com/vitorpamplona/quartz/blob/main/.claude/skills/event-store-semantics/references/searchable-kinds.md)
 at every Quartz bump: it lists each kind's exact `indexableContent()`, and existing rows keep
 their old text until you re-index (`IEventStore.reindexFullTextSearch`).

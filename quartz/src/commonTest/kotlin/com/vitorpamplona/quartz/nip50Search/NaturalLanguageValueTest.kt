@@ -114,4 +114,47 @@ class NaturalLanguageValueTest {
             assertFalse(isMachineValue(it), it)
         }
     }
+
+    @Test
+    fun nostrReferencesAreIdsAddressesBech32AndRelays() {
+        listOf(
+            "6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b",
+            "  6ACA05B812DA97601151776D13DE04AE71AFC9D86DA1408F0E72CFFEF72ECE4B ",
+            "39999:6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b:ol-ol2838774w",
+            "39998:2efaa715bbb46dd5be6b7da8d7700266d11674b913b8178addb5c2e63d987331:first one no uuid",
+            "39998:6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b",
+            "npub1f5pre6wl6ad87vr4hr5wppqq30sh58m4p33mthnjreh03qadcajs7gwt3z",
+            "nostr:npub1f5pre6wl6ad87vr4hr5wppqq30sh58m4p33mthnjreh03qadcajs7gwt3z",
+            "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5",
+            "ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p",
+            "wss://relay.example.com",
+            "WS://localhost:7777",
+            "",
+            "   ",
+        ).forEach { assertTrue(isNostrReference(it), it) }
+    }
+
+    @Test
+    fun otherCodesAreNotNostrReferences() {
+        listOf(
+            "vcavallo",
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709", // a git commit
+            "c65d75f4d058f4746e12e44441cacea0", // an md5
+            "6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b0", // 65 hex
+            "8ad7c296-67e9-5f57-ba52-2ff732e62e87",
+            "OL1141875W",
+            "9780306406157",
+            "+1 (555) 123-4567",
+            "https://github.com/vcavallo",
+            "urn:isbn:9780679428329",
+            "Johan Huizinga",
+            "nostr:",
+        ).forEach { assertFalse(isNostrReference(it), it) }
+    }
+
+    @Test
+    fun urlValuesAreUrlsOfAnyScheme() {
+        listOf("https://github.com/vcavallo", " http://x.y/a b.jpg ", "wss://relay.example.com").forEach { assertTrue(isUrlValue(it), it) }
+        listOf("github.com/vcavallo", "urn:isbn:9780679428329", "Song: Gold", "").forEach { assertFalse(isUrlValue(it), it) }
+    }
 }
