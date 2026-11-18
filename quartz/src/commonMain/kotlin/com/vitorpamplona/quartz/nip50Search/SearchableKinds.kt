@@ -169,9 +169,11 @@ object SearchableKinds {
             30063, // ReleaseArtifactSetEvent
             30066, // LiveChessMoveEvent
             30068, // LiveChessDrawOfferEvent
+            30099, // ModelTorrentEvent
             30100, // DrssFeedListEvent
             30101, // DrssListFolderEvent
-            30102, // DrssEventListEvent
+            30102, // DrssEventListEvent, SeederRequestEvent
+            30103, // ModelRequestEvent
             30104, // DrssProvenanceFolderEvent
             30142, // LearningResourceEvent
             30175, // PersonaEvent

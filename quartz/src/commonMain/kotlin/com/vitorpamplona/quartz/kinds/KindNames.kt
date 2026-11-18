@@ -192,6 +192,8 @@ import com.vitorpamplona.quartz.experimental.walletScrutiny.assetBundle.AssetBun
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.experimental.zapstore.identityProof.IdentityProofEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
+import com.vitorpamplona.quartz.llamagarden.modelRequest.ModelRequestEvent
+import com.vitorpamplona.quartz.llamagarden.torrent.ModelTorrentEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageRelayListEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.LegacyKeyPackageEvent
@@ -548,6 +550,10 @@ object KindNames {
             DrssProvenanceFolderEvent.KIND to KindName("DRSS Provenance Folder", null),
             DrssProvenanceEvent.KIND to KindName("DRSS Provenance", null),
             DrssShowEvent.KIND to KindName("DRSS Podcast Show", null),
+            // llama.garden's model-torrent kinds. 30099 and 30103 are shared with other apps; its
+            // releases (30100) and seeder requests (30102) share drss's numbers, named above.
+            ModelTorrentEvent.KIND to KindName("Model Torrent", null),
+            ModelRequestEvent.KIND to KindName("Model Request", null),
             Podcasting20TrailerEvent.KIND to KindName("Podcast Trailer (Podcasting 2.0)", null),
             AttestationEvent.KIND to KindName("Attestation", null),
             AttestationRequestEvent.KIND to KindName("Attestation Request", null),

@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.drss.feedList.DrssFeedListEvent
 import com.vitorpamplona.quartz.drss.listFolder.DrssListFolderEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceEvent
 import com.vitorpamplona.quartz.drss.provenance.DrssProvenanceFolderEvent
+import com.vitorpamplona.quartz.llamagarden.modelRequest.ModelRequestEvent
+import com.vitorpamplona.quartz.llamagarden.torrent.ModelTorrentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip69P2pOrderEvents.mostroInfo.MostroInfoEvent
 import com.vitorpamplona.quartz.nip87Ecash.recommendation.MintRecommendationEvent
@@ -127,6 +129,9 @@ class IndexableContentGoldenTest {
                     DrssListFolderEvent.KIND -> arrayOf(arrayOf("a", "30004:${"a".repeat(64)}:a-list"))
                     DrssProvenanceFolderEvent.KIND -> arrayOf(arrayOf("a", "31985:${"a".repeat(64)}:a-record"))
                     DrssProvenanceEvent.KIND -> arrayOf(arrayOf("L", DrssProvenanceEvent.NAMESPACE))
+                    // llama.garden's listings carry a `.torrent` url and its requests a `type`.
+                    ModelTorrentEvent.KIND -> arrayOf(arrayOf("url", "https://example.com/a.torrent"), arrayOf("model_name", "The Model"), arrayOf("lab", "The Lab"))
+                    ModelRequestEvent.KIND -> arrayOf(arrayOf("type", "all"), arrayOf("url", "https://huggingface.co/the/model"))
                     else -> emptyArray()
                 },
                 // Kind 38385 is Mostro's only with its `z`; the instance name and currencies are

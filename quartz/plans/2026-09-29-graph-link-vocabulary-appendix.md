@@ -760,6 +760,12 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 | 31341 | `DrssShowEvent` | p -> MEMBER (U) | showBotKey() (PTag) | drss's generated-show settings; the show bot publishes its episodes. JSON content not modelled. |
 | 31985 | `DrssProvenanceEvent` | p -> LABELED (U); a -> LABELED (A); content nostr: -> MENTION (E,A,U) | feedKey() (PTag), foundThroughAddressId() (ATag), citedNIP19() | drss's provenance record, a NIP-32-labelled note about a feed bot; i/k are the source (values). |
 | 30100, 30101, 30102, 30104, 31985 | `UnrecognizedKind…Event` | *none* | – | other apps' events on drss's kinds (CI statuses, room listings, votes, Ditto ratings): addressable, unread. |
+| 30099 | `ModelTorrentEvent` | *none* | – | llama.garden's model torrent listing; `url`, `webseed`, `tracker`, `magnet` are download locations and `x` the `.torrent` hash (values, not references). |
+| 30099 | `UnrecognizedKind30099Event` | *none* | – | other apps on 30099 (nostr-golded's update manifests): addressable, unread. |
+| 30100 | `ClientReleaseEvent` | *none* | – | llama.garden's viewer release: version, sha256, size, Blossom `url`s (values). |
+| 30102 | `SeederRequestEvent` | e -> REFERENCES (E) | torrentListingId() (ETag) | llama.garden's "please seed this torrent"; `i` is the infohash (a value, not NIP-73). |
+| 30103 | `ModelRequestEvent` | *none* | – | llama.garden's "please add this model"; `url`s are links to the model (values). |
+| 30103 | `UnrecognizedKind30103Event` | *none* | – | other apps on 30103 (usage counters): addressable, unread. |
 | 30055 | `Podcasting20TrailerEvent` | *none* | – | Podcasting-2.0 draft trailer: title, url, pubdate, length, type, season - no references. |
 
 ### `nip01Core` (1)

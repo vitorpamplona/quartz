@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind30104Event
 import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind31985Event
 import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.kinds.KindNames
+import com.vitorpamplona.quartz.llamagarden.seederRequest.SeederRequestEvent
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
@@ -507,7 +508,9 @@ class DrssEventsTest {
 
     @Test
     fun otherAppsOn30102AreUnrecognized() {
-        listOf(evlistVoto, evlistWaifu, evlistVouch).forEach { assertIs<UnrecognizedKind30102Event>(it, it.toJson()) }
+        listOf(evlistVoto, evlistVouch).forEach { assertIs<UnrecognizedKind30102Event>(it, it.toJson()) }
+        // llama.garden's seeder requests are typed on their own (LlamaGardenEventsTest).
+        assertIs<SeederRequestEvent>(evlistWaifu, evlistWaifu.toJson())
     }
 
     // ---- 30104 provenance folder, 31985 provenance ----
@@ -550,10 +553,10 @@ class DrssEventsTest {
 
     @Test
     fun theDrssShapesWithTextAreSearchableAndTheRestAreNot() {
-        listOf(feedlistDrss, folderRoot, evlistTitled, pfolderDrss, provDrss, show).forEach {
+        listOf(feedlistDrss, folderRoot, evlistTitled, evlistWaifu, pfolderDrss, provDrss, show).forEach {
             assertTrue(it is SearchableEvent, it.toJson())
         }
-        listOf(progressCompleted, progress78Completed, feedlistCi, folderRoom, evlistWaifu, pfolderRodada, provDitto).forEach {
+        listOf(progressCompleted, progress78Completed, feedlistCi, folderRoom, pfolderRodada, provDitto).forEach {
             assertTrue(it is AddressableEvent, it.toJson())
             assertFalse(it is SearchableEvent, it.toJson())
             assertEquals(IndexableFields.None, SearchFieldExtractor.extract(it), it.toJson())

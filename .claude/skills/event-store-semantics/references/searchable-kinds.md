@@ -125,9 +125,12 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30063 | ReleaseArtifactSetEvent † | nip51Lists/releaseArtifactSet | `listOfNotNull(title(), description(), searchableReleaseNotes())` NL |
 | 30066 | LiveChessMoveEvent | nip64Chess/move | `content` |
 | 30068 | LiveChessDrawOfferEvent | nip64Chess/draw | `content` |
+| 30099 | ModelTorrentEvent ¶ | llamagarden/torrent | `listOfNotNull(title(), name(), modelName(), lab(), repoId(), baseModel(), quantDetail(), quantDev())` distinct, NL |
 | 30100 | DrssFeedListEvent ‖ | drss/feedList | `(listOfNotNull(title()) + feedTitles())` NL |
 | 30101 | DrssListFolderEvent ‖ | drss/listFolder | `title() ?: ""` |
 | 30102 | DrssEventListEvent ‖ | drss/eventList | `title() ?: ""` |
+| 30102 | SeederRequestEvent ¶ | llamagarden/seederRequest | `name() ?: ""` (the listing's title) |
+| 30103 | ModelRequestEvent ¶ | llamagarden/modelRequest | `(listOfNotNull(name()) + links())` NL |
 | 30104 | DrssProvenanceFolderEvent ‖ | drss/provenance | `title() ?: ""` |
 | 30142 | LearningResourceEvent | experimental/library | `(listOfNotNull(title(), alternateTitle(), summary(), alternateSummary(), content, author()) + facetLabels())` NL — `facetLabels()` = resource types, educational levels, subjects, deduplicated |
 | 30175 | PersonaEvent | buzz/apPersonas | `personaOrNull()?.let { listOfNotNull(it.displayName, it.description, it.systemPrompt).joinToString("\n") } ?: ""` |
@@ -269,6 +272,13 @@ shape (see `drss/README.md`) and an `UnrecognizedKind30100Event` / `…30101…`
 / `UnrecognizedKind31985Event` otherwise — addressable but unsearchable. Kind-level probes answer
 as the drss class. Its listening progress, `DrssListenProgressAppDataEvent` (30078) and the legacy
 `DrssListenProgressEvent` (30054), is not searchable.
+
+¶ **llama.garden's kinds are shared too.** `EventFactory` builds `ModelTorrentEvent` (30099) for a
+`name` with a `magnet` or `url` (else `UnrecognizedKind30099Event`: nostr-golded's update manifests)
+and `ModelRequestEvent` (30103) for a `name` with a `type` (else `UnrecognizedKind30103Event`). On
+drss's 30100 and 30102, drss's stricter shape wins first, then llama.garden's `ClientReleaseEvent`
+(`version` + `sha256`, not searchable) and `SeederRequestEvent` (an `i` infohash). Kind-level probes
+answer as `ModelTorrentEvent` and `ModelRequestEvent`.
 
 ## Abstract bases (no kind of their own)
 

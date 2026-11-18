@@ -71,6 +71,9 @@ import com.vitorpamplona.quartz.experimental.trustedLists.TrustedListEvent
 import com.vitorpamplona.quartz.experimental.walletScrutiny.verification.BuildVerificationEvent
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
+import com.vitorpamplona.quartz.llamagarden.modelRequest.ModelRequestEvent
+import com.vitorpamplona.quartz.llamagarden.seederRequest.SeederRequestEvent
+import com.vitorpamplona.quartz.llamagarden.torrent.ModelTorrentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
@@ -570,6 +573,18 @@ object SearchFieldExtractor {
             // record is the reader's note about where a feed came from.
             is DrssListFolderEvent -> {
                 tiers(event, event.title(), null, null)
+            }
+
+            is ModelTorrentEvent -> {
+                tiers(event, listOf(event.title(), event.name()), listOf(event.modelName(), event.repoId(), event.baseModel(), event.lab(), event.quantDev(), event.quantDetail()), null)
+            }
+
+            is ModelRequestEvent -> {
+                tiers(event, listOf(event.name()), emptyList(), null, websites = event.links())
+            }
+
+            is SeederRequestEvent -> {
+                tiers(event, event.name(), null, null)
             }
 
             is DrssEventListEvent -> {
