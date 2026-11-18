@@ -348,8 +348,8 @@ class DecentralizedListsTest {
 
     @Test
     fun searchIndexesEveryValueOfTheAuthorsOwnTags() {
-        // Every tag the NIP does not define is indexed whatever its value looks like, each ISBN
-        // followed by its other form. The NIP's own tags (`d`, `z`, `json`, the single-letter
+        // Every tag the NIP does not define is indexed whatever its value looks like. The NIP's
+        // own tags (`d`, `z`, `json`, the single-letter
         // `p`/`e` with their relay hints and petname) and the NIP-wide metadata (`alt`, `client`,
         // `imeta`) are not, and neither are the 64-hex ids anywhere.
         assertEquals(
@@ -362,9 +362,7 @@ class DecentralizedListsTest {
                 "Civilisation médiévale",
                 "OL1141875W",
                 "9780226360935",
-                "0226360938",
                 "057507681X",
-                "9780575076815",
                 "1919",
                 "eng",
                 "openlibrary",
@@ -376,7 +374,7 @@ class DecentralizedListsTest {
     }
 
     @Test
-    fun searchSkipsNostrReferencesInTheAuthorsOwnTags() {
+    fun searchSkipsNostrReferencesAndJsonInTheAuthorsOwnTags() {
         val item =
             assertIs<ListItemEvent>(
                 event(
@@ -389,11 +387,12 @@ class DecentralizedListsTest {
                         arrayOf("home-relay", "wss://relay.example.com"),
                         arrayOf("commit", "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
                         arrayOf("phone", "+1 (555) 123-4567"),
+                        arrayOf("metadata", " {\"pubkey\": \"$author\", \"name\": \"Uniqjson\"}"),
                     ),
                 ),
             )
         assertEquals(
-            "vcavallo\nda39a3ee5e6b4b0d3255bfef95601890afd80709\n+1 (555) 123-4567\n15551234567\n5551234567\n551234567\n51234567",
+            "vcavallo\nda39a3ee5e6b4b0d3255bfef95601890afd80709\n+1 (555) 123-4567",
             item.indexableContent(),
         )
     }

@@ -925,8 +925,8 @@ object SearchFieldExtractor {
             // carry header tags (the spec's nonstandard method), and the tag helpers
             // read whichever are present. Every tag the NIP does not define is the
             // author's data: its prose values (author, subject, ...) are the text tier,
-            // below both; its other values (github-username, isbn, phone, ...) and their
-            // canonical search forms the keywords; its URLs the websites. Nostr's own
+            // below both; its other values (github-username, isbn, phone, ...) the
+            // keywords; its URLs the websites. Nostr's own
             // references (ids, addresses, bech32, relay URLs) stay out of every role.
             is DecentralizedListEvent -> {
                 tiers(

@@ -51,7 +51,6 @@ import com.vitorpamplona.quartz.nip50Search.isMachineValue
 import com.vitorpamplona.quartz.nip50Search.isNaturalLanguageValue
 import com.vitorpamplona.quartz.nip50Search.isNostrReference
 import com.vitorpamplona.quartz.nip50Search.isUrlValue
-import com.vitorpamplona.quartz.nip50Search.searchIdentifierForms
 import com.vitorpamplona.quartz.nip89AppHandlers.clientTag.ClientTag
 import com.vitorpamplona.quartz.nip92IMeta.IMetaTag
 
@@ -59,8 +58,7 @@ import com.vitorpamplona.quartz.nip92IMeta.IMetaTag
  * The human-authored text of any kind in the family: first, in a fixed order, the header's `names`
  * and `titles` (singular, then plural), the item's `name` and `title`, `description` and
  * `comments`; then, in tag order, each `t` value that is not a machine value and every value of
- * every tag the author named that is not a Nostr reference, each followed by its canonical search
- * forms ([forEachOtherValue]). Headers and items share
+ * every tag the author named that is not a Nostr reference ([forEachOtherValue]). Headers and items share
  * one walk because the spec's nonstandard method lets an item carry header tags; each kind simply
  * has fewer of them set.
  *
@@ -159,6 +157,15 @@ private val NOT_AUTHORED_TAG_NAMES =
         "icon",
     )
 
+/** Whether [value], ignoring leading whitespace, starts with `{`: a JSON object, not text to search. */
+private fun isJsonObject(value: String): Boolean {
+    for (i in value.indices) {
+        val c = value[i]
+        if (!c.isWhitespace()) return c == '{'
+    }
+    return false
+}
+
 /** Whether [name] is a tag whose values are the author's own data rather than NIP structure. */
 private fun isAuthoredTagName(name: String) = name.length > 1 && name !in NOT_AUTHORED_TAG_NAMES
 
@@ -170,15 +177,15 @@ private const val ROLE_WEBSITE = 3
 /**
  * Every value the first pass of [forEachSearchableListField] does not own, in tag order, with the
  * role it plays: each `t` value that is not [isMachineValue] (only [withHashtags]), then every
- * value of every tag the author named ([isAuthoredTagName]) that is not [isNostrReference].
+ * value of every tag the author named ([isAuthoredTagName]) that is not [isNostrReference] and
+ * does not start with `{` ([isJsonObject]: a JSON blob, whose ids and keys nobody searches for).
  *
  * The family's tag set is open — deployments add `author`, `isbn`, `github-username`, `phone`
  * and tags nobody has named yet — so a tag this NIP does not define is the author's data and is
  * indexed whatever its value looks like; only Nostr's own references (64-hex ids, addresses,
- * bech32, relay URLs) stay out, being reachable through tags and filters already. A value is a
+ * bech32, relay URLs), reachable through tags and filters already, and JSON objects stay out. A value is a
  * URL ([ROLE_WEBSITE]), prose ([isNaturalLanguageValue], [ROLE_TEXT]) or anything else
- * ([ROLE_KEYWORD]: usernames, codes, numbers), and is followed by its [searchIdentifierForms]
- * (an ISBN's or a phone number's canonical digits) as keywords.
+ * ([ROLE_KEYWORD]: usernames, codes, numbers).
  *
  * @return false when [visit] stopped the walk.
  */
@@ -194,7 +201,7 @@ private inline fun TagArray.forEachOtherValue(
         } else if (isAuthoredTagName(tagName)) {
             for (i in 1 until tag.size) {
                 val value = tag[i]
-                if (isNostrReference(value)) continue
+                if (isNostrReference(value) || isJsonObject(value)) continue
                 val role =
                     when {
                         isUrlValue(value) -> ROLE_WEBSITE
@@ -202,11 +209,6 @@ private inline fun TagArray.forEachOtherValue(
                         else -> ROLE_KEYWORD
                     }
                 if (!visit(value, role)) return false
-                val forms = searchIdentifierForms(value)
-                for (f in forms.indices) {
-                    val form = forms[f]
-                    if (form != value && form != value.trim() && !visit(form, ROLE_KEYWORD)) return false
-                }
             }
         }
     }
@@ -246,8 +248,7 @@ fun TagArray.searchableListExtraText(): String? = otherValues(ROLE_TEXT).joinToS
 
 /**
  * The KEYWORD role of [forEachSearchableListField]: the values of the tags the author named that
- * are neither prose nor URLs (usernames, codes, numbers), each followed by its
- * [searchIdentifierForms], in tag order and without repeats.
+ * are neither prose nor URLs (usernames, codes, numbers), in tag order and without repeats.
  */
 fun TagArray.searchableListKeywords(): List<String> = otherValues(ROLE_KEYWORD)
 

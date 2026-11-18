@@ -274,8 +274,7 @@ class SearchTest : BaseDBTest() {
                         arrayOf("subject", "Uniqsubject"),
                         arrayOf("lang", "uniqlang"),
                         arrayOf("github-username", "uniqhandle"),
-                        arrayOf("isbn", "0-306-40615-2"),
-                        arrayOf("phone", "+1 (555) 123-4567"),
+                        arrayOf("isbn", "9780306406157"),
                         arrayOf("alt", "Book: Uniqalt"),
                         arrayOf("p", signer.pubKey, "wss://uniqrelay.example", "Uniqpetname"),
                     ),
@@ -289,11 +288,7 @@ class SearchTest : BaseDBTest() {
             // values that are not prose are the author's data too
             db.assertQuery(item, Filter(search = "uniqlang"))
             db.assertQuery(item, Filter(search = "uniqhandle"))
-            // an ISBN by either form, a phone number by its digits with or without the country code
             db.assertQuery(item, Filter(search = "9780306406157"))
-            db.assertQuery(item, Filter(search = "0306406152"))
-            db.assertQuery(item, Filter(search = "15551234567"))
-            db.assertQuery(item, Filter(search = "5551234567"))
 
             // the NIP's own tags are not: the `d` slug, the NIP-31 fallback text, and the `p`
             // tag with its relay hint and petname

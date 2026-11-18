@@ -480,8 +480,7 @@ class SearchFieldExtractorTest {
     fun decentralizedListItemExtraTagsAreTheTextTierAndTheKeywords() {
         // Deployment tags rank below what the item is called and what it is about: their prose is
         // the text tier, their other values the keywords. The NIP's own `d` and the NIP-31 alt
-        // text are not indexed at all. `9781534445145` fails the ISBN check digit, so it is a
-        // keyword with no other forms.
+        // text are not indexed at all.
         val tags =
             arrayOf(
                 arrayOf("d", "ol-ol98624w"),
@@ -522,7 +521,7 @@ class SearchFieldExtractorTest {
             IndexableFields.Tiered(
                 secondary = listOf("Vinney Cavallo"),
                 websites = listOf("https://github.com/vcavallo"),
-                keywords = listOf("vcavallo", "978-0-306-40615-7", "9780306406157", "0306406152"),
+                keywords = listOf("vcavallo", "978-0-306-40615-7"),
             ),
             fields,
         )

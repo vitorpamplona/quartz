@@ -96,9 +96,8 @@ class EventSearchMatcherTest {
         assertTrue(matches("middle ages", book))
         assertTrue(matches("music", book))
         assertTrue(matches("openlibrary", book))
-        // an ISBN is found by its digits in either form, however it was written
-        assertTrue(matches("0306406152", book))
-        assertTrue(matches("9780306406157", book))
+        // an ISBN is found as it was written
+        assertTrue(matches("0-306-40615-2", book))
         // the `d` tag is the NIP's, and so is the `p` tag with its relay hint and petname
         assertFalse(matches("ol1141875w", book))
         assertFalse(matches("fan", book))

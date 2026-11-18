@@ -97,8 +97,7 @@ sealed interface IndexableFields {
      * [locations] tag values.
      *
      * [keywords] are values that are not prose but that people search for by
-     * typing them: usernames, codes, numbers, and the canonical forms
-     * [searchIdentifierForms] gives an ISBN or a phone number. A backend should
+     * typing them: usernames, codes, numbers. A backend should
      * match them as whole tokens (or prefixes), unstemmed and weighted below
      * [text], so `vcavallo` finds its item without competing with descriptions.
      * Only kinds with an open tag set fill it today (the decentralized lists).

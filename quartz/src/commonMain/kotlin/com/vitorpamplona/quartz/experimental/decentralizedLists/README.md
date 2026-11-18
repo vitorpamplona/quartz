@@ -104,22 +104,18 @@ then by one narrow value test:
   `zap`, and the media URLs `image`, `thumb`, `picture`, `banner`, `icon`).
 - **By value**: Nostr's own references (`isNostrReference`): 64-hex ids,
   `kind:pubkey:d` addresses, NIP-19 bech32 with or without `nostr:`, relay
-  URLs. Any other code, a 40-hex git commit included, may be what someone
-  searches for.
+  URLs; and any value starting with `{` (a JSON object). Any other code, a
+  40-hex git commit included, may be what someone searches for.
 
-Each value is followed by its canonical search forms
-(`nip50Search/SearchIdentifiers.kt`): an ISBN, validated by its check digit,
-by its ISBN-13 and ISBN-10 digits; a phone number (`tel:`, a leading `+`, or
-10–15 grouped digits) by its digits, with and without a country code. `t`
-values skip all of this: a `t` is indexed unless it is a machine value
+`t` values skip all of this: a `t` is indexed unless it is a machine value
 (`isMachineValue`: JSON, a number, a URI of any scheme, an address, a hex id,
 a UUID, bech32).
 
 `SearchFieldExtractor` splits the same walk by role: `names`/`titles`/`name`/
 `title` are the primary tier, `description`/`comments` the secondary, prose
 values the text tier (`isNaturalLanguageValue`: whitespace, non-ASCII, or one
-capitalized word), URLs the websites, and everything else, canonical forms
-included, the keywords (`IndexableFields.Tiered.keywords`).
+capitalized word), URLs the websites, and everything else the keywords
+(`IndexableFields.Tiered.keywords`).
 
 `content` is not part of the spec, and ids, pubkeys and coordinates are
 served by `#p`/`#e`/`#a`/`#z` filters, so none of them are indexed.
