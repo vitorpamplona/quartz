@@ -20,6 +20,26 @@ dependencies {
 }
 ```
 
+Releases are on Maven Central and, through [Magpie](https://github.com/vitorpamplona/magpie), on
+Nostr + Blossom. Since 2.19.0, Quartz depends on [crypto-kmp](https://github.com/vitorpamplona/crypto-kmp)
+2.1.1 or newer, which is released only through Magpie, so add Magpie's settings plugin. It trusts
+only the release key `releases@vitorpamplona.com` names, and serves Quartz itself too:
+
+```kotlin settings.gradle.kts
+plugins {
+    id("com.vitorpamplona.magpie") version "0.1.1"
+}
+
+magpie {
+    group("com.vitorpamplona.crypto")
+    // optional: take Quartz from Nostr + Blossom too, instead of Maven Central
+    group("com.vitorpamplona.quartz")
+}
+```
+
+Commit the `gradle/magpie.lock` it writes. Magpie verifies signatures inside the Gradle daemon,
+so Gradle has to run on Java 21 or newer.
+
 | Requirement | |
 |---|---|
 | JVM | Java 21 |
@@ -49,7 +69,7 @@ release after 2.3.0.
 
 ### Snapshots (JitPack)
 
-Tagged releases go to Maven Central. To test an unreleased fix straight from `main` or a branch, use
+Tagged releases go to Maven Central and Nostr + Blossom. To test an unreleased fix straight from `main` or a branch, use
 [JitPack](https://jitpack.io/#vitorpamplona/quartz), which builds the library on demand from any git
 ref:
 
