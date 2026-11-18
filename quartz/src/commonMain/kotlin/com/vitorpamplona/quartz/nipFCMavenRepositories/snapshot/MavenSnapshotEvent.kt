@@ -32,10 +32,13 @@ import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenCoordinate
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenModule
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenPublication
+import com.vitorpamplona.quartz.nipFCMavenRepositories.hasMavenModule
+import com.vitorpamplona.quartz.nipFCMavenRepositories.isMavenVersion
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenHashes
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenManifest
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenModuleKeys
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenModules
+import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenRootModule
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenServers
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenVersion
 import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.ManifestTag
@@ -63,6 +66,13 @@ class MavenSnapshotEvent(
     override fun moduleKeys() = tags.mavenModuleKeys()
 
     override fun modules() = tags.mavenModules()
+
+    override fun rootModule() = tags.mavenRootModule()
+
+    override fun covers(
+        module: MavenModule,
+        version: String,
+    ) = tags.isMavenVersion(version) && tags.hasMavenModule(module)
 
     override fun version() = tags.mavenVersion()
 
@@ -110,6 +120,7 @@ class MavenSnapshotEvent(
             require(modules.isNotEmpty()) { "A snapshot covers at least one module" }
             require(MavenCoordinate.isSnapshotVersion(version)) { "A snapshot needs a -SNAPSHOT version" }
             val root = modules.first().withVersion(version)
+            MavenPublication.checkManifest(manifest)
             return eventTemplate(KIND, "", createdAt) {
                 dTag(root.toString())
                 mavenModules(modules)

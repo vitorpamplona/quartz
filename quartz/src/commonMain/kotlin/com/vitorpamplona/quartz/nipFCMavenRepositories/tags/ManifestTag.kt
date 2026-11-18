@@ -50,7 +50,7 @@ class ManifestTag(
         fun assemble(
             sha256: HexKey,
             size: Long,
-        ) = arrayOf(TAG_NAME, sha256, size.toString())
+        ) = arrayOf(TAG_NAME, sha256.lowercase(), size.toString())
 
         fun assemble(manifest: ManifestTag) = assemble(manifest.sha256, manifest.size)
     }

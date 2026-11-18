@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nipFCMavenRepositories.snapshot.MavenSnapshotEve
 import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.ManifestTag
 import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.ModuleTag
 import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.VersionTag
+import com.vitorpamplona.quartz.utils.Hex
 
 /**
  * NIP-FC: what a release ([MavenReleaseEvent]) and a snapshot ([MavenSnapshotEvent]) share, an
@@ -39,6 +40,9 @@ interface MavenPublication {
 
     /** Every well-formed `j`, root module first. */
     fun modules(): List<MavenModule>
+
+    /** The first well-formed `j`: the root module. */
+    fun rootModule(): MavenModule?
 
     fun version(): String?
 
@@ -54,22 +58,28 @@ interface MavenPublication {
     /** The root coordinate: the first module at [version]. */
     fun coordinate(): MavenCoordinate? {
         val version = version() ?: return null
-        return modules().firstOrNull()?.withVersion(version)
+        return rootModule()?.withVersion(version)
     }
 
-    /** Whether this event is a candidate for [module] at [version]. */
+    /** Whether this event is a candidate for [module] at [version]. Resolvers call it for every event, so it allocates nothing. */
     fun covers(
         module: MavenModule,
         version: String,
-    ) = version() == version && module.key in moduleKeys()
+    ): Boolean
 
     /** Has modules, a version, and a manifest with a size. */
     fun isWellFormed(): Boolean {
         val size = manifest()?.size ?: return false
-        return size >= 0 && coordinate() != null
+        return size >= 0 && version() != null && rootModule() != null
     }
 
     companion object {
+        /** What [ManifestTag.parse] reads back: 32 bytes of hex and a size. */
+        internal fun checkManifest(manifest: ManifestTag) {
+            require(Hex.isHexKey(manifest.sha256)) { "The manifest hash must be 32 bytes of hex" }
+            require(manifest.size >= 0) { "The manifest size can't be negative" }
+        }
+
         val KINDS = listOf(MavenReleaseEvent.KIND, MavenSnapshotEvent.KIND)
 
         /** Every release and snapshot of [module] by [authors]: what a client lists for `maven-metadata.xml`. */

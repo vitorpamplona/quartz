@@ -31,12 +31,12 @@ import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.VersionTag
 
 // Shared by releases and snapshots, which carry the same tags.
 
-fun <T : Event> TagArrayBuilder<T>.mavenModules(modules: List<MavenModule>) = addAll(ModuleTag.assemble(modules))
+fun <T : Event> TagArrayBuilder<T>.mavenModules(modules: List<MavenModule>) = addAllUniqueValueIfNew(ModuleTag.assemble(modules))
 
 fun <T : Event> TagArrayBuilder<T>.mavenVersion(version: String) = addUnique(VersionTag.assemble(version))
 
 fun <T : Event> TagArrayBuilder<T>.mavenManifest(manifest: ManifestTag) = addUnique(ManifestTag.assemble(manifest))
 
-fun <T : Event> TagArrayBuilder<T>.mavenHashes(hashes: List<HexKey>) = addAllUniqueValueIfNew(hashes.map(HashSha256Tag::assemble))
+fun <T : Event> TagArrayBuilder<T>.mavenHashes(hashes: List<HexKey>) = addAllUniqueValueIfNew(hashes.map { HashSha256Tag.assemble(it.lowercase()) })
 
 fun <T : Event> TagArrayBuilder<T>.mavenServers(servers: List<String>) = addAllUniqueValueIfNew(servers.map(BlossomServerTag::assemble))

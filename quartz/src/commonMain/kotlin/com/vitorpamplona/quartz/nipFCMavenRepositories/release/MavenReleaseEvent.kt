@@ -30,10 +30,13 @@ import com.vitorpamplona.quartz.nip31Alts.alt
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenCoordinate
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenModule
 import com.vitorpamplona.quartz.nipFCMavenRepositories.MavenPublication
+import com.vitorpamplona.quartz.nipFCMavenRepositories.hasMavenModule
+import com.vitorpamplona.quartz.nipFCMavenRepositories.isMavenVersion
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenHashes
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenManifest
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenModuleKeys
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenModules
+import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenRootModule
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenServers
 import com.vitorpamplona.quartz.nipFCMavenRepositories.mavenVersion
 import com.vitorpamplona.quartz.nipFCMavenRepositories.tags.ManifestTag
@@ -62,6 +65,13 @@ class MavenReleaseEvent(
     override fun moduleKeys() = tags.mavenModuleKeys()
 
     override fun modules() = tags.mavenModules()
+
+    override fun rootModule() = tags.mavenRootModule()
+
+    override fun covers(
+        module: MavenModule,
+        version: String,
+    ) = tags.isMavenVersion(version) && tags.hasMavenModule(module)
 
     override fun version() = tags.mavenVersion()
 
@@ -101,6 +111,7 @@ class MavenReleaseEvent(
         ): EventTemplate<MavenReleaseEvent> {
             require(modules.isNotEmpty()) { "A release covers at least one module" }
             require(!MavenCoordinate.isSnapshotVersion(version)) { "A -SNAPSHOT version is published as a snapshot" }
+            MavenPublication.checkManifest(manifest)
             return eventTemplate(KIND, "", createdAt) {
                 mavenModules(modules)
                 mavenVersion(version)

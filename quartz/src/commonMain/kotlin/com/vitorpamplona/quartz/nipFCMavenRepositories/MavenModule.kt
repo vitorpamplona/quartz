@@ -31,6 +31,11 @@ data class MavenModule(
     val groupId: String,
     val artifactId: String,
 ) {
+    init {
+        require(isName(groupId)) { "Invalid groupId: '$groupId'" }
+        require(isName(artifactId)) { "Invalid artifactId: '$artifactId'" }
+    }
+
     /** `groupId:artifactId`, as the `j` tag spells it. */
     val key: String get() = "$groupId:$artifactId"
 
@@ -38,7 +43,16 @@ data class MavenModule(
 
     override fun toString() = key
 
+    /** Whether [key] is this module's `groupId:artifactId`, without building the key. */
+    fun matches(key: String) =
+        key.length == groupId.length + 1 + artifactId.length &&
+            key.startsWith(groupId) &&
+            key[groupId.length] == ':' &&
+            key.endsWith(artifactId)
+
     companion object {
+        internal fun isName(value: String) = value.isNotEmpty() && ':' !in value
+
         fun parse(key: String): MavenModule? {
             val sep = key.indexOf(':')
             if (sep <= 0 || sep == key.length - 1 || key.indexOf(':', sep + 1) >= 0) return null
@@ -57,6 +71,12 @@ data class MavenCoordinate(
     val artifactId: String,
     val version: String,
 ) {
+    init {
+        require(MavenModule.isName(groupId)) { "Invalid groupId: '$groupId'" }
+        require(MavenModule.isName(artifactId)) { "Invalid artifactId: '$artifactId'" }
+        require(MavenModule.isName(version)) { "Invalid version: '$version'" }
+    }
+
     val module: MavenModule get() = MavenModule(groupId, artifactId)
 
     val isSnapshot: Boolean get() = isSnapshotVersion(version)

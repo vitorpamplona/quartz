@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.nipFCMavenRepositories
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
+import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip31Alts.alt
@@ -48,33 +50,59 @@ class MavenPublicationTest {
 
     private suspend fun <T : Event> roundTrip(template: EventTemplate<T>): Event = Event.fromJson(signer.sign(template).toJson())
 
-    // The shape Magpie 0.1.x publishes: root module first, the manifest hash as the first `x`.
-    private val magpieRelease =
-        """
-        {"id":"${"1".repeat(64)}","pubkey":"${"e".repeat(64)}","created_at":1763000000,"kind":3071,
-        "tags":[["j","com.vitorpamplona.crypto:crypto"],["j","com.vitorpamplona.crypto:crypto-jvm"],
-        ["v","2.1.1"],["manifest","${"A".repeat(64)}","2048"],["x","$manifestHash"],["x","$jarHash"],
-        ["server","https://blossom.primal.net"],["server","https://nostr.download"],
-        ["alt","Release of com.vitorpamplona.crypto:crypto:2.1.1 (Maven artifacts on Nostr)"]],
-        "content":"","sig":"${"0".repeat(128)}"}
-        """.trimIndent()
+    // crypto-kmp 2.1.1, the first release published with Magpie, as wss://vitor.nostr1.com and
+    // wss://nos.lol served it on 2026-11-18. Magpie 0.1.1 writes `alt` before the artifact hashes.
+    private val cryptoKmpRelease =
+        "{\"content\":\"\",\"created_at\":1795012783,\"id\":\"1c993cfd7b8b034a12ce66b20b1910a88f2c1816a39f3c284155fd88" +
+            "31acf80d\",\"kind\":3071,\"pubkey\":\"e9867c970848e300d6fca32bbd600c2fd4bd92c760ae5707355058720991955c\",\"s" +
+            "ig\":\"5b87ae847a31207b13f15afc3ed23a34f4197b6f5b803285f4c50cb1d0bd0ca0b2ac97ac86ffc8831a6b721e6bb9027" +
+            "8c688e9934acb66a9c69ff5709b9c4cb0\",\"tags\":[[\"j\",\"com.vitorpamplona.crypto:crypto\"],[\"j\",\"com.vitorpa" +
+            "mplona.crypto:crypto-android\"],[\"j\",\"com.vitorpamplona.crypto:crypto-iosarm64\"],[\"j\",\"com.vitorpampl" +
+            "ona.crypto:crypto-iossimulatorarm64\"],[\"j\",\"com.vitorpamplona.crypto:crypto-js\"],[\"j\",\"com.vitorpamp" +
+            "lona.crypto:crypto-jvm\"],[\"j\",\"com.vitorpamplona.crypto:crypto-linuxx64\"],[\"j\",\"com.vitorpamplona.cr" +
+            "ypto:crypto-macosarm64\"],[\"j\",\"com.vitorpamplona.crypto:crypto-wasm-js\"],[\"v\",\"2.1.1\"],[\"manifest\",\"" +
+            "1012859c6c4548599c203c41f2126fcc0ca2138feae1f2acf84f42222f96825e\",\"5784\"],[\"x\",\"1012859c6c4548599c20" +
+            "3c41f2126fcc0ca2138feae1f2acf84f42222f96825e\"],[\"server\",\"https://nostr.download\"],[\"alt\",\"Release o" +
+            "f com.vitorpamplona.crypto:crypto:2.1.1 (Maven artifacts on Nostr)\"],[\"x\",\"5696e81b2f715a26856d1ecea" +
+            "548e85cefe25564259c7064ea7d0b124a5023a6\"],[\"x\",\"bf9e22eb647f7ff0ba950d59809eedab47b9818062fc7d581c45" +
+            "5cd16d306aea\"],[\"x\",\"4db9175acae17941dad5633d848f1d05d7f0697818ec48c374528bf2a6d95ab0\"],[\"x\",\"fc191e" +
+            "234a5ebd8d27fb5ede3cca00ebc29e77713e13051b56142b44daa3418e\"],[\"x\",\"4d863269c2b8d9c7ca7fa74b50f1fb4be" +
+            "45fc84415f84feea9df42c9f5d7f75a\"],[\"x\",\"575c52fb22543a81fdf4ef14ee21f7639e1d52697c2357448d3b055a4270" +
+            "9120\"],[\"x\",\"27a5da9f9853553985b46ca5651d7a350ed38e0a597c930946fc0b09fd5fd4af\"],[\"x\",\"64143c84cb134a" +
+            "2cfd6990b8d969c89d72a97deb6569d28b0cff086c7e0ea164\"],[\"x\",\"ec6bb6266956b203e573735d0d3f1970365ef0aff" +
+            "f473937cffad5376b364751\"],[\"x\",\"70bf27938d6007de6f9b41616faf5339040d23fc0d18aab6db29dc84c4677780\"],[" +
+            "\"x\",\"034f9b32984b5bd2a38300af445850cba9c2f382502e3365cf94f8dfc887bfc2\"],[\"x\",\"a23a97ffde75cb5cb1fc55" +
+            "8f8c678e7b3734f426fce9b5fca93b2a5d279dd096\"],[\"x\",\"6363cadabfc35efa2ffee360c5282059542b573b923d913f5" +
+            "574831c4d9d115b\"],[\"x\",\"722ee282f1524d0d969d5c8e8d2a57f42c3ce17d88d3dfa8b85c20b0642b511b\"],[\"x\",\"918" +
+            "a7273c1ecd8747f91e1f9d5943468a16dcd8e14ed272ec316311f38d26f3a\"],[\"x\",\"2e2b05535ddf2f1b351088a8c13c6f" +
+            "aecb9b5cd58cae114b43f21aa2b0b56413\"],[\"x\",\"d9699e5f61b02ef85667538bfc86c6fbc73b62d152777fa10df92bf1a" +
+            "36ccc9c\"],[\"x\",\"c741d0156bcab5b18fbcabaf5ea6a05ce0581f16c94de499529b2af4bf611962\"],[\"x\",\"12709016931" +
+            "a3d2ba0dba6c7e34fba86dfe7e5280df4d5d1d4fcb677ca3d95c7\"],[\"x\",\"1dfa9b07f8e9b2da3faa4f46293ef2ca91a104" +
+            "13904cfb7d1b73697695fd6ccd\"],[\"x\",\"a621e69109a576a814d04d5915460c79f5628f544a109b1b94106be3c4dc596b\"" +
+            "],[\"x\",\"2b909a2cca207b2e8cfe1fa24ac421891d6604c825a2ce53a4cac0ccc1e30d7b\"],[\"x\",\"c286ac3eadbcd167576" +
+            "0821d4397fed6bf80cbaea1b446e134d27c5c994ccab3\"],[\"x\",\"c455877c16a82f9494ed38d48836390a14ec161d15cab4" +
+            "969fdfbd092e21822b\"],[\"x\",\"d022136b8e0f26ff5264f3c33ece38e3246e78915f09e7e3a166ba3c3a4c3e67\"],[\"x\",\"" +
+            "8b6b4ab31957d13e6cf2f4b3503a68622492fc8896162ac18ab99e99331fe330\"],[\"x\",\"574612aa574d994c7860ea8beb4" +
+            "1fb9cc6a90e575c1f120245c38da9fc9811c7\"]]}"
 
     @Test
-    fun parsesMagpiesRelease() {
-        val event = Event.fromJson(magpieRelease)
+    fun parsesCryptoKmpsRelease() {
+        val event = Event.fromJson(cryptoKmpRelease)
         assertIs<MavenReleaseEvent>(event)
-        assertEquals(listOf(root, jvm), event.modules())
-        assertEquals(listOf(root.key, jvm.key), event.moduleKeys())
+        assertTrue(event.verifyId())
+        assertTrue(event.verifySignature())
+        assertEquals(9, event.modules().size)
+        assertEquals(root, event.modules().first())
         assertEquals("2.1.1", event.version())
         assertEquals(MavenCoordinate("com.vitorpamplona.crypto", "crypto", "2.1.1"), event.coordinate())
-        // The manifest hash is read in lower case.
-        assertEquals(manifestHash, event.manifest()?.sha256)
-        assertEquals(2048L, event.manifest()?.size)
-        assertEquals(listOf(manifestHash, jarHash), event.hashes())
-        assertEquals(listOf("https://blossom.primal.net", "https://nostr.download"), event.servers())
+        assertEquals("1012859c6c4548599c203c41f2126fcc0ca2138feae1f2acf84f42222f96825e", event.manifest()?.sha256)
+        assertEquals(5784L, event.manifest()?.size)
+        assertEquals(28, event.hashes().size)
+        assertEquals(event.manifest()?.sha256, event.hashes().first())
+        assertEquals(listOf("https://nostr.download"), event.servers())
         assertTrue(event.covers(jvm, "2.1.1"))
         assertFalse(event.covers(jvm, "2.1.0"))
-        assertFalse(event.covers(MavenModule("com.vitorpamplona.crypto", "crypto-js"), "2.1.1"))
+        assertFalse(event.covers(MavenModule("com.vitorpamplona.crypto", "crypto-jv"), "2.1.1"))
         assertTrue(event.isWellFormed())
     }
 
@@ -189,5 +217,57 @@ class MavenPublicationTest {
         val versions = MavenPublication.versionsFilter(listOf(author), jvm)
         assertEquals(listOf(3071, 33071), versions.kinds)
         assertEquals(mapOf("j" to listOf(jvm.key)), versions.tags)
+    }
+
+    @Test
+    fun buildRefusesAManifestItCouldNotReadBack() {
+        // A hash that isn't 32 bytes of hex, or a negative size, would sign an event whose
+        // manifest() is null or that isWellFormed() rejects.
+        assertFailsWith<IllegalArgumentException> {
+            MavenReleaseEvent.build(listOf(root), "1.0", ManifestTag("abc", 1))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            MavenReleaseEvent.build(listOf(root), "1.0", ManifestTag(manifestHash, -1))
+        }
+    }
+
+    @Test
+    fun buildWritesHashesInLowerCaseOnce() =
+        runTest {
+            val upper = manifestHash.uppercase()
+            val event =
+                roundTrip(
+                    MavenReleaseEvent.build(listOf(root, root, jvm), "1.0", ManifestTag(upper, 1), artifactHashes = listOf(jarHash.uppercase(), jarHash)),
+                ) as MavenReleaseEvent
+            // The `manifest` tag and its `x` agree, so a `#x` lookup by the manifest hash finds it.
+            assertEquals(manifestHash, event.tags.first { it[0] == "manifest" }[1])
+            assertEquals(listOf(manifestHash, jarHash), event.hashes())
+            assertEquals(listOf(root.key, jvm.key), event.moduleKeys())
+        }
+
+    @Test
+    fun aModuleNameHoldsNoColon() {
+        assertFailsWith<IllegalArgumentException> { MavenModule("a:b", "c") }
+        assertFailsWith<IllegalArgumentException> { MavenModule("a", "") }
+    }
+
+    @Test
+    fun coversReadsTheRawTags() {
+        val event =
+            MavenReleaseEvent(
+                "1".repeat(64),
+                "e".repeat(64),
+                1,
+                arrayOf(arrayOf("j", "bad"), arrayOf("j", jvm.key), arrayOf("j", root.key), arrayOf("v", "1.0"), arrayOf("manifest", manifestHash, "1")),
+                "",
+                "0".repeat(128),
+            )
+        assertTrue(event.covers(root, "1.0"))
+        assertTrue(event.covers(jvm, "1.0"))
+        assertFalse(event.covers(MavenModule("com.vitorpamplona.crypto", "crypto-j"), "1.0"))
+        assertFalse(event.covers(MavenModule("com.vitorpamplona", "crypto"), "1.0"))
+        // The root is the first well-formed `j`.
+        assertEquals(jvm.withVersion("1.0"), event.coordinate())
+        assertTrue(event.isWellFormed())
     }
 }
