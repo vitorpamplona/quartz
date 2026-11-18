@@ -8,7 +8,7 @@ composeRuntimeAnnotation = "1.12.1"
 core = "1.7.0"
 coreKtx = "1.19.1"
 # SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519 (vitorpamplona/crypto-kmp).
-cryptoKmp = "2.1.0"
+cryptoKmp = "2.1.1"
 # Pure-Kotlin BIP-340 Schnorr on secp256k1 (vitorpamplona/libschnorr256k1-kotlin).
 # From JitPack until 1.0.1 is on Maven Central: the release is tagged and tested, but Maven Central
 # blocks the organization's uploads until its monthly limit resets (2026-12-01). 867bb13 is main

@@ -1060,3 +1060,10 @@ Classes the 2026-09-29 pass did not list. Batch 1 of the event-class cleanup rou
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
 | 38421 | `RoutstrNodeEvent` | t -> HASHTAG (T) | topics() (HashtagTag) | Routstr AI node announcement (no NIP; read from live events). `u` endpoints are HTTP base URLs, `mint` Cashu mint URLs, `version`/`models` values: none is a Nostr reference. The node's npub in `GET /v1/info` is checked against the author, not linked. |
+
+### Rows added 2026-11-18 (`nipFCMavenRepositories`)
+
+| Kind | Class | Links | Built from | Notes |
+|---|---|---|---|---|
+| 3071 | `MavenReleaseEvent` | *none* | – | NIP-FC (draft) Maven release. `j` (`groupId:artifactId`) and `v` are indexed lookup values, `manifest`/`x` blob hashes, `server` Blossom URLs: none is a Nostr reference. |
+| 33071 | `MavenSnapshotEvent` | *none* | – | NIP-FC (draft) Maven snapshot; release's tags plus `d` = root coordinate. No references. |
