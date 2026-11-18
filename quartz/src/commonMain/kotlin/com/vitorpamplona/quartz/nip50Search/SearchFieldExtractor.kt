@@ -47,11 +47,9 @@ import com.vitorpamplona.quartz.experimental.citations.CitationEvent
 import com.vitorpamplona.quartz.experimental.citations.HardcopyCitationEvent
 import com.vitorpamplona.quartz.experimental.citations.PromptCitationEvent
 import com.vitorpamplona.quartz.experimental.decentralizedLists.DecentralizedListEvent
+import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListAuthoredFields
 import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListDescriptions
-import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListExtraText
-import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListKeywords
 import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListTitles
-import com.vitorpamplona.quartz.experimental.decentralizedLists.searchableListWebsites
 import com.vitorpamplona.quartz.experimental.edits.TextNoteModificationEvent
 import com.vitorpamplona.quartz.experimental.fitness.workout.ExerciseTemplateEvent
 import com.vitorpamplona.quartz.experimental.fitness.workout.WorkoutRecordEvent
@@ -929,14 +927,15 @@ object SearchFieldExtractor {
             // keywords; its URLs the websites. Nostr's own
             // references (ids, addresses, bech32, relay URLs) stay out of every role.
             is DecentralizedListEvent -> {
+                val authored = event.tags.searchableListAuthoredFields()
                 tiers(
                     event,
                     event.tags.searchableListTitles(),
                     event.tags.searchableListDescriptions(),
-                    event.tags.searchableListExtraText(),
-                    event.tags.searchableListWebsites(),
+                    authored.text,
+                    authored.websites,
                 ).let { tiered ->
-                    val keywords = cleanAll(event.tags.searchableListKeywords()).distinct()
+                    val keywords = cleanAll(authored.keywords).distinct()
                     if (keywords.isEmpty()) tiered else tiered.copy(keywords = keywords)
                 }
             }

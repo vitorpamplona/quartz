@@ -528,6 +528,31 @@ class SearchFieldExtractorTest {
     }
 
     @Test
+    fun decentralizedListItemLabelsAreIndexedButNotTheirNamespaces() {
+        // A NIP-32 self-label is the item's own description, like a `t`; the namespace is not,
+        // whether in the `L` tag or as the label's mark.
+        val tags =
+            arrayOf(
+                arrayOf("d", "dune"),
+                arrayOf("title", "Dune"),
+                arrayOf("L", "com.example.genres"),
+                arrayOf("l", "Science Fiction", "com.example.genres"),
+                arrayOf("L", "ISO-639-1"),
+                arrayOf("l", "en", "ISO-639-1"),
+                arrayOf("l", "6aca05b812da97601151776d13de04ae71afc9d86da1408f0e72cffef72ece4b", "pubkeys"),
+            )
+        val fields = SearchFieldExtractor.extract(AddressableListItemEvent("3e".repeat(32), alice, 1L, tags, "", ""))
+        assertEquals(
+            IndexableFields.Tiered(
+                primary = listOf("Dune"),
+                text = "Science Fiction",
+                keywords = listOf("en"),
+            ),
+            fields,
+        )
+    }
+
+    @Test
     fun textTracksIndexWhatIsSaidNotTheTimings() {
         val vtt = "WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000 align:start\n<v Roger>Hello nostr\n"
         val fields = SearchFieldExtractor.extract(TextTrackEvent("3c".repeat(32), alice, 1L, arrayOf(arrayOf("d", "subtitles:v1")), vtt, ""))

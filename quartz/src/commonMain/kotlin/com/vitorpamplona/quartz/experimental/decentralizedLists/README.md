@@ -94,9 +94,10 @@ the author's data and is indexed whatever its values look like: usernames,
 codes, numbers and URLs as well as prose. What stays out is decided by name,
 then by one narrow value test:
 
-- **By name**: every single-letter tag but `t` (`d`, `z`, `p`, `e`, `a`, …:
-  NIP-01's indexable tags, already reachable by `#x` filters, with their relay
-  hints and petnames); this NIP's own vocabulary (the fields above, `slug(s)`,
+- **By name**: every single-letter tag but `t` and `l` (`d`, `z`, `p`, `e`,
+  `a`, `L`, …: NIP-01's indexable tags, already reachable by `#x` filters, with
+  their relay hints and petnames). Of a NIP-32 `l` self-label only the label
+  is indexed, not its namespace mark; this NIP's own vocabulary (the fields above, `slug(s)`,
   `required`/`allowed`/`recommended`/`optional`/`disallowed`, `field-type`,
   `display`, `item-kind`, `concept-graph`, `json`, `curation-method`,
   `polarity`); and NIP-wide metadata (`alt`, `client`, `imeta`, `expiration`,
