@@ -163,7 +163,7 @@ object ConcordChannelRekey {
                 .toJson()
                 .encodeToByteArray()
                 .size
-        val chunks = ConcordRekey.chunkBlobs(blobs, envelope)
+        val chunks = ConcordRekey.chunkBlobs(blobs, envelope, ConcordRekey.MAX_CHANNEL_BLOBS_PER_EVENT)
         val stream = address(sealingRoot, channelId, newEpoch)
         return chunks.mapIndexed { index, chunk ->
             val tags = ConcordRekey.tags(channelId, newEpoch, heldEpoch, prevCommit, index + 1, chunks.size, authority)
@@ -208,17 +208,23 @@ object ConcordChannelRekey {
         }
         return groups.values.mapNotNull { parsed ->
             val first = parsed.first()
-            if (parsed.any { it.prevEpoch != first.prevEpoch || it.total != first.total }) return@mapNotNull null
+            // CORD-06 §2: `newepoch` MUST be `prevepoch + 1`.
+            if (first.newEpoch != first.prevEpoch + 1) return@mapNotNull null
+            if (parsed.any { it.prevEpoch != first.prevEpoch }) return@mapNotNull null
             val citations = parsed.map { p -> p.citation?.let { VacTag.assemble(it).joinToString(",") } }.distinct()
             if (citations.size > 1) return@mapNotNull null
+            // A Rotator may EXTEND a rotation with chunks numbered past the original `n`, each
+            // declaring a new total (CORD-06 §2): the reader unions every chunk's blobs, two chunks
+            // claiming one index included, and holds a complete set only at every index up to the
+            // largest `n` any chunk declares.
             ChannelRotation(
                 rotator = first.rotator,
                 channelIdHex = scope,
                 newEpoch = first.newEpoch,
                 prevEpoch = first.prevEpoch,
                 prevCommit = first.prevCommit,
-                total = first.total,
-                chunks = parsed.groupBy { it.index }.mapValues { (_, same) -> same.first().blobs },
+                total = parsed.maxOf { it.total },
+                chunks = parsed.groupBy { it.index }.mapValues { (_, same) -> same.flatMap { it.blobs }.distinctBy { it.locator to it.wrapped } },
                 authority = first.citation,
                 createdAt = parsed.maxOf { it.createdAt },
             )
@@ -229,7 +235,8 @@ object ConcordChannelRekey {
      * Walks [rotations] of the channel whose key this account holds ([heldKey] at [heldEpoch]) and
      * decides what to do (Armada `useChannelRekeyWatch`):
      *
-     *  - only **complete** rotations past [heldEpoch] from an [honored] Rotator count;
+     *  - only rotations past [heldEpoch] from an [honored] Rotator count, and only a **complete**
+     *    one can remove us (a chunk holding our blob is enough to adopt, CORD-06 §2);
      *  - epoch by epoch, ascending: a rotation carrying our blob **and** continuing the key we hold
      *    at that point (`prevepoch`/`prevcommit`) hands us the next key — racing Rotators at one
      *    epoch converge on the lexicographically lowest key — and the walk moves on from it;
@@ -254,7 +261,8 @@ object ConcordChannelRekey {
         val channelId = channelIdHex.hexToByteArray()
         val byEpoch =
             rotations
-                .filter { it.channelIdHex.equals(channelIdHex, ignoreCase = true) && it.newEpoch > heldEpoch && it.complete && honored(it) }
+                // A chunk holding our blob is enough to adopt; only a COMPLETE set without it removes us.
+                .filter { it.channelIdHex.equals(channelIdHex, ignoreCase = true) && it.newEpoch > heldEpoch && honored(it) }
                 .groupBy { it.newEpoch }
                 .entries
                 .sortedBy { it.key }
@@ -295,7 +303,7 @@ object ConcordChannelRekey {
                 continue
             }
             if (addressedHere) continue
-            if (candidates.any { it.createdAt >= joinedAtSecs && outranksMe(it.rotator) }) excludedAt = epoch
+            if (candidates.any { it.complete && it.createdAt >= joinedAtSecs && outranksMe(it.rotator) }) excludedAt = epoch
         }
 
         val adopted = adoptedEpoch

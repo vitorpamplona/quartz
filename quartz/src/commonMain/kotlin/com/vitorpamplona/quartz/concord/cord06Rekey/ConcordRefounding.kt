@@ -84,7 +84,22 @@ class ReceivedRefounding(
      * [ConcordRotationAuthority.citationSatisfied].
      */
     val authority: AuthorityCitation? = null,
+    /**
+     * A **Severing Refounding** (CORD-06 §3, `["sever","1"]` on any chunk): a link creator adopting
+     * it SHOULD retire every public link it minted under an older epoch and MUST NOT refresh one.
+     */
+    val severed: Boolean = false,
 ) {
+    @Deprecated("Use the constructor with severed. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        newRoot: ByteArray,
+        newEpoch: Long,
+        rotator: HexKey,
+        newControlPk: ByteArray?,
+        newControlRoot: ByteArray?,
+        authority: AuthorityCitation?,
+    ) : this(newRoot, newEpoch, rotator, newControlPk, newControlRoot, authority, false)
+
     /** True when this was a legacy pre-split rotation (72-byte base blob). */
     val legacy: Boolean get() = newControlPk == null
 }
@@ -303,6 +318,7 @@ object ConcordRefounding {
      * rotator-signed) on the [baseRekeyKey] address so every current member — who
      * precomputes that address from the prior root — receives it live.
      */
+    @Deprecated("Use the overload with severed. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
     suspend fun buildBaseRekeyWraps(
         rotatorSigner: NostrSigner,
         baseRekeyKey: GroupKey,
@@ -316,6 +332,22 @@ object ConcordRefounding {
         prevCommit: HexKey,
         createdAt: Long,
         authority: AuthorityCitation? = null,
+    ): List<Event> = buildBaseRekeyWraps(rotatorSigner, baseRekeyKey, recipientsXOnly, staffXOnly, newRoot, newControlPk, newControlRoot, newEpoch, prevEpoch, prevCommit, createdAt, authority, false)
+
+    suspend fun buildBaseRekeyWraps(
+        rotatorSigner: NostrSigner,
+        baseRekeyKey: GroupKey,
+        recipientsXOnly: List<HexKey>,
+        staffXOnly: Set<HexKey>,
+        newRoot: ByteArray,
+        newControlPk: ByteArray,
+        newControlRoot: ByteArray,
+        newEpoch: Long,
+        prevEpoch: Long,
+        prevCommit: HexKey,
+        createdAt: Long,
+        authority: AuthorityCitation? = null,
+        severed: Boolean = false,
     ): List<Event> {
         if (recipientsXOnly.isEmpty()) return emptyList()
         val staffLower = staffXOnly.mapTo(HashSet()) { it.lowercase() }
@@ -333,17 +365,18 @@ object ConcordRefounding {
             }
         // The envelope is measured once at the widest `chunk` tag this rotation could carry.
         val widest = blobs.size.coerceAtLeast(1)
-        val envelopeTags = ConcordRekey.tags(ConcordRekey.ROOT_SCOPE, newEpoch, prevEpoch, prevCommit, widest, widest, authority)
+        val severTag = if (severed) arrayOf(arrayOf(TAG_SEVER, SEVER_VALUE)) else emptyArray()
+        val envelopeTags = ConcordRekey.tags(ConcordRekey.ROOT_SCOPE, newEpoch, prevEpoch, prevCommit, widest, widest, authority) + severTag
         val envelope =
             RumorAssembler
                 .assembleRumor<Event>(rotatorSigner.pubKey, createdAt, ConcordRekey.KIND, envelopeTags, "")
                 .toJson()
                 .encodeToByteArray()
                 .size
-        val chunks = ConcordRekey.chunkBlobs(blobs, envelope)
+        val chunks = ConcordRekey.chunkBlobs(blobs, envelope, ConcordRekey.MAX_BASE_BLOBS_PER_EVENT)
         val total = chunks.size
         return chunks.mapIndexed { index, chunk ->
-            val tags = ConcordRekey.tags(ConcordRekey.ROOT_SCOPE, newEpoch, prevEpoch, prevCommit, index + 1, total, authority)
+            val tags = ConcordRekey.tags(ConcordRekey.ROOT_SCOPE, newEpoch, prevEpoch, prevCommit, index + 1, total, authority) + severTag
             val rumor = RumorAssembler.assembleRumor<Event>(rotatorSigner.pubKey, createdAt, ConcordRekey.KIND, tags, ConcordRekey.encodeContent(chunk))
             ConcordStreamEnvelope.wrap(rumor, baseRekeyKey, rotatorSigner, encrypted = true, createdAt = createdAt)
         }
@@ -415,7 +448,10 @@ object ConcordRefounding {
             // A present-but-malformed citation is a corrupt chunk; absent means the owner acts.
             val vacTag = rumor.tags.firstOrNull { it.isNotEmpty() && it[0] == VacTag.TAG_NAME }
             val citation = if (vacTag == null) null else VacTag.parse(vacTag) ?: continue
-            byRotator.getOrPut(opened.author.lowercase()) { ArrayList() }.add(RekeyChunk(opened.author, rumor.content, citation))
+            // `sever` (CORD-06 §3): only "1", at most once; any other shape makes the chunk malformed.
+            val severTags = rumor.tags.filter { it.isNotEmpty() && it[0] == TAG_SEVER }
+            if (severTags.size > 1 || severTags.any { it.getOrNull(1) != SEVER_VALUE }) continue
+            byRotator.getOrPut(opened.author.lowercase()) { ArrayList() }.add(RekeyChunk(opened.author, rumor.content, citation, severTags.isNotEmpty()))
         }
 
         // Pass 2: per rotator, find this member's blob.
@@ -437,7 +473,8 @@ object ConcordRefounding {
                     val derived = ConcordKeyDerivation.controlSignerKey(controlRoot, communityId, newEpoch).publicKey
                     if (!derived.contentEquals(controlPk)) continue
                 }
-                out.add(ReceivedRefounding(payload.newKey, newEpoch, rotator, controlPk, controlRoot, chunk.citation))
+                // A receiver reading `sever` from any chunk applies it to the whole rotation.
+                out.add(ReceivedRefounding(payload.newKey, newEpoch, rotator, controlPk, controlRoot, chunk.citation, chunks.any { it.severed }))
                 break
             }
         }
@@ -448,7 +485,12 @@ object ConcordRefounding {
         val rotator: HexKey,
         val content: String,
         val citation: AuthorityCitation?,
+        val severed: Boolean,
     )
+
+    /** The Severing Refounding mark on a base rotation's chunks (CORD-06 §3). */
+    const val TAG_SEVER = "sever"
+    const val SEVER_VALUE = "1"
 
     /**
      * The winner among authorized candidates racing to one epoch (CORD-06 §3): the

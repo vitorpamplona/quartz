@@ -69,6 +69,7 @@ class ConcordRekeyConformanceTest {
         recipients: List<String>,
         staff: Set<String> = emptySet(),
         authority: AuthorityCitation? = null,
+        severed: Boolean = false,
     ): List<Event> {
         val newEpoch = community.rootEpoch + 1
         return ConcordRefounding.buildBaseRekeyWraps(
@@ -84,6 +85,7 @@ class ConcordRekeyConformanceTest {
             prevCommit = ConcordKeyDerivation.epochKeyCommitment(community.rootEpoch, community.communityRoot).toHexKey(),
             createdAt = now,
             authority = authority,
+            severed = severed,
         )
     }
 
@@ -184,8 +186,10 @@ class ConcordRekeyConformanceTest {
                         .size <= 65_535,
                     "the wrap's NIP-44 plaintext (the seal) must fit the cap",
                 )
-                assertTrue(ConcordRekey.decodeContent(o.rumor.content).size <= 90, "the reference client fits 90 staff blobs per chunk")
+                assertTrue(ConcordRekey.decodeContent(o.rumor.content).size <= ConcordRekey.MAX_BASE_BLOBS_PER_EVENT, "a base rotation carries at most 60 blobs an event")
             }
+            // CORD-02 Appendix B: every published event, the outer wrap included, fits 64 KB.
+            for (w in wraps) assertTrue(w.toJson().encodeToByteArray().size <= ConcordRekey.MAX_EVENT_BYTES, "a wrap over the 64 KB relay limit")
             assertEquals(recipients.size, opened.sumOf { ConcordRekey.decodeContent(it.rumor.content).size })
             // And everyone still finds their key across the chunks.
             assertNotNull(ConcordRefounding.findNewRoot(wraps, baseRekey(community), member, community.communityId, community.communityRoot, community.rootEpoch))
@@ -210,16 +214,18 @@ class ConcordRekeyConformanceTest {
                         .encodeToByteArray()
                         .size <= ConcordRekey.REKEY_RUMOR_MAX_BYTES,
                 )
-                assertTrue(ConcordRekey.decodeContent(o.rumor.content).size < ConcordRekey.MAX_BLOBS_PER_CHUNK, "the byte budget, not the count cap, binds for 104-byte blobs")
+                assertTrue(ConcordRekey.decodeContent(o.rumor.content).size <= ConcordRekey.MAX_BASE_BLOBS_PER_EVENT)
             }
+            for (w in wraps) assertTrue(w.toJson().encodeToByteArray().size <= ConcordRekey.MAX_EVENT_BYTES, "a wrap over the 64 KB relay limit")
         }
 
     @Test
     fun chunkingKeepsTheCountCap() {
         val tiny = List(300) { RekeyBlob("a", "b") }
-        val chunks = ConcordRekey.chunkBlobs(tiny, envelopeBytes = 300)
-        assertEquals(listOf(120, 120, 60), chunks.map { it.size })
-        assertEquals(listOf(0), ConcordRekey.chunkBlobs(emptyList(), 300).map { it.size })
+        val chunks = ConcordRekey.chunkBlobs(tiny, envelopeBytes = 300, perEvent = ConcordRekey.MAX_CHANNEL_BLOBS_PER_EVENT)
+        assertEquals(listOf(80, 80, 80, 60), chunks.map { it.size })
+        assertEquals(listOf(0), ConcordRekey.chunkBlobs(emptyList(), 300, ConcordRekey.MAX_CHANNEL_BLOBS_PER_EVENT).map { it.size })
+        assertEquals(listOf(60, 60, 60, 60, 60), ConcordRekey.chunkBlobs(tiny, 300, ConcordRekey.MAX_BASE_BLOBS_PER_EVENT).map { it.size })
     }
 
     // ---- I9: the vac citation --------------------------------------------------------------
@@ -364,5 +370,26 @@ class ConcordRekeyConformanceTest {
             assertFailsWith<IncompleteControlPlaneException> {
                 ConcordRefounding.compactControlPlane(community.genesisWraps, community.controlPlane, newControl, community.communityId, owner.pubKey, mustCarry = mapOf(first to heads.getValue(first) + 1))
             }
+        }
+
+    // ---- CORD-06 §3: Severing Refoundings ---------------------------------------------------
+
+    @Test
+    fun aSeveringRefoundingCarriesItsMarkOnEveryChunk() =
+        runTest {
+            val community = ConcordCommunityFactory.create(owner, "Test", now)
+            val wraps = rotation(community, owner, ByteArray(32) { 1 }, members(150) + member.pubKey, severed = true)
+            for (o in rumorsOf(wraps, baseRekey(community))) {
+                assertEquals(
+                    listOf("sever", "1"),
+                    o.rumor.tags
+                        .single { it[0] == "sever" }
+                        .toList(),
+                )
+            }
+            val received = ConcordRefounding.findNewRoots(wraps, baseRekey(community), member, community.communityId, community.communityRoot, community.rootEpoch)
+            assertTrue(received.single().severed)
+            val plain = rotation(community, owner, ByteArray(32) { 2 }, listOf(member.pubKey))
+            assertTrue(ConcordRefounding.findNewRoots(plain, baseRekey(community), member, community.communityId, community.communityRoot, community.rootEpoch).none { it.severed })
         }
 }
