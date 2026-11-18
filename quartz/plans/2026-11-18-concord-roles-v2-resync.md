@@ -138,3 +138,26 @@ spec MUST, or a core feature Armada users rely on. P2 is a new optional feature.
 - Armada Discover curation UI (the wire parts are row A12).
 - Spec editorial commits: the paragraph splits (`61caf76`, `d59d4dc`, `29e4433`, `efb0737`) and examples-only commits (`f0d3f0c`), except where they pin a wire detail already covered above.
 - `173e970` (credit Armada in CORD-05): wording only.
+
+## Status (implementation, 2026-11-18)
+
+Quartz (`claude/awesome-mccarthy-6x0039`) and Amethyst (`wt/concord`, needs the Quartz release
+with these changes). Tested against the spec vectors (04.md §1 marked hash, 02.md A.6 coordinates,
+03.md §1 writer certificate) and Armada's Vector fixtures (`guild`, `switched`, `members`,
+`history`, `writers`, `refounded`), copied to `quartz/src/commonTest/resources/concord/cord25/`.
+
+| # | Status |
+|---|---|
+| S1 | **done (read)**: `RankedRoster` ports Armada's `foldRankedRoster` (Vector's `select_authorized`/`replay`) for a reader holding no floor: vsk 13 Roles and `@everyone`, activation, legacy list, rank keys as dense positions, downward support, fork siblings, Tenure seals, 100-Role cap; `AuthorityResolver` switches to it when activated (Banlist on Roles bits, `@everyone` in effective permissions); bits 13–29. Folds every fixture to Vector's Roles, Grants, `@everyone`, legacy list and per-member server permissions. Not ported: the floor/`StoredRoster` paths (Amethyst refolds from scratch). Writing vsk 13 Roles/Grants is P2: Amethyst refuses role and grant edits on a v2 Community |
+| S2 | **done**: `eh`/`eb` parse and duplicate rules, `EditionHash.markedHash`, `ControlEdition.binding`/`isAdmissibleIn`, every fold drops foreign-bound and unmarked vsk ≥ 13 editions; `ControlEditionBuilder` writes the marker, `RankedRoster.bindingForWrite` says when; Amethyst marks every edition of a v2 Community |
+| S3 | **done (read)**: `ConcordChannelSeal` reads, opens (prev check, creator, `public_until`) and seals; `ConcordCommunityState.fold` keeps sealed heads and opens them with the keys the caller holds; legacy-list rule for unmarked Channel editions. Not done: our own private-channel birth at epoch 1 and re-seal duty (Amethyst refuses to create or edit a private Channel on v2) |
+| S4 | **done (read)**: `ConcordChannelAccess` (plane, `delivery` parse, trust judge, access and history blob opening); Amethyst subscribes each Private Channel's access plane on v2 and adopts deliveries. Not done: delivering as a holder (P2 duty) |
+| S5 | **done (read)**: `ConcordWritersLedger` (parse with the malformed rules, windows, stops, `postStands`, certificates), `ChannelChat.acceptWriterOpened` and the `wepoch` drop at the read address; Amethyst subscribes and reads writer addresses. Held posts, take-backs, departures and minting not done |
+| S6 | **done (read)**: overwrites (vsk 14) and syncs (vsk 17) folded, `channelPermissions` matches Vector per member per Channel in every fixture; `everyoneSends`. Collapse of posts lacking SEND_MESSAGES and the editor UI not done |
+| S7 | **partial**: Tenures fold and lend sealed standing (roster, admits, Banlist). Writing a Tenure on our own reductions not done (bans of authors of Control editions should carry one) |
+| S8 | **done**: `ConcordCommunityState.honorsModerationHide`; Amethyst hides a target already in cache. A hide that arrives before its target is not yet applied, and offering the action to our moderators is not done |
+| S9 | **done**: `rev` read in the seed/current merges, `reviseSnapshots` bumps it in `planWrites`, channels ordered by raw id. Publishing the List to the stock relays not done |
+| S10 | **done (Quartz)**: `ConcordRootAuthentication.verify`. Not yet called from Amethyst's join gate |
+| S11 | **done**: channel rotations union extension chunks, take the largest total, adopt from any chunk holding our blob, remove only on a complete set; `newepoch = prevepoch + 1` enforced (S22). Base rotations already adopted per chunk |
+| S12 | **done**: 80 blobs per Channel rotation, 60 per base rotation, 28,672-byte rumor; test checks every wrap ≤ 65,536 bytes |
+| S13 | **partial**: `sever` read (malformed refused, any chunk applies) and written (`buildBaseRekeyWraps(severed)`); Invite List `epoch` helpers. Amethyst does not yet retire or skip refreshing severed links |
