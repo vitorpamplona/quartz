@@ -576,7 +576,7 @@ object SearchFieldExtractor {
             }
 
             is ModelTorrentEvent -> {
-                tiers(event, listOf(event.title(), event.name()), listOf(event.modelName(), event.repoId(), event.baseModel(), event.lab(), event.quantDev(), event.quantDetail()), null)
+                tiers(event, listOf(event.title(), event.name()), listOf(event.modelName(), event.repoId(), event.baseModel(), event.lab(), event.quantDev(), event.quantDetail()).distinct(), null)
             }
 
             is ModelRequestEvent -> {

@@ -38,14 +38,19 @@ import com.vitorpamplona.quartz.llamagarden.torrent.tags.FileClassTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.HfMatchTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.ModelKindTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip13Pow.pow
 import com.vitorpamplona.quartz.nip32Labeling.LabelEvent
+import com.vitorpamplona.quartz.nip50Search.IndexableFields
+import com.vitorpamplona.quartz.nip50Search.SearchFieldExtractor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.EventFactory
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -98,7 +103,14 @@ class LlamaGardenEventsTest {
 
     private val me = "77649e3424344dc6a068fc8f29265336d84b2b8f9449698609843427d468c341"
 
-    private fun <T : Event> EventTemplate<T>.parse(): T = EventFactory.create("11".repeat(32), me, createdAt, kind, tags, content, "00".repeat(64))
+    private val signer = NostrSignerInternal(KeyPair())
+
+    /** Signs with a real key, checks the signature, and parses the JSON back as a relay would hand it over. */
+    private suspend fun <T : Event> EventTemplate<T>.signAndParse(): Event {
+        val signed: T = signer.sign(this)
+        assertTrue(signed.verify(), "id and signature")
+        return Event.fromJson(signed.toJson())
+    }
 
     @Test
     fun readsAQuantListing() {
@@ -234,94 +246,147 @@ class LlamaGardenEventsTest {
     }
 
     @Test
-    fun buildsACatalogListingThatParsesBack() {
-        val listing =
-            ModelTorrentEvent
-                .build(
-                    infoHash = "17616834D44B4E2D1B35494D0B80EE61DA3CEA79",
-                    name = "Qwen3.6-27B",
-                    magnet = "magnet:?xt=urn:btih:17616834d44b4e2d1b35494d0b80ee61da3cea79",
-                    totalSize = 23_675_466_240L,
-                    torrentFileSha256 = "757e7ff736bbfdc17c959964119ecdd86ad95c2a2ab91c548e1509a94924a3e9",
-                    torrentFileUrls = listOf("https://nostr.download/a.torrent"),
-                    webSeeds = listOf("https://huggingface.co/Qwen/"),
-                    trackers = listOf("udp://tracker.opentrackr.org:1337/announce", "udp://tracker.opentrackr.org:1337/announce"),
-                    source = "huggingface.co/Qwen/Qwen3.6-27B",
-                ) {
-                    quantType("gguf")
-                }.parse()
+    fun buildsACatalogListingThatParsesBack() =
+        runTest {
+            val listing =
+                ModelTorrentEvent
+                    .build(
+                        infoHash = "17616834D44B4E2D1B35494D0B80EE61DA3CEA79",
+                        name = "Qwen3.6-27B",
+                        magnet = "magnet:?xt=urn:btih:17616834d44b4e2d1b35494d0b80ee61da3cea79",
+                        totalSize = 23_675_466_240L,
+                        torrentFileSha256 = "757e7ff736bbfdc17c959964119ecdd86ad95c2a2ab91c548e1509a94924a3e9",
+                        torrentFileUrls = listOf("https://nostr.download/a.torrent"),
+                        webSeeds = listOf("https://huggingface.co/Qwen/"),
+                        trackers = listOf("udp://tracker.opentrackr.org:1337/announce", "udp://tracker.opentrackr.org:1337/announce"),
+                        source = "huggingface.co/Qwen/Qwen3.6-27B",
+                    ) {
+                        quantType("gguf")
+                    }.signAndParse()
 
-        assertIs<ModelTorrentEvent>(listing)
-        assertEquals("17616834d44b4e2d1b35494d0b80ee61da3cea79", listing.infoHash())
-        assertEquals(1, listing.trackers().size)
-        assertEquals("Qwen/Qwen3.6-27B", listing.repoId())
-        assertEquals("gguf", listing.quantType())
-        assertEquals(ModelTorrentEvent.TORRENT_MIME_TYPE, listing.mimeType())
-    }
-
-    @Test
-    fun buildsAUserSubmissionLikeTheViewer() {
-        val submission =
-            ModelTorrentEvent
-                .buildSubmission(
-                    dTag = ModelTorrentEvent.userSubmissionDTag(me, "ab".repeat(32)),
-                    torrentUrl = "https://nostr.download/abc.torrent",
-                    name = "Qwen3-Next-80B-A3B",
-                    approximateSize = 17_179_869_184L,
-                    huggingFaceUrl = "https://huggingface.co/Qwen/Qwen3-Next-80B-A3B",
-                    fileClass = FileClassTag.BASE,
-                    lab = "Qwen",
-                    hfMatch = HfMatchTag.YES,
-                ).parse()
-
-        assertIs<ModelTorrentEvent>(submission)
-        assertFalse(submission.isCatalogListing())
-        assertNull(submission.infoHash())
-        assertNull(submission.magnetLink())
-        assertEquals("huggingface.co", submission.source())
-        assertEquals("Qwen/Qwen3-Next-80B-A3B", submission.repoId())
-        assertEquals("https://huggingface.co/Qwen/Qwen3-Next-80B-A3B", submission.huggingFaceUrl())
-        assertEquals(ModelKindTag.NOT_SAID, submission.modelKind())
-        assertEquals(ModelKindTag.NOT_SAID, submission.effectiveModelKind())
-        assertEquals(HfMatchTag.YES, submission.hfMatch())
-    }
+            assertIs<ModelTorrentEvent>(listing)
+            assertEquals(signer.pubKey, listing.pubKey)
+            assertEquals("17616834d44b4e2d1b35494d0b80ee61da3cea79", listing.dTag())
+            assertEquals("17616834d44b4e2d1b35494d0b80ee61da3cea79", listing.infoHash())
+            assertEquals("magnet:?xt=urn:btih:17616834d44b4e2d1b35494d0b80ee61da3cea79", listing.magnetLink())
+            assertEquals("Qwen3.6-27B", listing.name())
+            assertEquals(23_675_466_240L, listing.totalSize())
+            assertEquals("757e7ff736bbfdc17c959964119ecdd86ad95c2a2ab91c548e1509a94924a3e9", listing.torrentFileSha256())
+            assertEquals(listOf("https://nostr.download/a.torrent"), listing.torrentFileUrls())
+            assertEquals(listOf("https://huggingface.co/Qwen/"), listing.webSeeds())
+            assertEquals(listOf("udp://tracker.opentrackr.org:1337/announce"), listing.trackers())
+            assertEquals("Qwen/Qwen3.6-27B", listing.repoId())
+            assertEquals("gguf", listing.quantType())
+            assertEquals(ModelTorrentEvent.TORRENT_MIME_TYPE, listing.mimeType())
+        }
 
     @Test
-    fun buildsRequestsThatParseBack() {
-        val listing = Event.fromJson(kimiListingJson) as ModelTorrentEvent
-        val relay = RelayUrlNormalizer.normalizeOrNull("wss://nostr.mom/")
-        val seeders = SeederRequestEvent.build(EventHintBundle(listing, relay), me).parse()
-        assertIs<SeederRequestEvent>(seeders)
-        assertEquals(listing.id, seeders.torrentListingId())
-        assertEquals("9d990f92c6dcb8743cd9df1487327cbb787f5c8f", seeders.infoHash())
-        assertEquals("$me:9d990f92c6dcb8743cd9df1487327cbb787f5c8f", seeders.dTag())
-        assertEquals(listing.title(), seeders.name())
+    fun buildsAUserSubmissionLikeTheViewer() =
+        runTest {
+            val submission =
+                ModelTorrentEvent
+                    .buildSubmission(
+                        submitter = signer.pubKey,
+                        torrentUrl = " https://nostr.download/abc.torrent ",
+                        name = "Qwen3-Next-80B-A3B ",
+                        approximateSize = 17_179_869_184L,
+                        huggingFaceUrl = "https://huggingface.co/Qwen/Qwen3-Next-80B-A3B",
+                        fileClass = FileClassTag.BASE,
+                        lab = "Qwen",
+                        quantType = " ",
+                        hfMatch = HfMatchTag.YES,
+                    ).signAndParse()
 
-        val request = ModelRequestEvent.build(me, "Qwen3-Next-80B-A3B", listOf(" https://huggingface.co/Qwen/Qwen3-Next-80B-A3B ", ""), RequestTypeTag.QUANT, 24).parse()
-        assertIs<ModelRequestEvent>(request)
-        assertEquals(me, request.dTag())
-        assertEquals(listOf("https://huggingface.co/Qwen/Qwen3-Next-80B-A3B"), request.links())
-        assertEquals(RequestTypeTag.QUANT, request.requestType())
-        assertEquals(24, request.vramGb())
-
-        val approval = LlamaGardenCuration.buildApproval(EventHintBundle(listing, relay)).parse()
-        assertIs<LabelEvent>(approval)
-        assertEquals(listOf(listing.id), LlamaGardenCuration.approvedListingIds(approval))
-        val rejection = LlamaGardenCuration.buildRejection(EventHintBundle(listing, relay)).parse()
-        assertEquals(listOf(listing.id), LlamaGardenCuration.rejectedListingIds(assertIs<LabelEvent>(rejection)))
-    }
+            assertIs<ModelTorrentEvent>(submission)
+            // The viewer's d: sha256 hex of "<url>:<name>" over the trimmed form fields.
+            assertEquals("user:${signer.pubKey}:1e5c6175eb75c4b4595332d1533d25dbc7789657b506a7b5044681b957fd15d7", submission.dTag())
+            assertEquals(ModelTorrentEvent.userSubmissionDTag(signer.pubKey, "https://nostr.download/abc.torrent", "Qwen3-Next-80B-A3B"), submission.dTag())
+            assertFalse(submission.isCatalogListing())
+            assertNull(submission.infoHash())
+            assertNull(submission.magnetLink())
+            assertEquals(listOf("https://nostr.download/abc.torrent"), submission.torrentFileUrls())
+            assertEquals("Qwen3-Next-80B-A3B", submission.name())
+            assertEquals(17_179_869_184L, submission.totalSize())
+            assertEquals("huggingface.co", submission.source())
+            assertEquals("Qwen/Qwen3-Next-80B-A3B", submission.repoId())
+            assertEquals("https://huggingface.co/Qwen/Qwen3-Next-80B-A3B", submission.huggingFaceUrl())
+            assertEquals(FileClassTag.BASE, submission.fileClass())
+            assertEquals(ModelKindTag.NOT_SAID, submission.modelKind())
+            assertEquals(ModelKindTag.NOT_SAID, submission.effectiveModelKind())
+            assertEquals("Qwen", submission.lab())
+            assertNull(submission.quantType())
+            assertEquals(HfMatchTag.YES, submission.hfMatch())
+        }
 
     @Test
-    fun buildsAClientReleaseThatParsesBack() {
-        val release =
-            ClientReleaseEvent
-                .build("22", "aa".repeat(32), 180_000L, listOf("https://blossom.primal.net/" + "aa".repeat(32)))
-                .parse()
+    fun buildsRequestsThatParseBack() =
+        runTest {
+            val listing = Event.fromJson(kimiListingJson) as ModelTorrentEvent
+            val relay = RelayUrlNormalizer.normalizeOrNull("wss://nostr.mom/")
+            val seeders = SeederRequestEvent.build(EventHintBundle(listing, relay), signer.pubKey).signAndParse()
+            assertIs<SeederRequestEvent>(seeders)
+            assertEquals(listing.id, seeders.torrentListingId())
+            assertEquals(listOf(listing.id), seeders.linkedEventIds())
+            assertEquals(listOf(relay), seeders.eventHints().map { it.relay })
+            assertEquals("9d990f92c6dcb8743cd9df1487327cbb787f5c8f", seeders.infoHash())
+            assertEquals("${signer.pubKey}:9d990f92c6dcb8743cd9df1487327cbb787f5c8f", seeders.dTag())
+            assertEquals(listing.title(), seeders.name())
+
+            val request =
+                ModelRequestEvent
+                    .build(signer.pubKey, "Qwen3-Next-80B-A3B", listOf(" https://huggingface.co/Qwen/Qwen3-Next-80B-A3B ", ""), RequestTypeTag.QUANT, 24)
+                    .signAndParse()
+            assertIs<ModelRequestEvent>(request)
+            assertEquals(signer.pubKey, request.dTag())
+            assertEquals("Qwen3-Next-80B-A3B", request.name())
+            assertEquals(listOf("https://huggingface.co/Qwen/Qwen3-Next-80B-A3B"), request.links())
+            assertEquals(RequestTypeTag.QUANT, request.requestType())
+            assertEquals(24, request.vramGb())
+
+            val approval = LlamaGardenCuration.buildApproval(EventHintBundle(listing, relay)).signAndParse()
+            assertIs<LabelEvent>(approval)
+            assertEquals(LlamaGardenCuration.Verdict.APPROVE, LlamaGardenCuration.verdict(approval))
+            assertEquals(listOf(listing.id), LlamaGardenCuration.approvedListingIds(approval))
+            val rejection = assertIs<LabelEvent>(LlamaGardenCuration.buildRejection(EventHintBundle(listing, relay)).signAndParse())
+            assertEquals(LlamaGardenCuration.Verdict.REJECT, LlamaGardenCuration.verdict(rejection))
+            assertEquals(listOf(listing.id), LlamaGardenCuration.rejectedListingIds(rejection))
+            assertEquals(emptyList(), LlamaGardenCuration.approvedListingIds(rejection))
+        }
+
+    @Test
+    fun buildsAClientReleaseThatParsesBack() =
+        runTest {
+            val release =
+                ClientReleaseEvent
+                    .build("22", "aa".repeat(32), 180_000L, listOf("https://blossom.primal.net/" + "aa".repeat(32)))
+                    .signAndParse()
+            assertIs<ClientReleaseEvent>(release)
+            assertEquals(ClientReleaseEvent.WAIFU_MAGNET, release.clientId())
+            assertEquals("22", release.version())
+            assertEquals(22L, release.versionNumber())
+            assertEquals("aa".repeat(32), release.sha256())
+            assertEquals(180_000L, release.size())
+            assertEquals(listOf("https://blossom.primal.net/" + "aa".repeat(32)), release.downloadUrls())
+        }
+
+    @Test
+    fun searchRanksTitlesAboveTheModelsAndLinks() {
+        val listing = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(Event.fromJson(qwenQuantListingJson)))
+        assertEquals(listOf("Qwen_Qwen3.6-27B \u00b7 Q6_K \u00b7 bartowski", "Qwen_Qwen3.6-27B---Q6_K---bartowski-4612927-1761683"), listing.primary)
+        assertEquals(listOf("Qwen_Qwen3.6-27B", "bartowski/Qwen_Qwen3.6-27B-GGUF", "Qwen/Qwen3.6-27B", "bartowski", "Q6_K"), listing.secondary)
+        assertNull(listing.text)
+
+        val request = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(Event.fromJson(requestWithVramJson)))
+        assertEquals(listOf("DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"), request.primary)
+        assertEquals(listOf("https://huggingface.co/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF"), request.websites)
+
+        val seeders = assertIs<IndexableFields.Tiered>(SearchFieldExtractor.extract(Event.fromJson(seederRequestJson)))
+        assertEquals(listOf("Kimi-K3.1-Pro \u00b7 modelopt_mixed \u00b7 nvidia"), seeders.primary)
+
+        // The other apps' shapes and the release carry nothing to search.
+        assertEquals(IndexableFields.None, SearchFieldExtractor.extract(Event.fromJson(usageCounterJson)))
+        val release = EventFactory.create<Event>("11".repeat(32), me, 1L, 30100, arrayOf(arrayOf("d", "waifu-magnet"), arrayOf("version", "22"), arrayOf("sha256", "aa".repeat(32))), "", "00".repeat(64))
         assertIs<ClientReleaseEvent>(release)
-        assertEquals(ClientReleaseEvent.WAIFU_MAGNET, release.clientId())
-        assertEquals(22L, release.versionNumber())
-        assertEquals("aa".repeat(32), release.sha256())
-        assertEquals(180_000L, release.size())
-        assertEquals(1, release.downloadUrls().size)
+        assertEquals(IndexableFields.None, SearchFieldExtractor.extract(release))
     }
 }

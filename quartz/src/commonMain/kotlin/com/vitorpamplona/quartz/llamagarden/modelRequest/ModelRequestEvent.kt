@@ -32,7 +32,6 @@ import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip51Lists.tags.NameTag
-import com.vitorpamplona.quartz.nip94FileMetadata.tags.UrlTag
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 /**
@@ -74,7 +73,7 @@ class ModelRequestEvent(
 
     override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
         if (!visitor.visit(name())) return
-        tags.forEach { tag -> UrlTag.parse(tag)?.let { if (!visitor.visit(it)) return } }
+        for (link in links()) if (!visitor.visit(link)) return
     }
 
     companion object {

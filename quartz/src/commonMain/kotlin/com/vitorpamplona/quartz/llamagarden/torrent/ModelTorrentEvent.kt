@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.llamagarden.torrent
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.crypto.sha2.sha256
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.FileClassTag
 import com.vitorpamplona.quartz.llamagarden.torrent.tags.ModelKindTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
@@ -28,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -243,11 +245,19 @@ class ModelTorrentEvent(
             return "${parts[0]}/${parts[1]}"
         }
 
-        /** The `d` llama.garden's viewer gives a user submission: `user:<pubkey>:<sha256Hex>` of `<url>:<name>`. */
+        /**
+         * The `d` llama.garden's viewer gives a user submission: `user:<submitter>:<sha256 hex of "<url>:<name>">`,
+         * over the trimmed [torrentUrl] and [name] as the form reads them. Stable, so resubmitting the
+         * same `.torrent` under the same name replaces the earlier listing.
+         */
         fun userSubmissionDTag(
-            pubKey: HexKey,
-            sha256OfUrlAndName: String,
-        ) = "$USER_SUBMISSION_PREFIX$pubKey:$sha256OfUrlAndName"
+            submitter: HexKey,
+            torrentUrl: String,
+            name: String,
+        ): String {
+            val hash = sha256("${torrentUrl.trim()}:${name.trim()}".encodeToByteArray()).toHexKey()
+            return "$USER_SUBMISSION_PREFIX$submitter:$hash"
+        }
 
         /**
          * A catalog listing in the shape llama.garden's builders publish, keyed by [infoHash]. The
@@ -281,12 +291,13 @@ class ModelTorrentEvent(
         }
 
         /**
-         * A user submission in the shape of llama.garden's "Add a torrent" form: [dTag] from
-         * [userSubmissionDTag], a [torrentUrl] to an already uploaded `.torrent`, a [name], and what the
-         * user knows about the model. [approximateSize] is bytes (the form rounds GB to bytes).
+         * A user submission in the shape of llama.garden's "Add a torrent" form, by [submitter] (the key
+         * that will sign it): a [torrentUrl] to an already uploaded `.torrent`, a [name], and what the
+         * user knows about the model. The `d` is [userSubmissionDTag]. [approximateSize] is bytes (the
+         * form rounds GB to bytes). Mine it before publishing, as the viewer does.
          */
         fun buildSubmission(
-            dTag: String,
+            submitter: HexKey,
             torrentUrl: String,
             name: String,
             approximateSize: Long? = null,
@@ -300,19 +311,19 @@ class ModelTorrentEvent(
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<ModelTorrentEvent>.() -> Unit = {},
         ) = eventTemplate<ModelTorrentEvent>(KIND, "", createdAt) {
-            dTag(dTag)
-            torrentFileUrls(listOf(torrentUrl))
-            name(name)
+            dTag(userSubmissionDTag(submitter, torrentUrl, name))
+            torrentFileUrls(listOf(torrentUrl.trim()))
+            name(name.trim())
             approximateSize?.let { totalSize(it) }
-            huggingFaceUrl?.let {
+            huggingFaceUrl?.trim()?.ifEmpty { null }?.let {
                 hostOf(it)?.let { host -> source(host) }
                 huggingFace(it)
             }
             fileClass(fileClass)
             modelKind(modelKind)
-            lab?.let { lab(it) }
-            quantType?.let { quantType(it) }
-            torrentTool?.let { torrentTool(it) }
+            lab?.trim()?.ifEmpty { null }?.let { lab(it) }
+            quantType?.trim()?.ifEmpty { null }?.let { quantType(it) }
+            torrentTool?.trim()?.ifEmpty { null }?.let { torrentTool(it) }
             hfMatch?.let { hfMatch(it) }
             initializer()
         }
