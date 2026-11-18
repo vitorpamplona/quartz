@@ -270,4 +270,22 @@ class MavenPublicationTest {
         assertEquals(jvm.withVersion("1.0"), event.coordinate())
         assertTrue(event.isWellFormed())
     }
+
+    @Test
+    fun aSecondVersionTagClaimsNothing() {
+        // version() reads the first `v`; covers() must agree, or this 1.0 release would be a
+        // candidate for 2.0 too.
+        val event =
+            MavenReleaseEvent(
+                "1".repeat(64),
+                "e".repeat(64),
+                1,
+                arrayOf(arrayOf("j", root.key), arrayOf("v", "1.0"), arrayOf("v", "2.0"), arrayOf("manifest", manifestHash, "1")),
+                "",
+                "0".repeat(128),
+            )
+        assertEquals("1.0", event.version())
+        assertTrue(event.covers(root, "1.0"))
+        assertFalse(event.covers(root, "2.0"))
+    }
 }

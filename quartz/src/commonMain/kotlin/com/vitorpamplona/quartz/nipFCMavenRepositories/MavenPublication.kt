@@ -61,7 +61,11 @@ interface MavenPublication {
         return rootModule()?.withVersion(version)
     }
 
-    /** Whether this event is a candidate for [module] at [version]. Resolvers call it for every event, so it allocates nothing. */
+    /**
+     * Whether this event is a candidate for [module] at [version]: its [version] (the first `v`)
+     * is [version] and a `j` names [module]. Resolvers call it for every event, so it allocates
+     * nothing.
+     */
     fun covers(
         module: MavenModule,
         version: String,
