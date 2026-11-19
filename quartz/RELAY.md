@@ -205,6 +205,17 @@ override fun openSubscription(ctx: RequestContext, filters: List<Filter>, onLive
 }
 ```
 
+Live events never precede a REQ's `EOSE`. The registration comes first, so nothing accepted
+during the replay is missed, but `LiveEventStore` holds those events and forwards them, in
+acceptance order, right after the replay's `onEose`: everything before `EOSE` is the stored answer
+the filters' `limit` bounds. A REQ holds at most `maxHeldBeforeEose` events (the third constructor
+argument, 1,000 by default); past it the held events go out at once and later ones as they arrive,
+ahead of `EOSE`, so a slow replay under heavy ingest loses its clean `limit` but never an event.
+`0` turns the hold off. Only the replay's `EOSE` releases what is held: a wrapper must run the
+inner `replayRaw`/`replay` (or `cancel` the subscription), never answer the REQ itself and keep the
+registration, or its live tail stays silent until the cap. A wrapper need not hold live events
+of its own to keep them behind `EOSE`.
+
 A REQ on this path lives in the index, not in a coroutine, once its replay ends: end a session
 with `RelaySession.close()` (the server classes do), since cancelling its scope no longer
 unregisters it. A `FanoutExecutor` owns the queue between the ingest and its thread (one task per

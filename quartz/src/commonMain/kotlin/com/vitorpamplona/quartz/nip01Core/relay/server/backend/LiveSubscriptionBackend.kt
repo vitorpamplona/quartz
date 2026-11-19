@@ -52,8 +52,11 @@ interface LiveSubscriptionBackend : SessionBackend {
      * live is delivered once, by one path or the other. Events accepted before the replay's
      * EOSE reach [onLive] after it, still in acceptance order (without an executor, on the
      * replay's thread), so everything before EOSE is the stored answer its `limit` bounds (a
-     * backend may cap how many it holds; see [LiveEventStore.maxHeldBeforeEose]).
-     * Non-suspending, so the caller holds the handle before anything can target it.
+     * backend may cap how many it holds; see [LiveEventStore.maxHeldBeforeEose]). Only that
+     * EOSE releases them, so a caller (or a wrapper answering a REQ itself) must run the
+     * replay or [LiveSubscription.cancel] the subscription: one left unreplayed sends nothing
+     * live until the cap is reached. Non-suspending, so the caller holds the handle before
+     * anything can target it.
      */
     fun openSubscription(
         ctx: RequestContext,

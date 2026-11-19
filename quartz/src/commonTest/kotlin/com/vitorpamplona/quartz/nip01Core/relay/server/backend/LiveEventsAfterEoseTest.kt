@@ -204,6 +204,91 @@ class LiveEventsAfterEoseTest {
         }
 
     @Test
+    fun eventsForwardedPastTheCapStillDedupeAgainstTheReplay() =
+        runTest {
+            val store = GatedStore(EventStore(null))
+            val live = LiveEventStore(store, AcceptingIngest, maxHeldBeforeEose = 1)
+            val frames = mutableListOf<String>()
+
+            val sub = live.openSubscription(Ctx, listOf(notes)) { event, _ -> frames.add("live:" + event.id) }
+            val replay = launch { sub.replayRaw({ frames.add("stored:" + it.id) }) { frames.add("EOSE") } }
+            store.replayStarted.await()
+            val both = note("both")
+            store.inner.insert(both)
+            live.submit(both) {}
+            val overflow = note("overflow")
+            live.submit(overflow) {}
+            assertEquals(listOf("live:" + both.id, "live:" + overflow.id), frames)
+
+            // The replay reads `both` from the store; the live path already sent it.
+            store.gate.complete(Unit)
+            replay.join()
+            assertEquals(listOf("live:" + both.id, "live:" + overflow.id, "EOSE"), frames)
+            sub.cancel()
+            store.close()
+        }
+
+    @Test
+    fun aCapOfZeroHoldsNothing() =
+        runTest {
+            val store = GatedStore(EventStore(null))
+            val live = LiveEventStore(store, AcceptingIngest, maxHeldBeforeEose = 0)
+            val frames = mutableListOf<String>()
+
+            val sub = live.openSubscription(Ctx, listOf(notes)) { event, _ -> frames.add(event.id) }
+            val replay = launch { sub.replayRaw({ frames.add(it.id) }) { frames.add("EOSE") } }
+            store.replayStarted.await()
+            val early = note("early")
+            live.submit(early) {}
+            assertEquals(listOf(early.id), frames)
+
+            store.gate.complete(Unit)
+            replay.join()
+            assertEquals(listOf(early.id, "EOSE"), frames)
+            sub.cancel()
+            store.close()
+        }
+
+    @Test
+    fun aReplayThatHeldNothingQueuesNoReleaseOnItsExecutor() =
+        runTest {
+            val executor = FanoutExecutorTest.QueueExecutor()
+            val store = EventStore(null)
+            val live = LiveEventStore(store, AcceptingIngest)
+            val frames = mutableListOf<String>()
+
+            val sub = live.openSubscription(ExecutorCtx(executor), listOf(notes)) { event, _ -> frames.add(event.id) }
+            sub.replayRaw({ frames.add(it.id) }) { frames.add("EOSE") }
+            // Only the dedupe settle: the gate opened inline, without a task of its own.
+            assertEquals(1, executor.tasks.size)
+
+            val after = note("after")
+            live.submit(after) {}
+            executor.drain()
+            assertEquals(listOf("EOSE", after.id), frames)
+            sub.cancel()
+            store.close()
+        }
+
+    @Test
+    fun aSubscriptionNeverReplayedForwardsNothingUntilTheCap() =
+        runTest {
+            val store = EventStore(null)
+            val live = LiveEventStore(store, AcceptingIngest, maxHeldBeforeEose = 2)
+            val frames = mutableListOf<String>()
+
+            // The documented misuse: registered, never replayed, never cancelled.
+            val sub = live.openSubscription(Ctx, listOf(notes)) { event, _ -> frames.add(event.id) }
+            val arrived = (1..3).map { note("live $it") }
+            arrived.take(2).forEach { live.submit(it) {} }
+            assertEquals(emptyList(), frames)
+            live.submit(arrived[2]) {}
+            assertEquals(arrived.map { it.id }, frames)
+            sub.cancel()
+            store.close()
+        }
+
+    @Test
     fun aReqClosedBeforeEoseForwardsNothingItHeld() =
         runTest {
             val store = GatedStore(EventStore(null))

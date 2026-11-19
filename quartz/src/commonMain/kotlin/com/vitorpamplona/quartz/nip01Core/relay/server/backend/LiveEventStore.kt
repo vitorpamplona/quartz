@@ -87,7 +87,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * @property maxHeldBeforeEose How many live events one REQ may hold while its replay runs.
  *  Past it the held events are forwarded at once and later ones as they arrive, ahead of
  *  EOSE: a slow replay under heavy ingest then costs the REQ its clean `limit`, never an
- *  event and never unbounded memory. 1,000 with the two-argument constructor.
+ *  event and never unbounded memory. 1,000 with the two-argument constructor; 0 holds
+ *  nothing, every live event forwarding as it arrives, as before the hold existed.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class LiveEventStore(
@@ -173,8 +174,13 @@ class LiveEventStore(
         /** Guards [gate] and [held]: claimed by the delivery thread and, without an executor, the replay's. */
         private val holdLock = SpinLock()
 
-        /** [HOLDING] until the replay's EOSE (or the cap) asks to forward, then [FORWARDING], then [OPEN]. */
-        private var gate = HOLDING
+        /**
+         * [HOLDING] until the replay's EOSE (or the cap) asks to forward, then [FORWARDING], then
+         * [OPEN], and never back. Written under [holdLock]; volatile so [offer] reads [OPEN] without
+         * it, which is every live delivery after EOSE. [OPEN] from the start when nothing may be held.
+         */
+        @Volatile
+        private var gate = if (maxHeldBeforeEose == 0) OPEN else HOLDING
 
         /** Live events accepted while the gate was not [OPEN], in acceptance order; allocated on the first. */
         private var held: ArrayList<SharedBody>? = null
@@ -185,7 +191,10 @@ class LiveEventStore(
          * an event in both is sent BEFORE EOSE, as the stored answer, and its held copy is dropped.
          */
         fun offer(body: SharedBody) {
-            var full = false
+            // The live tail's path: the gate opens once and stays open, and it opens only after
+            // everything held has gone out, so nothing held can be overtaken from here.
+            if (gate == OPEN) return forward(body)
+            var heldCount = 0
             val heldIt =
                 holdLock.locked {
                     if (gate == OPEN) {
@@ -193,14 +202,14 @@ class LiveEventStore(
                     } else {
                         val list = held ?: ArrayList<SharedBody>().also { held = it }
                         list.add(body)
-                        full = gate == HOLDING && list.size > maxHeldBeforeEose
+                        if (gate == HOLDING && list.size > maxHeldBeforeEose) heldCount = list.size
                         true
                     }
                 }
             if (!heldIt) {
                 forward(body)
-            } else if (full) {
-                Log.d(TAG) { "a REQ held $maxHeldBeforeEose live events before its EOSE; forwarding them ahead of it" }
+            } else if (heldCount > 0) {
+                Log.d(TAG) { "a REQ held $heldCount live events before its EOSE; forwarding them ahead of it" }
                 openGate()
             }
         }
@@ -246,6 +255,24 @@ class LiveEventStore(
                 }
             }
         }
+
+        /**
+         * Opens the gate at once when the replay ended with nothing held, so the common REQ costs
+         * no task on its executor; false when something is held and [openGate] must forward it.
+         * Safe off the executor: a fan-out task still queued there finds the gate open and
+         * forwards straight away, with nothing held ahead of it to overtake.
+         */
+        fun openIfNothingHeld(): Boolean =
+            holdLock.locked {
+                when {
+                    gate != HOLDING -> true
+                    held == null -> {
+                        gate = OPEN
+                        true
+                    }
+                    else -> false
+                }
+            }
 
         fun settle(keep: HashSet<String>?) {
             if (seen?.settle(keep) == true) seen = null
@@ -297,8 +324,10 @@ class LiveEventStore(
                 val seen = seen ?: throw IllegalStateException("a subscription replays once")
                 withCallerIdentity(ctx) { rows(seen) }
                 onEose()
-                val executor = partition.executor
-                if (executor == null || !post(executor) { openGate() }) openGate()
+                if (!openIfNothingHeld()) {
+                    val executor = partition.executor
+                    if (executor == null || !post(executor) { openGate() }) openGate()
+                }
                 settle(this)
             } catch (e: Throwable) {
                 cancel()
