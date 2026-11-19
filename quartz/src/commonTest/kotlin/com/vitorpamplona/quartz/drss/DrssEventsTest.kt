@@ -36,6 +36,7 @@ import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind30104Event
 import com.vitorpamplona.quartz.drss.provenance.UnrecognizedKind31985Event
 import com.vitorpamplona.quartz.drss.show.DrssShowEvent
 import com.vitorpamplona.quartz.kinds.KindNames
+import com.vitorpamplona.quartz.llamagarden.seederRequest.SeederRequestEvent
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
@@ -507,7 +508,9 @@ class DrssEventsTest {
 
     @Test
     fun otherAppsOn30102AreUnrecognized() {
-        listOf(evlistVoto, evlistWaifu, evlistVouch).forEach { assertIs<UnrecognizedKind30102Event>(it, it.toJson()) }
+        listOf(evlistVoto, evlistVouch).forEach { assertIs<UnrecognizedKind30102Event>(it, it.toJson()) }
+        // llama.garden's seeder requests are typed on their own (LlamaGardenEventsTest).
+        assertIs<SeederRequestEvent>(evlistWaifu, evlistWaifu.toJson())
     }
 
     // ---- 30104 provenance folder, 31985 provenance ----
