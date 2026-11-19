@@ -68,16 +68,17 @@ class RelayDisconnect(
 
 /**
  * The frames one socket session sent: how many, the largest by UTF-8 size (what a relay's
- * payload limit counts), and the last. Labels are the frames' NIP-01 verbs (`REQ`, `NEG-OPEN`, ...).
+ * payload limit counts), and the last, by length in chars, which costs nothing to take. Labels are
+ * the frames' NIP-01 verbs (`REQ`, `NEG-OPEN`, ...).
  */
 class SentFrames(
     val count: Long,
     val largestBytes: Int,
     val largestLabel: String?,
-    val lastBytes: Int,
+    val lastChars: Int,
     val lastLabel: String?,
 ) {
-    override fun toString(): String = if (count == 0L) "nothing sent" else "$count frame(s) sent, largest $largestBytes bytes $largestLabel, last $lastBytes bytes $lastLabel"
+    override fun toString(): String = if (count == 0L) "nothing sent" else "$count frame(s) sent, largest $largestBytes bytes $largestLabel, last $lastChars chars $lastLabel"
 
     companion object {
         val NONE = SentFrames(0, 0, null, 0, null)

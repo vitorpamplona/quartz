@@ -35,11 +35,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
-import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvWriter
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import com.vitorpamplona.quartz.utils.concurrent.withLock
+import com.vitorpamplona.quartz.utils.utf8Length
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -103,16 +103,14 @@ open class BasicRelayClient(
 
     override val lastDisconnect: RelayDisconnect? get() = lastEnd
 
-    // Set while [disconnect] runs: a socket reports the close it causes synchronously (see
-    // [WebSocket.disconnect]), and that report is this client's end, not the relay's.
-    @Volatile private var closingReason: String? = null
+    override val sentFrames: SentFrames? get() = if (socket == null) null else sentSoFar()
 
     // The current session's frames and open time, for the [RelayDisconnect] its end records.
     private val sentLock = PlatformLock()
     private var sentCount = 0L
     private var sentLargestBytes = 0
     private var sentLargestLabel: String? = null
-    private var sentLastBytes = 0
+    private var sentLastChars = 0
     private var sentLastLabel: String? = null
 
     @Volatile private var sessionOpenedAtMillis: Long? = null
@@ -120,6 +118,9 @@ open class BasicRelayClient(
     // Volatile: each socket's listener compares itself to it (MyWebsocketListener.owner) from the
     // transport's own threads.
     @Volatile private var socket: WebSocket? = null
+
+    // The listener [socket] reports to: [disconnect] marks on it that this session's end is ours.
+    @Volatile private var sessionListener: MyWebsocketListener? = null
 
     // True if it has received the onOpen call from the socket.
     // @Volatile: written on the serialized socket-callback thread, read from the
@@ -185,6 +186,7 @@ open class BasicRelayClient(
             val listenerForSocket = MyWebsocketListener()
             val newSocket = socketBuilder.build(url, listenerForSocket)
             listenerForSocket.owner = newSocket
+            sessionListener = listenerForSocket
             socket = newSocket
             newSocket.connect()
         } catch (e: Exception) {
@@ -220,7 +222,10 @@ open class BasicRelayClient(
         // close report of its own: the first end is the session's.
         private val ended = AtomicBoolean(false)
 
-        /** Records this session's end, once: our own close while [disconnect] runs, else [side]'s. */
+        /** Set by [disconnect] on the session it closes: the end that follows is ours, for this reason. */
+        @Volatile var closingReason: String? = null
+
+        /** Records this session's end, once: ours when [disconnect] closed it, else [side]'s. */
         private fun ended(
             side: RelayDisconnect.Side,
             code: Int?,
@@ -312,12 +317,12 @@ open class BasicRelayClient(
             if (isReplaced()) return
 
             if (socket == null) {
-                // comes from the disconnect action.
-                ended(RelayDisconnect.Side.CLIENT, null, closingReason ?: DISCONNECT_REASON)
+                // comes from the disconnect action, or from a transport failing before it handed back a socket.
+                ended(RelayDisconnect.Side.TRANSPORT, code, failureText(t, response), t::class.simpleName)
                 listener.onDisconnected(this@BasicRelayClient)
             } else {
                 // Before the disconnect below, whose own close report is this same end.
-                ended(RelayDisconnect.Side.TRANSPORT, code, listOfNotNull(t.message, response).joinToString(" ").ifEmpty { null }, t::class.simpleName)
+                ended(RelayDisconnect.Side.TRANSPORT, code, failureText(t, response), t::class.simpleName)
                 socket?.disconnect()
 
                 // suppression rules below must match the raw message; displayMsg is for listener output only.
@@ -416,30 +421,18 @@ open class BasicRelayClient(
     }
 
     override fun disconnect(reason: String) {
-        closingReason = reason
-        try {
-            disconnect()
-        } finally {
-            closingReason = null
-        }
+        markClosing(reason)
+        disconnect()
     }
 
     override fun disconnect() {
-        // Kept for a subclass that overrides this one and calls super: the reason, if any, was set by the overload.
-        val given = closingReason
-        if (given == null) closingReason = DISCONNECT_REASON
-        try {
-            closeSocket()
-        } finally {
-            if (given == null) closingReason = null
-        }
-    }
-
-    private fun closeSocket() {
-        lastConnectTentativeInSeconds = 0L // this is not an error, so prepare to reconnect as soon as requested.
+        markClosing(DISCONNECT_REASON)
+        socket?.disconnect()
+        // After the close report: an explicit disconnect is not an error, so whatever that report
+        // did to the backoff, prepare to reconnect as soon as requested.
+        lastConnectTentativeInSeconds = 0L
         delayToConnectInSeconds = DELAY_TO_RECONNECT_IN_SECS
         connectedAtInSeconds = 0L
-        socket?.disconnect()
         socket = null
         isReady = false
         usingCompression = false
@@ -564,13 +557,24 @@ open class BasicRelayClient(
         return success
     }
 
+    /**
+     * Marks the session being closed as ending by our hand, keeping a reason already given. On the
+     * session, so it cannot label another one; a session the relay already ended keeps the
+     * relay's end, which its socket reports on the disconnect.
+     */
+    private fun markClosing(reason: String) {
+        val closing = socket ?: return
+        if (closing.endedByPeer()) return
+        sessionListener?.let { if (it.closingReason == null) it.closingReason = reason }
+    }
+
     /** A new dial: its session starts with nothing sent. */
     private fun startSession() {
         sentLock.withLock {
             sentCount = 0
             sentLargestBytes = 0
             sentLargestLabel = null
-            sentLastBytes = 0
+            sentLastChars = 0
             sentLastLabel = null
         }
         sessionOpenedAtMillis = null
@@ -580,11 +584,18 @@ open class BasicRelayClient(
         msg: String,
         label: String,
     ) {
-        val bytes = TlvWriter.utf8Length(msg)
+        val chars = msg.length
+        // A char encodes to at most 3 UTF-8 bytes, so a frame that cannot beat the largest is never scanned.
+        val couldBeLargest =
+            sentLock.withLock {
+                sentCount++
+                sentLastChars = chars
+                sentLastLabel = label
+                3L * chars > sentLargestBytes
+            }
+        if (!couldBeLargest) return
+        val bytes = utf8Length(msg)
         sentLock.withLock {
-            sentCount++
-            sentLastBytes = bytes
-            sentLastLabel = label
             if (bytes > sentLargestBytes) {
                 sentLargestBytes = bytes
                 sentLargestLabel = label
@@ -592,13 +603,19 @@ open class BasicRelayClient(
         }
     }
 
+    private fun sentSoFar(): SentFrames = sentLock.withLock { if (sentCount == 0L) SentFrames.NONE else SentFrames(sentCount, sentLargestBytes, sentLargestLabel, sentLastChars, sentLastLabel) }
+
+    private fun failureText(
+        t: Throwable,
+        response: String?,
+    ): String? = listOfNotNull(t.message, response).joinToString(" ").ifEmpty { null }
+
     private fun recordEnd(
         side: RelayDisconnect.Side,
         code: Int?,
         reason: String?,
         errorType: String?,
     ) {
-        val sent = sentLock.withLock { if (sentCount == 0L) SentFrames.NONE else SentFrames(sentCount, sentLargestBytes, sentLargestLabel, sentLastBytes, sentLastLabel) }
-        lastEnd = RelayDisconnect(side, code, reason, errorType, TimeUtils.nowMillis(), sessionOpenedAtMillis, sent)
+        lastEnd = RelayDisconnect(side, code, reason, errorType, TimeUtils.nowMillis(), sessionOpenedAtMillis, sentSoFar())
     }
 }

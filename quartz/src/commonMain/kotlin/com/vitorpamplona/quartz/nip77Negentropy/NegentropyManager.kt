@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip77Negentropy
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.RelayDisconnect
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -53,6 +54,17 @@ interface INegentropyListener {
         subId: String,
         reason: String,
     )
+
+    /**
+     * The session's relay disconnected: [disconnect] says how (the relay's close code, our own
+     * close, or the transport error, with the frames sent), when the transport records it.
+     * Defaults to [onError] with `closed: relay disconnected`.
+     */
+    fun onRelayDisconnected(
+        relay: NormalizedRelayUrl,
+        subId: String,
+        disconnect: RelayDisconnect?,
+    ) = onError(relay, subId, "closed: relay disconnected")
 }
 
 /**
@@ -141,7 +153,7 @@ class NegentropyManager(
         val toRemove = activeSessions.filter { it.value.first == relay.url }
         toRemove.forEach { (subId, pair) ->
             activeSessions.remove(subId)
-            listener.onError(pair.first, subId, "closed: relay disconnected")
+            listener.onRelayDisconnected(pair.first, subId, relay.lastDisconnect)
         }
     }
 }

@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.RelayDisconnect
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.SentFrames
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.newSubId
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
@@ -1086,6 +1087,7 @@ internal suspend fun reconcileWindows(
                                 failure = outcome.failure,
                                 disconnect = outcome.disconnect,
                                 rounds = outcome.rounds,
+                                sent = outcome.sent,
                             )
                     }
                 }
@@ -1115,6 +1117,8 @@ private sealed interface ReconcileOutcome {
         val disconnect: RelayDisconnect? = null,
         /** NEG-MSG rounds this window completed before it stopped. */
         val rounds: Int = 0,
+        /** The frames the socket had sent. */
+        val sent: SentFrames? = null,
     ) : ReconcileOutcome
 }
 
@@ -1443,7 +1447,17 @@ private suspend fun INostrClient.reconcileStreaming(
         // NEG-OPEN is never resent, so we must connect and wait until the relay is
         // ready before sending it. The connect itself keeps a finite bound even when
         // the watchdog is disabled, so an unreachable relay can't hang here forever.
-        val dialedAtMillis = TimeUtils.nowMillis()
+        // Identity, not time: an end recorded after this one is a different object, even in the same millisecond.
+        val endBeforeDial = relayClient.lastDisconnect
+        var rounds = 0
+
+        /** A failed reconcile, with the frames the socket had sent: its own if it ended, else the live one's. */
+        fun failed(
+            detail: String,
+            failure: NegentropySyncException.Failure,
+            disconnect: RelayDisconnect? = null,
+        ) = ReconcileOutcome.Failed(detail, failure, disconnect, rounds, disconnect?.sent ?: relayClient.sentFrames)
+
         relayClient.connect()
         val connectBound = if (idleTimeoutMs > 0) idleTimeoutMs else DEFAULT_CONNECT_TIMEOUT_MS
         val connected =
@@ -1451,13 +1465,12 @@ private suspend fun INostrClient.reconcileStreaming(
                 connectedRelaysFlow().first { targetUrl in it }
             }
         if (connected == null) {
-            return ReconcileOutcome.Failed(
+            return failed(
                 "could not connect within ${connectBound}ms",
                 NegentropySyncException.Failure.CONNECT_TIMEOUT,
-                relayClient.lastDisconnect?.takeIf { it.atMillis >= dialedAtMillis },
+                relayClient.lastDisconnect?.takeIf { it !== endBeforeDial },
             )
         }
-        var rounds = 0
 
         relayClient.sendIfConnected(session.open())
 
@@ -1469,9 +1482,9 @@ private suspend fun INostrClient.reconcileStreaming(
             val frame =
                 incoming.receiveWithinIdle(clock, idleTimeoutMs)
                     ?: return if (idleTimeoutMs > 0) {
-                        ReconcileOutcome.Failed("relay went silent for ${idleTimeoutMs}ms mid-reconcile", NegentropySyncException.Failure.SILENT, rounds = rounds)
+                        failed("relay went silent for ${idleTimeoutMs}ms mid-reconcile", NegentropySyncException.Failure.SILENT)
                     } else {
-                        ReconcileOutcome.Failed("connection closed before reconcile completed", NegentropySyncException.Failure.DISCONNECTED, relayClient.lastDisconnect, rounds)
+                        failed("connection closed before reconcile completed", NegentropySyncException.Failure.DISCONNECTED, relayClient.lastDisconnect)
                     }
 
             when (frame) {
@@ -1479,7 +1492,7 @@ private suspend fun INostrClient.reconcileStreaming(
                     return if (isOverflow(frame.reason)) {
                         ReconcileOutcome.Overflow(frame.cap)
                     } else {
-                        ReconcileOutcome.Failed(frame.reason, frame.failure, frame.disconnect, rounds)
+                        failed(frame.reason, frame.failure, frame.disconnect)
                     }
 
                 is NegFrame.Msg -> {

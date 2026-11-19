@@ -90,4 +90,11 @@ interface IRelayClient {
      * for a transport that does not record it.
      */
     val lastDisconnect: RelayDisconnect? get() = null
+
+    /**
+     * The frames the current socket session has sent so far, for a failure that leaves the socket
+     * up (a relay gone silent, a refusal). Null with no session, or for a transport that does not
+     * record it.
+     */
+    val sentFrames: SentFrames? get() = null
 }
