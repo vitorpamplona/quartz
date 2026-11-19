@@ -49,8 +49,11 @@ interface LiveSubscriptionBackend : SessionBackend {
      * on [RequestContext.liveExecutor] when [ctx] has one and otherwise on the thread that
      * accepted it, in acceptance order. Call [LiveSubscription.replayRaw] or
      * [LiveSubscription.replay] once to stream the stored events; an event both stored and
-     * live is delivered once, by one path or the other. Non-suspending, so the caller holds the
-     * handle before anything can target it.
+     * live is delivered once, by one path or the other. Events accepted before the replay's
+     * EOSE reach [onLive] after it, still in acceptance order (without an executor, on the
+     * replay's thread), so everything before EOSE is the stored answer its `limit` bounds (a
+     * backend may cap how many it holds; see [LiveEventStore.maxHeldBeforeEose]).
+     * Non-suspending, so the caller holds the handle before anything can target it.
      */
     fun openSubscription(
         ctx: RequestContext,
@@ -75,8 +78,9 @@ fun interface LiveListener {
 interface LiveSubscription {
     /**
      * Streams the stored events matching the subscription to [onEachStored] as [RawEvent]s,
-     * then calls [onEose]. Returns after [onEose]; live delivery carries on without a
-     * coroutine. Unregisters the subscription if it throws or is cancelled.
+     * then calls [onEose], then releases the live events accepted meanwhile to the listener.
+     * Returns after [onEose]; live delivery carries on without a coroutine. Unregisters the
+     * subscription if it throws or is cancelled.
      */
     suspend fun replayRaw(
         onEachStored: (RawEvent) -> Unit,
