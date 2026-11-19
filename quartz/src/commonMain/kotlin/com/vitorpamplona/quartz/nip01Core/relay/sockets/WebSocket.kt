@@ -48,4 +48,11 @@ interface WebSocket {
     fun disconnect()
 
     fun send(msg: String): Boolean
+
+    /**
+     * True once the peer has ended this session while its last messages are still being
+     * delivered. A [disconnect] then reports the peer's own end rather than one of its own, so the
+     * relay client records who really ended it. False by default.
+     */
+    fun endedByPeer(): Boolean = false
 }

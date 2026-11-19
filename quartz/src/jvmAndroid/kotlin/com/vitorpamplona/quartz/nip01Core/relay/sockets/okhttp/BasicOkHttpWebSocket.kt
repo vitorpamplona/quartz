@@ -76,6 +76,9 @@ class BasicOkHttpWebSocket(
      */
     private val state = AtomicInteger(OPEN)
 
+    /** The relay's own end of this session, while its last messages drain; [disconnect] reports it. */
+    @Volatile private var peerEnd: (() -> Unit)? = null
+
     /** The channel and coroutine delivering this session's messages, once [connect] made them. */
     @Volatile private var delivery: Delivery? = null
 
@@ -184,6 +187,7 @@ class BasicOkHttpWebSocket(
                  * where it suspended.
                  */
                 private fun endedByRelay(report: () -> Unit) {
+                    peerEnd = report
                     if (!state.compareAndSet(OPEN, DRAINING)) return
                     socket = null
                     incoming.trySend(SessionEnd(report))
@@ -290,12 +294,18 @@ class BasicOkHttpWebSocket(
         // client may dial a new socket right after this call.
         endDelivery()
         closing?.cancel()
-        // A session the relay already ended, still delivering, ends here instead: its own end
-        // is dropped with the rest of the queue, so it is still reported exactly once.
-        if (closing != null || previous == DRAINING) out.onClosed(1000, "client disconnect")
+        // A session the relay already ended, still delivering, ends here instead, with the relay's
+        // own end: it is dropped from the queue with the rest, so it is still reported exactly once.
+        if (previous == DRAINING) {
+            (peerEnd ?: { out.onClosed(1000, "client disconnect") })()
+        } else if (closing != null) {
+            out.onClosed(1000, "client disconnect")
+        }
     }
 
     override fun send(msg: String): Boolean = socket?.send(msg) ?: false
+
+    override fun endedByPeer() = state.get() == DRAINING
 
     class Builder(
         val httpClient: (NormalizedRelayUrl) -> OkHttpClient,

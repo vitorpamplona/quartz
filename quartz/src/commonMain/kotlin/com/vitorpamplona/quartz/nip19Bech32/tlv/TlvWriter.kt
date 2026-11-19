@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip19Bech32.tlv
 
 import com.vitorpamplona.quartz.nip19Bech32.bech32.Bech32
+import com.vitorpamplona.quartz.utils.utf8Length as utf8Size
 
 /**
  * Exact-size TLV writer behind the NIP-19 entity encoders. The caller sums the record sizes first
@@ -122,33 +123,8 @@ internal class TlvWriter(
         /** True when a value of [byteLength] bytes fits one TLV record. */
         fun fits(byteLength: Int) = byteLength <= TlvBuilder.MAX_VALUE_SIZE
 
-        /**
-         * The number of bytes `encodeToByteArray()` writes for [s], counted without encoding it.
-         *
-         * An unpaired surrogate is the one char the platforms disagree on (1 byte, `?`, on the JVM
-         * and Android; 3 bytes, U+FFFD, on Native), so a string holding one defers to the encoder
-         * itself: the size pass and the write must agree to the byte, or the record's length claims
-         * bytes that were never written.
-         */
-        fun utf8Length(s: String): Int {
-            var n = 0
-            var i = 0
-            while (i < s.length) {
-                val c = s[i].code
-                when {
-                    c < 0x80 -> n += 1
-                    c < 0x800 -> n += 2
-                    c in 0xD800..0xDBFF && i + 1 < s.length && s[i + 1].code in 0xDC00..0xDFFF -> {
-                        n += 4
-                        i++
-                    }
-                    c in 0xD800..0xDFFF -> return s.encodeToByteArray().size
-                    else -> n += 3
-                }
-                i++
-            }
-            return n
-        }
+        /** The bytes [s] encodes to; see [com.vitorpamplona.quartz.utils.utf8Length]. */
+        fun utf8Length(s: String): Int = utf8Size(s)
     }
 }
 

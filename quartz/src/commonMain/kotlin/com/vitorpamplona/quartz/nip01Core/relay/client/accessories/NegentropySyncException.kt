@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.RelayDisconnect
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.SentFrames
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 
@@ -53,6 +54,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
  *   failed dial behind a [Failure.CONNECT_TIMEOUT]: the relay's close code, our own close, or the
  *   transport error, with the frames sent on that socket.
  * @property rounds `NEG-MSG` rounds the failed window completed before it stopped, when known.
+ * @property sent   the frames the socket had sent: the ended socket's for a disconnect, else the
+ *   live one's, so a relay that goes silent or refuses after a large frame shows the size too.
  */
 class NegentropySyncException(
     val relay: NormalizedRelayUrl,
@@ -63,6 +66,7 @@ class NegentropySyncException(
     val failure: Failure? = null,
     val disconnect: RelayDisconnect? = null,
     val rounds: Int? = null,
+    val sent: SentFrames? = null,
 ) : Exception("NIP-77 sync of $relay failed ($reason): $detail") {
     @Deprecated("Kept for binary compatibility.", level = DeprecationLevel.HIDDEN)
     constructor(
@@ -71,7 +75,7 @@ class NegentropySyncException(
         reason: Reason,
         detail: String,
         cap: Long? = null,
-    ) : this(relay, window, reason, detail, cap, null, null, null)
+    ) : this(relay, window, reason, detail, cap, null, null, null, null)
 
     /** Why an [Reason.UNAVAILABLE] sync stopped. */
     enum class Failure {
