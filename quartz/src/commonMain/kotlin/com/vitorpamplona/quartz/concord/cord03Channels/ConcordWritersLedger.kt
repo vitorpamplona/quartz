@@ -21,8 +21,6 @@
 package com.vitorpamplona.quartz.concord.cord03Channels
 
 import com.vitorpamplona.crypto.sha2.sha256
-import com.vitorpamplona.quartz.concord.cord04Roles.RankedRosterContent
-import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.ConcordLabels
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -31,11 +29,6 @@ import com.vitorpamplona.quartz.nip01Core.core.hexToByteArrayOrNull
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.utils.Secp256k1Instance
-import com.vitorpamplona.schnorr256k1.kotlin.Schnorr256k1
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 
 /**
  * One window in which a restricted Channel's posts go to a **writer address** (CORD-03 §1): the
@@ -53,11 +46,17 @@ data class WriterWindow(
     val root: Long?,
 )
 
-/** A `stop` entry (CORD-03 §1): from [atMs] (or the earlier [fromMs]) the certificate its window's epoch gave [member] vouches for nothing. */
+/**
+ * A `stop` entry (CORD-03 §1): from [fromMs] (the departure it records, or else its own [atMs]) the
+ * certificate gave [member] vouches for nothing at the writer [epochs] it applies to: the epoch whose
+ * writer entry it follows, or, for a stop written before the ledger's first moving entry, every
+ * retired window whose bounds hold its [atMs] (Armada `stopped`).
+ */
 data class WriterStop(
     val atMs: Long,
     val member: HexKey,
     val fromMs: Long,
+    val epochs: Set<Long>,
 )
 
 /**
@@ -81,16 +80,15 @@ data class ConcordWritersLedger(
     /** The window whose address is [writerPubKey], or null. */
     fun windowAt(writerPubKey: HexKey): WriterWindow? = windows.firstOrNull { it.writerPubKey.equals(writerPubKey, ignoreCase = true) }
 
-    /** Whether a `stop` names [member] in [window] at or before [postMs]. */
+    /**
+     * Whether a `stop` naming [member] applies to [window] by [postMs] (Armada `stopped`): only a stop
+     * written for that window's epoch counts, so two windows meeting at one millisecond never share one.
+     */
     fun isStopped(
         window: WriterWindow,
         member: HexKey,
         postMs: Long,
-    ): Boolean =
-        stops.any { s ->
-            s.member.equals(member, ignoreCase = true) && s.fromMs <= postMs &&
-                s.atMs >= window.fromMs && (window.toMs == null || s.atMs <= window.toMs)
-        }
+    ): Boolean = stops.any { s -> window.epoch in s.epochs && s.member.equals(member, ignoreCase = true) && s.fromMs <= postMs }
 
     /**
      * Whether a post at [window]'s writer address stands (CORD-03 §1): dated before the window
@@ -119,18 +117,6 @@ data class ConcordWritersLedger(
     companion object {
         const val MAX_ENTRIES = 64
         const val MAX_RETIRED = 64
-        private const val MAX_EPOCH = (1L shl 53) - 1
-
-        private fun hexKeyOf(e: Any?): String? = ((e as? JsonPrimitive)?.takeIf { it.isString }?.content)?.takeIf { RankedRosterContent.isHex64(it) }?.lowercase()
-
-        private fun uint(e: Any?): Long? {
-            val p = e as? JsonPrimitive ?: return null
-            if (p.isString) return null
-            return p.content.toLongOrNull()?.takeIf { it >= 0 }
-        }
-
-        /** Whether [hex] names a valid x-only point (an even-y compressed key that parses). */
-        private fun isPoint(hex: String): Boolean = Schnorr256k1.pubkeyParse(byteArrayOf(0x02) + hex.hexToByteArray()) != null
 
         /**
          * Reads a ledger edition's [content] for the Channel at coordinate [entityIdHex] of the
@@ -141,83 +127,9 @@ data class ConcordWritersLedger(
             communityId: ByteArray,
             entityIdHex: String,
         ): ConcordWritersLedger? {
-            val c = RankedRosterContent.parseObject(content) ?: return null
-            val channel = hexKeyOf(c["channel"]) ?: return null
-            if (ConcordKeyDerivation.writersCoordinate(communityId, channel.hexToByteArray()).toHexKey() != entityIdHex.lowercase()) return null
-            val ledger = c["ledger"] as? JsonArray ?: return null
-            val retiredEl = c["retired"]
-            val retired = if (retiredEl == null) JsonArray(emptyList()) else retiredEl as? JsonArray ?: return null
-            if (ledger.size > MAX_ENTRIES || retired.size > MAX_RETIRED) return null
-
-            val windows = ArrayList<WriterWindow>()
-            val stops = ArrayList<WriterStop>()
-            var lastEpoch = 0L
-            for (r in retired) {
-                val arr = r as? JsonArray ?: return null
-                if (arr.size != 4 && arr.size != 5) return null
-                val epoch = uint(arr[0])?.takeIf { it in 1..MAX_EPOCH } ?: return null
-                val writer = hexKeyOf(arr[1])?.takeIf { isPoint(it) } ?: return null
-                val from = uint(arr[2]) ?: return null
-                val to = uint(arr[3]) ?: return null
-                if (from > to) return null
-                val certifier = if (arr.size == 5) hexKeyOf(arr[4])?.takeIf { isPoint(it) } ?: return null else null
-                if (epoch <= lastEpoch) return null
-                lastEpoch = epoch
-                windows.add(WriterWindow(epoch, writer, from, to, certifier, null))
-            }
-
-            var lastAt = -1L
-            var openAt: Long? = null
-            var lastMovingIsOpen = false
-            var hadMoving = false
-            var current: WriterWindow? = null
-            for (item in ledger) {
-                val e = item as? JsonObject ?: return null
-                val at = uint(e["at"]) ?: return null
-                if (at < lastAt) return null
-                lastAt = at
-                when {
-                    e.containsKey("open") -> {
-                        if ((e["open"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull != true) return null
-                        current?.let { windows[windows.indexOf(it)] = it.copy(toMs = at) }
-                        current = null
-                        lastMovingIsOpen = true
-                        hadMoving = true
-                        openAt = at
-                    }
-                    e.containsKey("stop") -> {
-                        val member = hexKeyOf(e["stop"])?.takeIf { isPoint(it) } ?: return null
-                        if (hadMoving && lastMovingIsOpen) return null
-                        val from =
-                            (e["from"] as? JsonPrimitive)
-                                ?.takeIf { !it.isString }
-                                ?.content
-                                ?.toLongOrNull()
-                                ?.takeIf { it >= 0 }
-                        stops.add(WriterStop(at, member, minOf(from ?: at, at)))
-                    }
-                    e.containsKey("epoch") || e.containsKey("writer") -> {
-                        val epoch = uint(e["epoch"])?.takeIf { it in 1..MAX_EPOCH } ?: return null
-                        val writer = hexKeyOf(e["writer"])?.takeIf { isPoint(it) } ?: return null
-                        val root = uint(e["root"]) ?: return null
-                        val by = hexKeyOf(e["by"]) ?: return null
-                        if (by.isEmpty()) return null
-                        val certifierEl = e["certifier"]
-                        val certifier = if (certifierEl == null) null else hexKeyOf(certifierEl)?.takeIf { isPoint(it) } ?: return null
-                        if (epoch <= lastEpoch) return null
-                        lastEpoch = epoch
-                        current?.let { windows[windows.indexOf(it)] = it.copy(toMs = at) }
-                        val w = WriterWindow(epoch, writer, at, null, certifier, root)
-                        windows.add(w)
-                        current = w
-                        lastMovingIsOpen = false
-                        hadMoving = true
-                    }
-                    // A kind a reader doesn't know is carried verbatim and moves nothing.
-                    else -> {}
-                }
-            }
-            return ConcordWritersLedger(channel, windows, stops, isRestricted = hadMoving && !lastMovingIsOpen && current != null)
+            val doc = WritersLedgerDoc.parse(content) ?: return null
+            if (!doc.isAt(communityId, entityIdHex)) return null
+            return doc.toLedger()
         }
 
         /**

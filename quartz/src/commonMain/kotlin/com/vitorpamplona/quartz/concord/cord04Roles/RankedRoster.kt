@@ -585,18 +585,29 @@ object RankedRoster {
 
     /**
      * Whether the Community [communityId], owned by [ownerPubKey], is on Roles v2 (CORD-04 §2): an
-     * owner-rooted fold of vsk 13 seats `@everyone`. [editions] must already be the ones a reader
-     * of this Community admits ([ControlEdition.admissibleIn]).
+     * owner-rooted fold of vsk 13 seats `@everyone`. [editions] may be raw: the ones a reader of this
+     * Community refuses ([ControlEdition.admissibleIn]) are dropped first.
      */
     fun isActivated(
         editions: Collection<ControlEdition>,
         communityId: ByteArray,
         ownerPubKey: String,
-    ): Boolean {
+    ): Boolean = foldIfActivated(ControlEdition.admissibleIn(editions, communityId), communityId, ownerPubKey) != null
+
+    /**
+     * The ban-blind Roster fold when it seats `@everyone` (the Community is on Roles v2), else null:
+     * the activation check and the first fold [AuthorityResolver.resolve] needs are one fixpoint.
+     * [editions] must already be the ones a reader of this Community admits.
+     */
+    internal fun foldIfActivated(
+        editions: Collection<ControlEdition>,
+        communityId: ByteArray,
+        ownerPubKey: String,
+    ): RankedRosterFold? {
         val everyoneHex = ConcordKeyDerivation.everyoneCoordinate(communityId).toHexKey()
-        if (editions.none { it.vsk == "13" && it.isMarked && it.entityIdHex == everyoneHex }) return false
-        val owner = ownerPubKey.lowercase()
-        return everyoneHex in selectAuthorized(buildCands(editions, communityId, owner), communityId, owner, emptySet()).heads
+        if (editions.none { it.vsk == "13" && it.isMarked && it.entityIdHex == everyoneHex }) return null
+        val fold = foldAdmitted(editions, communityId, ownerPubKey)
+        return fold.takeIf { everyoneHex in it.heads }
     }
 
     /**
@@ -612,16 +623,39 @@ object RankedRoster {
     ): ByteArray? {
         val binding = ConcordKeyDerivation.editionBinding(communityId)
         if (kind.alwaysMarked) return binding
-        return if (isActivated(ControlEdition.admissibleIn(editions, communityId), communityId, ownerPubKey)) binding else null
+        return if (isActivated(editions, communityId, ownerPubKey)) binding else null
+    }
+
+    /**
+     * [bindingForWrite] for a Community whose plane the caller already resolved into [authority]:
+     * no second Roster fold, the one [authority] settled says whether it is on Roles v2.
+     */
+    fun bindingForWrite(
+        authority: AuthorityResolver,
+        communityId: ByteArray,
+        kind: ControlEntityKind,
+    ): ByteArray? {
+        val binding = ConcordKeyDerivation.editionBinding(communityId)
+        return if (kind.alwaysMarked || authority.isRolesV2) binding else null
     }
 
     /**
      * Folds the Roles v2 Roster of the Community [communityId]: Roles, `@everyone`, Grants and
      * Tenures, the [excluded] (banned) members' editions refused except what a Tenure keeps.
      * Applies the 100-Role cap after authority is resolved (CORD-04 §2), and takes the legacy
-     * Channel list from the switching `@everyone` edition when it is served.
+     * Channel list from the switching `@everyone` edition when it is served. [editions] may be raw:
+     * the ones a reader of this Community refuses ([ControlEdition.admissibleIn]) are dropped first,
+     * so a marked edition bound to another Community never folds.
      */
     fun fold(
+        editions: Collection<ControlEdition>,
+        communityId: ByteArray,
+        ownerPubKey: String,
+        excluded: Set<String> = emptySet(),
+    ): RankedRosterFold = foldAdmitted(ControlEdition.admissibleIn(editions, communityId), communityId, ownerPubKey, excluded)
+
+    /** [fold] over [editions] a reader of this Community already admits. */
+    internal fun foldAdmitted(
         editions: Collection<ControlEdition>,
         communityId: ByteArray,
         ownerPubKey: String,

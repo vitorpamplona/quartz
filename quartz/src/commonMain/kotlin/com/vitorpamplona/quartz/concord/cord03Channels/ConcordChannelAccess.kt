@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -210,6 +211,8 @@ object ConcordChannelAccess {
             for (i in 0 until 8) epoch = (epoch shl 8) or (bytes[32 + i].toLong() and 0xFF)
             if (epoch != delivery.newEpoch) return null
             ChannelHistoryKey(epoch, bytes.copyOfRange(40, 72).toHexKey(), bytes.copyOfRange(72, 104))
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             null
         }

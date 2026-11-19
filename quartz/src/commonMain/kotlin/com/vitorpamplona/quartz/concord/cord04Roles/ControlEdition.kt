@@ -100,7 +100,8 @@ class ControlEdition(
         author: String,
         rumorId: String,
         createdAt: Long,
-        vsk: String,
+        // The default it had before `binding`, so a caller compiled against it still links (its `$default` stub).
+        vsk: String = entityKind?.wire ?: "",
     ) : this(entityKind, entityId, version, prevHash, authorityCitation, content, author, rumorId, createdAt, vsk, null)
 
     /** True when this edition is marked (`["eh","2"]`, CORD-04 §1). */
@@ -126,8 +127,11 @@ class ControlEdition(
      */
     fun isAdmissibleIn(communityBinding: ByteArray): Boolean {
         if (binding != null) return binding.contentEquals(communityBinding)
-        val number = vsk.toIntOrNull() ?: return true
-        return number < FIRST_ALWAYS_MARKED_VSK
+        // A decimal sub-kind of 13 and up, however long (an overflowing `99999999999` included), is a
+        // kind no older client wrote; anything that is no decimal at all is judged elsewhere.
+        if (vsk.isEmpty() || !vsk.all { it in '0'..'9' }) return true
+        val significant = vsk.trimStart('0')
+        return significant.length < 3 && (significant.toIntOrNull() ?: 0) < FIRST_ALWAYS_MARKED_VSK
     }
 
     val entityIdHex: String get() = entityId.toHexKey()

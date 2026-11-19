@@ -65,6 +65,8 @@ data class AuthorityResolver private constructor(
     private val grantHeads: Map<String, GrantHead>,
     /** The Roles v2 Roster (CORD-04 §2) when the Community has switched to it; null on the legacy Roster. */
     private val ranked: RankedRosterFold? = null,
+    /** The head edition of every authority entity this resolver settled (Roles, Grants, Tenures, and on v2 the Banlist). */
+    private val heads: AuthorityHeads = AuthorityHeads.EMPTY,
 ) {
     // Derived from the constructor values, so deliberately outside the data class's equality.
     private val communityId: ByteArray by lazy { communityIdHex.hexToByteArray() }
@@ -110,6 +112,15 @@ data class AuthorityResolver private constructor(
         author: String,
         hashHex: String,
     ): Boolean = ranked?.isListed(author, hashHex) == true
+
+    /**
+     * The head edition of every authority entity this resolver settled, keyed by entity id: the
+     * Roles, Grants and Tenures the owner-rooted fold admitted (the Roles v2 Roster's, or the
+     * legacy fixpoint's), and on Roles v2 the Banlist head the ban was read from. What a floor or
+     * a Refounding's compaction must remember for these entities: an edition the fold refused is
+     * never among them, however it cites.
+     */
+    internal fun authorityHeads(): Map<String, ControlEdition> = heads.byEntity
 
     /** The resolved role definitions (authority-gated), keyed by role id. Safe for display. */
     fun roles(): Map<String, RoleEntity> = roles
@@ -183,6 +194,20 @@ data class AuthorityResolver private constructor(
      * the `control_root` in a base rotation's 136-byte blobs (CORD-06 §1).
      */
     fun staffMembers(): Set<String> = memberRoles.keys.filterTo(hashSetOf(ownerLower)) { isStaff(it) }
+
+    /**
+     * [staffMembers] among a known membership: the owner, every Role holder carrying a staff bit,
+     * and, when `@everyone` itself carries one (CORD-04 §3: then every member is staff), every
+     * unbanned member of [members]. Plain membership leaves no Control Plane trace, so only the
+     * caller knows who the members are; a rotation that must reach all staff passes them here.
+     */
+    fun staffMembers(members: Collection<String>): Set<String> {
+        val out = HashSet(staffMembers())
+        if (ranked?.everyone?.hasAny(ConcordPermissions.STAFF_BITS) == true) {
+            for (m in members) if (isStaff(m)) out.add(m.lowercase())
+        }
+        return out
+    }
 
     /**
      * Whether [actor] may take the action guarded by permission [bit] against
@@ -406,7 +431,8 @@ data class AuthorityResolver private constructor(
             // kind no older client wrote, are refused before anything folds.
             @Suppress("NAME_SHADOWING")
             val editions = ControlEdition.admissibleIn(editions, communityId)
-            if (RankedRoster.isActivated(editions, communityId, ownerPubKey)) return resolveRanked(editions, communityId, ownerPubKey)
+            // The activation check IS the ban-blind Roster fold: run it once and reuse it (CORD-04 §2).
+            RankedRoster.foldIfActivated(editions, communityId, ownerPubKey)?.let { return resolveRanked(editions, communityId, ownerPubKey, it) }
 
             val passA = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = emptySet())
             // A further pass costs a whole fold, so skip it unless it could change something. Nobody
@@ -457,12 +483,13 @@ data class AuthorityResolver private constructor(
             editions: Collection<ControlEdition>,
             communityId: ByteArray,
             ownerPubKey: String,
+            first: RankedRosterFold,
         ): AuthorityResolver {
             val ownerLower = ownerPubKey.lowercase()
             val communityIdHex = communityId.toHexKey()
-            val first = RankedRoster.fold(editions, communityId, ownerLower)
-            val banned = rankedBanlist(editions, communityId, ownerLower, first)
-            val roster = if (banned.isEmpty()) first else RankedRoster.fold(editions, communityId, ownerLower, excluded = banned)
+            val banlistHead = rankedBanlistHead(editions, communityId, ownerLower, first)
+            val banned = rankedBanlist(banlistHead, ownerLower, first)
+            val roster = if (banned.isEmpty()) first else RankedRoster.foldAdmitted(editions, communityId, ownerLower, excluded = banned)
 
             val roles = LinkedHashMap<String, RoleEntity>()
             for (r in roster.roles) {
@@ -480,24 +507,24 @@ data class AuthorityResolver private constructor(
                 val member = RankedRosterContent.parseGrant(head.content)?.member ?: continue
                 if (grantCoordinateOrNull(communityId, member) == eid) grantHeads.getOrPut(member) { GrantHead(head.version, head.hashHex) }
             }
-            return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles, banned, grantHeads, roster)
+            val heads = HashMap(roster.heads)
+            if (banlistHead != null) heads[banlistHead.entityIdHex] = banlistHead
+            return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles, banned, grantHeads, roster, AuthorityHeads(heads))
         }
 
         /**
-         * The Roles v2 Banlist (CORD-04 §4): its head among the editions whose signer holds BAN
-         * through their Roles (`@everyone`'s bits author no Banlist) or a sealed standing, citing
-         * their Grant; then the head's list alone, each entry its author may name (BAN and a strict
-         * outrank, or a sealed standing above the target), the first 500 of them.
+         * The Roles v2 Banlist head (CORD-04 §4): among the editions whose signer holds BAN through
+         * their Roles (`@everyone`'s bits author no Banlist) or a sealed standing, citing their Grant.
          */
-        private fun rankedBanlist(
+        private fun rankedBanlistHead(
             editions: Collection<ControlEdition>,
             communityId: ByteArray,
             ownerLower: String,
             roster: RankedRosterFold,
-        ): Set<String> {
+        ): ControlEdition? {
             val banlistEid = banlistCoordinateHex(communityId)
             val list = editions.filter { it.entityKind == ControlEntityKind.BANLIST && it.entityIdHex == banlistEid }
-            if (list.isEmpty()) return emptySet()
+            if (list.isEmpty()) return null
             val grantHeads = HashMap<String, GrantHead>()
             for ((eid, head) in roster.heads) if (head.vsk == ControlEntityKind.GRANT.wire) grantHeads[eid] = GrantHead(head.version, head.hashHex)
 
@@ -519,6 +546,22 @@ data class AuthorityResolver private constructor(
                 return bans && (sealedBan(e) || cited(e))
             }
 
+            return EditionFold.foldEntityGated(list, rank = { a -> rankOf(a.lowercase()) ?: Long.MAX_VALUE }, gate = ::admissible)
+        }
+
+        /**
+         * The Roles v2 Banlist (CORD-04 §4): the [head]'s list alone, each entry its author may name
+         * (BAN and a strict outrank, or a sealed standing above the target), the first 500 of them.
+         */
+        private fun rankedBanlist(
+            head: ControlEdition?,
+            ownerLower: String,
+            roster: RankedRosterFold,
+        ): Set<String> {
+            if (head == null) return emptySet()
+
+            fun rankOf(member: String): Long? = if (member == ownerLower) OWNER_RANK else roster.highestPosition(member)
+
             fun entitled(
                 e: ControlEdition,
                 target: String,
@@ -534,8 +577,6 @@ data class AuthorityResolver private constructor(
                 return viaRoles || roster.sealOf(author, e.hashHex, targetRank).has(ConcordPermissions.BAN)
             }
 
-            val head =
-                EditionFold.foldEntityGated(list, rank = { a -> rankOf(a.lowercase()) ?: Long.MAX_VALUE }, gate = ::admissible) ?: return emptySet()
             return ConcordJson
                 .decodeBanlist(head.content)
                 ?.map { it.lowercase() }
@@ -576,6 +617,8 @@ data class AuthorityResolver private constructor(
             var roles: Map<String, RoleEntity> = emptyMap()
             var memberRoles: Map<String, Set<String>> = emptyMap()
             var grantHeads: Map<String, GrantHead> = emptyMap()
+            // The gated head of every Role and Grant chain, deleted Roles included: what a floor keeps.
+            var headEditions: Map<String, ControlEdition> = emptyMap()
 
             // Authority helpers read the CURRENT (previous-pass) roster, so within a pass a granter's
             // rank is judged by the chain already settled behind it — the owner-rooted resolution the
@@ -655,8 +698,10 @@ data class AuthorityResolver private constructor(
                 }
 
                 val newRoles = HashMap<String, RoleEntity>()
+                val newHeads = HashMap<String, ControlEdition>()
                 for ((entity, chain) in roleChains) {
                     val head = EditionFold.foldEntityGated(chain, rank = ::tieRank) { roleGate(entity, it) } ?: continue
+                    newHeads[entity] = head
                     val r = ConcordJson.decodeOrNull<RoleEntity>(head.content) ?: continue
                     if (r.deleted || r.position < 1) continue // no role may claim the owner's position 0
                     newRoles[entity] = r
@@ -692,6 +737,7 @@ data class AuthorityResolver private constructor(
                 for ((_, chain) in grantChains) {
                     val head = EditionFold.foldEntityGated(chain, rank = ::tieRank, gate = ::grantGate) ?: continue
                     val g = grantAt(head, communityId) ?: continue
+                    newHeads[head.entityIdHex] = head
                     val member = g.member.lowercase()
                     // A member holds at most 64 Roles (CORD-04 §2): the rest of the list is ignored.
                     newMemberRoles[member] =
@@ -702,6 +748,7 @@ data class AuthorityResolver private constructor(
                     newGrantHeads[member] = GrantHead(head.version, head.hashHex)
                 }
 
+                headEditions = newHeads
                 if (newRoles == roles && newMemberRoles == memberRoles && newGrantHeads == grantHeads) break
                 roles = newRoles
                 memberRoles = newMemberRoles
@@ -813,7 +860,25 @@ data class AuthorityResolver private constructor(
             val banHead = EditionFold.foldEntityGated(allBanlist, rank = ::tieRank, gate = ::banGate)
             val banned = banHead?.let { effectiveList(it, HashSet()) } ?: emptySet()
 
-            return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles.toMap(), banned, grantHeads)
+            return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles.toMap(), banned, grantHeads, null, AuthorityHeads(headEditions))
         }
+    }
+}
+
+/**
+ * The head editions an [AuthorityResolver] settled, keyed by entity id. Compared by each head's hash
+ * and rumor id, so two resolvers folded from the same plane are equal however the editions were opened.
+ */
+internal class AuthorityHeads(
+    val byEntity: Map<String, ControlEdition>,
+) {
+    private val identity: Map<String, String> by lazy { byEntity.mapValues { it.value.hashHex + ":" + it.value.rumorId } }
+
+    override fun equals(other: Any?): Boolean = other is AuthorityHeads && identity == other.identity
+
+    override fun hashCode(): Int = identity.hashCode()
+
+    companion object {
+        val EMPTY = AuthorityHeads(emptyMap())
     }
 }

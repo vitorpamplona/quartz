@@ -161,3 +161,24 @@ with these changes). Tested against the spec vectors (04.md §1 marked hash, 02.
 | S11 | **done**: channel rotations union extension chunks, take the largest total, adopt from any chunk holding our blob, remove only on a complete set; `newepoch = prevepoch + 1` enforced (S22). Base rotations already adopted per chunk |
 | S12 | **done**: 80 blobs per Channel rotation, 60 per base rotation, 28,672-byte rumor; test checks every wrap ≤ 65,536 bytes |
 | S13 | **partial**: `sever` read (malformed refused, any chunk applies) and written (`buildBaseRekeyWraps(severed)`); Invite List `epoch` helpers; Amethyst stamps `epoch` on new links and, on a severed rotation, retires links minted under older epochs instead of refreshing them. Publishing the Invite List to stock and community relays not checked |
+
+## Audit fixes (2026-11-19)
+
+Findings of the Roles v2 audit, checked against CORD-03/04 and Armada (`control.ts`, `roster.ts`,
+`writers.ts`, `strictJson.ts`). Adversarial tests: `RolesV2AdversarialTest` (each failed on the
+pre-fix code, 15 of 21) and `StrictRosterContentTest`.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | `authorizedHeads` judged Roster, overwrite, sync and Tenure heads by "holds the bit and cites" | **fixed**. `ControlPlaneFold` holds one gate per kind and both `fold` and `authorizedHeads` read it. Roles, Grants (both Rosters), Tenures and the v2 Banlist come from the heads the resolver itself settled (`AuthorityResolver.authorityHeads`), so a Mod's forged deletion of the Admin Role is never a floor nor compacted; overwrites, syncs and ledgers pass their own gates (no `vac`), so valid uncited editions are kept. Channels now pass the fold's channel gate too (form, legacy list). Signature unchanged |
+| 2 | A sync took `MANAGE_ROLES` alone | **fixed**: Armada's `maySwapOverwrites` over the Channel's scope, the Category it syncs to and the one it leaves, the predecessor looked up among served editions and floors (refused when missing), the banned/Tenure rule. The Refounding compaction now carries a sync head's predecessor beside it (CORD-04 §8) |
+| 3 | Writers ledger fold skipped the chain rules | **fixed**: `WritersLedgerDoc` (entries, `with`, `extends`), gate judged iteratively along the chain and memoized: genesis at v1 with one entry, exactly one entry appended verbatim, entry within 10 min of `created_at` and at most 1 h past the reader's clock (`fold(..., nowMillis, ...)`), writer entry `by` = signer, predecessor must stand; an unserved predecessor is judged on itself (Armada). Ties go to the rumor id alone, as Armada's ledger `pickHead` |
+| 4 | Roles v2 content parsed lenient, last-wins | **fixed**: `ConcordStrictJson` (RFC 8259, depth 127, no lone surrogates, repeated keys recorded). Roster content refuses a repeated top-level key and a repeated key in an overwrite `target` or Tenure entry (Armada `parseStrictObject` + `hadRepeatedKeys`); ledgers read like `parseStrictValue`; sealed Channel content like `JSON.parse`. Legacy content keeps `ConcordJson` |
+| 5 | Hidden overloads dropped old defaults | **fixed** for `ControlEdition` (`vsk`), `ConcordCommunityState` (`inviteRegistries`), `ReceivedRefounding` (`newControlPk`, `newControlRoot`, `authority`); `ConcordCommunityState` keeps its 2.20 `copy` as a hidden function. **Cannot be kept, for the release notes**: `ControlEntityKind` gains `RANKED_ROLE`, `ACL`, `CATEGORY`, `TENURE`, `SYNC`, `WRITERS`, and `ControlEntityKind.of("13".."18")` is no longer null, so a dependent's exhaustive `when` compiled against 2.20 throws `NoWhenBranchMatchedException` on them |
+| 6 | Ledger parser keyed on the first field it saw | **fixed**: entries classified by their whole field set (Armada `parseLedger`) |
+| 7 | `isStaff` vs `staffMembers` with a staff bit on `@everyone` | **fixed** by `staffMembers(members)`; Amethyst's rotations should pass their recipients |
+| 8 | Unmarked edition of an overflowing `vsk` admitted | **fixed** (any decimal of 13 and up, however long) |
+| 9 | `RankedRoster.fold` / `isActivated` trusted the caller's filtering | **fixed**: both run `admissibleIn` first |
+| 10 | `openHistory` swallowed cancellation | **fixed** |
+| 11 | Performance | **fixed**: the activation check is the first Roster fold (`foldIfActivated`), `bindingForWrite(authority, …)` reuses a resolved roster, ledger parses and point checks memoized per fold, overwrite/sync parse and coordinate memoized per edition, overwrites indexed by scope for `channelPermissions` |
+| 12 | Quality | **fixed**: rekey KDoc; `isStopped` applies a stop only to the epoch it follows (Armada `stopped`); adversarial tests. The `ChannelEntity` finding was wrong: `ChannelEntity` models only `name`/`private`/`deleted`, so nothing is lost; the other opened fields are in `openedChannels` (now said in the fold) |

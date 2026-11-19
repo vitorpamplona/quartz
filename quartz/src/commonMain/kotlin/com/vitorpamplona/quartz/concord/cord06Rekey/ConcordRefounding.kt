@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityState
 import com.vitorpamplona.quartz.concord.cord02Community.HeldRoot
 import com.vitorpamplona.quartz.concord.cord04Roles.AuthorityCitation
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEdition
+import com.vitorpamplona.quartz.concord.cord04Roles.ControlEntityKind
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.VacTag
 import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.ControlPlaneKeys
@@ -95,9 +96,10 @@ class ReceivedRefounding(
         newRoot: ByteArray,
         newEpoch: Long,
         rotator: HexKey,
-        newControlPk: ByteArray?,
-        newControlRoot: ByteArray?,
-        authority: AuthorityCitation?,
+        // The defaults it had before `severed`, so a caller compiled against it still links.
+        newControlPk: ByteArray? = null,
+        newControlRoot: ByteArray? = null,
+        authority: AuthorityCitation? = null,
     ) : this(newRoot, newEpoch, rotator, newControlPk, newControlRoot, authority, false)
 
     /** True when this was a legacy pre-split rotation (72-byte base blob). */
@@ -286,6 +288,13 @@ object ConcordRefounding {
                 continue
             }
             out.add(ConcordStreamEnvelope.wrapSeal(seal, newControlKeys, createdAt = seal.createdAt))
+            // A sync is judged against the Category it leaves, named by its predecessor, which must
+            // be served (CORD-04 §8): the Refounding carries it beside the head.
+            if (head != null && head.vsk == ControlEntityKind.SYNC.wire) {
+                val prevHex = head.prevHash?.toHexKey() ?: continue
+                val prevSeal = editions.firstOrNull { it.first.entityIdHex == entity && it.first.hashHex == prevHex }?.second
+                if (prevSeal != null) out.add(ConcordStreamEnvelope.wrapSeal(prevSeal, newControlKeys, createdAt = prevSeal.createdAt))
+            }
         }
         // Every head the caller already folds must survive at or above the version it honors: a
         // shorter compaction means the fetch we compacted from was partial, and publishing it would

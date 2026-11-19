@@ -35,15 +35,12 @@ import com.vitorpamplona.quartz.concord.cord04Roles.ControlEntityKind
 import com.vitorpamplona.quartz.concord.cord04Roles.EditionFold
 import com.vitorpamplona.quartz.concord.cord04Roles.EntityFloor
 import com.vitorpamplona.quartz.concord.cord04Roles.MetadataEntity
-import com.vitorpamplona.quartz.concord.cord04Roles.RankedRoster
-import com.vitorpamplona.quartz.concord.cord04Roles.RankedRosterContent
 import com.vitorpamplona.quartz.concord.cord04Roles.RoleEntity
 import com.vitorpamplona.quartz.concord.cord04Roles.asFloor
 import com.vitorpamplona.quartz.concord.cord05Invites.ConcordInviteRegistry
-import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
-import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
+import com.vitorpamplona.quartz.utils.TimeUtils
 
 /** A channel id paired with its current folded definition. */
 data class ConcordChannel(
@@ -99,11 +96,18 @@ data class ConcordCommunityState(
         roles: Map<String, RoleEntity>,
         authority: AuthorityResolver,
         dissolved: Boolean,
-        inviteRegistries: Map<HexKey, List<HexKey>>,
+        // The default it had before the Roles v2 fields, so a caller compiled against it still links.
+        inviteRegistries: Map<HexKey, List<HexKey>> = emptyMap(),
     ) : this(ownerPubKey, metadata, channels, roles, authority, dissolved, inviteRegistries, emptyMap())
 
     /** True once the Community is on Roles v2 (CORD-04 §2). */
     val isRolesV2: Boolean get() = authority.isRolesV2
+
+    /** [overwrites] indexed by scope: every member × Channel query reads one scope's rows. */
+    private val overwritesByScope: Map<String, List<ChannelOverwrite>> by lazy { overwrites.groupBy { it.scope } }
+
+    /** The overwrites standing in [scope] (a Channel's or Category's id, lowercase hex). */
+    fun overwritesIn(scope: HexKey): List<ChannelOverwrite> = overwritesByScope[scope.lowercase()] ?: emptyList()
 
     /**
      * [member]'s permissions in the Channel [channelIdHex] (CORD-04 §8), resolved Discord's way:
@@ -128,7 +132,7 @@ data class ConcordCommunityState(
         var p = held.fold(roster.everyone ?: ConcordPermissions.NONE) { acc, r -> acc union r.permissions }
         val created = p.has(ConcordPermissions.MANAGE_CHANNELS) && openedChannels[channel]?.creator == m
         val scope = syncs[channel] ?: channel
-        val here = overwrites.filter { it.scope == scope }
+        val here = overwritesByScope[scope] ?: emptyList()
         here.firstOrNull { it.targetKind == ChannelOverwrite.EVERYONE }?.let { p = (p minus it.deny) union it.allow }
         if (isPrivate) p = p.without(ConcordPermissions.VIEW_CHANNEL)
         var deny = ConcordPermissions.NONE
@@ -180,7 +184,7 @@ data class ConcordCommunityState(
         val everyone = authority.everyonePermissions() ?: return true
         val channel = channelIdHex.lowercase()
         val scope = syncs[channel] ?: channel
-        val row = overwrites.firstOrNull { it.scope == scope && it.targetKind == ChannelOverwrite.EVERYONE }
+        val row = overwritesByScope[scope]?.firstOrNull { it.targetKind == ChannelOverwrite.EVERYONE }
         val p = if (row != null) (everyone minus row.deny) union row.allow else everyone
         return p.has(ConcordPermissions.SEND_MESSAGES)
     }
@@ -250,16 +254,42 @@ data class ConcordCommunityState(
      */
     fun withDissolved(dissolved: Boolean): ConcordCommunityState = if (dissolved == this.dissolved) this else copy(dissolved = dissolved)
 
-    companion object {
-        /** The Community Signals sub-kind (CORD-04 §8, upstream PR #17), carried but not modeled here. */
-        private const val VSK_SIGNALS = "12"
+    /**
+     * The `copy` this data class had before the Roles v2 fields, kept so a caller compiled against it
+     * (its `copy$default` stub) still links. The Roles v2 fields carry over unchanged.
+     */
+    @Deprecated("Use copy with the Roles v2 fields. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        ownerPubKey: String = this.ownerPubKey,
+        metadata: MetadataEntity? = this.metadata,
+        channels: Map<String, ConcordChannel> = this.channels,
+        roles: Map<String, RoleEntity> = this.roles,
+        authority: AuthorityResolver = this.authority,
+        dissolved: Boolean = this.dissolved,
+        inviteRegistries: Map<HexKey, List<HexKey>> = this.inviteRegistries,
+    ): ConcordCommunityState =
+        ConcordCommunityState(
+            ownerPubKey,
+            metadata,
+            channels,
+            roles,
+            authority,
+            dissolved,
+            inviteRegistries,
+            sealedChannels,
+            openedChannels,
+            overwrites,
+            syncs,
+            writers,
+        )
 
+    companion object {
         /**
          * The permission bit an edition of each entity kind must be authored under.
          * `null` means owner-only (no bit grants it). Mirrors the per-kind gating
          * [fold] applies before the structural fold.
          */
-        private fun requiredPermission(kind: ControlEntityKind): Int? =
+        internal fun requiredPermission(kind: ControlEntityKind): Int? =
             when (kind) {
                 ControlEntityKind.METADATA -> ConcordPermissions.MANAGE_METADATA
                 ControlEntityKind.CHANNEL -> ConcordPermissions.MANAGE_CHANNELS
@@ -273,42 +303,24 @@ data class ConcordCommunityState(
             }
 
         /**
-         * Whether a reader honors [edition] as its entity's head: well-formed at its coordinate,
-         * authored by the owner or a holder of the kind's bit, citing the Grant it acts under.
-         *
-         * A sub-kind we do not model is still gated — a floor or a compaction must only remember
-         * editions some reader honors: a Signal by `MANAGE_CHANNELS` (the one gate Armada implements, `pause`), and anything newer by any
-         * staff bit, the set whose actions are Control editions at all (CORD-04 §3).
-         */
-        private fun honors(
-            authority: AuthorityResolver,
-            edition: ControlEdition,
-        ): Boolean {
-            val kind = edition.entityKind ?: return honorsUnmodeled(authority, edition)
-            return authority.admits(edition, requiredPermission(kind))
-        }
-
-        private fun honorsUnmodeled(
-            authority: AuthorityResolver,
-            edition: ControlEdition,
-        ): Boolean =
-            when (edition.vsk) {
-                VSK_SIGNALS -> authority.admits(edition, ConcordPermissions.MANAGE_CHANNELS)
-                else -> authority.isOwner(edition.author) || (authority.isStaff(edition.author) && authority.citationSatisfied(edition))
-            }
-
-        /**
          * The authority-gated structural head of **every** control entity, keyed by
          * [ControlEdition.entityIdHex] — the source of the anti-rollback [EntityFloor]s a
          * client carries across a CORD-06 Refounding, and the set of heads a Refounding's
          * compaction re-wraps (sub-kinds we do not model included, so another client's Pins
          * or Signals survive our Refounding).
          *
-         * It is deliberately gated the same way [fold] gates each entity kind (and, for
-         * [ControlEntityKind.DISSOLVED], owner-only): an *ungated* head map would let any
-         * ex-member who still holds a rotated-out root mint a high-version edition on the
-         * old Control Plane and thereby raise our floor, freezing the entity for us. The
-         * floor must only ever remember editions we would actually have honored.
+         * Every entity is judged by the same gate [fold] applies to it, never a looser one: an
+         * edition [fold] refuses must never become a head, or a Refounding would re-wrap it as the
+         * entity's whole history (a moderator's forged deletion of the Admin Role, say) and every
+         * reader of the new epoch would fold it. So the Roles, Grants and Tenures, and on Roles v2
+         * the Banlist, are the heads the owner-rooted Roster fold itself settled
+         * ([AuthorityResolver]); overwrites, syncs and Writers ledgers pass their own gates (downward
+         * support, the sync's swap check, the ledger's chain rules), which read no `vac`, so a valid
+         * uncited edition is kept; the rest pass the bit-and-citation gate of their kind.
+         *
+         * An *ungated* head map would let any ex-member who still holds a rotated-out root mint a
+         * high-version edition on the old Control Plane and thereby raise our floor, freezing the
+         * entity for us. The floor must only ever remember editions we would actually have honored.
          */
         fun authorizedHeads(
             editions: Collection<ControlEdition>,
@@ -316,30 +328,32 @@ data class ConcordCommunityState(
             ownerPubKey: String,
             floors: Map<String, EntityFloor> = emptyMap(),
         ): Map<String, EntityFloor> {
-            @Suppress("NAME_SHADOWING")
-            val editions = ControlEdition.admissibleIn(editions, communityId)
+            val bound = ControlEdition.admissibleIn(editions, communityId)
             // This call folds exactly one epoch's editions, so they ARE the snapshot: an entity
             // appearing here has been re-wrapped into this epoch and must anchor on version, not
             // on a `prev` that necessarily dangles back into the epoch the floor came from. The
             // known heads `admissible` re-seats are not in the set, so an entity this epoch never
             // mentioned correctly keeps chain-walk semantics.
-            val snapshot = editions.mapTo(HashSet(editions.size)) { it.rumorId }
-            val pool = EditionFold.admissible(editions, floors, snapshot = snapshot)
+            val snapshot = bound.mapTo(HashSet(bound.size)) { it.rumorId }
+            val pool = EditionFold.admissible(bound, floors, snapshot = snapshot)
             val authority = AuthorityResolver.resolve(pool, communityId, ownerPubKey)
+            val plane = ControlPlaneFold(bound, pool, communityId, authority, floors, snapshot, TimeUtils.nowMillis())
             val out = HashMap<String, EntityFloor>(floors)
-            for ((_, list) in pool.groupBy { it.entityKind }) {
-                // Gate the CANDIDATES, don't pre-filter the chain: a rejected edition mid-chain must
-                // stay inert instead of orphaning the authorized editions above it (EditionFold.candidates).
-                val heads =
-                    EditionFold.foldGated(list, floors, snapshot = snapshot, rank = authority::tieBreakRank) {
-                        honors(authority, it)
-                    }
-                for ((entity, head) in heads) {
-                    // Monotonic: a floor only ever rises. Folding epoch by epoch, an entity the
-                    // newer epoch never mentions keeps the version the older one reached.
-                    val prior = out[entity]
-                    if (prior == null || head.version >= prior.version) out[entity] = head.asFloor()
-                }
+
+            fun raise(
+                entity: String,
+                head: ControlEdition,
+            ) {
+                // Monotonic: a floor only ever rises. Folding epoch by epoch, an entity the
+                // newer epoch never mentions keeps the version the older one reached.
+                val prior = out[entity]
+                if (prior == null || head.version >= prior.version) out[entity] = head.asFloor()
+            }
+
+            for ((entity, head) in authority.authorityHeads()) raise(entity, head)
+            for (kind in pool.mapTo(HashSet()) { it.entityKind }) {
+                if (plane.settledByResolver(kind)) continue
+                for ((entity, head) in plane.heads(kind)) raise(entity, head)
             }
             return out
         }
@@ -368,6 +382,19 @@ data class ConcordCommunityState(
             ownerPubKey: String,
             floors: Map<String, EntityFloor> = emptyMap(),
             channelConversationKey: ((channelIdHex: HexKey, epoch: Long) -> ByteArray?)? = null,
+        ): ConcordCommunityState = fold(editions, communityId, ownerPubKey, floors, TimeUtils.nowMillis(), channelConversationKey)
+
+        /**
+         * [fold] read at the reader's clock [nowMillis], against which a Writers ledger entry dated
+         * more than an hour ahead is refused (CORD-03 §1, CORD-02 §5).
+         */
+        fun fold(
+            editions: Collection<ControlEdition>,
+            communityId: ByteArray,
+            ownerPubKey: String,
+            floors: Map<String, EntityFloor>,
+            nowMillis: Long,
+            channelConversationKey: ((channelIdHex: HexKey, epoch: Long) -> ByteArray?)?,
         ): ConcordCommunityState {
             // CORD-04 §1: a marked edition bound to another Community, and an unmarked edition of a
             // kind no older client wrote, are refused before anything folds.
@@ -381,67 +408,38 @@ data class ConcordCommunityState(
             // snapshot that selects the compaction arm. Captured BEFORE `admissible` re-seats
             // known heads from older epochs, which must not be mistaken for this epoch's.
             val snapshot = bound.mapTo(HashSet(bound.size)) { it.rumorId }
-
-            @Suppress("NAME_SHADOWING")
-            val editions = EditionFold.admissible(bound, floors, snapshot = snapshot)
+            val pool = EditionFold.admissible(bound, floors, snapshot = snapshot)
 
             // Resolve authority from the FULL edition set (not the structural heads): the resolver
             // folds each role/grant chain through authorized editions only, so a rogue higher-version
             // edition can't supersede a legit one before authority is even judged.
-            val authority = AuthorityResolver.resolve(editions, communityId, ownerPubKey)
+            val authority = AuthorityResolver.resolve(pool, communityId, ownerPubKey)
 
-            // CORD-04 §1: "an edition whose signer isn't authorized is dropped." Authority is
-            // owner-rooted (the AuthorityResolver resolves it from the owner outward via the grant
-            // fixpoint), so gating each managed entity by its required permission BEFORE the
-            // structural fold filters out spoofed editions — e.g. a decoy metadata genesis minted by
-            // an unprivileged key — instead of letting a higher-version forgery win the chain. The
-            // permission check also excludes banned authors (hasPermission is false for a banned npub).
-            // The gate is applied to each entity's ORDERED CANDIDATES (chain head first, then the
-            // remaining editions version-descending), never as a pre-filter on the chain: dropping a
-            // rejected edition out of the middle of a chain permanently orphans every honest edition
-            // above it, freezing the entity. See EditionFold.candidates.
-            //
-            // Every gate also demands the edition sit at its derived coordinate and cite the Grant
-            // its author acts under (CORD-04 §5, `vac`) — AuthorityResolver.admits — and an
-            // equal-version tie goes to the higher-ranked author before the rumor id (§1).
-            fun foldGatedBy(
-                kind: ControlEntityKind,
-                bit: Int,
-            ): Map<String, ControlEdition> =
-                EditionFold.foldGated(editions.filter { it.entityKind == kind }, floors, snapshot = snapshot, rank = authority::tieBreakRank) {
-                    authority.admits(it, bit)
-                }
+            // CORD-04 §1: "an edition whose signer isn't authorized is dropped." Each kind's gate
+            // (ControlPlaneFold) is applied to each entity's ORDERED CANDIDATES (chain head first, then
+            // the remaining editions version-descending), never as a pre-filter on the chain: dropping
+            // a rejected edition out of the middle of a chain permanently orphans every honest edition
+            // above it, freezing the entity. See EditionFold.candidates. authorizedHeads reads the
+            // same gates, so a floor never remembers an edition this fold refused.
+            val plane = ControlPlaneFold(bound, pool, communityId, authority, floors, snapshot, nowMillis)
 
             // Metadata is ONE entity, at the community_id itself (CORD-04 §1): an edition at any
             // other coordinate is not this community's metadata however high its version, so it can
             // neither shadow the chain nor bypass it (S8). Name and description caps are fold gates.
             val metadata =
-                foldGatedBy(ControlEntityKind.METADATA, ConcordPermissions.MANAGE_METADATA)[communityId.toHexKey()]
+                plane
+                    .heads(ControlEntityKind.METADATA)[communityId.toHexKey()]
                     ?.let { ConcordJson.decodeOrNull<MetadataEntity>(it.content) }
 
             // Channels are gated by MANAGE_CHANNELS, per channel entity, dropping the tombstoned ones.
-            // The gate also enforces the content's form (CORD-03 §2): a plain edition needs a name
-            // (non-empty, <= 64 UTF-8 bytes), a sealed one its `{private, epoch, sealed}` shape. On
-            // Roles v2 an unmarked edition counts only for a Channel the switch listed (CORD-04 §2).
-            val legacyChannels = authority.legacyChannels()
-            val channelEditions = editions.filter { it.entityKind == ControlEntityKind.CHANNEL }
-            val channelGate = { edition: ControlEdition ->
-                authority.admits(edition, ConcordPermissions.MANAGE_CHANNELS) &&
-                    (legacyChannels == null || edition.isMarked || edition.entityIdHex in legacyChannels) &&
-                    channelReadable(edition)
-            }
             // Deletion is terminal (CORD-03 §2): any gated edition anywhere in a channel's accepted
             // chain that says `deleted` retires it for good, even if a later edition "restores" it —
             // members may already have discarded its keys, so a resurrection would split them.
-            val everDeleted =
-                channelEditions
-                    .filter { edition ->
-                        channelGate(edition) && ConcordJson.decodeOrNull<ChannelEntity>(edition.content)?.deleted == true
-                    }.mapTo(HashSet()) { it.entityIdHex }
+            val everDeleted = plane.everDeletedChannels()
             val channels = LinkedHashMap<String, ConcordChannel>()
             val sealedChannels = HashMap<HexKey, SealedChannelMeta>()
             val openedChannels = HashMap<HexKey, OpenedChannelSeal>()
-            for (head in EditionFold.foldGated(channelEditions, floors, snapshot = snapshot, rank = authority::tieBreakRank, gate = channelGate).values) {
+            for (head in plane.heads(ControlEntityKind.CHANNEL).values) {
                 if (head.entityIdHex in everDeleted) continue
                 val sealed = ConcordChannelSeal.readSealed(head.content, head.prevHash?.toHexKey())
                 if (sealed != null) {
@@ -450,31 +448,14 @@ data class ConcordCommunityState(
                     val opened =
                         channelConversationKey?.invoke(head.entityIdHex, sealed.epoch)?.let { ConcordChannelSeal.open(sealed, it) }
                     if (opened != null) openedChannels[head.entityIdHex] = opened
+                    // ChannelEntity models only the name and the Private flag; a sealed Channel's other
+                    // opened fields (topic, position, category, ...) are in [openedChannels].
                     channels[head.entityIdHex] = ConcordChannel(head.entityIdHex, ChannelEntity(name = opened?.name ?: "", private = true))
                     continue
                 }
                 val def = ConcordJson.decodeOrNull<ChannelEntity>(head.content) ?: continue
                 if (def.deleted) continue
                 channels[head.entityIdHex] = ConcordChannel(head.entityIdHex, def)
-            }
-
-            // Channel permissions (CORD-04 §8), on Roles v2 only: each overwrite at the coordinate its
-            // own scope and target derive, written by a MANAGE_ROLES holder above its target who holds
-            // every bit it touches; each Channel's sync to a Category.
-            val overwrites = if (authority.isRolesV2) foldOverwrites(editions, communityId, authority, floors, snapshot) else emptyList()
-            val syncs = if (authority.isRolesV2) foldSyncs(editions, communityId, authority, floors, snapshot) else emptyMap()
-
-            // Writers ledgers (CORD-03 §1): MANAGE_CHANNELS, at the coordinate its Channel derives.
-            val writers = HashMap<HexKey, ConcordWritersLedger>()
-            if (authority.isRolesV2) {
-                val ledgerEditions = editions.filter { it.entityKind == ControlEntityKind.WRITERS }
-                val gate = { e: ControlEdition ->
-                    authority.admits(e, ConcordPermissions.MANAGE_CHANNELS) && ConcordWritersLedger.parse(e.content, communityId, e.entityIdHex) != null
-                }
-                for (head in EditionFold.foldGated(ledgerEditions, floors, snapshot = snapshot, rank = authority::tieBreakRank, gate = gate).values) {
-                    val ledger = ConcordWritersLedger.parse(head.content, communityId, head.entityIdHex) ?: continue
-                    writers[ledger.channelIdHex] = ledger
-                }
             }
 
             // Role definitions come from the authority-gated fold (not the raw structural heads): a
@@ -495,7 +476,7 @@ data class ConcordCommunityState(
             // pins the coordinate to the author and requires a JSON array, so a registry at someone
             // else's coordinate or a malformed one never lands; entries are kept only when they are 64-hex.
             val inviteRegistries = HashMap<HexKey, List<HexKey>>()
-            for (head in foldGatedBy(ControlEntityKind.INVITE_REGISTRY, ConcordPermissions.CREATE_INVITE).values) {
+            for (head in plane.heads(ControlEntityKind.INVITE_REGISTRY).values) {
                 val links = ConcordInviteRegistry.decodeOrNull(head.content) ?: continue
                 inviteRegistries[head.author.lowercase()] = links
             }
@@ -510,89 +491,11 @@ data class ConcordCommunityState(
                 inviteRegistries = inviteRegistries,
                 sealedChannels = sealedChannels,
                 openedChannels = openedChannels,
-                overwrites = overwrites,
-                syncs = syncs,
-                writers = writers,
+                // Channel permissions (CORD-04 §8) and Writers ledgers (CORD-03 §1), on Roles v2 only.
+                overwrites = plane.overwrites(),
+                syncs = plane.syncs(),
+                writers = plane.writers(),
             )
-        }
-
-        /** Whether a Channel edition's content has a form a reader applies (CORD-03 §2): a named plain form, or the sealed form. */
-        private fun channelReadable(edition: ControlEdition): Boolean {
-            if (ConcordChannelSeal.readSealed(edition.content, edition.prevHash?.toHexKey()) != null) return true
-            return ConcordJson.decodeOrNull<ChannelEntity>(edition.content)?.hasValidName() == true
-        }
-
-        private fun foldOverwrites(
-            editions: Collection<ControlEdition>,
-            communityId: ByteArray,
-            authority: AuthorityResolver,
-            floors: Map<String, EntityFloor>,
-            snapshot: Set<String>,
-        ): List<ChannelOverwrite> {
-            val roster = authority.rankedRoster() ?: return emptyList()
-            val everyoneId = ConcordKeyDerivation.everyoneCoordinate(communityId)
-
-            fun coordinateOf(o: ChannelOverwrite): String {
-                val target = if (o.targetKind == ChannelOverwrite.EVERYONE) everyoneId else o.targetId!!.hexToByteArray()
-                return ConcordKeyDerivation.aclCoordinate(communityId, o.scope.hexToByteArray(), o.targetKind, target).toHexKey()
-            }
-
-            fun targetRank(o: ChannelOverwrite): Long? =
-                when (o.targetKind) {
-                    ChannelOverwrite.EVERYONE -> RankedRoster.BENEATH_EVERY_ROLE
-                    ChannelOverwrite.ROLE -> roster.role(o.targetId!!)?.position
-                    else -> if (authority.isOwner(o.targetId!!) || authority.isBanned(o.targetId)) null else roster.highestPosition(o.targetId) ?: RankedRoster.BENEATH_EVERY_ROLE
-                }
-
-            val gate = { e: ControlEdition ->
-                val o = RankedRosterContent.parseOverwrite(e.content)
-                if (o == null || coordinateOf(o) != e.entityIdHex) {
-                    false
-                } else {
-                    val rank = targetRank(o)
-                    when {
-                        rank == null -> false
-                        authority.isOwner(e.author) -> true
-                        authority.isBanned(e.author) && !authority.isTenureListed(e.author, e.hashHex) -> false
-                        else -> {
-                            val support = roster.permissionsAbove(e.author, rank) union roster.sealOf(e.author, e.hashHex, rank)
-                            support.has(ConcordPermissions.MANAGE_ROLES) && ((o.allow union o.deny) minus support).isEmpty()
-                        }
-                    }
-                }
-            }
-            val heads = EditionFold.foldGated(editions.filter { it.entityKind == ControlEntityKind.ACL }, floors, snapshot = snapshot, rank = authority::tieBreakRank, gate = gate)
-            return heads.values
-                .mapNotNull { RankedRosterContent.parseOverwrite(it.content) }
-                .filter { !(it.allow.isEmpty() && it.deny.isEmpty()) }
-                .sortedWith(compareBy<ChannelOverwrite> { it.scope }.thenBy { it.targetKind }.thenBy { it.targetId ?: "" })
-        }
-
-        private fun foldSyncs(
-            editions: Collection<ControlEdition>,
-            communityId: ByteArray,
-            authority: AuthorityResolver,
-            floors: Map<String, EntityFloor>,
-            snapshot: Set<String>,
-        ): Map<HexKey, HexKey> {
-            val roster = authority.rankedRoster() ?: return emptyMap()
-            val gate = { e: ControlEdition ->
-                val sync = RankedRosterContent.parseSync(e.content)
-                when {
-                    sync == null -> false
-                    ConcordKeyDerivation.syncCoordinate(communityId, sync.first.hexToByteArray()).toHexKey() != e.entityIdHex -> false
-                    authority.isOwner(e.author) -> true
-                    authority.isBanned(e.author) && !authority.isTenureListed(e.author, e.hashHex) -> false
-                    // A sync takes MANAGE_ROLES held through a Role (CORD-04 §8).
-                    else -> (roster.permissionsAbove(e.author, RankedRoster.BENEATH_EVERY_ROLE) union roster.sealOf(e.author, e.hashHex, RankedRoster.BENEATH_EVERY_ROLE)).has(ConcordPermissions.MANAGE_ROLES)
-                }
-            }
-            val out = HashMap<HexKey, HexKey>()
-            for (head in EditionFold.foldGated(editions.filter { it.entityKind == ControlEntityKind.SYNC }, floors, snapshot = snapshot, rank = authority::tieBreakRank, gate = gate).values) {
-                val (channel, category) = RankedRosterContent.parseSync(head.content) ?: continue
-                if (category != null) out[channel] = category
-            }
-            return out
         }
     }
 }

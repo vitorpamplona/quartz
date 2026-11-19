@@ -178,7 +178,8 @@ object ConcordChannelRekey {
      * (rotator, newepoch, prevcommit). Drops: a wrap at no known address, a plaintext seal (a rekey
      * seal is encrypted, CORD-02 §5), a non-3303 rumor, a scope other than the channel, a
      * non-decimal or 0-based chunk, a malformed `vac`. A rotation whose chunks disagree on
-     * `prevepoch`, `total` or citation is distrusted whole.
+     * `prevepoch` or citation is distrusted whole; chunks that disagree on `total` are unioned, and
+     * the rotation is complete once it holds every chunk up to the largest `total` any of them names.
      */
     fun rotations(
         wraps: Collection<Event>,
