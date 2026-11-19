@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.single.basic
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.RelayDisconnect
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.SentFrames
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.basic.BasicRelayClient.Companion.DELAY_TO_RECONNECT_IN_SECS
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
@@ -33,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.deliverMessage
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.isResolverTimeout
+import com.vitorpamplona.quartz.nip19Bech32.tlv.TlvWriter
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
@@ -91,7 +94,28 @@ open class BasicRelayClient(
         // immediately drop the socket would otherwise reset the backoff on
         // every onOpen and reconnect in a tight ~3s loop forever.
         const val STABLE_CONNECTION_IN_SECS = TimeUtils.ONE_MINUTE
+
+        /** The [RelayDisconnect.reason] of a [disconnect] that gave none. */
+        const val DISCONNECT_REASON = "disconnect"
     }
+
+    @Volatile private var lastEnd: RelayDisconnect? = null
+
+    override val lastDisconnect: RelayDisconnect? get() = lastEnd
+
+    // Set while [disconnect] runs: a socket reports the close it causes synchronously (see
+    // [WebSocket.disconnect]), and that report is this client's end, not the relay's.
+    @Volatile private var closingReason: String? = null
+
+    // The current session's frames and open time, for the [RelayDisconnect] its end records.
+    private val sentLock = PlatformLock()
+    private var sentCount = 0L
+    private var sentLargestBytes = 0
+    private var sentLargestLabel: String? = null
+    private var sentLastBytes = 0
+    private var sentLastLabel: String? = null
+
+    @Volatile private var sessionOpenedAtMillis: Long? = null
 
     // Volatile: each socket's listener compares itself to it (MyWebsocketListener.owner) from the
     // transport's own threads.
@@ -157,6 +181,7 @@ open class BasicRelayClient(
 
             lastConnectTentativeInSeconds = nowInSeconds()
 
+            startSession()
             val listenerForSocket = MyWebsocketListener()
             val newSocket = socketBuilder.build(url, listenerForSocket)
             listenerForSocket.owner = newSocket
@@ -167,6 +192,7 @@ open class BasicRelayClient(
             val typeName = e::class.simpleName
             val detail = e.message?.let { "$it ($typeName)" } ?: (typeName ?: "unknown error")
             listener.onCannotConnect(this, "Error when trying to connect: $detail")
+            recordEnd(RelayDisconnect.Side.TRANSPORT, null, e.message, typeName)
             listener.onDisconnected(this)
             dontTryAgainForALongTime()
             markConnectionAsClosed()
@@ -190,11 +216,32 @@ open class BasicRelayClient(
         /** True when a newer socket replaced [owner]; an end with no socket at all is still ours. */
         private fun isReplaced() = socket != null && owner !== socket
 
+        // A socket reports one terminal callback, but a [disconnect] answering a failure may add a
+        // close report of its own: the first end is the session's.
+        private val ended = AtomicBoolean(false)
+
+        /** Records this session's end, once: our own close while [disconnect] runs, else [side]'s. */
+        private fun ended(
+            side: RelayDisconnect.Side,
+            code: Int?,
+            reason: String?,
+            errorType: String? = null,
+        ) {
+            if (!ended.compareAndSet(false, true)) return
+            val ours = closingReason
+            if (ours != null) {
+                recordEnd(RelayDisconnect.Side.CLIENT, null, ours, null)
+            } else {
+                recordEnd(side, code, reason, errorType)
+            }
+        }
+
         override fun onOpen(
             pingMillis: Int,
             compression: Boolean,
         ) {
             if (!isCurrent()) return
+            sessionOpenedAtMillis = TimeUtils.nowMillis()
             replayGate.withLock { replaying = true }
             try {
                 markConnectionAsReady(compression)
@@ -250,6 +297,7 @@ open class BasicRelayClient(
             reason: String,
         ) {
             if (isReplaced()) return
+            ended(RelayDisconnect.Side.RELAY, code, reason)
             markConnectionAsClosed()
             listener.onDisconnected(this@BasicRelayClient)
         }
@@ -265,8 +313,11 @@ open class BasicRelayClient(
 
             if (socket == null) {
                 // comes from the disconnect action.
+                ended(RelayDisconnect.Side.CLIENT, null, closingReason ?: DISCONNECT_REASON)
                 listener.onDisconnected(this@BasicRelayClient)
             } else {
+                // Before the disconnect below, whose own close report is this same end.
+                ended(RelayDisconnect.Side.TRANSPORT, code, listOfNotNull(t.message, response).joinToString(" ").ifEmpty { null }, t::class.simpleName)
                 socket?.disconnect()
 
                 // suppression rules below must match the raw message; displayMsg is for listener output only.
@@ -364,7 +415,27 @@ open class BasicRelayClient(
         rateLimits?.onDisconnected()
     }
 
+    override fun disconnect(reason: String) {
+        closingReason = reason
+        try {
+            disconnect()
+        } finally {
+            closingReason = null
+        }
+    }
+
     override fun disconnect() {
+        // Kept for a subclass that overrides this one and calls super: the reason, if any, was set by the overload.
+        val given = closingReason
+        if (given == null) closingReason = DISCONNECT_REASON
+        try {
+            closeSocket()
+        } finally {
+            if (given == null) closingReason = null
+        }
+    }
+
+    private fun closeSocket() {
         lastConnectTentativeInSeconds = 0L // this is not an error, so prepare to reconnect as soon as requested.
         delayToConnectInSeconds = DELAY_TO_RECONNECT_IN_SECS
         connectedAtInSeconds = 0L
@@ -487,8 +558,47 @@ open class BasicRelayClient(
         val socket = socket ?: return false
         // Through the command, not the mapper: an EVENT carrying its own JSON is sent as it is.
         val msg = cmd.toJson()
+        noteSent(msg, cmd.label())
         val success = socket.send(msg)
         listener.onSent(this@BasicRelayClient, msg, cmd, success)
         return success
+    }
+
+    /** A new dial: its session starts with nothing sent. */
+    private fun startSession() {
+        sentLock.withLock {
+            sentCount = 0
+            sentLargestBytes = 0
+            sentLargestLabel = null
+            sentLastBytes = 0
+            sentLastLabel = null
+        }
+        sessionOpenedAtMillis = null
+    }
+
+    private fun noteSent(
+        msg: String,
+        label: String,
+    ) {
+        val bytes = TlvWriter.utf8Length(msg)
+        sentLock.withLock {
+            sentCount++
+            sentLastBytes = bytes
+            sentLastLabel = label
+            if (bytes > sentLargestBytes) {
+                sentLargestBytes = bytes
+                sentLargestLabel = label
+            }
+        }
+    }
+
+    private fun recordEnd(
+        side: RelayDisconnect.Side,
+        code: Int?,
+        reason: String?,
+        errorType: String?,
+    ) {
+        val sent = sentLock.withLock { if (sentCount == 0L) SentFrames.NONE else SentFrames(sentCount, sentLargestBytes, sentLargestLabel, sentLastBytes, sentLastLabel) }
+        lastEnd = RelayDisconnect(side, code, reason, errorType, TimeUtils.nowMillis(), sessionOpenedAtMillis, sent)
     }
 }
