@@ -86,17 +86,38 @@ Filter(
 All four kinds are `SearchableEvent`s sharing one walk
 (`forEachSearchableListField`): `names` and `titles` (singular then plural),
 `name`, `title`, `description`, `comments`, then, in tag order, every `t`
-item value and every value of every other tag that reads as natural language.
+value and every value of every tag the author named.
 
-The tag set is open — deployments add `author`, `subject`, `artist`,
-`relationshipType` and tags nobody has named yet — so that last step decides
-by the value, not the tag (`nip50Search/NaturalLanguageValue.kt`): a value is
-indexed when it has whitespace or a non-ASCII character, or is a single
-capitalized word ("Fiction", "Aristotle"), and is never a machine value (JSON,
-a number, a URI of any scheme, an address, a hex id, a UUID, bech32). `t`
-values skip the natural-language test but not the machine one. `alt` (NIP-31
-fallback text that restates other tags), `client` and `imeta` (NIP-92 `key
-value` pairs) are not indexed.
+The tag set is open — deployments add `author`, `isbn`, `github-username`,
+`phone` and tags nobody has named yet — so a tag this NIP does not define is
+the author's data and is indexed whatever its values look like: usernames,
+codes, numbers and URLs as well as prose. What stays out is decided by name,
+then by one narrow value test:
+
+- **By name**: every single-letter tag but `t` and `l` (`d`, `z`, `p`, `e`,
+  `a`, `L`, …: NIP-01's indexable tags, already reachable by `#x` filters, with
+  their relay hints and petnames). Of a NIP-32 `l` self-label only the label
+  is indexed, not its namespace mark; this NIP's own vocabulary (the fields above, `slug(s)`,
+  `required`/`allowed`/`recommended`/`optional`/`disallowed`, `field-type`,
+  `display`, `item-kind`, `concept-graph`, `json`, `curation-method`,
+  `polarity`); and NIP-wide metadata (`nip50Search.METADATA_TAG_NAMES`, shared
+  with `EventSearchMatcher`'s fallback: `alt`, `client`, `imeta`, `expiration`,
+  `emoji`, `nonce`, `proxy`, `published_at`, `content-warning`, `relay(s)`,
+  `zap`, and the media URLs `image`, `thumb`, `picture`, `banner`, `icon`).
+- **By value**: Nostr's own references (`isNostrReference`): 64-hex ids,
+  `kind:pubkey:d` addresses, NIP-19 bech32 with or without `nostr:`, relay
+  URLs; and any value starting with `{` (a JSON object). Any other code, a
+  40-hex git commit included, may be what someone searches for.
+
+`t` values skip all of this: a `t` is indexed unless it is a machine value
+(`isMachineValue`: JSON, a number, a URI of any scheme, an address, a hex id,
+a UUID, bech32).
+
+`SearchFieldExtractor` splits the same walk by role: `names`/`titles`/`name`/
+`title` are the primary tier, `description`/`comments` the secondary, prose
+values the text tier (`isNaturalLanguageValue`: whitespace, non-ASCII, or one
+capitalized word), URLs the websites, and everything else the keywords
+(`IndexableFields.Tiered.keywords`).
 
 `content` is not part of the spec, and ids, pubkeys and coordinates are
 served by `#p`/`#e`/`#a`/`#z` filters, so none of them are indexed.

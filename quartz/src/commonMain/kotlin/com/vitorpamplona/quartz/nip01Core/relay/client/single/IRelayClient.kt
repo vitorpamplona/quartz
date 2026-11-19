@@ -74,4 +74,27 @@ interface IRelayClient {
     fun sendFromSync(cmd: Command) = sendOrConnectAndSync(cmd)
 
     fun disconnect()
+
+    /**
+     * [disconnect], saying why. A transport that records how its sessions end
+     * ([lastDisconnect]) keeps [reason] on the [RelayDisconnect.Side.CLIENT] end this produces,
+     * so a listener can tell a release from an eviction or a reconnect. Defaults to [disconnect].
+     */
+    fun disconnect(reason: String) = disconnect()
+
+    /**
+     * How this relay's last socket session ended: who ended it, the close code and reason or the
+     * failure, and what it had sent. Set before
+     * [com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener.onDisconnected]
+     * runs, so a listener reads the end it is being told about. Null before any session ended, or
+     * for a transport that does not record it.
+     */
+    val lastDisconnect: RelayDisconnect? get() = null
+
+    /**
+     * The frames the current socket session has sent so far, for a failure that leaves the socket
+     * up (a relay gone silent, a refusal). Null with no session, or for a transport that does not
+     * record it.
+     */
+    val sentFrames: SentFrames? get() = null
 }

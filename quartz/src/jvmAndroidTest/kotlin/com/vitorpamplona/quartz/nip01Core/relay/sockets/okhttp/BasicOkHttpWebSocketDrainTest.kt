@@ -25,7 +25,6 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.InputStream
@@ -222,14 +221,13 @@ class BasicOkHttpWebSocketDrainTest {
             assertTrue("still delivering: no reconnect pass may tear it down", !socket.needsReconnect())
 
             socket.disconnect()
-            assertEquals("disconnect() reports synchronously", 1, recorder.closedCount.get())
+            // The relay ended this session (it hung up), so the end disconnect() reports is the relay's, not one of ours.
+            assertEquals("disconnect() reports the relay's own end, synchronously", 1, recorder.failures.get())
             val delivered = recorder.events.size
 
             Thread.sleep(500)
             assertEquals("nothing reaches the listener after disconnect()", delivered, recorder.events.size)
-            assertEquals("one terminal report", 1, recorder.closedCount.get())
-            assertEquals("the relay's own end is dropped with the queue", 0, recorder.failures.get())
-            assertNull(recorder.events.firstOrNull { it == "failure" })
+            assertEquals("one terminal report", 1, recorder.failures.get() + recorder.closedCount.get())
             assertTrue(socket.needsReconnect())
 
             client.dispatcher.executorService.shutdown()

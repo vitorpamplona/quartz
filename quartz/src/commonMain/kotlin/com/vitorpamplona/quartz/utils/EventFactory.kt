@@ -209,6 +209,12 @@ import com.vitorpamplona.quartz.experimental.walletScrutiny.verification.BuildVe
 import com.vitorpamplona.quartz.experimental.zapPolls.ZapPollEvent
 import com.vitorpamplona.quartz.experimental.zapstore.identityProof.IdentityProofEvent
 import com.vitorpamplona.quartz.feedDefinition.FeedDefinitionEvent
+import com.vitorpamplona.quartz.llamagarden.modelRequest.ModelRequestEvent
+import com.vitorpamplona.quartz.llamagarden.modelRequest.UnrecognizedKind30103Event
+import com.vitorpamplona.quartz.llamagarden.release.ClientReleaseEvent
+import com.vitorpamplona.quartz.llamagarden.seederRequest.SeederRequestEvent
+import com.vitorpamplona.quartz.llamagarden.torrent.ModelTorrentEvent
+import com.vitorpamplona.quartz.llamagarden.torrent.UnrecognizedKind30099Event
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.KeyPackageRelayListEvent
 import com.vitorpamplona.quartz.marmot.mip00KeyPackages.LegacyKeyPackageEvent
@@ -700,11 +706,12 @@ class EventFactory {
                 // drss.io's reader (RSS and podcasts bridged to Nostr) publishes its lists and records on
                 // kinds other apps use too. Each is told apart by its drss shape; the rest stays
                 // addressable but unread. Its show definitions (31341) have the kind to themselves.
+                // 30100 and 30102 also carry llama.garden's client releases and seeder requests.
                 DrssFeedListEvent.KIND ->
-                    if (DrssFeedListEvent.isFeedList(tags, content)) {
-                        DrssFeedListEvent(id, pubKey, createdAt, tags, content, sig)
-                    } else {
-                        UnrecognizedKind30100Event(id, pubKey, createdAt, tags, content, sig)
+                    when {
+                        DrssFeedListEvent.isFeedList(tags, content) -> DrssFeedListEvent(id, pubKey, createdAt, tags, content, sig)
+                        ClientReleaseEvent.isClientRelease(tags) -> ClientReleaseEvent(id, pubKey, createdAt, tags, content, sig)
+                        else -> UnrecognizedKind30100Event(id, pubKey, createdAt, tags, content, sig)
                     }
                 DrssListFolderEvent.KIND ->
                     if (DrssListFolderEvent.isListFolder(tags)) {
@@ -713,10 +720,10 @@ class EventFactory {
                         UnrecognizedKind30101Event(id, pubKey, createdAt, tags, content, sig)
                     }
                 DrssEventListEvent.KIND ->
-                    if (DrssEventListEvent.isEventList(tags)) {
-                        DrssEventListEvent(id, pubKey, createdAt, tags, content, sig)
-                    } else {
-                        UnrecognizedKind30102Event(id, pubKey, createdAt, tags, content, sig)
+                    when {
+                        DrssEventListEvent.isEventList(tags) -> DrssEventListEvent(id, pubKey, createdAt, tags, content, sig)
+                        SeederRequestEvent.isSeederRequest(tags) -> SeederRequestEvent(id, pubKey, createdAt, tags, content, sig)
+                        else -> UnrecognizedKind30102Event(id, pubKey, createdAt, tags, content, sig)
                     }
                 DrssProvenanceFolderEvent.KIND ->
                     if (DrssProvenanceFolderEvent.isProvenanceFolder(tags)) {
@@ -745,6 +752,19 @@ class EventFactory {
             sig: HexKey,
         ): Event? =
             when (kind) {
+                // llama.garden's model torrents and model requests share their kinds with other apps.
+                ModelTorrentEvent.KIND ->
+                    if (ModelTorrentEvent.isModelTorrent(tags)) {
+                        ModelTorrentEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30099Event(id, pubKey, createdAt, tags, content, sig)
+                    }
+                ModelRequestEvent.KIND ->
+                    if (ModelRequestEvent.isModelRequest(tags)) {
+                        ModelRequestEvent(id, pubKey, createdAt, tags, content, sig)
+                    } else {
+                        UnrecognizedKind30103Event(id, pubKey, createdAt, tags, content, sig)
+                    }
                 CapabilityDiscoveryEvent.KIND -> CapabilityDiscoveryEvent(id, pubKey, createdAt, tags, content, sig)
                 CallAnswerEvent.KIND -> CallAnswerEvent(id, pubKey, createdAt, tags, content, sig)
                 CallHangupEvent.KIND -> CallHangupEvent(id, pubKey, createdAt, tags, content, sig)
@@ -1287,7 +1307,8 @@ class EventFactory {
          * the Kanban card, Open Markets' 30405 and 30406 as their collection and shipping option
          * (Shopstr's carts and escrow records on them are the unsearchable fallbacks), 30054 as
          * the Podcasting-2.0 episode, and drss.io's 30100, 30101, 30102, 30104 and 31985 as its feed
-         * list, list folder, event list, provenance folder and provenance record. (The other
+         * list, list folder, event list, provenance folder and provenance record, and llama.garden's
+         * 30099 and 30103 as its model torrent and model request. (The other
          * tag-split kinds, 39005 and 20001, already land on a typed class with no tags.)
          *
          * The id is non-blank so kinds that lazily hash a missing id (NIP-17 chat) skip that work
@@ -1305,6 +1326,8 @@ class EventFactory {
                 KanbanBoardEvent.KIND -> KanbanBoardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 KanbanCardEvent.KIND -> KanbanCardEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 Podcasting20EpisodeEvent.KIND -> Podcasting20EpisodeEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                ModelTorrentEvent.KIND -> ModelTorrentEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
+                ModelRequestEvent.KIND -> ModelRequestEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 DrssFeedListEvent.KIND -> DrssFeedListEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 DrssListFolderEvent.KIND -> DrssListFolderEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")
                 DrssEventListEvent.KIND -> DrssEventListEvent(PROBE_ID, PROBE_ID, 0L, emptyArray(), "", "")

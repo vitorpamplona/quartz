@@ -76,8 +76,8 @@ class EventSearchMatcher(
     search: String?,
     /**
      * For a kind that is not a [SearchableEvent]: tag names whose values are not worth searching —
-     * `p`/`e`/`a` hold hex ids that only ever match by accident, `client` and `alt` hold text the
-     * author did not write.
+     * `p`/`e`/`a` hold hex ids that only ever match by accident, and [METADATA_TAG_NAMES] (`client`,
+     * `alt`, media URLs, …) describe the event rather than say anything its author wrote.
      */
     private val exceptTagNames: Set<String> = DEFAULT_EXCLUDED_TAGS,
 ) {
@@ -176,7 +176,7 @@ class EventSearchMatcher(
     }
 
     companion object {
-        val DEFAULT_EXCLUDED_TAGS = setOf("client", "p", "e", "a", "alt")
+        val DEFAULT_EXCLUDED_TAGS: Set<String> = METADATA_TAG_NAMES + setOf("p", "e", "a")
 
         private fun fieldHolds(
             field: String,

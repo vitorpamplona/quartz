@@ -130,7 +130,7 @@ class RelayPool(
             if (relay.isConnected()) {
                 if (relay.needsToReconnect()) {
                     // network has changed, force reconnect
-                    relay.disconnect()
+                    relay.disconnect("the transport changed: reconnecting")
                     relay.connect()
                 }
             } else {
@@ -156,7 +156,7 @@ class RelayPool(
 
     fun disconnect() {
         relays.forEach { url, relay ->
-            relay.disconnect()
+            relay.disconnect("the client disconnected")
         }
         // We just tore every socket down; say so here rather than leaving it to each socket's
         // own report. The transports do report a disconnect synchronously (see [WebSocket]),
@@ -276,7 +276,7 @@ class RelayPool(
     private fun removeRelayInner(relay: NormalizedRelayUrl): Boolean {
         val relayInPool = relays.remove(relay)
         if (relayInPool != null) {
-            relayInPool.disconnect()
+            relayInPool.disconnect("removed from the pool")
             // A relay that is no longer a member cannot be connected, whatever its socket
             // layer reports (or fails to report) later.
             _connectedRelays.update { it - relay }

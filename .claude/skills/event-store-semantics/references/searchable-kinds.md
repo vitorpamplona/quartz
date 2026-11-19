@@ -88,7 +88,7 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 9736 | Bolt12ZapEvent | nipB1Bolt12Zaps/zap | `content` |
 | 9737 | Bolt12ZapIntentEvent | nipB1Bolt12Zaps/intent | `content` |
 | 9802 | HighlightEvent | nip84Highlights | `listOfNotNull(comment(), searchableContext(), content)` NL — `searchableContext()` is the `context` tag, else a `textquoteselector`'s prefix and suffix (whitespace-collapsed, space-joined) |
-| 9998 | ListHeaderEvent | experimental/decentralizedLists/header | `tags.searchableListContent()` NL — `names` (singular, plural), `titles` (singular, plural), `name`, `title`, `description`, `comments`, then in tag order every `t` value that is not `isMachineValue` and every value of every other tag (except `alt`, `client`, `imeta`) that passes `isNaturalLanguageValue` (has whitespace or non-ASCII, or is one capitalized letters-only word; never JSON, numbers, URIs of any scheme, addresses, hex ids, UUIDs, bech32) |
+| 9998 | ListHeaderEvent | experimental/decentralizedLists/header | `tags.searchableListContent()` NL — `names` (singular, plural), `titles` (singular, plural), `name`, `title`, `description`, `comments`, then in tag order every `t` value that is not `isMachineValue`, each NIP-32 `l` label (position 1 only; never `L`), and every value of every tag the author named (not single-letter, not this NIP's own vocabulary, not NIP-wide metadata such as `alt`, `client`, `imeta`, `expiration`, `image`) that is not `isNostrReference` (64-hex, `kind:pubkey:d`, NIP-19 bech32, relay URLs) and does not start with `{`; `SearchFieldExtractor` puts the prose values in `text`, URLs in `websites`, the rest in `keywords` |
 | 9999 | ListItemEvent | experimental/decentralizedLists/item | same as 9998 |
 | 10003 | BookmarkListEvent | nip51Lists/bookmarkList | `listOfNotNull(titleOrName())` NL |
 | 10100 | AgentProfileEvent | buzz/agentProfiles | `profileOrNull()?.let { listOfNotNull(it.name, it.displayName).joinToString("\n") } ?: ""` |
@@ -125,9 +125,11 @@ Separator legend: **NL** = `joinToString("\n")`, **SP** = `joinToString(" ")`.
 | 30063 | ReleaseArtifactSetEvent † | nip51Lists/releaseArtifactSet | `listOfNotNull(title(), description(), searchableReleaseNotes())` NL |
 | 30066 | LiveChessMoveEvent | nip64Chess/move | `content` |
 | 30068 | LiveChessDrawOfferEvent | nip64Chess/draw | `content` |
+| 30099 | ModelTorrentEvent ¶ | llamagarden/torrent | `listOfNotNull(title(), name(), modelName(), lab(), repoId(), baseModel(), quantDetail(), quantDev())` distinct, NL |
 | 30100 | DrssFeedListEvent ‖ | drss/feedList | `(listOfNotNull(title()) + feedTitles())` NL |
 | 30101 | DrssListFolderEvent ‖ | drss/listFolder | `title() ?: ""` |
 | 30102 | DrssEventListEvent ‖ | drss/eventList | `title() ?: ""` |
+| 30103 | ModelRequestEvent ¶ | llamagarden/modelRequest | `(listOfNotNull(name()) + links())` NL |
 | 30104 | DrssProvenanceFolderEvent ‖ | drss/provenance | `title() ?: ""` |
 | 30142 | LearningResourceEvent | experimental/library | `(listOfNotNull(title(), alternateTitle(), summary(), alternateSummary(), content, author()) + facetLabels())` NL — `facetLabels()` = resource types, educational levels, subjects, deduplicated |
 | 30175 | PersonaEvent | buzz/apPersonas | `personaOrNull()?.let { listOfNotNull(it.displayName, it.description, it.systemPrompt).joinToString("\n") } ?: ""` |
@@ -269,6 +271,14 @@ shape (see `drss/README.md`) and an `UnrecognizedKind30100Event` / `…30101…`
 / `UnrecognizedKind31985Event` otherwise — addressable but unsearchable. Kind-level probes answer
 as the drss class. Its listening progress, `DrssListenProgressAppDataEvent` (30078) and the legacy
 `DrssListenProgressEvent` (30054), is not searchable.
+
+¶ **llama.garden's kinds are shared too.** `EventFactory` builds `ModelTorrentEvent` (30099) for a
+`name` with a `magnet` or `url` (else `UnrecognizedKind30099Event`: nostr-golded's update manifests)
+and `ModelRequestEvent` (30103) for a `name` with a `type` (else `UnrecognizedKind30103Event`). On
+drss's 30100 and 30102, drss's stricter shape wins first, then llama.garden's `ClientReleaseEvent`
+(`version` + `sha256`) and `SeederRequestEvent` (an `i` with an `e`), neither searchable: the seeder
+request's `name` copies its listing's title. Kind-level probes
+answer as `ModelTorrentEvent` and `ModelRequestEvent`.
 
 ## Abstract bases (no kind of their own)
 

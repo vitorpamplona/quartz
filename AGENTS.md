@@ -7,7 +7,7 @@ a Kotlin Multiplatform library for JVM, Android, iOS, macOS and Linux, published
 utilities to build on them: NIPs under `nipXX` packages, and whole non-NIP protocol families beside
 them: `marmot/` (MLS over Nostr, `mipXX`: event classes, tags and content codecs only),
 `contextvm/` (MCP over Nostr, `cepXX`), `concord/` (`cordXX`), `openagents/` (OpenAgents
-NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`, `drss/` (drss.io's reader), `routstr/` (Routstr's AI-node
+NIP-CAP/NIP-EXT, `nipXxx`), `buzz/`, `drss/` (drss.io's reader), `llamagarden/` (llama.garden's model torrents), `routstr/` (Routstr's AI-node
 announcements). A new protocol over Nostr belongs here as a package. Every event class stays
 here, so any client or relay parses and stores every kind typed; a protocol's heavy engine does
 not. The MLS bindings' engines and clients are their own libraries,
@@ -50,8 +50,8 @@ for a specific one (the `nostr-expert` skill shows how to map it to Quartz).
   source sets). Amethyst keeps the same file for `commons`/`commonsUI`: change both.
 
 Crypto primitives (SHA, HMAC, HKDF, AES, ChaCha20, X25519, Ed25519, secure random) come from
-crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp and libschnorr256k1-kotlin are
-released on Nostr + Blossom: the Magpie settings plugin (`settings.gradle.kts`) resolves their
+crypto-kmp (`libs.crypto`, `com.vitorpamplona.crypto.*`). crypto-kmp, libschnorr256k1-kotlin and
+negentropy-kmp are released on Nostr + Blossom: the Magpie settings plugin (`settings.gradle.kts`) resolves their
 groups, and `gradle/magpie.lock` pins their release key and files. Commit the lock's changes with a
 version bump; a lock failure means a key or a release changed, so ask before editing it. secp256k1
 is libsecp256k1 through ACINQ's secp256k1-kmp (`Secp256k1Instance`, everything secret) and the
