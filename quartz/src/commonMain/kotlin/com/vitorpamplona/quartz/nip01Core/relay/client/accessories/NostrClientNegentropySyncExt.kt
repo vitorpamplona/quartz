@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.RelayDisconnect
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.newSubId
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
@@ -359,6 +360,7 @@ suspend fun INostrClient.negentropySync(
                     window = next.window,
                     reason = NegentropySyncException.Reason.UNAVAILABLE,
                     detail = "the relay still holds older events after ${cursor.passes} reconcile passes",
+                    failure = NegentropySyncException.Failure.NOT_CONVERGING,
                 )
             }
             cursor.advance(next)
@@ -795,6 +797,7 @@ internal fun downloadsGaveUp(
     window = filter,
     reason = NegentropySyncException.Reason.UNAVAILABLE,
     detail = "by-id downloads kept failing (DownloadPace gave up: rounds in a row dropped or went silent)",
+    failure = NegentropySyncException.Failure.DOWNLOADS_FAILED,
 )
 
 /**
@@ -1068,6 +1071,7 @@ internal suspend fun reconcileWindows(
                                     window = window,
                                     reason = NegentropySyncException.Reason.UNAVAILABLE,
                                     detail = "created_at window split exceeded $MAX_WINDOWS windows without converging; the relay likely rejects negentropy with an overflow-looking error",
+                                    failure = NegentropySyncException.Failure.NOT_CONVERGING,
                                 )
                             }
                             splitInto(window, lo, hi)
@@ -1079,6 +1083,9 @@ internal suspend fun reconcileWindows(
                                 window = window,
                                 reason = NegentropySyncException.Reason.UNAVAILABLE,
                                 detail = outcome.detail,
+                                failure = outcome.failure,
+                                disconnect = outcome.disconnect,
+                                rounds = outcome.rounds,
                             )
                     }
                 }
@@ -1100,9 +1107,14 @@ private sealed interface ReconcileOutcome {
         val cap: Long?,
     ) : ReconcileOutcome
 
-    /** Reconciliation could not complete; [detail] says why. */
+    /** Reconciliation could not complete; [detail] says why, [failure] says it typed. */
     class Failed(
         val detail: String,
+        val failure: NegentropySyncException.Failure,
+        /** The socket's end, read when it was reported, so a reconnect since cannot replace it. */
+        val disconnect: RelayDisconnect? = null,
+        /** NEG-MSG rounds this window completed before it stopped. */
+        val rounds: Int = 0,
     ) : ReconcileOutcome
 }
 
@@ -1385,7 +1397,7 @@ private suspend fun INostrClient.reconcileStreaming(
                         clock.bump()
                         if (msg.subId == subId) {
                             sawNegFrame = true
-                            incoming.trySend(NegFrame.Err(msg.reason, msg.statedCap))
+                            incoming.trySend(NegFrame.Err(msg.reason, NegentropySyncException.Failure.REFUSED, msg.statedCap))
                         }
                     }
 
@@ -1393,7 +1405,7 @@ private suspend fun INostrClient.reconcileStreaming(
                         // A CLOSED addressed to our negentropy subscription is a
                         // terminal rejection of the NEG-OPEN (some relays answer a
                         // refused negentropy session this way instead of NEG-ERR).
-                        if (msg.subId == subId) incoming.trySend(NegFrame.Err("closed: ${msg.message}"))
+                        if (msg.subId == subId) incoming.trySend(NegFrame.Err("closed: ${msg.message}", NegentropySyncException.Failure.REFUSED))
 
                     is NoticeMessage ->
                         // NIP-77 says a relay SHOULD reject with NEG-ERR, but relays
@@ -1406,7 +1418,7 @@ private suspend fun INostrClient.reconcileStreaming(
                         // answer to our NEG-OPEN. Surface it as terminal so the caller
                         // fails over (paging) instead of hanging until the socket drops.
                         if (!sawNegFrame && isNegentropyRejectionNotice(msg.message)) {
-                            incoming.trySend(NegFrame.Err("notice: ${msg.message}"))
+                            incoming.trySend(NegFrame.Err("notice: ${msg.message}", NegentropySyncException.Failure.REFUSED))
                         }
 
                     else ->
@@ -1417,7 +1429,10 @@ private suspend fun INostrClient.reconcileStreaming(
             }
 
             override fun onDisconnected(relay: IRelayClient) {
-                if (relay.url == targetUrl) incoming.trySend(NegFrame.Err("closed: relay disconnected"))
+                // The end is read here, as it is reported: a reconnect may replace it before the driver runs.
+                if (relay.url == targetUrl) {
+                    incoming.trySend(NegFrame.Err("closed: relay disconnected", NegentropySyncException.Failure.DISCONNECTED, disconnect = relay.lastDisconnect))
+                }
             }
         }
 
@@ -1428,13 +1443,21 @@ private suspend fun INostrClient.reconcileStreaming(
         // NEG-OPEN is never resent, so we must connect and wait until the relay is
         // ready before sending it. The connect itself keeps a finite bound even when
         // the watchdog is disabled, so an unreachable relay can't hang here forever.
+        val dialedAtMillis = TimeUtils.nowMillis()
         relayClient.connect()
         val connectBound = if (idleTimeoutMs > 0) idleTimeoutMs else DEFAULT_CONNECT_TIMEOUT_MS
         val connected =
             withTimeoutOrNull(connectBound) {
                 connectedRelaysFlow().first { targetUrl in it }
             }
-        if (connected == null) return ReconcileOutcome.Failed("could not connect within ${connectBound}ms")
+        if (connected == null) {
+            return ReconcileOutcome.Failed(
+                "could not connect within ${connectBound}ms",
+                NegentropySyncException.Failure.CONNECT_TIMEOUT,
+                relayClient.lastDisconnect?.takeIf { it.atMillis >= dialedAtMillis },
+            )
+        }
+        var rounds = 0
 
         relayClient.sendIfConnected(session.open())
 
@@ -1445,23 +1468,22 @@ private suspend fun INostrClient.reconcileStreaming(
             // an Err frame, so a dead socket ends this promptly regardless.
             val frame =
                 incoming.receiveWithinIdle(clock, idleTimeoutMs)
-                    ?: return ReconcileOutcome.Failed(
-                        if (idleTimeoutMs > 0) {
-                            "relay went silent for ${idleTimeoutMs}ms mid-reconcile"
-                        } else {
-                            "connection closed before reconcile completed"
-                        },
-                    )
+                    ?: return if (idleTimeoutMs > 0) {
+                        ReconcileOutcome.Failed("relay went silent for ${idleTimeoutMs}ms mid-reconcile", NegentropySyncException.Failure.SILENT, rounds = rounds)
+                    } else {
+                        ReconcileOutcome.Failed("connection closed before reconcile completed", NegentropySyncException.Failure.DISCONNECTED, relayClient.lastDisconnect, rounds)
+                    }
 
             when (frame) {
                 is NegFrame.Err ->
                     return if (isOverflow(frame.reason)) {
                         ReconcileOutcome.Overflow(frame.cap)
                     } else {
-                        ReconcileOutcome.Failed(frame.reason)
+                        ReconcileOutcome.Failed(frame.reason, frame.failure, frame.disconnect, rounds)
                     }
 
                 is NegFrame.Msg -> {
+                    rounds++
                     val result = session.processMessage(frame.payload)
                     val needIds = result.needIds
                     if (needIds.isNotEmpty()) {
@@ -1524,8 +1546,11 @@ private sealed interface NegFrame {
 
     class Err(
         val reason: String,
+        val failure: NegentropySyncException.Failure,
         // The relay's own max_sync_events, when the refusal stated one.
         val cap: Long? = null,
+        // How the socket ended, for a disconnect.
+        val disconnect: RelayDisconnect? = null,
     ) : NegFrame
 }
 
