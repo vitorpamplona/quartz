@@ -75,15 +75,33 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * [StoreQueryContext] around each store call so observer-relative stores
  * can read the connection's NIP-42 identity.
  *
+ * A REQ's live events never precede its EOSE. Its index entry is registered before the
+ * replay starts, so an event accepted mid-replay is not missed, but the event is HELD and
+ * forwarded right after EOSE: everything before EOSE is the stored answer the filters'
+ * `limit` bounds, as NIP-01 defines it, and a ranked NIP-50 page is not interleaved with
+ * whatever the relay happened to accept while ranking it.
+ *
  * @property store The underlying persistent storage for events.
  * @property ingest The writer pipeline, quartz's group-commit [IngestQueue] unless the
  *  store brings its own. Accepted events fan out via the index; rejected events do not.
+ * @property maxHeldBeforeEose How many live events one REQ may hold while its replay runs.
+ *  Past it the held events are forwarded at once and later ones as they arrive, ahead of
+ *  EOSE: a slow replay under heavy ingest then costs the REQ its clean `limit`, never an
+ *  event and never unbounded memory. 1,000 with the two-argument constructor; 0 holds
+ *  nothing, every live event forwarding as it arrives, as before the hold existed.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class LiveEventStore(
     private val store: IEventStore,
     private val ingest: EventIngest,
+    val maxHeldBeforeEose: Int,
 ) : LiveSubscriptionBackend {
+    constructor(store: IEventStore, ingest: EventIngest) : this(store, ingest, DEFAULT_MAX_HELD_BEFORE_EOSE)
+
+    init {
+        require(maxHeldBeforeEose >= 0) { "maxHeldBeforeEose must not be negative: $maxHeldBeforeEose" }
+    }
+
     /**
      * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
      * the thread that accepted the event, as before executors existed.
@@ -153,10 +171,51 @@ class LiveEventStore(
         @Volatile
         var active = true
 
-        fun offer(
-            event: Event,
-            body: SharedBody,
-        ) {
+        /** Guards [gate] and [held]: claimed by the delivery thread and, without an executor, the replay's. */
+        private val holdLock = SpinLock()
+
+        /**
+         * [HOLDING] until the replay's EOSE (or the cap) asks to forward, then [FORWARDING], then
+         * [OPEN], and never back. Written under [holdLock]; volatile so [offer] reads [OPEN] without
+         * it, which is every live delivery after EOSE. [OPEN] from the start when nothing may be held.
+         */
+        @Volatile
+        private var gate = if (maxHeldBeforeEose == 0) OPEN else HOLDING
+
+        /** Live events accepted while the gate was not [OPEN], in acceptance order; allocated on the first. */
+        private var held: ArrayList<SharedBody>? = null
+
+        /**
+         * A matching live event: held while the replay runs (see [openGate]), forwarded otherwise.
+         * Not deduped against the replay when held: the replay claims every stored row first, so
+         * an event in both is sent BEFORE EOSE, as the stored answer, and its held copy is dropped.
+         */
+        fun offer(body: SharedBody) {
+            // The live tail's path: the gate opens once and stays open, and it opens only after
+            // everything held has gone out, so nothing held can be overtaken from here.
+            if (gate == OPEN) return forward(body)
+            var heldCount = 0
+            val heldIt =
+                holdLock.locked {
+                    if (gate == OPEN) {
+                        false
+                    } else {
+                        val list = held ?: ArrayList<SharedBody>().also { held = it }
+                        list.add(body)
+                        if (gate == HOLDING && list.size > maxHeldBeforeEose) heldCount = list.size
+                        true
+                    }
+                }
+            if (!heldIt) {
+                forward(body)
+            } else if (heldCount > 0) {
+                Log.d(TAG) { "a REQ held $heldCount live events before its EOSE; forwarding them ahead of it" }
+                openGate()
+            }
+        }
+
+        private fun forward(body: SharedBody) {
+            val event = body.event
             val dedupe = seen
             if (dedupe != null) {
                 if (!dedupe.firstSighting(event.id)) return
@@ -164,6 +223,56 @@ class LiveEventStore(
             }
             listener.onLive(event, body.get())
         }
+
+        /**
+         * Forwards what [offer] held, in order, then lets live events straight through. Runs where
+         * live delivery runs: on the executor, queued behind every fan-out task already there, or
+         * on the replay's thread for a connection without one. One caller drains; a second (the cap
+         * and EOSE racing) returns at once, and whatever arrives meanwhile joins the drain, so no
+         * event can overtake one held before it. Before [settle], so held events still dedupe
+         * against the whole replay.
+         */
+        fun openGate() {
+            holdLock.locked {
+                if (gate != HOLDING) return
+                gate = FORWARDING
+            }
+            while (true) {
+                val batch =
+                    holdLock.locked {
+                        val list = held
+                        held = null
+                        if (list == null) gate = OPEN
+                        list
+                    } ?: return
+                for (body in batch) {
+                    if (!active) continue
+                    try {
+                        forward(body)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "a live listener threw", e)
+                    }
+                }
+            }
+        }
+
+        /**
+         * Opens the gate at once when the replay ended with nothing held, so the common REQ costs
+         * no task on its executor; false when something is held and [openGate] must forward it.
+         * Safe off the executor: a fan-out task still queued there finds the gate open and
+         * forwards straight away, with nothing held ahead of it to overtake.
+         */
+        fun openIfNothingHeld(): Boolean =
+            holdLock.locked {
+                when {
+                    gate != HOLDING -> true
+                    held == null -> {
+                        gate = OPEN
+                        true
+                    }
+                    else -> false
+                }
+            }
 
         fun settle(keep: HashSet<String>?) {
             if (seen?.settle(keep) == true) seen = null
@@ -198,6 +307,11 @@ class LiveEventStore(
          * SharedFlow-based implementation closed with `onSubscription`), and [SeenIds]
          * bridges the two paths: each claims ids there and only the first claim delivers,
          * and after EOSE [settle] drops the set so every live event forwards.
+         *
+         * What the live path accepted meanwhile is held until [onEose] has run, then
+         * [openGate] forwards it. Before that, a REQ for `limit:1` could get every event
+         * accepted during a slow replay ahead of its one stored row and its EOSE, and a
+         * client cannot tell those frames from the stored answer.
          */
         private suspend inline fun replayWith(
             onEose: () -> Unit,
@@ -210,6 +324,10 @@ class LiveEventStore(
                 val seen = seen ?: throw IllegalStateException("a subscription replays once")
                 withCallerIdentity(ctx) { rows(seen) }
                 onEose()
+                if (!openIfNothingHeld()) {
+                    val executor = partition.executor
+                    if (executor == null || !post(executor) { openGate() }) openGate()
+                }
                 settle(this)
             } catch (e: Throwable) {
                 cancel()
@@ -227,7 +345,7 @@ class LiveEventStore(
      * a thread that loses the race drops its copy and takes the winner's.
      */
     private class SharedBody(
-        private val event: Event,
+        val event: Event,
     ) {
         private val json = AtomicReference<String?>(null)
 
@@ -573,7 +691,7 @@ class LiveEventStore(
             if (sub.active && sub.filters.any { it.match(event) }) {
                 // One failing listener must not cost the rest of the fan-out the event.
                 try {
-                    sub.offer(event, body)
+                    sub.offer(body)
                 } catch (e: Exception) {
                     Log.w(TAG, "a live listener threw", e)
                 }
@@ -875,6 +993,18 @@ class LiveEventStore(
         const val SNAPSHOT_TTL_SECONDS = 30L
 
         const val TAG = "LiveEventStore"
+
+        /** [LiveEventStore.maxHeldBeforeEose] for the two-argument constructor. */
+        const val DEFAULT_MAX_HELD_BEFORE_EOSE = 1_000
+
+        /** [LiveSub]'s gate: live events are held for after EOSE. */
+        const val HOLDING = 0
+
+        /** Draining what was held; events arriving now still queue behind it. */
+        const val FORWARDING = 1
+
+        /** Live events go straight to the listener. */
+        const val OPEN = 2
 
         /**
          * A relay has one fan-out executor per delivery thread; this many means executors are
