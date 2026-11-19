@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -82,6 +83,29 @@ class GroupPutUserEvent(
             previous(previousEvents)
             initializer()
         }
+
+        /**
+         * The put-user that sets [pubkey]'s roles in [groupId], for whichever relay hosts it.
+         *
+         * NIP-29 relays read the roles inside the `p` tag (`["p", pubkey, role, ...]`). Buzz reads
+         * `p[2]` first and the top-level `role` tag only as a fallback (buzz `d0dee1cb5`,
+         * `put_user_targets` in `side_effects.rs`), refusing the whole event for a role outside
+         * owner/admin/member/guest/bot. So with a [buzzRole] (see [com.vitorpamplona.quartz.buzz.workspace.buzzRoleFor]) the `p` tag stays bare
+         * and the role travels in the `role` tag alone, the shape Buzz's own SDK sends
+         * (`build_add_member`), which old and new Buzz relays read the same way.
+         */
+        fun buildRoleChange(
+            groupId: String,
+            pubkey: HexKey,
+            roles: List<String>,
+            buzzRole: String?,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<GroupPutUserEvent> =
+            if (buzzRole != null) {
+                build(groupId, listOf(pubkey to emptyList()), buzzRole = buzzRole, createdAt = createdAt)
+            } else {
+                build(groupId, listOf(pubkey to roles), createdAt = createdAt)
+            }
     }
 }
 

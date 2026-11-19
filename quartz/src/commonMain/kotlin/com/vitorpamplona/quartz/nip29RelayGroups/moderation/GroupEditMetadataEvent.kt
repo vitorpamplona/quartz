@@ -21,10 +21,14 @@
 package com.vitorpamplona.quartz.nip29RelayGroups.moderation
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.buzz.workspace.BUZZ_VISIBILITY_OPEN
+import com.vitorpamplona.quartz.buzz.workspace.BUZZ_VISIBILITY_PRIVATE
+import com.vitorpamplona.quartz.buzz.workspace.BuzzChannelLabels
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.geohash.GeoHashTag
 import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohashes
@@ -124,6 +128,55 @@ class GroupEditMetadataEvent(
             previous(previousEvents)
             extraTags.forEach { if (it.isNotEmpty() && it[0] !in GroupMetadataEvent.EDIT_MANAGED_TAG_NAMES) add(it) }
             initializer()
+        }
+
+        /**
+         * A metadata edit of [groupId] for whichever relay hosts it, starting from its [currentMetadata].
+         *
+         * On a Buzz relay ([isBuzz]) visibility rides a `visibility` ("open"/"private") tag, since the
+         * relay does not read NIP-29's `private` flag; [hashtags] are dropped, because there `t` tags
+         * are channel labels and the 39000's include the channel type, which the relay refuses as a
+         * label; the labels change only through [buzzLabels] (null: unchanged; empty: cleared),
+         * validated by [BuzzChannelLabels.editTags], which throws [IllegalArgumentException] on a set
+         * the relay would refuse; and the 39000's tags this edit doesn't manage are not echoed, since
+         * Buzz stamps relay-internal ones (`join_role`, `auto_join`, `P`, ...) a channel admin may not
+         * set. A NIP-29 relay gets [currentMetadata]'s unmanaged tags verbatim
+         * ([GroupMetadataEvent.unmanagedTags]), so an edit doesn't erase them.
+         */
+        fun buildEdit(
+            groupId: String,
+            currentMetadata: GroupMetadataEvent?,
+            isBuzz: Boolean,
+            name: String?,
+            about: String?,
+            picture: String?,
+            banner: String?,
+            status: Set<GroupMetadataEvent.GroupStatus>,
+            hashtags: List<String>,
+            geohashes: List<String>,
+            parent: String?,
+            children: List<String>,
+            buzzLabels: List<String>?,
+            createdAt: Long = TimeUtils.now(),
+        ): EventTemplate<GroupEditMetadataEvent> {
+            val labelTags = if (isBuzz) BuzzChannelLabels.editTags(buzzLabels) else emptyList()
+            return build(
+                groupId,
+                name = name,
+                about = about,
+                picture = picture,
+                banner = banner,
+                status = status,
+                hashtags = if (isBuzz) emptyList() else hashtags,
+                geohashes = geohashes,
+                parent = parent,
+                children = children,
+                visibility = if (isBuzz) (if (GroupMetadataEvent.GroupStatus.PRIVATE in status) BUZZ_VISIBILITY_PRIVATE else BUZZ_VISIBILITY_OPEN) else null,
+                extraTags = if (isBuzz) emptyList() else currentMetadata?.unmanagedTags() ?: emptyList(),
+                createdAt = createdAt,
+            ) {
+                labelTags.forEach { add(it) }
+            }
         }
     }
 }

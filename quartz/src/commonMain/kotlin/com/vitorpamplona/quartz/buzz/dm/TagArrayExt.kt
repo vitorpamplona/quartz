@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.buzz.dm
 
+import com.vitorpamplona.quartz.buzz.dm.tags.DmHistoryTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.DTag
@@ -31,6 +32,9 @@ fun TagArray.dmParticipants() = mapNotNull(PTag::parseKey)
 
 /** The DM channel id - the first `h` tag. */
 fun TagArray.dmChannelId() = firstNotNullOfOrNull(GroupIdTag::parse)
+
+/** What a DM add asks the relay to do with the DM's history - the `history` tag ([DmHistoryTag]). */
+fun TagArray.dmHistory() = firstNotNullOfOrNull(DmHistoryTag::parse)
 
 /** The DM id - the `d` tag value (empty string when absent). */
 fun TagArray.dmId() = firstTagValue(DTag.TAG_NAME) ?: ""

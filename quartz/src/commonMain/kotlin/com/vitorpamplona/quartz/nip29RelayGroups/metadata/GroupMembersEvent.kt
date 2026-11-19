@@ -55,6 +55,9 @@ class GroupMembersEvent(
 
     fun members(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
 
+    /** Buzz only: the members here as read-only guests, `p` tags whose role (fourth value) is `guest`. */
+    fun buzzGuests(): Set<HexKey> = tags.buzzGuests()
+
     /** How many members [members] would list, without building the list: a roster can be thousands long. */
     fun memberCount(): Int {
         var count = 0
