@@ -22,19 +22,21 @@ dependencies {
 
 Since 2.19.0, releases go to Nostr + Blossom through [Magpie](https://github.com/vitorpamplona/magpie)
 instead of Maven Central (2.18.0 and older are on Central), and so do
-[crypto-kmp](https://github.com/vitorpamplona/crypto-kmp) and
-[libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin), which Quartz
-depends on. Add Magpie's settings plugin: it serves all three, trusting only the key
+[crypto-kmp](https://github.com/vitorpamplona/crypto-kmp),
+[libschnorr256k1-kotlin](https://github.com/vitorpamplona/libschnorr256k1-kotlin) and, since
+2.19.1, [negentropy-kmp](https://github.com/vitorpamplona/negentropy-kmp), which Quartz depends
+on. Add Magpie's settings plugin: it serves all four, trusting only the key
 `releases@vitorpamplona.com` names:
 
 ```kotlin settings.gradle.kts
 plugins {
-    id("com.vitorpamplona.magpie") version "0.2.0"
+    id("com.vitorpamplona.magpie") version "0.2.1"
 }
 
 magpie {
     group("com.vitorpamplona.crypto")
     group("com.vitorpamplona.schnorr256k1")
+    group("com.vitorpamplona.negentropy")
     group("com.vitorpamplona.quartz")
 }
 ```
