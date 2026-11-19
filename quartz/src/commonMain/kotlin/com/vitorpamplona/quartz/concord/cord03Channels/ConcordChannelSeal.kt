@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.concord.cord03Channels
 
 import com.vitorpamplona.quartz.concord.cord04Roles.ConcordJson
+import com.vitorpamplona.quartz.concord.cord04Roles.ConcordStrictJson
 import com.vitorpamplona.quartz.concord.cord04Roles.RankedRosterContent
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.CanonicalDecimal
 import com.vitorpamplona.quartz.nip44Encryption.Nip44
@@ -60,6 +61,9 @@ data class OpenedChannelSeal(
 object ConcordChannelSeal {
     private const val TAG = "ConcordChannelSeal"
 
+    /** A JSON object as `JSON.parse` reads it (Armada `readChannelContent`, `openSealedChannel`): strict, a repeated key keeping its last value. */
+    private fun jsonObject(text: String): JsonObject? = ConcordStrictJson.parse(text, allowLoneSurrogates = true)?.value as? JsonObject
+
     /**
      * The sealed form of a Channel edition's [content], or null when it is the plain form or
      * breaks the sealed one. [prevHex] is the edition's `ep` (lowercase hex), null on a first edition.
@@ -68,7 +72,7 @@ object ConcordChannelSeal {
         content: String,
         prevHex: String?,
     ): SealedChannelMeta? {
-        val c = RankedRosterContent.parseObject(content) ?: return null
+        val c = jsonObject(content) ?: return null
         val deletedEl = c["deleted"]
         if (deletedEl != null && (deletedEl !is JsonPrimitive || deletedEl.isString || deletedEl.booleanOrNull == null)) return null
         if ((c["private"] as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull == true } != true) return null
@@ -94,7 +98,7 @@ object ConcordChannelSeal {
                 Log.d(TAG) { "sealed channel metadata did not open: ${e.message}" }
                 return null
             }
-        val obj = RankedRosterContent.parseObject(plain) ?: return null
+        val obj = jsonObject(plain) ?: return null
         val prev =
             (obj["prev"] as? JsonPrimitive)
                 ?.takeIf { it.isString }

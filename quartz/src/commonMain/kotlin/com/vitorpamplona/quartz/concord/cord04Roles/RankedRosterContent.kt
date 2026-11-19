@@ -89,12 +89,12 @@ object RankedRosterContent {
 
     fun isHex64(s: String?): Boolean = s != null && HEX64.matches(s)
 
-    internal fun parseObject(content: String): JsonObject? =
-        try {
-            ConcordJson.instance.parseToJsonElement(content) as? JsonObject
-        } catch (_: Exception) {
-            null
-        }
+    /**
+     * Roles v2 content as serde reads it ([ConcordStrictJson]): strict JSON, an object that repeats
+     * no top-level key and holds no lone surrogate. Null otherwise. Legacy content keeps
+     * [ConcordJson]'s lenient decoder.
+     */
+    internal fun parseObject(content: String): JsonObject? = ConcordStrictJson.parseObject(content)?.value as? JsonObject
 
     private fun isNone(e: JsonElement?): Boolean = e == null || e is JsonNull
 
@@ -130,6 +130,8 @@ object RankedRosterContent {
     ): Long? {
         val p = e as? JsonPrimitive ?: return null
         if (p.isString || p is JsonNull) return null
+        // An integer literal only: serde's u32 refuses `-0`, `1.0` and `1e0` alike.
+        if (!isDigits(p.content)) return null
         val v = p.content.toLongOrNull() ?: return null
         return v.takeIf { it in 0..max }
     }
@@ -268,13 +270,16 @@ object RankedRosterContent {
 
     /** A Tenure; entries with a malformed rank key, and malformed heads, are dropped, then capped. */
     fun parseTenure(content: String): Tenure? {
-        val c = parseObject(content) ?: return null
+        val parsed = ConcordStrictJson.parseObject(content) ?: return null
+        val c = parsed.value as JsonObject
         val member = stringOf(c["member"])?.lowercase() ?: return null
         val rawEl = c["sealed"]
         val raw = if (rawEl == null) JsonArray(emptyList()) else rawEl as? JsonArray ?: return null
         val sealed = ArrayList<TenureEntry>()
         for (item in raw) {
             val e = item as? JsonObject ?: return null
+            // An entry is a serde struct too: a repeated field refuses the Tenure.
+            if (parsed.hadRepeatedKeys(e)) return null
             val rank = stringOf(e["rank"]) ?: return null
             val permissions = parsePermissionBits(e["permissions"]) ?: return null
             val headsEl = e["heads"]
@@ -291,9 +296,11 @@ object RankedRosterContent {
 
     /** An overwrite (CORD-04 §8), its bits masked to the overwritable set as it parses. */
     fun parseOverwrite(content: String): ChannelOverwrite? {
-        val c = parseObject(content) ?: return null
+        val parsed = ConcordStrictJson.parseObject(content) ?: return null
+        val c = parsed.value as JsonObject
         val scope = stringOf(c["scope"])?.takeIf { isHex64(it) }?.lowercase() ?: return null
         val t = c["target"] as? JsonObject ?: return null
+        if (parsed.hadRepeatedKeys(t)) return null
         val kind = stringOf(t["kind"])
         val id = t["id"]
         val targetId: String?
