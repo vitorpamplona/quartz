@@ -30,7 +30,7 @@ on. Add Magpie's settings plugin: it serves all four, trusting only the key
 
 ```kotlin settings.gradle.kts
 plugins {
-    id("com.vitorpamplona.magpie") version "0.2.0"
+    id("com.vitorpamplona.magpie") version "0.2.1"
 }
 
 magpie {
