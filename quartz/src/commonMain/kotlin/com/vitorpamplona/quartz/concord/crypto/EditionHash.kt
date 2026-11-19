@@ -53,6 +53,14 @@ object EditionHash {
         version: Long,
         prevHash: ByteArray?,
         content: ByteArray,
+    ): ByteArray = sha256(signingBytes(entityId, version, prevHash, content))
+
+    /** An edition's `signing_bytes`: the length-prefixed, domain-separated preimage [hash] digests. */
+    private fun signingBytes(
+        entityId: ByteArray,
+        version: Long,
+        prevHash: ByteArray?,
+        content: ByteArray,
     ): ByteArray {
         val label = DOMAIN.encodeToByteArray()
         val prev = prevHash ?: ZERO_32
@@ -75,7 +83,24 @@ object EditionHash {
         pos = writeBe64(preimage, pos, content.size.toLong())
         content.copyInto(preimage, pos)
 
-        return sha256(preimage)
+        return preimage
+    }
+
+    /**
+     * A **marked** edition's hash (CORD-04 §1, `["eh","2"]`): `SHA-256(signing_bytes ‖
+     * utf8("concord/edition-signer") ‖ signer[32])`, the label raw with no length prefix, where
+     * `signing_bytes` is the unmarked [hash]'s preimage. The signer is in the hash, so a copy
+     * re-signed under another key is another edition that nothing built on the original links to.
+     */
+    fun markedHash(
+        entityId: ByteArray,
+        version: Long,
+        prevHash: ByteArray?,
+        content: ByteArray,
+        signer: ByteArray,
+    ): ByteArray {
+        require(signer.size == 32) { "signer must be 32 bytes, was ${signer.size}" }
+        return sha256(signingBytes(entityId, version, prevHash, content) + ConcordLabels.EDITION_SIGNER.encodeToByteArray() + signer)
     }
 
     /** Convenience overload that hashes the UTF-8 bytes of a [content] string. */

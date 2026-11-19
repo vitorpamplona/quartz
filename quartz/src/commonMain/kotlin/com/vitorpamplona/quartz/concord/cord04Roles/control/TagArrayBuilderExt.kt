@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.concord.cord04Roles.control
 
 import com.vitorpamplona.quartz.concord.cord04Roles.AuthorityCitation
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEntityKind
+import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EbTag
+import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EhTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EidTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EpTag
 import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.EvTag
@@ -38,3 +40,12 @@ fun TagArrayBuilder<ControlEditionEvent>.ev(version: Long) = addUnique(EvTag.ass
 fun TagArrayBuilder<ControlEditionEvent>.ep(prevHash: ByteArray) = addUnique(EpTag.assemble(prevHash))
 
 fun TagArrayBuilder<ControlEditionEvent>.vac(citation: AuthorityCitation) = addUnique(VacTag.assemble(citation))
+
+/**
+ * Marks the edition for the Community whose `edition_binding` is [binding] (CORD-04 §1): `eh`
+ * then `eb`, after every other machinery tag, as the spec orders them.
+ */
+fun TagArrayBuilder<ControlEditionEvent>.marked(binding: ByteArray) {
+    addUnique(EhTag.assemble())
+    addUnique(EbTag.assemble(binding))
+}

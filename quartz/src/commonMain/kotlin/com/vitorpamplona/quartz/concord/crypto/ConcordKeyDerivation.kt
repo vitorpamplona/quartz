@@ -254,6 +254,74 @@ object ConcordKeyDerivation {
         creatorXOnly: ByteArray,
     ): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.INVITE_LINKS, creatorXOnly))
 
+    // ---- Roles v2 coordinates (CORD-04 §2, §8, §9; CORD-03 §1) ------------------
+
+    /** The `@everyone` Role coordinate: `hkdf32(communityId, "concord/everyone" ‖ 0x00 ‖ ZERO32)`. */
+    fun everyoneCoordinate(communityId: ByteArray): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.EVERYONE, ByteArray(32)))
+
+    /** What a marked edition's `eb` names: `hkdf32(communityId, "concord/edition-binding" ‖ 0x00 ‖ ZERO32)`. */
+    fun editionBinding(communityId: ByteArray): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.EDITION_BINDING, ByteArray(32)))
+
+    /** A Channel's sync coordinate: `hkdf32(communityId, "concord/sync" ‖ 0x00 ‖ channel_id)`. */
+    fun syncCoordinate(
+        communityId: ByteArray,
+        channelId: ByteArray,
+    ): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.SYNC, channelId))
+
+    /** A restricted Channel's Writers ledger coordinate: `hkdf32(communityId, "concord/writers" ‖ 0x00 ‖ channel_id)`. */
+    fun writersCoordinate(
+        communityId: ByteArray,
+        channelId: ByteArray,
+    ): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.WRITERS, channelId))
+
+    /** A member's Tenure from [sealerXOnly]: `hkdf32(communityId, "concord/tenure" ‖ 0x00 ‖ sha256(member ‖ sealer))`. */
+    fun tenureCoordinate(
+        communityId: ByteArray,
+        memberXOnly: ByteArray,
+        sealerXOnly: ByteArray,
+    ): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.TENURE, sha256(memberXOnly + sealerXOnly)))
+
+    /**
+     * One overwrite's coordinate (CORD-04 §8): `hkdf32(communityId, "concord/acl" ‖ 0x00 ‖
+     * sha256(scope ‖ sha256(utf8(kind) ‖ target)))`, [kind] being `everyone`, `role` or `member` and
+     * [target] the `@everyone` coordinate, the role id or the member's x-only key.
+     */
+    fun aclCoordinate(
+        communityId: ByteArray,
+        scope: ByteArray,
+        kind: String,
+        target: ByteArray,
+    ): ByteArray = hkdf32(communityId, buildInfo(ConcordLabels.ACL, sha256(scope + sha256(kind.encodeToByteArray() + target))))
+
+    /** A restricted Channel's writer address and signer at [writerEpoch] (CORD-03 §1). */
+    fun channelWriterKey(
+        writerSecret: ByteArray,
+        channelId: ByteArray,
+        writerEpoch: Long,
+    ): GroupKey = groupKey(ConcordLabels.CHANNEL_WRITER, writerSecret, channelId, writerEpoch)
+
+    /** A Channel's access plane at the root epoch [rootEpoch], where its keys are delivered (CORD-03 §5). */
+    fun channelAccessKey(
+        communityRoot: ByteArray,
+        channelId: ByteArray,
+        rootEpoch: Long,
+    ): GroupKey = groupKey(ConcordLabels.CHANNEL_ACCESS, communityRoot, channelId, rootEpoch)
+
+    /** `sha256(utf8(label) ‖ channelId)`: the writer, certifier and history scopes (CORD-03 §1, §5). */
+    private fun channelScope(
+        label: String,
+        channelId: ByteArray,
+    ): ByteArray = sha256(label.encodeToByteArray() + channelId)
+
+    /** A restricted Channel's writer scope, `sha256("concord/writer-scope" ‖ channel_id)`. */
+    fun writerScope(channelId: ByteArray): ByteArray = channelScope(ConcordLabels.WRITER_SCOPE, channelId)
+
+    /** A restricted Channel's certifier scope, `sha256("concord/certifier-scope" ‖ channel_id)`. */
+    fun certifierScope(channelId: ByteArray): ByteArray = channelScope(ConcordLabels.CERTIFIER_SCOPE, channelId)
+
+    /** A Channel's history scope, `sha256("concord/history-scope" ‖ channel_id)`. */
+    fun historyScope(channelId: ByteArray): ByteArray = channelScope(ConcordLabels.HISTORY_SCOPE, channelId)
+
     // ---- CORD-05 invite bundle key --------------------------------------------
 
     /**

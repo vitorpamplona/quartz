@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip44Encryption.Nip44
+import com.vitorpamplona.quartz.nip59Giftwrap.rumors.RumorAssembler
 import kotlinx.coroutines.test.runTest
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -226,5 +227,45 @@ class ConcordChannelRekeyTest {
             assertTrue(ConcordChannelRekey.rotations(elsewhere, keysFor(1), channelHex).isEmpty())
             val atOurAddress = mapOf(ConcordChannelRekey.address(root, otherChannel, 1).let { it.publicKeyHex to it })
             assertTrue(ConcordChannelRekey.rotations(elsewhere, atOurAddress, channelHex).isEmpty())
+        }
+
+    // ---- CORD-06 §2: rotation extensions ------------------------------------------------------
+
+    /** An extension chunk at [index] of [total] delivering [newKey] to [recipients], off the same continuity point. */
+    private suspend fun extension(
+        newKey: ByteArray,
+        recipients: List<HexKey>,
+        index: Int,
+        total: Int,
+    ): Event {
+        val blobs = recipients.map { ConcordRekey.blobForSigner(admin, it.hexToByteArray(), channelId, 1, newKey) }
+        val tags = ConcordRekey.tags(channelId, 1, 0, ConcordChannelRekey.prevCommit(0, key0), index, total)
+        val rumor = RumorAssembler.assembleRumor<Event>(admin.pubKey, now, ConcordRekey.KIND, tags, ConcordRekey.encodeContent(blobs))
+        return ConcordStreamEnvelope.wrap(rumor, ConcordChannelRekey.address(root, channelId, 1), admin, encrypted = true, createdAt = now)
+    }
+
+    @Test
+    fun anExtensionChunkRescuesAMemberTheRotationLeftOut() =
+        runTest {
+            val key1 = ByteArray(32) { 0x31 }
+            val base = rotate(key0, 0, key1, listOf(alice.pubKey))
+            val ext = extension(key1, listOf(bob.pubKey), index = 2, total = 2)
+            val rotations = ConcordChannelRekey.rotations(base + ext, keysFor(1), channelHex)
+            assertEquals(1, rotations.size, "the extension joins the rotation it extends")
+            assertEquals(2, rotations.single().total)
+            assertTrue(rotations.single().complete)
+            val outcome = walk(base + ext, bob)
+            assertIs<ChannelRekeyOutcome.Adopted>(outcome)
+            assertContentEquals(key1, outcome.key)
+        }
+
+    @Test
+    fun aChunkHoldingOurBlobAdoptsBeforeTheSetIsCompleteButAMissingChunkRemovesNobody() =
+        runTest {
+            val key1 = ByteArray(32) { 0x32 }
+            // Chunk 3 of 3 only: bob is in it, alice isn't, and the set is incomplete.
+            val partial = listOf(extension(key1, listOf(bob.pubKey), index = 3, total = 3))
+            assertIs<ChannelRekeyOutcome.Adopted>(walk(partial, bob))
+            assertSame(ChannelRekeyOutcome.None, walk(partial, alice))
         }
 }

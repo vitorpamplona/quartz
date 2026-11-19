@@ -59,6 +59,9 @@ class DmAddMemberEvent(
     /** The member being added - the single `p` tag. */
     fun member() = tags.dmParticipants().firstOrNull()
 
+    /** What the add asks the relay to do with the DM's history - the `history` tag ([com.vitorpamplona.quartz.buzz.dm.tags.DmHistoryTag]), null when absent. */
+    fun history() = tags.dmHistory()
+
     companion object {
         const val KIND = 41011
 

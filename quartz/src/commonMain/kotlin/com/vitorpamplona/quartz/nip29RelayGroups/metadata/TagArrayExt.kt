@@ -20,12 +20,40 @@
  */
 package com.vitorpamplona.quartz.nip29RelayGroups.metadata
 
+import com.vitorpamplona.quartz.buzz.workspace.BUZZ_ROLE_GUEST
+import com.vitorpamplona.quartz.buzz.workspace.BUZZ_ROLE_MEMBER
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzChannelTypeTag
+import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzJoinRoleTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.SupportedKindsTag
 
 fun TagArray.buzzChannelType() = fastFirstNotNullOfOrNull(BuzzChannelTypeTag::parse)
+
+/**
+ * Buzz only: the role a person gets on joining, from the 39000's `join_role` ([BuzzJoinRoleTag]):
+ * [BUZZ_ROLE_MEMBER] when absent (relays from before announce channels), and any value other than
+ * `member` reads as [BUZZ_ROLE_GUEST], as the relay's own `ChannelJoinRole::parse_fail_closed` does,
+ * so it never widens who may write.
+ */
+fun TagArray.buzzJoinRole(): String {
+    val value = fastFirstNotNullOfOrNull(BuzzJoinRoleTag::parse) ?: return BUZZ_ROLE_MEMBER
+    return if (value == BUZZ_ROLE_MEMBER) BUZZ_ROLE_MEMBER else BUZZ_ROLE_GUEST
+}
+
+/** Buzz only: the guests on a 39002, the `p` tags whose fourth value (the role) is [BUZZ_ROLE_GUEST]. */
+fun TagArray.buzzGuests(): Set<HexKey> {
+    var guests: MutableSet<HexKey>? = null
+    fastForEach { tag ->
+        if (tag.size > 3 && tag[0] == PTag.TAG_NAME && tag[3] == BUZZ_ROLE_GUEST) {
+            (guests ?: HashSet<HexKey>().also { guests = it }).add(tag[1])
+        }
+    }
+    return guests ?: emptySet()
+}
 
 /** The first `supported_kinds` tag's kinds; null when there is none. */
 fun TagArray.supportedKinds() = fastFirstNotNullOfOrNull(SupportedKindsTag::parse)

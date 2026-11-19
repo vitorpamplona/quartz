@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip29RelayGroups.metadata
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.buzz.workspace.BuzzChannelLabels
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -33,6 +34,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.geohash.geohashes
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzChannelTypeTag
+import com.vitorpamplona.quartz.nip29RelayGroups.tags.BuzzJoinRoleTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ChildTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.ParentTag
 import com.vitorpamplona.quartz.nip29RelayGroups.tags.SupportedKindsTag
@@ -124,6 +126,15 @@ class GroupMetadataEvent(
      * viewer's consent before it shows up on Messages.
      */
     fun isBuzzDmChannel() = buzzChannelType() == BUZZ_CHANNEL_TYPE_DM
+
+    /**
+     * Buzz only: the role a person gets on joining ([BuzzJoinRoleTag]), `member` or `guest`, read
+     * fail-closed ([buzzJoinRole]). An open channel whose joiners become guests is an announce channel.
+     */
+    fun buzzJoinRole(): String = tags.buzzJoinRole()
+
+    /** Buzz only: the channel's labels (NIP-CL), every `t` value but the channel type ([BuzzChannelLabels]). */
+    fun buzzChannelLabels(): List<String> = BuzzChannelLabels.of(this)
 
     /** Only members can read. Presence of the `private` flag; absent = public read. */
     fun isPrivate() = tags.hasTagName("private")

@@ -147,6 +147,7 @@ object ConcordRekey {
     fun chunkBlobs(
         blobs: List<RekeyBlob>,
         envelopeBytes: Int,
+        perEvent: Int,
     ): List<List<RekeyBlob>> {
         val budget = REKEY_RUMOR_MAX_BYTES - envelopeBytes
         val chunks = ArrayList<List<RekeyBlob>>()
@@ -154,7 +155,7 @@ object ConcordRekey {
         var used = 2 // the content's own "[]"
         for (blob in blobs) {
             val cost = escapedJsonLength(blob)
-            if (current.isNotEmpty() && (current.size >= MAX_BLOBS_PER_CHUNK || used + 1 + cost > budget)) {
+            if (current.isNotEmpty() && (current.size >= perEvent || used + 1 + cost > budget)) {
                 chunks.add(current)
                 current = ArrayList()
                 used = 2
@@ -165,6 +166,12 @@ object ConcordRekey {
         if (current.isNotEmpty() || chunks.isEmpty()) chunks.add(current)
         return chunks
     }
+
+    @Deprecated("Pass the per-event cap: MAX_CHANNEL_BLOBS_PER_EVENT or MAX_BASE_BLOBS_PER_EVENT. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    fun chunkBlobs(
+        blobs: List<RekeyBlob>,
+        envelopeBytes: Int,
+    ): List<List<RekeyBlob>> = chunkBlobs(blobs, envelopeBytes, MAX_CHANNEL_BLOBS_PER_EVENT)
 
     /** A blob's byte length inside the rumor's JSON-escaped `content` string (without outer quotes). */
     private fun escapedJsonLength(blob: RekeyBlob): Int {
@@ -187,18 +194,34 @@ object ConcordRekey {
 
     const val KIND: Int = 3303
 
-    /** CORD-06 §1: a single kind-3303 event carries at most this many per-recipient blobs. */
+    /**
+     * CORD-06 §1: the most per-recipient blobs a **reader** accepts in one kind-3303 event. A writer
+     * mints fewer ([MAX_CHANNEL_BLOBS_PER_EVENT], [MAX_BASE_BLOBS_PER_EVENT]), so every event fits a
+     * 64 KB relay limit.
+     */
     const val MAX_BLOBS_PER_CHUNK = 120
 
+    /** CORD-06 §1: the most blobs a writer puts in one Channel rotation event (72-byte blobs). */
+    const val MAX_CHANNEL_BLOBS_PER_EVENT = 80
+
+    /** CORD-06 §1: the most blobs a writer puts in one base rotation event (104- and 136-byte blobs). */
+    const val MAX_BASE_BLOBS_PER_EVENT = 60
+
     /**
-     * Byte ceiling on one kind-3303 rumor's JSON, beside the 120-blob count cap. Base blobs are
-     * wider than channel ones, and 120 of them pushed the wrap's NIP-44 plaintext (the seal, which
-     * carries the rumor's own NIP-44 ciphertext as base64) past the 65,535-byte cap. 40,960 is the
-     * top of the NIP-44 padding bucket that still wraps — the reference client's
-     * `REKEY_RUMOR_MAX_BYTES`. Capacity: 120 blobs at 72 bytes (the count cap binds), 99 at 104,
-     * 90 at 136. Finer chunking is always wire-legal.
+     * CORD-02 Appendix B: every published event, its outer wrap included, serializes to at most this
+     * many bytes, the common relay limit.
      */
-    const val REKEY_RUMOR_MAX_BYTES = 40_960
+    const val MAX_EVENT_BYTES = 65_536
+
+    /**
+     * Byte ceiling on one kind-3303 rumor's JSON, beside the count caps. 28,672 is the top of the
+     * NIP-44 padding bucket whose seal and wrap still serialize under the 64 KB relay event limit
+     * (CORD-02 Appendix B), about 55 KB, so the count caps bind for every real blob width — the
+     * reference client's `REKEY_RUMOR_MAX_BYTES`. The earlier 40,960 kept the seal under NIP-44's
+     * 65,535-byte plaintext cap but left the wrap itself near 70 KB, which relays refuse whole.
+     * Finer chunking is always wire-legal.
+     */
+    const val REKEY_RUMOR_MAX_BYTES = 28_672
 
     /**
      * Builds a rekey blob for one recipient using [rotatorSigner] instead of a raw

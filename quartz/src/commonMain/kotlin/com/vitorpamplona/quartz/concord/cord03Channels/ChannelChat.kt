@@ -465,6 +465,31 @@ object ChannelChat {
         if (rumor.kind !in kinds) return null
         if (!isBoundTo(rumor, channelId, epoch)) return null
         if (orderingMs(rumor) == null) return null
+        // A rumor committing a writer epoch belongs at a writer address: at the read address it is
+        // dropped, and a repeated or malformed `wepoch` drops it anywhere (CORD-03 §3).
+        if (ConcordWritersLedger.wepochOf(rumor) != ConcordWritersLedger.NOT_PRESENT) return null
+        return rumor
+    }
+
+    /**
+     * The ingest gate for a wrap opened at a restricted Channel's **writer address** for
+     * [writerEpoch] (CORD-03 §1, §3): every rule [acceptOpened] applies, except that the rumor must
+     * commit exactly `["wepoch", writerEpoch]`. Whether the post *stands* (its window, certificate
+     * and stops) is [ConcordWritersLedger.postStands]'s, judged against the ledger the reader holds.
+     */
+    fun acceptWriterOpened(
+        opened: OpenedStreamEvent,
+        channelId: HexKey,
+        epoch: Long,
+        writerEpoch: Long,
+        kinds: Set<Int> = CHAT_KINDS,
+    ): Event? {
+        if (opened.sealKind != ConcordStreamEnvelope.KIND_SEAL_ENCRYPTED) return null
+        val rumor = opened.rumor
+        if (rumor.kind !in kinds) return null
+        if (!isBoundTo(rumor, channelId, epoch)) return null
+        if (orderingMs(rumor) == null) return null
+        if (ConcordWritersLedger.wepochOf(rumor) != writerEpoch) return null
         return rumor
     }
 

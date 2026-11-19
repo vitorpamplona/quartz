@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.buzz.dm
 
+import com.vitorpamplona.quartz.buzz.dm.tags.DmHistoryTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -35,6 +36,9 @@ fun <T : Event> TagArrayBuilder<T>.dmChannel(channelId: String) = addUnique(Grou
 
 /** A single `p` tag for the member being added. */
 fun <T : Event> TagArrayBuilder<T>.dmMember(pubKey: HexKey) = addUnique(PTag.assemble(pubKey, null))
+
+/** The `history` tag of a DM add ([DmHistoryTag.INCLUDE] or [DmHistoryTag.ASK]). */
+fun <T : Event> TagArrayBuilder<T>.dmHistory(choice: String) = addUnique(DmHistoryTag.assemble(choice))
 
 /** The `d` tag carrying the DM id (relay-signed [DmCreatedEvent]). */
 fun <T : Event> TagArrayBuilder<T>.dmId(dmId: String) = addUnique(DTag.assemble(dmId))

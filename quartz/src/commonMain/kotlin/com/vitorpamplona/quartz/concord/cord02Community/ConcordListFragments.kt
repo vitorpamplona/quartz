@@ -278,7 +278,13 @@ object ConcordListFragments {
         out["root_epoch"] = epoch
         (m["control_pk"] as? JsonPrimitive)?.takeIf { it.isString }?.let { out["control_pk"] = JsonPrimitive(hexToB64(it.content)) }
         (m["control_root"] as? JsonPrimitive)?.takeIf { it.isString }?.let { out["control_root"] = JsonPrimitive(hexToB64(it.content)) }
-        val channels = (m["channels"] as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let(::channelToWire) }.orEmpty()
+        // Ordered by each id's raw 32 bytes (CORD-02 §8), so two devices holding one state write one byte string.
+        val channels =
+            (m["channels"] as? JsonArray)
+                ?.mapNotNull { it as? JsonObject }
+                ?.sortedBy { stringOr(it["id"], "").lowercase() }
+                ?.mapNotNull(::channelToWire)
+                .orEmpty()
         if (channels.isNotEmpty()) out["channels"] = JsonArray(channels)
         val relays = (m["relays"] as? JsonArray)?.filter { it is JsonPrimitive && it.isString }.orEmpty()
         if (relays.isNotEmpty()) out["relays"] = JsonArray(relays)
@@ -414,7 +420,23 @@ object ConcordListFragments {
 
     private fun epochOf(m: JsonObject?): Long = number(m?.get("root_epoch"))?.longOrNull ?: 0L
 
-    /** Higher epoch wins; a tie goes to the lexicographically lowest canonical bytes. */
+    private const val MAX_SAFE_REV = (1L shl 53) - 1
+
+    /** A snapshot's revision (CORD-02 §8): its `rev`, absent, malformed or above 2^53 − 1 reading as 0. */
+    fun revOf(m: JsonObject?): Long = number(m?.get("rev"))?.longOrNull?.takeIf { it in 1..MAX_SAFE_REV } ?: 0L
+
+    /** Within one epoch the higher revision wins, then the lowest canonical bytes (CORD-02 §8). */
+    private fun sameEpochWinner(
+        a: JsonObject,
+        b: JsonObject,
+    ): JsonObject {
+        val ra = revOf(a)
+        val rb = revOf(b)
+        if (ra != rb) return if (ra > rb) a else b
+        return if (canonicalString(a) <= canonicalString(b)) a else b
+    }
+
+    /** Higher epoch wins; within one, the higher revision, then the lexicographically lowest canonical bytes. */
     private fun freshest(
         a: JsonObject,
         b: JsonObject,
@@ -422,10 +444,10 @@ object ConcordListFragments {
         val ea = epochOf(a)
         val eb = epochOf(b)
         if (ea != eb) return if (ea > eb) a else b
-        return if (canonicalString(a) <= canonicalString(b)) a else b
+        return sameEpochWinner(a, b)
     }
 
-    /** Lower epoch wins; a tie goes to the lowest canonical bytes. */
+    /** Lower epoch wins; within one, the higher revision, then the lowest canonical bytes. */
     private fun earliest(
         a: JsonObject,
         b: JsonObject,
@@ -433,7 +455,45 @@ object ConcordListFragments {
         val ea = epochOf(a)
         val eb = epochOf(b)
         if (ea != eb) return if (ea < eb) a else b
-        return if (canonicalString(a) <= canonicalString(b)) a else b
+        return sameEpochWinner(a, b)
+    }
+
+    /** The snapshot without its revision, in canonical bytes: what decides whether it changed. */
+    private fun unrevised(m: JsonObject): String = canonicalString(JsonObject(m - "rev"))
+
+    private fun withRev(
+        m: JsonObject,
+        rev: Long,
+    ): JsonObject {
+        if (revOf(m) == rev && (rev > 0 || "rev" !in m)) return m
+        val out = LinkedHashMap<String, JsonElement>(m)
+        out.remove("rev")
+        if (rev > 0) out["rev"] = JsonPrimitive(rev)
+        return JsonObject(out)
+    }
+
+    /**
+     * Stamps each entry's `current` in [next] with its revision against the copy the write read
+     * ([read], CORD-02 §8): one past the read copy's when the snapshot changed (a new epoch
+     * included), the read copy's when nothing did. A same-epoch update only lands on other devices
+     * when it wins the revision, so a write that skipped this would lose to a stale copy.
+     */
+    fun reviseSnapshots(
+        read: JsonObject,
+        next: JsonObject,
+    ): JsonObject {
+        val readById = (read["entries"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.associateBy { idOf(it) }
+        val entries = (next["entries"] as? JsonArray) ?: return next
+        val revised =
+            entries.map { el ->
+                val e = el as? JsonObject ?: return@map el
+                val current = e["current"] as? JsonObject ?: return@map e
+                val theirs = readById[idOf(e)]?.let(::currentOf) ?: return@map e
+                val rev = if (unrevised(current) == unrevised(theirs)) revOf(theirs) else revOf(theirs) + 1
+                val stamped = withRev(current, rev)
+                if (stamped === current) e else JsonObject(e + ("current" to stamped))
+            }
+        return JsonObject(next + ("entries" to JsonArray(revised)))
     }
 
     private fun currentOf(e: JsonObject): JsonObject? = (e["current"] as? JsonObject) ?: (e["seed"] as? JsonObject)
