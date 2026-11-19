@@ -40,7 +40,7 @@ Since 2.19.0, Quartz and its crypto-kmp and libschnorr256k1-kotlin dependencies 
 
 ```kotlin
 plugins {
-    id("com.vitorpamplona.magpie") version "0.2.1"
+    id("com.vitorpamplona.magpie") version "0.2.3"
 }
 
 magpie {
