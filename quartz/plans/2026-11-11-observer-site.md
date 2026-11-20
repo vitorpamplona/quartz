@@ -236,11 +236,6 @@ found it, and new tags go private. Amethyst keeps everything but `d` (and a runn
   holds shows that occurrence unclaimed, its claim stale, or this install's own unfinished one
   whose run died mid-way (never one whose run ended: the reader prints that by hand).
   A change of schedule moves the waiting timer or job; it never stops a print that is running.
-- Migration: an install that had a local schedule (`on|7|30`, now `30 7 * * *` in its zone,
-  set at the migration's time) and finds no synced one (more than half of the write relays
-  answered and hold none) publishes it; the local on/off stays as this device's "Print from
-  this device". It runs once per account and install: not when a readable synced schedule is
-  already here, and not on a device that can't print alone (there the local on/off is cleared).
 - Nothing is made up before the schedule is known: with no synced schedule the screen says
   "not set up" with the shared switch off; turning it, or "Print from this device", on
   publishes one at once (set now). With no NIP-65 write relays it says so and points to the
@@ -287,6 +282,8 @@ print with different models.
 | `key`   | the NIP-FA key to print with: its endpoint URL, then the key's last 4 characters | the first usable key (NIP-FA's default) |
 | `model` | the model id, as the key's endpoint takes it | the app's default for that endpoint |
 | `effort` | `deep`: ask the provider for its high reasoning effort (OpenRouter `reasoning.effort`, OpenAI-style `reasoning_effort`, Anthropic's thinking budget) | Standard: nothing extra |
+| `publish` | `yes`: publish to the reader's Observer site, the reader having confirmed it is public; `no` (or any other value): publish nothing, from any app or runner (a runner whose only delivery is its public site doesn't print) | on, not yet confirmed: a manual print asks first, a scheduled one publishes nothing (2026-11-20) |
+| `place` | the weather's place: its name, latitude and longitude (to 0.01°), then `us` (°F) or `metric`. The apps fetch the forecast when they print, keep it beside the paper and draw it only over the copy they show; it is never in a published page. A printer that shows no weather (the Assistant) still prints | no weather (2026-11-20) |
 | `size`  | not defined yet: every app prints one size today. When a size choice is added, its values are fixed here first | |
 
 - `key` never holds the key itself. The last 4 characters only pick between two keys at one
@@ -297,8 +294,6 @@ print with different models.
   never runs. A manual print reads them and, when the reader changes the model in the print
   view, writes them back (one shared choice, no longer per install).
 - Every writer keeps the `param` tags it doesn't know, as FB requires.
-- Migration: an install's remembered model is written as `model` the first time it edits
-  the event, unless the event already has one.
 
 ### The Assistant as runner
 
