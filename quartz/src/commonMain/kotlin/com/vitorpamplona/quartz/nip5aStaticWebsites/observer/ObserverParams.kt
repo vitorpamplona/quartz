@@ -36,6 +36,8 @@ import com.vitorpamplona.quartz.nipFBScheduledTasks.ScheduledTask
  * | [KEY]   | the NIP-FA key's endpoint URL, then the key's last 4 characters | NIP-FA's default key |
  * | [MODEL] | the model id, as the endpoint takes it | the app's default for that endpoint |
  * | [EFFORT] | [EFFORT_DEEP]: ask the provider for its high reasoning effort | Standard: nothing extra |
+ * | [PLACE] | the weather's place: a name, latitude and longitude (to 0.01°), then `us` (°F) or `metric` | no weather |
+ * | [PUBLISH] | [PUBLISH_YES]: publish, confirmed; [PUBLISH_NO] (or any other value): don't publish | on, not yet confirmed: nothing goes out unattended |
  *
  * `key` never holds the key itself. `size` is listed in the plan as not defined yet, so it isn't
  * one of [KNOWN]: a schedule carrying it is one this code doesn't understand, which NIP-FB says
@@ -45,15 +47,23 @@ object ObserverParams {
     const val MODEL = "model"
     const val KEY = "key"
     const val EFFORT = "effort"
+    const val PUBLISH = "publish"
+    const val PLACE = "place"
 
     /** The one [EFFORT] value today. Standard is the param's absence, so apps that predate it still run the schedule. */
     const val EFFORT_DEEP = "deep"
+
+    /** [PUBLISH]: the reader said yes to their public Observer site. */
+    const val PUBLISH_YES = "yes"
+
+    /** [PUBLISH]: nothing is published, from any app or runner. */
+    const val PUBLISH_NO = "no"
 
     /** How many of the key's last characters `key` holds. */
     const val KEY_SUFFIX_LENGTH = 4
 
     /** The params this code understands. */
-    val KNOWN: Set<String> = setOf(MODEL, KEY, EFFORT)
+    val KNOWN: Set<String> = setOf(MODEL, KEY, EFFORT, PUBLISH, PLACE)
 
     /** Whether [task] asks for Deep writing; any other value, or none, is Standard. */
     fun isDeep(task: ScheduledTask): Boolean =
