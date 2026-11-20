@@ -1349,7 +1349,7 @@ private suspend fun INostrClient.reconcileStreaming(
     val targetUrl = relay
     val relayClient = getOrCreateRelay(relay)
     val subId = newSubId()
-    val session = NegentropySession(subId, filter, localEntries = localEntries)
+    val session = NegentropySession(subId, filter, localEntries = localEntries, frameSizeLimit = CLIENT_FRAME_SIZE_LIMIT)
 
     // Reader-thread → driver hand-off. Holds at most one frame: the relay only sends
     // the next one once we ack, and we ack only after this round's ids are queued.
@@ -1616,6 +1616,13 @@ private const val BUDGET_GROWTH = 1.25
  * at the top of this page; the rest is margin for events we already hold locally.
  */
 private const val TRUNCATION_PROBE_DEPTH = 20
+
+/**
+ * The most raw bytes one outgoing NEG-MSG may carry, strfry's own client default. Hex doubles
+ * it on the wire, which keeps every frame under strfry's default 131,072-byte
+ * `maxWebsocketPayloadSize`; an unlimited frame there closes the socket mid-reconcile.
+ */
+internal const val CLIENT_FRAME_SIZE_LIMIT = 60_000L
 
 /** Bounded buffer between the download workers and the single delivery consumer. */
 private const val DELIVERY_BUFFER = 256
