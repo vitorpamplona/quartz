@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
 import com.vitorpamplona.quartz.nip65RelayList.AdvertisedRelayListEvent
+import com.vitorpamplona.quartz.nip77Negentropy.NegentropyServerSession
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -268,6 +269,23 @@ interface IEventStore : AutoCloseable {
         } else {
             all
         }
+    }
+
+    /**
+     * [snapshotIdsForNegentropy] of [filters] as a sealed negentropy storage, ready to back any
+     * number of server sessions; `null` when the set exceeds [maxEntries].
+     *
+     * The default seals the list, holding it and the storage at once. A store that walks its ids
+     * should override this to insert them straight into the storage, so the snapshot never holds
+     * a per-id object, which roughly halves the heap a large snapshot needs.
+     */
+    suspend fun sealedNegentropyStorage(
+        filters: List<Filter>,
+        maxEntries: Int,
+    ): IStorage? {
+        val entries = snapshotIdsForNegentropy(filters, maxEntries)
+        if (entries.size > maxEntries) return null
+        return NegentropyServerSession.sealVector(entries)
     }
 
     /**
