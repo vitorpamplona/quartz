@@ -91,6 +91,9 @@ alongside quartz, build a local checkout: `./gradlew -PcryptoKmpDir=../crypto-km
   in tests use `assertTrue`, not `assert`.
 - JVM target is 21: a dependency can't need a newer JVM than its users, so every dependency
   targets 21 or lower (crypto-kmp: 17, libschnorr256k1-kotlin: 21).
+- Builds run on JDK 25 (CI, the release, cloud sessions, and Android Studio's bundled runtime), still
+  for that JVM 21 target. The JVM target compiles with `-Xjdk-release=21`, so a call to an API newer
+  than JDK 21 fails the build instead of a consumer's JVM; keep it.
 - Releases follow semantic versioning, with breaking changes held back for a major release once
   or twice a year: see [Versioning](#versioning) before you remove, rename or change anything
   public.
