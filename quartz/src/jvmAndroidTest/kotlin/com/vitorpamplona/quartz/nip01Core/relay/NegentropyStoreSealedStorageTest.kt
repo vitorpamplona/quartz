@@ -109,4 +109,32 @@ class NegentropyStoreSealedStorageTest : RelayClientTest() {
             assertEquals(50, store.sealedNegentropyStorage(listOf(Filter(kinds = listOf(1))), maxEntries = 50)!!.size())
             assertNull(store.sealedNegentropyStorage(listOf(Filter(kinds = listOf(1))), maxEntries = 49))
         }
+
+    /** A store on the interface's default snapshot, as a store that overrides neither method is. */
+    private class DefaultSnapshotStore(
+        inner: IEventStore,
+    ) : IEventStore by inner {
+        override suspend fun snapshotIdsForNegentropy(
+            filters: List<Filter>,
+            maxEntries: Int?,
+            onProgress: ((collected: Int) -> Unit)?,
+        ): List<IdAndTime> = super<IEventStore>.snapshotIdsForNegentropy(filters, maxEntries, onProgress)
+
+        override suspend fun sealedNegentropyStorage(
+            filters: List<Filter>,
+            maxEntries: Int,
+        ): IStorage? = super<IEventStore>.sealedNegentropyStorage(filters, maxEntries)
+    }
+
+    @Test
+    fun theDefaultsTakeACapAtIntMaxValueAsNoCap() =
+        runBlocking {
+            val sqlite = EventStore(dbName = null, relay = defaultRelayUrl, indexStrategy = TestRelay.RelayIndexing)
+            events(1..50).forEach { sqlite.insert(it) }
+            val store = DefaultSnapshotStore(sqlite)
+
+            assertEquals(50, store.snapshotIdsForNegentropy(listOf(Filter(kinds = listOf(1))), Int.MAX_VALUE).size)
+            assertEquals(50, store.sealedNegentropyStorage(listOf(Filter(kinds = listOf(1))), Int.MAX_VALUE)!!.size())
+            assertEquals(11, store.snapshotIdsForNegentropy(listOf(Filter(kinds = listOf(1))), 10).size)
+        }
 }

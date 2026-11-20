@@ -264,11 +264,9 @@ interface IEventStore : AutoCloseable {
             all.add(IdAndTime(event.createdAt, event.id))
             if (onProgress != null && all.size % NEGENTROPY_PROGRESS_EVERY == 0) onProgress(all.size)
         }
-        return if (maxEntries != null && all.size > maxEntries + 1) {
-            all.subList(0, maxEntries + 1)
-        } else {
-            all
-        }
+        // One past the cap is the overflow sentinel; at Int.MAX_VALUE there is no room for it, so no cap.
+        val sentinel = maxEntries?.takeIf { it < Int.MAX_VALUE }?.plus(1)
+        return if (sentinel != null && all.size > sentinel) all.subList(0, sentinel) else all
     }
 
     /**
@@ -276,8 +274,8 @@ interface IEventStore : AutoCloseable {
      * number of server sessions; `null` when the set exceeds [maxEntries].
      *
      * The default seals the list, holding it and the storage at once. A store that walks its ids
-     * should override this to insert them straight into the storage, so the snapshot never holds
-     * a per-id object, which roughly halves the heap a large snapshot needs.
+     * should override this to insert them straight into the storage instead, which roughly halves
+     * the heap a large single-filter snapshot needs.
      */
     suspend fun sealedNegentropyStorage(
         filters: List<Filter>,

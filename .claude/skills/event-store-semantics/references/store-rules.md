@@ -291,10 +291,12 @@ across replaceable displacement, kind-5s, and vanish (invalidate-and-rebuild for
 non-itemizable cases).
 
 **STORE-N02 —** `sealedNegentropyStorage(filters, maxEntries)` is the same set sealed, `null`
-past `maxEntries`; the relay's `LiveEventStore` builds every NEG-OPEN's storage through it. The
-default seals `snapshotIdsForNegentropy`'s list; a store that walks its ids overrides it to
-insert each page straight into the storage, so the snapshot holds no per-id objects. An override
-answers exactly the set STORE-N01 does, and a decorator forwards it or loses the streaming.
+past `maxEntries`; the relay's `LiveEventStore` builds every NEG-OPEN's storage through it, after
+`liveNegentropySnapshot` for an empty filter. The default seals `snapshotIdsForNegentropy`'s list;
+a store that walks its ids overrides it to insert each page straight into the storage, so a
+single-filter snapshot holds no per-id objects (a multi-filter one still dedups by id). An
+override answers exactly the set STORE-N01 does, and a decorator forwards it or loses the
+streaming.
 
 ---
 
