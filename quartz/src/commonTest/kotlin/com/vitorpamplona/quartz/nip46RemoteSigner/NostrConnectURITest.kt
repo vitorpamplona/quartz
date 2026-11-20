@@ -88,6 +88,33 @@ class NostrConnectURITest {
     }
 
     @Test
+    fun aNameWithPlusSignsReadsWithSpaces() {
+        // Web clients build the offer with URLSearchParams, which writes a space as `+`.
+        val parsed = NostrConnectURI.parseNostrConnect("nostrconnect://$pubkey?relay=wss%3A%2F%2Frelay.example.com&secret=xyz&name=Web+Test+Client")!!
+        assertEquals("Web Test Client", parsed.name)
+    }
+
+    @Test
+    fun anEncodedPlusInANameStaysAPlus() {
+        val parsed = NostrConnectURI.parseNostrConnect("nostrconnect://$pubkey?relay=wss%3A%2F%2Frelay.example.com&secret=xyz&name=C%2B%2B+Notes")!!
+        assertEquals("C++ Notes", parsed.name)
+    }
+
+    @Test
+    fun aSecretKeepsItsPlusSigns() {
+        // A secret is matched byte for byte: a raw `+` (base64, unencoded) must not turn into a space.
+        val parsed = NostrConnectURI.parseNostrConnect("nostrconnect://$pubkey?relay=wss%3A%2F%2Frelay.example.com&secret=ab+cd/ef==")!!
+        assertEquals("ab+cd/ef==", parsed.secret)
+    }
+
+    @Test
+    fun decodeTextReadsPlusAsSpace() {
+        assertEquals("My App", NostrConnectURI.decodeText("My+App"))
+        assertEquals("a+b", NostrConnectURI.decodeText("a%2Bb"))
+        assertEquals("a+b", NostrConnectURI.decode("a+b"))
+    }
+
+    @Test
     fun decodeHandlesUtf8() {
         assertEquals("café", NostrConnectURI.decode("caf%C3%A9"))
     }
