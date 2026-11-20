@@ -73,6 +73,14 @@ class StoreWrapperForwardingTest {
             calls.add("liveNegentropySnapshot")
             return null
         }
+
+        override suspend fun sealedNegentropyStorage(
+            filters: List<Filter>,
+            maxEntries: Int,
+        ): IStorage? {
+            calls.add("sealedNegentropyStorage")
+            return null
+        }
     }
 
     private val signer = NostrSignerSync()
@@ -87,8 +95,9 @@ class StoreWrapperForwardingTest {
             store.rawQuery(listOf(Filter())) {}
             store.authorsMissingOutbox()
             store.liveNegentropySnapshot(10)
+            store.sealedNegentropyStorage(listOf(Filter()), 10)
             assertEquals(
-                listOf("ftsCatchUp", "batchInsert", "rawQuery", "authorsMissingOutbox", "liveNegentropySnapshot"),
+                listOf("ftsCatchUp", "batchInsert", "rawQuery", "authorsMissingOutbox", "liveNegentropySnapshot", "sealedNegentropyStorage"),
                 spy.calls,
             )
         } finally {

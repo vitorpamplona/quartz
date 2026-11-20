@@ -979,7 +979,8 @@ class LiveEventStore(
             return cached.storage
         }
 
-        val built = super.sealedNegentropyStorage(filters, maxEntries)
+        // The store builds it, so one that walks its ids can stream them into the storage.
+        val built = store.sealedNegentropyStorage(filters, maxEntries)
         snapshotCache.store(CachedSnapshot(key, generation, now, built))
         return built
     }
