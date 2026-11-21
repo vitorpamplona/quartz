@@ -71,6 +71,9 @@ import com.vitorpamplona.quartz.buzz.notifications.MemberAddedNotificationEvent
 import com.vitorpamplona.quartz.buzz.notifications.MemberRemovedNotificationEvent
 import com.vitorpamplona.quartz.buzz.pairing.PairingEvent
 import com.vitorpamplona.quartz.buzz.plPushLease.PushLeaseEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.ChannelPinsEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.PinMessageEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.UnpinMessageEvent
 import com.vitorpamplona.quartz.buzz.presence.PresenceUpdateEvent
 import com.vitorpamplona.quartz.buzz.presence.TypingIndicatorEvent
 import com.vitorpamplona.quartz.buzz.relayAdmin.RelayAdminAddMemberEvent
@@ -603,6 +606,7 @@ class EventFactory {
                 DmHideEvent.KIND -> DmHideEvent(id, pubKey, createdAt, tags, content, sig)
                 DmOpenEvent.KIND -> DmOpenEvent(id, pubKey, createdAt, tags, content, sig)
                 DmVisibilityEvent.KIND -> DmVisibilityEvent(id, pubKey, createdAt, tags, content, sig)
+                ChannelPinsEvent.KIND -> ChannelPinsEvent(id, pubKey, createdAt, tags, content, sig)
                 EventReminderEvent.KIND -> EventReminderEvent(id, pubKey, createdAt, tags, content, sig)
                 ForumCommentEvent.KIND -> ForumCommentEvent(id, pubKey, createdAt, tags, content, sig)
                 ForumPostEvent.KIND -> ForumPostEvent(id, pubKey, createdAt, tags, content, sig)
@@ -645,6 +649,8 @@ class EventFactory {
                 StreamMessageDiffEvent.KIND -> StreamMessageDiffEvent(id, pubKey, createdAt, tags, content, sig)
                 StreamMessageEditEvent.KIND -> StreamMessageEditEvent(id, pubKey, createdAt, tags, content, sig)
                 StreamMessagePinnedEvent.KIND -> StreamMessagePinnedEvent(id, pubKey, createdAt, tags, content, sig)
+                PinMessageEvent.KIND -> PinMessageEvent(id, pubKey, createdAt, tags, content, sig)
+                UnpinMessageEvent.KIND -> UnpinMessageEvent(id, pubKey, createdAt, tags, content, sig)
                 StreamMessageScheduledEvent.KIND -> StreamMessageScheduledEvent(id, pubKey, createdAt, tags, content, sig)
                 StreamMessageV2Event.KIND -> StreamMessageV2Event(id, pubKey, createdAt, tags, content, sig)
                 StreamReminderEvent.KIND -> StreamReminderEvent(id, pubKey, createdAt, tags, content, sig)

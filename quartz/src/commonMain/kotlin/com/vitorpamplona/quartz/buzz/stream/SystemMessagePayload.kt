@@ -53,6 +53,7 @@ import kotlinx.serialization.json.Json
  * | [CHANNEL_CREATED] / [CHANNEL_DELETED] | [actor] | channel lifecycle |
  * | [MESSAGE_DELETED] | [actor], [targetEventId], optional [actionId] / [reasonCode] / [publicReason] | a message was deleted (moderation tombstone) |
  * | [DM_CREATED] | [actor], [participants] | a DM channel was opened |
+ * | [MESSAGE_PINNED] | [actor], [targetEventId] (and a `command_event_id`, not modelled) | a NIP-PM pin changed the channel's pin list; an unpin posts nothing |
  * | [ADMIN_KICK] | [target], [actionId] — **no** [actor] | a relay/workspace administrator removed [target] (delivered by the admin outbox worker) |
  * | [CHANNEL_AUTO_ARCHIVED] | nothing | the ephemeral-channel reaper archived an idle channel |
  */
@@ -111,6 +112,9 @@ data class SystemMessagePayload(
         const val CHANNEL_DELETED = "channel_deleted"
         const val MESSAGE_DELETED = "message_deleted"
         const val DM_CREATED = "dm_created"
+
+        /** A member pinned [targetEventId] (NIP-PM, `buzz-relay/src/handlers/pins.rs`). Not unread, never pushed. */
+        const val MESSAGE_PINNED = "message_pinned"
 
         /** An administrator removed [target]; relay-authored with no [actor] (`admin_outbox_worker.rs`). */
         const val ADMIN_KICK = "admin_kick"

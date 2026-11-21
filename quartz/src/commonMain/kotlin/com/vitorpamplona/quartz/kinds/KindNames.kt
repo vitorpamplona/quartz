@@ -68,6 +68,9 @@ import com.vitorpamplona.quartz.buzz.notifications.MemberAddedNotificationEvent
 import com.vitorpamplona.quartz.buzz.notifications.MemberRemovedNotificationEvent
 import com.vitorpamplona.quartz.buzz.pairing.PairingEvent
 import com.vitorpamplona.quartz.buzz.plPushLease.PushLeaseEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.ChannelPinsEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.PinMessageEvent
+import com.vitorpamplona.quartz.buzz.pmPinnedMessages.UnpinMessageEvent
 import com.vitorpamplona.quartz.buzz.presence.PresenceUpdateEvent
 import com.vitorpamplona.quartz.buzz.presence.TypingIndicatorEvent
 import com.vitorpamplona.quartz.buzz.relayAdmin.RelayAdminAddMemberEvent
@@ -964,12 +967,15 @@ object KindNames {
             WorkflowDefEvent.KIND to KindName("Workflow Definition", null),
             ProjectEvent.KIND to KindName("Project", null),
             DmVisibilityEvent.KIND to KindName("DM Visibility", null),
+            ChannelPinsEvent.KIND to KindName("Channel Pins", null),
             CyberspaceBagEvent.KIND to KindName("Cyberspace Bag", null),
             SnoObjectEvent.KIND to KindName("SNO Object", null),
             GroupPinnedEvent.KIND to KindName("Group Pinned", "29"),
             StreamMessageV2Event.KIND to KindName("Stream Message v2", null),
             StreamMessageEditEvent.KIND to KindName("Stream Message Edit", null),
             StreamMessagePinnedEvent.KIND to KindName("Stream Message Pinned", null),
+            PinMessageEvent.KIND to KindName("Pin Message", null),
+            UnpinMessageEvent.KIND to KindName("Unpin Message", null),
             StreamMessageBookmarkedEvent.KIND to KindName("Stream Message Bookmarked", null),
             StreamMessageScheduledEvent.KIND to KindName("Stream Message Scheduled", null),
             StreamReminderEvent.KIND to KindName("Stream Reminder", null),

@@ -95,6 +95,7 @@ conflicts below).
 | `workflow` / `forum` / `notifications` | workflow + social | 30620, 46001-46031 / 45001-45003 / 44100, 44101 |
 | `arArtifacts` | NIP-AR channel artifacts (revision chain by `prev`) | 45010, 45011 (relay-signed removal) |
 | `mpProjects` | NIP-MP multi-repo projects (global, not `h`-scoped) | 30621 |
+| `pmPinnedMessages` | NIP-PM pinned messages: member pin/unpin commands, relay-signed list read by `#h` | 40010, 40011 / 30623 |
 | `presence` / `huddles` / `pairing` / `audit` / `media` | presence + misc | 20001, 20002 / 24810, 48100-48106 (48104 = relay-synthesized liveness) / 24134 / 48001 / 49001 |
 | `rsReadState` | NIP-RS | (helpers on `AppSpecificDataEvent`, kind 30078) |
 
