@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.concord.cord04Roles
 
 import com.vitorpamplona.quartz.concord.cord02Community.ImagePointer
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -103,9 +104,10 @@ object ConcordJson {
  * a `String` (the old bug) makes the whole [RoleEntity] fail to decode, which silently
  * drops the role, and with it every authority (grant) that depends on it.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class RoleScope(
-    val kind: String = "server",
+    @EncodeDefault val kind: String = "server",
     @SerialName("channel_id") val channelId: String? = null,
 )
 
@@ -119,15 +121,22 @@ data class RoleScope(
  * `eid` is then the id), but a role whose [roleId] names a *different* coordinate is refused
  * ([isWellFormedAt]).
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class RoleEntity(
     @SerialName("role_id") val roleId: String? = null,
-    val name: String = "",
-    val position: Long = 0,
+    // CORD-04 §2: a legacy Role requires role_id, name, position, permissions and scope, so they
+    // are written even at their defaults; a reader that follows the spec drops a Role without one.
+    @EncodeDefault val name: String = "",
+    @EncodeDefault val position: Long = 0,
     /** u64 permission bitfield as a decimal string. */
-    val permissions: String = "0",
-    /** Server-wide, or a single channel — an object (see [RoleScope]). Null = server. */
-    val scope: RoleScope? = null,
+    @EncodeDefault val permissions: String = "0",
+    /**
+     * Server-wide, or a single channel — an object (see [RoleScope]). Written as
+     * `{"kind":"server"}` by default; null (what an older edition without `scope` decodes to)
+     * also means server-wide.
+     */
+    @EncodeDefault val scope: RoleScope? = RoleScope(),
     val color: Long = 0,
     val deleted: Boolean = false,
 ) {
@@ -175,10 +184,13 @@ data class GrantEntity(
  * wrote is not ours to interpret; it rides through edits untouched like any unknown field
  * ([ConcordJson.encodePreserving]), as does the optional `custom` object (CORD-02 §6).
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ChannelEntity(
-    val name: String = "",
-    val private: Boolean = false,
+    // CORD-03 §2: `name` and `private` are required, so they are written even at their defaults;
+    // an edition missing either is malformed and a reader applies nothing from it.
+    @EncodeDefault val name: String = "",
+    @EncodeDefault val private: Boolean = false,
     val deleted: Boolean = false,
 ) {
     /** True when [name] is within the protocol's name rule ([isValidName]). */
