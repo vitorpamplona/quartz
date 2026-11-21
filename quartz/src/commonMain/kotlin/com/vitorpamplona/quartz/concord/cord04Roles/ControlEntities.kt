@@ -221,7 +221,8 @@ data class ChannelEntity(
  */
 @Serializable
 data class MetadataEntity(
-    val name: String = "",
+    /** Required (CORD-02 §6): a reader refuses an edition without a string `name`, so it is written even when empty. */
+    @EncodeDefault val name: String = "",
     val icon: ImagePointer? = null,
     val banner: ImagePointer? = null,
     val description: String? = null,

@@ -37,6 +37,8 @@ import kotlin.test.assertTrue
 class ControlEntityRequiredFieldsTest {
     private fun encode(channel: ChannelEntity): JsonObject = ConcordJson.instance.parseToJsonElement(ConcordJson.encodePreserving(ChannelEntity.serializer(), channel, null)).jsonObject
 
+    private fun encode(metadata: MetadataEntity): JsonObject = ConcordJson.instance.parseToJsonElement(ConcordJson.encodePreserving(MetadataEntity.serializer(), metadata, null)).jsonObject
+
     private fun encode(role: RoleEntity): JsonObject = ConcordJson.instance.parseToJsonElement(ConcordJson.encodePreserving(RoleEntity.serializer(), role, null)).jsonObject
 
     /** CORD-03 §2: `name` (a string) and `private` (a boolean) are required. */
@@ -45,6 +47,18 @@ class ControlEntityRequiredFieldsTest {
         val json = encode(ChannelEntity(name = "general"))
         assertEquals("general", json["name"]?.jsonPrimitive?.content)
         assertEquals(false, json["private"]?.jsonPrimitive?.boolean)
+    }
+
+    /**
+     * CORD-02 §6: `name` is required (Armada folds no edition without a string one), so metadata
+     * written over an empty fold, a timer alone, still carries it.
+     */
+    @Test
+    fun metadataWritesItsNameEvenWhenEmpty() {
+        val json = encode(MetadataEntity().withMessageExpiration(3600))
+        assertEquals(JsonPrimitive(""), json["name"])
+        assertEquals(JsonPrimitive(3600), json["message_expiration"])
+        assertEquals("Vector", encode(MetadataEntity(name = "Vector"))["name"]?.jsonPrimitive?.content)
     }
 
     /** CORD-04 §2: a legacy Role requires `role_id`, `name`, `position`, `permissions` and `scope`. */
