@@ -38,9 +38,20 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** How long the default AUTH warm-up read of [publishAwaitingOkThroughAuth] may stay idle. */
 const val DEFAULT_AUTH_WARM_UP_MS = 5_000L
+
+/**
+ * How long [publishAwaitingOkThroughAuth] keeps listening after the retry, when a relay has answered
+ * but not accepted. After an AUTH the pool may re-send the event more than once, and the copies race
+ * on the relay: one is applied (a Buzz DM command, with its side effects, answers tens of
+ * milliseconds later) while another is answered at once, `duplicate: already processed` or a refusal
+ * the first copy caused (`invalid: deletion target not found` for a delete the other copy is
+ * applying). The accepted OK is the relay's answer, and the one with the data.
+ */
+const val IN_FLIGHT_OK_GRACE_MS = 1_000L
 
 /**
  * Publishes [event] to [relays] and returns each relay's real answer, across a NIP-42 challenge.
@@ -58,7 +69,9 @@ const val DEFAULT_AUTH_WARM_UP_MS = 5_000L
  *     once each of them has answered;
  *  3. publish once more to those still without an accepted OK, on the now-authed socket.
  *
- * An accepted OK seen at any point wins over a later `duplicate:` from the same relay. A relay
+ * An accepted OK seen at any point wins over a later `duplicate:` or refusal from the same relay,
+ * and a relay that answered the retry without accepting gets [IN_FLIGHT_OK_GRACE_MS] more for a
+ * copy it is still applying. A relay
  * that refuses our AUTH `blocked:` (a banned key) answers with that refusal at once instead of
  * an `auth-required:` loop. Relays that answered anything else keep their first answer.
  */
@@ -74,6 +87,8 @@ suspend fun INostrClient.publishAwaitingOkThroughAuth(
     // Relays that refused one of our AUTH events `blocked:`.
     val blocked = MutableStateFlow<Map<NormalizedRelayUrl, PublishResult>>(emptyMap())
     val authSent = MutableStateFlow<Set<HexKey>>(emptySet())
+    // Relays that answered [event] `duplicate:`: it was applied, or is being applied, elsewhere.
+    val duplicated = MutableStateFlow<Set<NormalizedRelayUrl>>(emptySet())
     val watcher =
         object : RelayConnectionListener {
             override fun onSent(
@@ -91,8 +106,11 @@ suspend fun INostrClient.publishAwaitingOkThroughAuth(
                 msg: Message,
             ) {
                 if (msg !is OkMessage || relay.url !in relays) return
-                if (msg.success && msg.eventId == event.id && MachineReadablePrefix.parse(msg.message) != MachineReadablePrefix.DUPLICATE) {
+                val duplicate = MachineReadablePrefix.parse(msg.message) == MachineReadablePrefix.DUPLICATE
+                if (msg.success && msg.eventId == event.id && !duplicate) {
                     accepted.update { if (relay.url in it) it else it + (relay.url to PublishResult(true, msg.message)) }
+                } else if (msg.eventId == event.id && duplicate) {
+                    duplicated.update { it + relay.url }
                 } else if (isAuthBlocked(msg, relay.url, relays, authSent.value)) {
                     blocked.update { if (relay.url in it) it else it + (relay.url to PublishResult(false, msg.message)) }
                 }
@@ -135,6 +153,11 @@ suspend fun INostrClient.publishAwaitingOkThroughAuth(
         if (stillOpen.isEmpty()) return merged(first)
 
         val retry = publishAndCollectResults(event, stillOpen, timeoutInSeconds = timeoutInSeconds)
+        // No accepted OK yet, but an answer: a copy the relay is still applying may yet accept it.
+        val inFlight = stillOpen.filter { it !in accepted.value && it !in blocked.value && (it in duplicated.value || retry[it]?.isTransportFailure == false) }
+        if (inFlight.isNotEmpty()) {
+            withTimeoutOrNull(IN_FLIGHT_OK_GRACE_MS) { accepted.first { m -> inFlight.all { it in m } } }
+        }
         return merged(first + retry)
     } finally {
         removeConnectionListener(watcher)
