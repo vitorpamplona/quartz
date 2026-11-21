@@ -46,6 +46,19 @@ class BuzzInviteLinkTest {
         assertEquals("https://amethyst.communities.buzz.xyz", invite.httpBase())
     }
 
+    /** The link the live interop run got from a relay on `ws://127.0.0.1:7500` (buzz 52cbc6113). */
+    @Test
+    fun aLinkMintedForAPlainWsRelayIsClaimedOverHttp() {
+        val link = "http://127.0.0.1:7500/invite/$v2Token"
+        val invite = BuzzInviteLink.parse(link)!!
+        val secure = BuzzInviteLink.isSecure(link)
+        assertEquals(false, secure)
+        assertEquals("http://127.0.0.1:7500", invite.httpBase(secure))
+        assertEquals("ws://127.0.0.1:7500", invite.relayUrl(secure))
+        assertEquals(true, BuzzInviteLink.isSecure(realUrl))
+        assertEquals("https://amethyst.communities.buzz.xyz", BuzzInviteLink.parse(realUrl)!!.httpBase(BuzzInviteLink.isSecure(realUrl)))
+    }
+
     @Test
     fun honorsTheExpiry() {
         val invite = BuzzInviteLink.parse(realUrl)!!

@@ -146,6 +146,8 @@ pins this). The accessories already wait for the first challenge to resolve, so
 | --- | --- | --- |
 | `publishAndConfirm(event, relays, timeout)` | `NostrClientPublishExt` | Send an EVENT and wait for `OK`; returns whether any relay accepted it. |
 | `publishAndConfirmDetailed(event, relays, timeout)` | `NostrClientPublishExt` | Same, but returns the per-relay accepted/rejected map. |
+| `publishAndCollectResults(event, relays, timeout)` | `NostrClientPublishExt` | Per-relay `PublishResult` with the relay's reason. A relay that refuses our AUTH `blocked:` (a banned key) answers with that at once. |
+| `publishAwaitingOkThroughAuth(event, relays, timeout, warmUp)` | `NostrClientPublishThroughAuthExt` | Publish across a NIP-42 challenge and keep the relay's **real** OK: the one to the pool's post-AUTH re-send, which a publish-again-after-AUTH loop misses (it gets `duplicate:`). Use it when the OK carries data (a Buzz DM command's channel id) or the caller needs one verdict through AUTH. |
 | `publishStream(relay, events, maxInFlight, idleTimeoutMs, onResult)` | `NostrClientPublishStreamExt` | Bulk publish of a `Flow<Event>` to one relay with a bounded window of unanswered EVENTs; each verdict reaches `onResult` as its OK lands. One listener for the whole stream, so millions of events cost a map lookup per OK. Its wait is an idle window over the relay's answers, not a deadline. |
 | `publishRawStream(relay, events, maxInFlight, idleTimeoutMs, onResult)` | `NostrClientPublishStreamExt` | `publishStream` for `EventWithJson` items: each event's JSON as read (an export line) goes on the wire verbatim, through `INostrClient.publishRaw`, and the byte window counts it exactly. |
 
