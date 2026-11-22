@@ -279,10 +279,12 @@ class NostrServerAuthTest {
                 )
             session.receive(authJson(event))
 
-            val okMessages = collector.rawMessagesContaining("NOTICE")
+            // NIP-42: every AUTH is answered with an OK, like an EVENT. A kind-1 event is no
+            // auth event, so the frame does not parse, but its id still reads: OK false, no NOTICE.
+            val okMessages = collector.rawMessagesContaining("OK")
             assertEquals(1, okMessages.size)
-            assertTrue(okMessages[0].contains("error"))
-            assertTrue(okMessages[0].contains("could not parse message"))
+            assertTrue(okMessages[0].contains("\"${hexId(99)}\",false,\"invalid:"), okMessages[0])
+            assertEquals(0, collector.rawMessagesContaining("NOTICE").size)
             assertFalse((session.policy as FullAuthPolicy).isAuthenticated())
 
             server.close()
