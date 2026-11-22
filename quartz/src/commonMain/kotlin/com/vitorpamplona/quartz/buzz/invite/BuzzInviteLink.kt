@@ -62,10 +62,19 @@ data class BuzzInvite(
     val expiresAt: Long?,
 ) {
     /** The tenant's relay websocket URL. */
-    fun relayUrl(): String = "wss://$host"
+    fun relayUrl(): String = relayUrl(secure = true)
 
     /** The tenant's HTTPS base for the invite/policy REST endpoints. */
-    fun httpBase(): String = "https://$host"
+    fun httpBase(): String = httpBase(secure = true)
+
+    /**
+     * The tenant's relay websocket URL over TLS (`wss://`) or not (`ws://`). Pass
+     * [BuzzInviteLink.isSecure] of the link: a relay deployed on `ws://` mints `http://` links.
+     */
+    fun relayUrl(secure: Boolean): String = (if (secure) "wss://" else "ws://") + host
+
+    /** The tenant's REST base over TLS (`https://`) or not (`http://`), as [relayUrl]. */
+    fun httpBase(secure: Boolean): String = (if (secure) "https://" else "http://") + host
 
     /** True when [nowSecs] is at or past the invite's expiry (client-side courtesy check). */
     fun isExpired(nowSecs: Long): Boolean = expiresAt != null && nowSecs >= expiresAt
@@ -153,6 +162,17 @@ object BuzzInviteLink {
             role = payload.r?.takeIf { it.isNotBlank() } ?: DEFAULT_ROLE,
             expiresAt = payload.e,
         )
+    }
+
+    /**
+     * Whether [url], an invite link, was minted for a TLS deployment. Buzz writes the link's scheme
+     * from its own relay url (`minted_invite_json` in `buzz-relay/src/api/invites.rs`): `https://` for
+     * a `wss://` relay, `http://` for a `ws://` one (dev and test). A link without a scheme counts as
+     * TLS, as every public Buzz host is.
+     */
+    fun isSecure(url: String): Boolean {
+        val trimmed = url.trim()
+        return !trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("ws://", ignoreCase = true)
     }
 
     /**

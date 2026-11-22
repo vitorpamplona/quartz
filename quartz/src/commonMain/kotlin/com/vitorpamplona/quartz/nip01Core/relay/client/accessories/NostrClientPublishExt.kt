@@ -21,17 +21,23 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MachineReadablePrefix
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.AuthCmd
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.Log
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.TimeSource
 
@@ -171,8 +177,23 @@ suspend fun INostrClient.publishAndCollectResults(
 
     Log.d("publishAndConfirm") { "Waiting for ${relayList.size} responses" }
 
+    // AUTH events sent to the listed relays while we wait: a relay that answers one of them
+    // `blocked:` has refused the key itself (a ban, a block list), so nothing it says about the
+    // event will change. Reporting that at once beats waiting out the timeout through the
+    // reconnect-and-re-AUTH loop a relay that hangs up after the refusal causes.
+    val authSent = MutableStateFlow<Set<HexKey>>(emptySet())
+
     val subscription =
         object : RelayConnectionListener {
+            override fun onSent(
+                relay: IRelayClient,
+                cmdStr: String,
+                cmd: Command,
+                success: Boolean,
+            ) {
+                if (cmd is AuthCmd && relay.url in relayList) authSent.update { it + cmd.event.id }
+            }
+
             override fun onCannotConnect(
                 relay: IRelayClient,
                 errorMessage: String,
@@ -230,6 +251,9 @@ suspend fun INostrClient.publishAndCollectResults(
                         if (msg.eventId == event.id && relay.url in relayList) {
                             resultChannel.trySend(DetailedResult(relay.url, msg.success, msg.message, mark.elapsedNow().inWholeMilliseconds, msg.retryAfterMs))
                             Log.d("publishAndConfirm") { "onSendResponse Received response for ${msg.eventId} from relay ${relay.url} message ${msg.message} success ${msg.success}" }
+                        } else if (isAuthBlocked(msg, relay.url, relayList, authSent.value)) {
+                            resultChannel.trySend(DetailedResult(relay.url, false, msg.message, mark.elapsedNow().inWholeMilliseconds, authBlocked = true))
+                            Log.d("publishAndConfirm") { "Relay ${relay.url} refused our AUTH: ${msg.message}" }
                         }
                     }
                 }
@@ -271,10 +295,25 @@ suspend fun INostrClient.publishAndCollectResults(
                             var deadlineMs = timeoutInSeconds * 1000
                             run {
                                 val awaitingReconnect = mutableSetOf<NormalizedRelayUrl>()
+                                // Relays that refused our AUTH `blocked:`: their verdict is final.
+                                val authBlocked = mutableSetOf<NormalizedRelayUrl>()
                                 while (receivedResults.size < relayList.size) {
                                     val remainingMs = deadlineMs - mark.elapsedNow().inWholeMilliseconds
                                     if (remainingMs <= 0) break
                                     val result = withTimeoutOrNull(remainingMs) { resultChannel.receive() } ?: break
+
+                                    if (result.relay in authBlocked) continue
+                                    if (result.authBlocked) {
+                                        // Not over an acceptance: a relay that took the event and
+                                        // then refused a later AUTH still stored it.
+                                        if (receivedResults[result.relay]?.accepted != true) {
+                                            receivedResults[result.relay] = PublishResult(false, result.message, result.elapsedMs)
+                                        }
+                                        authBlocked.add(result.relay)
+                                        awaitingReconnect.remove(result.relay)
+                                        heldRefusals.remove(result.relay)
+                                        continue
+                                    }
 
                                     if (result.message == RECONNECTED) {
                                         // The pool flushes what it still owes a relay as part of
@@ -397,4 +436,18 @@ private class DetailedResult(
     val message: String,
     val elapsedMs: Long = -1,
     val retryAfterMs: Long? = null,
+    /** An `OK false "blocked: …"` to an AUTH we sent this relay, not to the event. */
+    val authBlocked: Boolean = false,
 )
+
+/**
+ * True when [msg] is [relay]'s `OK false "blocked: …"` to one of the AUTH events in [authSent]: the
+ * relay refuses the key itself, whatever event it publishes. Only `blocked:` counts. Any other AUTH
+ * refusal (`invalid:` for a stale challenge, `restricted:`) may pass on the next challenge.
+ */
+internal fun isAuthBlocked(
+    msg: OkMessage,
+    relay: NormalizedRelayUrl,
+    relayList: Set<NormalizedRelayUrl>,
+    authSent: Set<HexKey>,
+): Boolean = !msg.success && relay in relayList && msg.eventId in authSent && MachineReadablePrefix.parse(msg.message) == MachineReadablePrefix.BLOCKED
