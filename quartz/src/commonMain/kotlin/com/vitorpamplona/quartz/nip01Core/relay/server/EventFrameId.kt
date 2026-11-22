@@ -23,17 +23,22 @@ package com.vitorpamplona.quartz.nip01Core.relay.server
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 
 /**
- * The event id of a raw `["EVENT", {...}]` frame, read without parsing it, or null when
- * [frame] is not an EVENT frame or its event carries no 64-hex `id`. For the frames a
- * relay refuses before parsing (an oversized one), which NIP-01 still owes an `OK`.
+ * The event id of a raw `["EVENT", {...}]` or `["AUTH", {...}]` frame, read without parsing
+ * it, or null when [frame] is neither or its event carries no 64-hex `id`. For the frames a
+ * relay refuses before parsing (an oversized one) or cannot parse (an AUTH whose event is not
+ * kind 22242), which NIP-01 (EVENT) and NIP-42 (AUTH) still owe an `OK`.
  * Only the top-level event object's own `id` key counts, never text inside a string.
  */
-internal fun eventIdOfEventFrame(frame: String): HexKey? {
+internal fun eventIdOfFrame(frame: String): HexKey? {
     var i = skipSpace(frame, 0)
     if (i >= frame.length || frame[i] != '[') return null
     i = skipSpace(frame, i + 1)
-    if (!frame.startsWith("\"EVENT\"", i)) return null
-    i = skipSpace(frame, i + 7)
+    i =
+        when {
+            frame.startsWith("\"EVENT\"", i) -> skipSpace(frame, i + 7)
+            frame.startsWith("\"AUTH\"", i) -> skipSpace(frame, i + 6)
+            else -> return null
+        }
     if (i >= frame.length || frame[i] != ',') return null
     i = skipSpace(frame, i + 1)
     if (i >= frame.length || frame[i] != '{') return null
