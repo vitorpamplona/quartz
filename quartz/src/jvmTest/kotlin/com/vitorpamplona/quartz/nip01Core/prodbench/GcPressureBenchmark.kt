@@ -33,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
+import com.vitorpamplona.quartz.nip50Search.EventSearchMatcher
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.SeenIds
 import kotlinx.coroutines.runBlocking
@@ -176,12 +177,35 @@ class GcPressureBenchmark {
         if (profiles.isNotEmpty()) {
             row("MetadataEvent.contactMetaData() (kind 0)", threadAlloc(profiles.size) { i -> profiles[i].contactMetaData() }, per = profiles.size)
         }
+        if (profiles.isNotEmpty()) {
+            // A keystroke of a cache-wide search: a fresh matcher, every profile checked.
+            row(
+                "search \"vitor nostr\" over kind 0 (per profile)",
+                threadAlloc(20) {
+                    val matcher = EventSearchMatcher("vitor nostr")
+                    var hits = 0
+                    for (e in profiles) if (matcher.match(e)) hits++
+                    hits
+                },
+                per = 20 * profiles.size,
+            )
+        }
         val searchable = events.filterIsInstance<SearchableEvent>()
         row("indexableContent() (searchable kinds)", threadAlloc(searchable.size) { i -> searchable[i].indexableContent() }, per = searchable.size)
         row(
             "AddressSerializer.assemble (30023 + d)",
             threadAlloc(n) { i -> AddressSerializer.assemble(30023, events[i].pubKey, "my-article-slug-20c") },
         )
+
+        // Large events: every write past the builder's kept size used to regrow it from 1K chars.
+        val big = events.filter { it.toJson().length > 16 * 1024 }
+        if (big.isNotEmpty()) {
+            val bigChars = big.sumOf { it.toJson().length.toLong() }
+            val bytes = threadAlloc(big.size) { i -> big[i].toJson() }
+            println("  %-40s %9d B/op  %6.2fx its JSON (%d events > 16K chars)".format("Event -> JSON, events over 16K chars", bytes / big.size, bytes.toDouble() / bigChars, big.size))
+            val tagBytes = threadAlloc(big.size) { i -> OptimizedJsonMapper.toJson(big[i].tags) }
+            println("  %-40s %9d B/op".format("tags -> JSON (store insert), same events", tagBytes / big.size))
+        }
 
         val req = ReqCmd("sub-1", listOf(follow, notif))
         row("ReqCmd(2 filters, 500 authors).toJson", threadAlloc(200) { OptimizedJsonMapper.toJson(req) }, per = 200)

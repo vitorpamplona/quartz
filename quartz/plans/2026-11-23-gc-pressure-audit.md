@@ -1,8 +1,8 @@
 # Library-wide allocation and GC-pressure audit
 
 **Date:** 2026-11-23
-**Status:** measurements and ranked backlog; fixed so far: item 1 (hint providers), item 17
-(address assembly, in part), item 20 (`EventInterner` leak)
+**Status:** measurements and ranked backlog; fixed so far: items 1 (hint providers), 10 (write
+buffers), 11 (`ContactTag`), 12 (kind-0 search), 17 (address assembly, in part), 20 (`EventInterner`)
 **Harnesses:**
 - `quartz/src/jvmTest/.../nip01Core/prodbench/IngestAllocationBenchmark.kt` (ingest stages, retained size)
   `./gradlew :quartz:jvmTest --tests "*.IngestAllocationBenchmark" -i`
@@ -57,12 +57,12 @@ nothing. The garbage comes from what runs after the parse.
 | `EventHasher.hashId` (hex) | 311 B | `Hex.encode` costs about 250 B for a 104 B result |
 | `Filter.match`, 500 authors / `#p` | 15–19 B | lean |
 | hint providers (event + pubkey + address, both forms) | **596 B / event** | runs on every relay copy; ~120 B after item 1 |
-| `ContactListEvent.follows()` | **532 B / p tag** | 0.5 MB per 1,000-follow list |
+| `ContactListEvent.follows()` | **532 B / p tag** | 0.5 MB per 1,000-follow list; 35 B after item 11 |
 | `ContactListEvent.linkedPubKeys()` | 12 B / tag | lean |
-| `MetadataEvent.contactMetaData()` | **2,290 B / kind 0** | uncached; search calls it per event per term per keystroke |
+| `MetadataEvent.contactMetaData()` | **2,290 B / kind 0** | uncached; search called it per event per term per keystroke (98 B per profile per keystroke after item 12) |
 | `SearchableEvent.indexableContent()` | 684 B | on every store insert of a searchable kind |
 | `AddressSerializer.assemble(30023, pk, d)` | 455 B | for a ~110 B result; 150–200 B after item 17 |
-| `ReqCmd` (2 filters, 500 authors) `.toJson()` | **164,173 B** | for a ~34 KB frame |
+| `ReqCmd` (2 filters, 500 authors) `.toJson()` | **164,173 B** | for a ~34 KB frame; 69 KB after item 10 |
 | `SeenIds()` default constructor | **16 MB** | eager `LongArray(2^21)` |
 | SQLite `batchInsert` (500 per batch) | 1,644 B / event | |
 | SQLite `insert` (one by one) | 1,621 B / event | |
@@ -217,40 +217,30 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
        which also removes the `SELECT last_insert_rowid()` statement.
      - This overlaps backlog Store-4 (skip duplicates before the write). Doing Store-4 first
        removes most of these throws.
-10. **Large outputs regrow the per-thread buffers from scratch every time.** *Measured*: a REQ
-    with 500 authors allocates 164 KB to produce a ~34 KB frame.
-    - `KiteWriter` drops its `StringBuilder` when it held more than 16K chars
-      (`KiteWriter.kt:83`), so the next large write regrows it from 1K chars.
-    - The same pattern repeats on the reader:
-      - `cb` (`KiteReader.kt:122,500`): a 30K-char escaped article leaves about 130 KB of
-        `char[]` garbage;
-      - `tagsScratch` (`:120,666`): a 5,000-follow list leaves about 64 KB.
-    - On native, the id-hash preimage buffer (`KiteWriter.kt:84,293`): native has no streaming
-      SHA-256, so about 250 KB of garbage per verify of a large contact list.
-    - Hit on: REQs with many authors, kind 3, long-form, every resend on reconnect.
-    - Fix:
-      - once a buffer outgrows the cap, allocate the final size directly instead of doubling
-        (`n - start` bounds a string value; a quick count bounds the tags);
-      - keep one larger buffer per thread, perhaps 64K;
-      - ask crypto-kmp for a streaming SHA-256 on native.
-11. **`ContactTag.parseValid` runs a regex per `p` tag.** *Measured*: 532 B per tag.
-    - Where: `ContactTag.kt:82` calls `decodePublicKey(tag[1]).toHexKey()`, which goes through
-      `Nip19Parser.uriToRoute`, then a regex `find`, then a hex decode and re-encode, to return
-      a String equal to the input.
-    - On Android the ICU matcher also copies the input to native memory.
-    - Callers: every `follows()`, `diffFrom`, and `GrapeRankCrawler.ingest` (once per crawled
-      contact list).
-    - Fix: `length == 64 && Hex.isHex64(key)`, then reuse the tag's own String (lowercased only
-      if it has uppercase). Same result for valid keys, no allocation.
-12. **Kind-0 search re-parses the profile JSON through kotlinx for every check.** *Measured*:
-    2.3 KB per call.
-    - Where: `MetadataEvent.forEachIndexableField` (`:145`) calls `contactMetaData()` with no
-      cache. `EventSearchMatcher` calls it once per term, per event, per keystroke. 5,000
-      profiles × 2 terms is about 23 MB per keystroke.
-    - Fix:
-      - cache the parsed `UserMetadata` in a private field for the search path;
-      - walk the fields once per event in `EventSearchMatcher`, with a term bitmask;
-      - use `UserMetadata.serializer()` instead of the reified `fromJson<T>`.
+10. **Fixed for writes: large outputs regrew the per-thread buffers from scratch every time.**
+    *Measured*: a REQ with 500 authors went from 164 KB to 69 KB (the builder plus the result
+    String, the floor for a String-returning writer). Events over 16K chars went from 4.4× to
+    2.4× their JSON.
+    - The thread's `StringBuilder` is still dropped after a write past 16K chars, but the next
+      large write sizes it once from a cheap length estimate (`KiteWriter.reserve`: events,
+      tag arrays, templates, and every filter of a REQ or COUNT at once) instead of doubling
+      from 1K.
+    - On native, where the id-hash preimage cannot be streamed into the digest
+      (`SHA256_STREAMS`), the byte buffer is sized to the preimage once.
+    - Still open: the reader's escape buffer (`cb`) and tag scratch regrow the same way for a
+      large escaped article or a 5,000-follow list.
+11. **Fixed: `ContactTag.parseValid` ran a regex per `p` tag.** *Measured*: 532 → 35 B per tag (the
+    `ContactTag` itself). A 64-hex key now keeps the tag's own string, lower-cased if needed;
+    anything else still takes the `decodePublicKey` path, so even a 64-char value hiding an
+    `npub1…` parses as before (`ContactTagParseValidTest`).
+12. **Fixed: kind-0 search re-parsed the profile JSON through kotlinx for every check.**
+    *Measured*: a two-term search over the corpus's profiles went from 3,311 to 98 B per profile
+    per keystroke.
+    - `EventSearchMatcher` walks a searchable event's fields once for all its terms, phrases and
+      exclusions.
+    - Its case-insensitive substring check no longer allocates an `IntRange` per field.
+    - `MetadataEvent` keeps the nine searchable fields after its first parse. That retains
+      ~670 B per searched profile (the corpus mean), recovered on the next keystroke.
 13. **Published events are serialized once per relay.**
     - Where: `BasicRelayClient.kt:553` calls `cmd.toJson()` for each relay, and
       `EventCmd.toJson()` (`EventCmd.kt:41`) re-serializes every time.
