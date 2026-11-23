@@ -209,6 +209,10 @@ class NostrClientSubscribeEventBatchesTest {
             val saver = scope.launch { resume.caughtUpAtFlow(relay).filterNotNull().collect { saved += it } }
             val job = scope.launch { batches().collect { } }
             awaitPoint(900_000)
+            // caughtUpAtFlow is a StateFlow: a point raised before the saver reads the one before
+            // it replaces it, and the saver sees only the newer. Moving the point on before the
+            // saver has the first one is the race, not a lost save.
+            withTimeout(5_000) { while (900_000L !in saved) delay(10) }
             hub.getOrCreate(relay).publish(note(950_000))
             awaitPoint(950_000)
             delay(100)
