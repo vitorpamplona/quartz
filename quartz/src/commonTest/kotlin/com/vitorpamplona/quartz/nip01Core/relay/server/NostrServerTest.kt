@@ -506,4 +506,21 @@ class NostrServerTest {
 
             server.close()
         }
+
+    @Test
+    fun unparsableEventWithReadableIdIsAnsweredOkFalse() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val server = createServer(dispatcher = dispatcher)
+            val collector = MessageCollector()
+
+            val c1 = server.connect(collector.sendCallback)
+            // A client pipelining EVENTs pairs OKs by id: one it cannot parse is still owed its OK.
+            c1.receive("""["EVENT",{"id":"${hexId(7)}","kind":"not a number"}]""")
+
+            assertEquals(1, collector.messages.size)
+            assertTrue(collector.messages[0].startsWith("""["OK","${hexId(7)}",false,"invalid:"""), collector.messages[0])
+
+            server.close()
+        }
 }

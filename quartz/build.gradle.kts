@@ -22,6 +22,9 @@ kotlin {
     jvm {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
+            // Built on JDK 25 for users on JDK 21: compile against JDK 21's API too (javac's
+            // --release), so a call to an API from a newer JDK fails here, not on their JVM.
+            freeCompilerArgs.add("-Xjdk-release=21")
         }
     }
 

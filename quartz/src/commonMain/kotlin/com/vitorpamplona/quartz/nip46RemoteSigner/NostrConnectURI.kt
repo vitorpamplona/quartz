@@ -83,10 +83,10 @@ object NostrConnectURI {
         if (!isValidPubKey(pubkey)) return null
         val relays = mutableSetOf<NormalizedRelayUrl>()
         var secret: String? = null
-        forEachParam(params) { key, value ->
+        forEachParam(params) { key, raw ->
             when (key) {
-                "relay" -> RelayUrlNormalizer.normalizeOrNull(value)?.let { relays.add(it) }
-                "secret" -> secret = value
+                "relay" -> RelayUrlNormalizer.normalizeOrNull(decode(raw))?.let { relays.add(it) }
+                "secret" -> secret = decode(raw)
             }
         }
         return Bunker(pubkey, relays, secret)
@@ -115,14 +115,16 @@ object NostrConnectURI {
         var name: String? = null
         var url: String? = null
         var image: String? = null
-        forEachParam(params) { key, value ->
+        forEachParam(params) { key, raw ->
             when (key) {
-                "relay" -> RelayUrlNormalizer.normalizeOrNull(value)?.let { relays.add(it) }
-                "secret" -> secret = value
-                "perms" -> perms = value
-                "name" -> name = value
-                "url" -> url = value
-                "image" -> image = value
+                "relay" -> RelayUrlNormalizer.normalizeOrNull(decode(raw))?.let { relays.add(it) }
+                "secret" -> secret = decode(raw)
+                "perms" -> perms = decode(raw)
+                // Shown to the user, and written by web clients through URLSearchParams, which sends a
+                // space as `+`. The other values are matched or parsed as given, so a raw `+` stays one.
+                "name" -> name = decodeText(raw)
+                "url" -> url = decode(raw)
+                "image" -> image = decode(raw)
             }
         }
         val validSecret = secret ?: return null
@@ -159,17 +161,26 @@ object NostrConnectURI {
         return authority to (parts.getOrNull(1) ?: "")
     }
 
+    /** Calls [action] with each `key=value` pair of [query], the value still encoded. */
     private inline fun forEachParam(
         query: String,
-        action: (key: String, value: String) -> Unit,
+        action: (key: String, raw: String) -> Unit,
     ) {
         if (query.isEmpty()) return
         for (param in query.split("&")) {
             val kv = param.split("=", limit = 2)
             if (kv.size < 2) continue
-            action(kv[0], decode(kv[1]))
+            action(kv[0], kv[1])
         }
     }
+
+    /**
+     * Decodes a free-text query value as forms encode it (`application/x-www-form-urlencoded`, what
+     * a browser's `URLSearchParams` writes): `+` is a space, then percent escapes are decoded, so an
+     * encoded plus (`%2B`) is still a `+`. For text a person reads, like an app's name; [decode] keeps
+     * a raw `+`, for values compared or parsed as given.
+     */
+    fun decodeText(input: String): String = decode(input.replace('+', ' '))
 
     /** Percent-decode a query value (e.g. `wss%3A%2F%2F…` → `wss://…`). */
     fun decode(input: String): String {

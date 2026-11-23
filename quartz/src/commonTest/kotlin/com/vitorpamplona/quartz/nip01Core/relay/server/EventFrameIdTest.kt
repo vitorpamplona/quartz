@@ -30,38 +30,47 @@ class EventFrameIdTest {
 
     @Test
     fun readsTheIdOfAnEventFrame() {
-        assertEquals(id, eventIdOfEventFrame("""["EVENT",{"id":"$id","kind":1,"tags":[],"content":"hi"}]"""))
+        assertEquals(id, eventIdOfFrame("""["EVENT",{"id":"$id","kind":1,"tags":[],"content":"hi"}]"""))
     }
 
     @Test
     fun toleratesWhitespaceAndKeyOrder() {
-        assertEquals(id, eventIdOfEventFrame(""" [ "EVENT" , { "kind" : 3, "tags" : [["p","x"]], "id" : "$id" } ] """))
+        assertEquals(id, eventIdOfFrame(""" [ "EVENT" , { "kind" : 3, "tags" : [["p","x"]], "id" : "$id" } ] """))
     }
 
     @Test
     fun ignoresAnIdInsideContent() {
         val frame = """["EVENT",{"content":"{\"id\":\"$decoy\"}","id":"$id"}]"""
-        assertEquals(id, eventIdOfEventFrame(frame))
+        assertEquals(id, eventIdOfFrame(frame))
     }
 
     @Test
     fun ignoresAnIdInsideTags() {
         val frame = """["EVENT",{"tags":[["id","$decoy"],["e","$decoy"]],"id":"$id"}]"""
-        assertEquals(id, eventIdOfEventFrame(frame))
+        assertEquals(id, eventIdOfFrame(frame))
     }
 
     @Test
     fun survivesEscapedBackslashesBeforeTheId() {
         val frame = """["EVENT",{"content":"ends in a backslash \\","id":"$id"}]"""
-        assertEquals(id, eventIdOfEventFrame(frame))
+        assertEquals(id, eventIdOfFrame(frame))
+    }
+
+    @Test
+    fun readsTheIdOfAnAuthFrame() {
+        // NIP-42 owes an AUTH its OK as NIP-01 owes an EVENT one, so a refused AUTH needs its id too.
+        assertEquals(id, eventIdOfFrame("""["AUTH",{"id":"$id","kind":22242,"tags":[["challenge","c"]],"content":""}]"""))
+        assertEquals(id, eventIdOfFrame("""["AUTH",{"kind":1,"id":"$id"}]"""))
     }
 
     @Test
     fun answersNullForOtherFrames() {
-        assertNull(eventIdOfEventFrame("""["REQ","sub",{"ids":["$id"]}]"""))
-        assertNull(eventIdOfEventFrame("""["EVENT",{"kind":1}]"""))
-        assertNull(eventIdOfEventFrame("""["EVENT",{"id":"not-hex"}]"""))
-        assertNull(eventIdOfEventFrame("""["EVENT",{"id":"$id"""))
-        assertNull(eventIdOfEventFrame("not json"))
+        assertNull(eventIdOfFrame("""["REQ","sub",{"ids":["$id"]}]"""))
+        assertNull(eventIdOfFrame("""["EVENT",{"kind":1}]"""))
+        assertNull(eventIdOfFrame("""["EVENT",{"id":"not-hex"}]"""))
+        assertNull(eventIdOfFrame("""["EVENT",{"id":"$id"""))
+        assertNull(eventIdOfFrame("not json"))
+        assertNull(eventIdOfFrame("""["CLOSE","$id"]"""))
+        assertNull(eventIdOfFrame("""["AUTH","$id"]"""))
     }
 }

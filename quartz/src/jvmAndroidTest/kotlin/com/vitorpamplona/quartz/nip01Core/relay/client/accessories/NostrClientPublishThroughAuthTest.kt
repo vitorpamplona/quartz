@@ -23,6 +23,10 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.accessories
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.auth.RelayAuthenticator
+import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.OkMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.AuthCmd
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
@@ -30,11 +34,13 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.testing.InProcessRelays
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -87,11 +93,29 @@ class NostrClientPublishThroughAuthTest {
         runBlocking {
             val c = start { FullAuthPolicy(url) }
             val note = signer.sign(TextNoteEvent.build("hello again"))
+            // After the AUTH the pool re-sends the refused event by itself, and the relay answers
+            // that copy with the real OK. A retry sent before that OK reaches us races the copy: it
+            // is paired by id with whichever OK comes first, so it can get the real OK itself, or a
+            // refusal while the copy is still being applied (59740eb84). The point here is the
+            // retry AFTER the re-send was answered, so wait for that OK first.
+            val resendAnswered = CompletableDeferred<Unit>()
+            c.addConnectionListener(
+                object : RelayConnectionListener {
+                    override suspend fun onIncomingMessage(
+                        relay: IRelayClient,
+                        msgStr: String,
+                        msg: Message,
+                    ) {
+                        if (msg is OkMessage && msg.eventId == note.id && msg.success) resendAnswered.complete(Unit)
+                    }
+                },
+            )
             val first = c.publishAndCollectResults(note, setOf(url), timeoutInSeconds = 5).getValue(url)
             assertTrue(first.message.startsWith("auth-required:"), first.message)
             c.warmUpAuth(setOf(url), note.kind)
+            withTimeout(5_000) { resendAnswered.await() }
             val retry = c.publishAndCollectResults(note, setOf(url), timeoutInSeconds = 5).getValue(url)
-            assertTrue(retry.accepted)
+            assertTrue(retry.accepted, retry.message)
             assertTrue(retry.message.startsWith("duplicate:"), retry.message)
         }
 

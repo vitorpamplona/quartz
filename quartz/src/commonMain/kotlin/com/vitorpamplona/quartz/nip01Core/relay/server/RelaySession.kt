@@ -246,7 +246,12 @@ class RelaySession(
             try {
                 OptimizedJsonMapper.fromJsonToCommand(command)
             } catch (_: Exception) {
-                send(NoticeMessage("error: could not parse message"))
+                // An EVENT or AUTH is owed its OK even when it does not parse (NIP-01, NIP-42):
+                // a client pipelining EVENTs pairs OKs by id, and an AUTH carrying an event of
+                // the wrong kind fails here, not in the auth policy. Only a frame whose id
+                // cannot be read gets the NOTICE.
+                val id = eventIdOfFrame(command)
+                send(if (id != null) OkMessage(id, false, "invalid: could not parse message") else NoticeMessage("error: could not parse message"))
                 return
             }
 
@@ -271,14 +276,14 @@ class RelaySession(
 
     /**
      * Answers a frame [IRelayPolicy.acceptMessage] refused. An EVENT is owed its `OK` (NIP-01),
-     * and a client pipelining EVENTs pairs OKs by id, so a refused EVENT whose id can be read
-     * gets `OK false`; anything else gets a NOTICE.
+     * as is an AUTH (NIP-42), and a client pipelining EVENTs pairs OKs by id, so a refused EVENT
+     * or AUTH whose id can be read gets `OK false`; anything else gets a NOTICE.
      */
     private fun refuseUnparsed(
         command: String,
         reason: String,
     ) {
-        val id = eventIdOfEventFrame(command)
+        val id = eventIdOfFrame(command)
         send(if (id != null) OkMessage(id, false, reason) else NoticeMessage(reason))
     }
 
