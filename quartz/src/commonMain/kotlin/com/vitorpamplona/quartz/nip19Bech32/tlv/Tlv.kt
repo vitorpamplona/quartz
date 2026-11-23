@@ -28,13 +28,19 @@ class Tlv(
 ) {
     fun asInt(type: Byte) = data[type]?.mapNotNull { it.toInt32() }
 
-    fun asHex(type: Byte) = data[type]?.map { it.toHexKey().internIfPossible() }
+    fun asHex(type: Byte) = data[type]?.map { it.toHexInterningKeys() }
 
     fun asString(type: Byte) = data[type]?.map { it.decodeToString() }
 
     fun firstAsInt(type: Byte) = data[type]?.firstOrNull()?.toInt32()
 
-    fun firstAsHex(type: Byte) = data[type]?.firstOrNull()?.toHexKey()?.internIfPossible()
+    fun firstAsHex(type: Byte) = data[type]?.firstOrNull()?.toHexInterningKeys()
+
+    /**
+     * Interns only what has a key's shape (32 bytes): a TLV value can be up to 255 bytes of
+     * anything, and an interned string stays for the life of the process.
+     */
+    private fun ByteArray.toHexInterningKeys(): String = if (size == 32) toHexKey().internIfPossible() else toHexKey()
 
     fun firstAsString(type: Byte) = data[type]?.firstOrNull()?.decodeToString()
 

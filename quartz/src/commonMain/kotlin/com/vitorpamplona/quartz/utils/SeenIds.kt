@@ -51,7 +51,7 @@ package com.vitorpamplona.quartz.utils
  * set should be forgotten) so a long-running process can't grow the table forever.
  */
 class SeenIds(
-    initialSlotsPow2: Int = INITIAL_POW2,
+    private val initialSlotsPow2: Int = INITIAL_POW2,
 ) {
     private var mask = 0
     private var table = LongArray(0)
@@ -168,8 +168,18 @@ class SeenIds(
         }
     }
 
+    /**
+     * Forgets every id. Back to this instance's own initial size: a table that never grew is
+     * cleared in place, one that grew is replaced by one of the initial size.
+     */
     fun reset() {
-        allocate(1 shl INITIAL_POW2)
+        val slots = 1 shl initialSlotsPow2
+        if (mask + 1 == slots) {
+            table.fill(0L)
+            count = 0
+        } else {
+            allocate(slots)
+        }
         zeroSeen = false
     }
 
@@ -190,6 +200,9 @@ class SeenIds(
 
     companion object {
         private const val LOAD = 0.7
-        private const val INITIAL_POW2 = 20
+
+        // 4,096 slots (64 KB): the table doubles as ids arrive, so a big walk pays for its size
+        // as it goes. 20 allocated 16 MB up front for every default-constructed instance.
+        private const val INITIAL_POW2 = 12
     }
 }

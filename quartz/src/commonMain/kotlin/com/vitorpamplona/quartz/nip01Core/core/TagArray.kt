@@ -181,13 +181,15 @@ fun TagArray.hasTagName(tagName: String) = this.fastAny { it.isNotEmpty() && it[
 inline fun <R> TagArray.mapValueTagged(
     tagName: String,
     transform: (tagValue: String) -> R,
-) = this.mapNotNull {
-    if (it.size > 1 && it[0] == tagName) {
-        transform(it[1])
-    } else {
-        null
+): List<R & Any> =
+    // fastMapNotNull: no iterator, and the shared emptyList() when nothing matches.
+    this.fastMapNotNull {
+        if (it.size > 1 && it[0] == tagName) {
+            transform(it[1])
+        } else {
+            null
+        }
     }
-}
 
 /**
  * Returns the first tag value that match the given [key] and have a tag value.
@@ -203,6 +205,19 @@ fun TagArray.firstTagValueAsLong(key: String) = this.fastFirstOrNull { it.size >
  * Returns the first tag value that match any of the given [tagNames] and have a tag value
  */
 fun TagArray.firstTagValueFor(vararg tagNames: String) = this.fastFirstOrNull { it.size > 1 && it[0] in tagNames }?.let { it[1] }
+
+/** [firstTagValueFor] for two names, without the vararg array each call would allocate. */
+fun TagArray.firstTagValueFor(
+    tagName1: String,
+    tagName2: String,
+) = this.fastFirstOrNull { it.size > 1 && (it[0] == tagName1 || it[0] == tagName2) }?.let { it[1] }
+
+/** [firstTagValueFor] for three names, without the vararg array each call would allocate. */
+fun TagArray.firstTagValueFor(
+    tagName1: String,
+    tagName2: String,
+    tagName3: String,
+) = this.fastFirstOrNull { it.size > 1 && (it[0] == tagName1 || it[0] == tagName2 || it[0] == tagName3) }?.let { it[1] }
 
 /**
  * Returns `true` if at least one tag matches the given [tagName] and [tagValue]
