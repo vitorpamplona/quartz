@@ -107,9 +107,13 @@ class KiteWriterTest {
     }
 
     @Test
-    fun surrogatesStayAsIsInTextAndAreEscapedAloneInUtf8() {
+    fun loneSurrogatesAreEscapedInTextAndUtf8() {
+        // The text form escapes a lone surrogate too: written raw it has no UTF-8 form and reaches
+        // the wire as '?', so the id hashed over `\uxxxx` no longer matched what was sent.
         val lone = "x\uD83Dy\uDE00"
-        assertEquals("[0,\"$pk\",1,1,[],\"$lone\"]", KiteWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
+        assertEquals("[0,\"$pk\",1,1,[],\"x\\ud83dy\\ude00\"]", KiteWriter.idPreimageJson(pk, 1, 1, emptyArray(), lone))
+        val pair = "\uD83D\uDE00"
+        assertEquals("[0,\"$pk\",1,1,[],\"$pair\"]", KiteWriter.idPreimageJson(pk, 1, 1, emptyArray(), pair))
         assertEquals(
             "[0,\"$pk\",1,1,[],\"x\\ud83dy\\ude00\"]".encodeToByteArray().toList(),
             KiteWriter.idPreimageBytes(pk, 1, 1, emptyArray(), lone).toList(),

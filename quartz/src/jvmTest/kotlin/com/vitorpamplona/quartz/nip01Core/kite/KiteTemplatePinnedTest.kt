@@ -34,6 +34,11 @@ import kotlin.test.fail
  * every captured event as a template and as its tags, hand-picked odd inputs, and every prefix
  * of a sample. The pins were recorded while every outcome was also compared with the Jackson
  * (de)serializers they replaced; the two agreed wherever Jackson accepted the input.
+ *
+ * Re-recorded (2026-11-23) when the reader began refusing anything but whitespace after the
+ * top-level value, where Jackson read the first value and ignored the rest. Only suites holding
+ * such inputs (hand-written `… trailing` frames, random edits that append past the closing
+ * bracket) moved; the captured events and the unedited sets of well-formed frames did not.
  */
 class KiteTemplatePinnedTest {
     private fun <T> run(block: () -> T): Result<T> =
@@ -223,8 +228,8 @@ class KiteTemplatePinnedTest {
                 "templates" to "9768c546eec3ec796c9559ed3c38bd2dad90928e7b68e6e932f6332aadd58d64",
                 "tag arrays" to "903900905972551d6c983e609fd1bd5fdcf00677a6e7ca7e101e7a1ff7b6c9c3",
                 "written templates" to "610e602d0c8da268854f1cee50626d844151c54e5a072fdebbf4f233a24aa5ec",
-                "odd templates" to "d55350ac6b4a2bd0fcf5573c34c53795e314a45836c81f1294bb3c2c12565c49",
-                "odd tag arrays" to "5343507e47666a3ea93f1862122fcbe70e98b5b005283fb18662e1026bf5bf5c",
+                "odd templates" to "3a0d99b66d6d72f8147afd7c82cf173ecb1c0ad10a2a55c43a21cadb8840dd67",
+                "odd tag arrays" to "179122c5cfa9a6072ef6964d2abdf88ad1782a086778c431ee1513d003cd014f",
                 "filters" to "67668e6943165af16a0d9e0d99bbb42006087f9efda6053145768f41e6b719f6",
             )
     }
