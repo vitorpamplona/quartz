@@ -112,6 +112,35 @@ class RelayGroupTemplatesTest {
         assertFailsWith<IllegalArgumentException> { edit(isBuzz = true, buzzLabels = listOf("stream")) }
     }
 
+    private fun flagEdit(
+        current: GroupMetadataEvent,
+        status: Set<GroupMetadataEvent.GroupStatus>,
+        isBuzz: Boolean = false,
+    ) = GroupEditMetadataEvent
+        .buildEdit(gid, current, isBuzz, "general", null, null, null, status, emptyList(), emptyList(), null, emptyList(), null)
+        .tags
+        .map { it.toList() }
+
+    @Test
+    fun anEditThatLiftsAFlagAlsoSendsTheLegacyOpposite() {
+        // relay29 keeps `private`/`closed` unless a 9002 carries `public`/`open` (see the relay29 vectors).
+        val current = metadata(arrayOf("private"), arrayOf("closed"))
+        val lifted = flagEdit(current, emptySet())
+        assertTrue(listOf("public") in lifted && listOf("open") in lifted, "$lifted")
+        assertTrue(listOf("private") !in lifted && listOf("closed") !in lifted, "$lifted")
+
+        val kept = flagEdit(current, setOf(GroupMetadataEvent.GroupStatus.PRIVATE, GroupMetadataEvent.GroupStatus.CLOSED))
+        assertTrue(listOf("public") !in kept && listOf("open") !in kept, "$kept")
+
+        // Nothing to lift: no legacy tags, so a spec relay's 39000 stays as it was.
+        val plain = flagEdit(metadata(), emptySet())
+        assertTrue(plain.none { it[0] == "public" || it[0] == "open" }, "$plain")
+
+        // Buzz reads `visibility`, never the legacy flags.
+        val buzz = flagEdit(current, emptySet(), isBuzz = true)
+        assertTrue(buzz.none { it[0] == "public" || it[0] == "open" }, "$buzz")
+    }
+
     @Test
     fun nip29EditStillCarriesHashtagsAndUnmanagedTags() {
         val tags = edit(isBuzz = false)

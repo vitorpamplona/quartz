@@ -1,0 +1,554 @@
+{
+  "cases": [
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225600,
+        "id": "20adf2ae67a12064097149f869b5810990863bc9d4c5417a09719999a194e271",
+        "kind": 9007,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "fe0a7c08208da02f2c6f7617db45bc00f58e2dbe3e049dd5e62f86b6e5e8a038e6fa91a0e447a011f5ae7f78d74f340f3fecd97ed6d04d45b872391ef66e692a",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Lovers"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ]
+        ]
+      },
+      "name": "create",
+      "relay29": {
+        "action": "create-group",
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225601,
+        "id": "aadf961a0c5282bdd30df2e939df6e9f7ecf5c5416e4b6cc1c1acb2a4b7eb6ea",
+        "kind": 9002,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "5e53885ea67d5480a40117ab1e02f777e438d9702bff83d650654ca9e671e4be28b45e3df7866f8a26a5a4492f61abccc27aa536d7efb60aa456a6cccb77c2dc",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Lovers"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ],
+          [
+            "picture",
+            "https://pizza.example/p.png"
+          ],
+          [
+            "private"
+          ],
+          [
+            "closed"
+          ]
+        ]
+      },
+      "name": "edit_new_private_closed",
+      "relay29": {
+        "action": "edit-metadata",
+        "applied_to_private_closed": {
+          "about": "a group for people who love pizza",
+          "closed": true,
+          "name": "Pizza Lovers",
+          "picture": "https://pizza.example/p.png",
+          "private": true
+        },
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225602,
+        "id": "f4124d7d8f4d139ff60a90ddfc74d02fb12f747b19659dcbd64b84fbb28a908a",
+        "kind": 9002,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "b41f1378ff5193c6a7654956e2edc5ecb33a918a67bbd79770b0a5bb97cca8b20c81bb9e9f62c5b9a40264dd36a6f58c226c8ab07267539d1712431c7ce0e97b",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Fans"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ],
+          [
+            "picture",
+            "https://pizza.example/p.png"
+          ],
+          [
+            "private"
+          ],
+          [
+            "closed"
+          ]
+        ]
+      },
+      "name": "edit_rename_keeps_private_closed",
+      "relay29": {
+        "action": "edit-metadata",
+        "applied_to_private_closed": {
+          "about": "a group for people who love pizza",
+          "closed": true,
+          "name": "Pizza Fans",
+          "picture": "https://pizza.example/p.png",
+          "private": true
+        },
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225603,
+        "id": "8aa46266e371de5ba05b1a79dbbafabc8eb2c378360e226ea95080b5727a9fdb",
+        "kind": 9002,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "5dbd8778fb7c9b6f35c584549efc3fdacf8835ad793b8fce0eba60a0e77c18b238625a7849cf4ce91f4039177bc5d2ad28499d74fc087656f20eed5cc3e9dbbd",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Lovers"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ],
+          [
+            "picture",
+            "https://pizza.example/p.png"
+          ],
+          [
+            "public"
+          ],
+          [
+            "open"
+          ]
+        ]
+      },
+      "name": "edit_to_public_open",
+      "relay29": {
+        "action": "edit-metadata",
+        "applied_to_private_closed": {
+          "about": "a group for people who love pizza",
+          "closed": false,
+          "name": "Pizza Lovers",
+          "picture": "https://pizza.example/p.png",
+          "private": false
+        },
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225604,
+        "id": "14acc0a37a1cdf5a92fad0d7bc2b9fbea4a2816525716d94817c8f95283bbbe2",
+        "kind": 9002,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "d52a65c0c0958d29f92674ead32b872c3c4d5ab7117d97a505d0ec9eaf0bdacc5e4916fe5e4935e16b4378dbfcfd25d36b7c07ceacab1eadb3069c35a25b64bc",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Lovers"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ],
+          [
+            "picture",
+            "https://pizza.example/p.png"
+          ],
+          [
+            "closed"
+          ],
+          [
+            "public"
+          ]
+        ]
+      },
+      "name": "edit_to_public_keeps_closed",
+      "relay29": {
+        "action": "edit-metadata",
+        "applied_to_private_closed": {
+          "about": "a group for people who love pizza",
+          "closed": true,
+          "name": "Pizza Lovers",
+          "picture": "https://pizza.example/p.png",
+          "private": false
+        },
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225605,
+        "id": "0810b825d3ff7c33094397753e7ddf3e381333f7359613655e37f8ab8693dab3",
+        "kind": 9002,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "5bfc2ba6d27265b86d617876655b4d04e26db6463859fc1d1b0be10c53d0c3f1d33903594aa60b645b6a8b5ca51b8f42856d8d443dba7c60b405297deb19a5a4",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "name",
+            "Pizza Lovers"
+          ],
+          [
+            "about",
+            "a group for people who love pizza"
+          ],
+          [
+            "picture",
+            "https://pizza.example/p.png"
+          ],
+          [
+            "private"
+          ],
+          [
+            "open"
+          ]
+        ]
+      },
+      "name": "edit_to_open_keeps_private",
+      "relay29": {
+        "action": "edit-metadata",
+        "applied_to_private_closed": {
+          "about": "a group for people who love pizza",
+          "closed": false,
+          "name": "Pizza Lovers",
+          "picture": "https://pizza.example/p.png",
+          "private": true
+        },
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225610,
+        "id": "2bb0172a2221744292179cdec11916a3b1199449ac222dce24a86cd613d87d87",
+        "kind": 9000,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "14c8ded127ac9939d74ed96bcc3b0348a4c4e9078204ad3163eff88ffd6a53b33142268d00bb3e0bd46b28bf1c4390a56abe267eed3bf9269ae02668591f7559",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ]
+        ]
+      },
+      "name": "put_user_plain",
+      "relay29": {
+        "action": "put-user",
+        "group_id": "interop-pizza",
+        "signature_valid": true,
+        "targets": [
+          {
+            "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+            "roles": []
+          }
+        ]
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225611,
+        "id": "3fadc2818243d555557ade3697df2c30e5da2cbf9a26b2f3b21bc6a46b36bfc2",
+        "kind": 9000,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "3e7d3e94880d0e12a09cf6a534e58c7e5525bf63a316004cfdf208dac67fe0d0784bb02296d7532cf5ef64018257a9af2b50477b51d02a74dac62cccb861330e",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "moderator"
+          ]
+        ]
+      },
+      "name": "put_user_moderator",
+      "relay29": {
+        "action": "put-user",
+        "group_id": "interop-pizza",
+        "signature_valid": true,
+        "targets": [
+          {
+            "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "roles": [
+              "moderator"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225612,
+        "id": "cd2940859dd6e1649c98f48decc3210c9799c4885468b0f4b16ea64e594c4d28",
+        "kind": 9000,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "02c43bdcda95ebac2e59e1cd279346bc96734881c623617677153edfbdf46f231346c23ffe40a06a9a988b39104dc4154b88b15fa2de20fdbe2d815c96acb4f0",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "admin",
+            "moderator"
+          ]
+        ]
+      },
+      "name": "put_user_two_roles",
+      "relay29": {
+        "action": "put-user",
+        "group_id": "interop-pizza",
+        "signature_valid": true,
+        "targets": [
+          {
+            "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "roles": [
+              "admin",
+              "moderator"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225613,
+        "id": "5a1b3e7f2e36309287c68f2d0606ae8556a04bdce406f1abfcafd998f2f7da82",
+        "kind": 9001,
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "sig": "062467ef69adae2b241ffdf2a41a3a3053150bd9c0942946f99668c16851f6f20b1f0359eb076b0784cf23f6e9a0174714d4d99f0a148538bc42adb4863709fa",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "p",
+            "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+          ]
+        ]
+      },
+      "name": "remove_user",
+      "relay29": {
+        "action": "remove-user",
+        "group_id": "interop-pizza",
+        "signature_valid": true,
+        "targets": [
+          "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+        ]
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225614,
+        "id": "c2e124562e55b1e43befd98e4ac33b2e2f8cccdfc76eff75f14967a571428b5d",
+        "kind": 9005,
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "sig": "cf7e1754601706b5ab468a7fcdae46520ae0fc328f375801bed941044ea370b1ea856c0af27751ba64a3e9ad5fb6b5696a6ac307d8c4f9303f8f1235f26a995c",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "e",
+            "abababababababababababababababababababababababababababababababab"
+          ]
+        ]
+      },
+      "name": "delete_event",
+      "relay29": {
+        "action": "delete-event",
+        "group_id": "interop-pizza",
+        "signature_valid": true,
+        "targets": [
+          "abababababababababababababababababababababababababababababababab"
+        ]
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225615,
+        "id": "400ec2aedc6e7305dd6454aa86127413fe3e7eef4a08c585df12fa6bc26922c0",
+        "kind": 9008,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "a33fbcb83d3d44a513a0ea06ac3cc902bf6812cf7f68cdf0db1f70a740467b345c0f66a4266a0ef896d1fa4554c2c28b9cc0147db8c2dca82a53f8e887b48d0c",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ]
+        ]
+      },
+      "name": "delete_group",
+      "relay29": {
+        "action": "delete-group",
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225616,
+        "id": "9cee7335fe90d6db60f66b14bebed6a5a05bf4adb60cb9367f9e6e98ebfc2a02",
+        "kind": 9009,
+        "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "sig": "689286b0cb855f8c3c1d6704ddb9c968903d091f7e601cde6454e7fd797806fe154a2c5c071e90036869e9e26630a26888bb4b3a28b5e05cc4e23a5729547f6f",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "code",
+            "pizza-night"
+          ]
+        ]
+      },
+      "name": "create_invite",
+      "relay29": {
+        "error": "event kind 9009 is not a supported moderation action",
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "I like pizza",
+        "created_at": 1767225620,
+        "id": "c654133ac93f38d3a38eebaba8fcae0471228f9b3e1543b2b60983ee49a7bb3c",
+        "kind": 9021,
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "sig": "0a180aa47ffdf6f24321bed14fa1e2df8227a37312a6a1fcdebaaa70013a76dbb67ecf4521c53f5b448348ef03cdb829064aa0e7b350df37a07c571697466c37",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ]
+        ]
+      },
+      "name": "join_request",
+      "relay29": {
+        "action": "join-request",
+        "code": "",
+        "code_read": false,
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225621,
+        "id": "5df2c04e4435815fd13491d5bb9f848b32172f79fd086da39053b0b5d419860e",
+        "kind": 9021,
+        "pubkey": "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30",
+        "sig": "6f8b457cd71e38b76e14643e85f2a9a9c34986043bc5c937e1ba26ac275863501914240215e7763d66bba8db4c941e521ff284e2b38d488cdb7901d4dcaa6e9d",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ],
+          [
+            "code",
+            "pizza-night"
+          ]
+        ]
+      },
+      "name": "join_request_with_code",
+      "relay29": {
+        "action": "join-request",
+        "code": "pizza-night",
+        "code_read": false,
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    },
+    {
+      "event": {
+        "content": "",
+        "created_at": 1767225622,
+        "id": "4946c89a45e3e3355a804fe561aa7678c05f5e9599754ff27ff0e4c96ff08f85",
+        "kind": 9022,
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "sig": "875704f111fea007423188a79d66188271b8b5addc635faa41b4dd9ae6f723e29fb4eff203c8ea2b79e1047536c75577d03771d1685b67b2e568df73c4a8c03f",
+        "tags": [
+          [
+            "h",
+            "interop-pizza"
+          ]
+        ]
+      },
+      "name": "leave_request",
+      "relay29": {
+        "action": "leave-request",
+        "group_id": "interop-pizza",
+        "signature_valid": true
+      }
+    }
+  ],
+  "source": "fiatjaf/relay29 v0.5.2-0.20250621200750-3276594e9d85 (PrepareModerationAction, go-nostr nip29)"
+}
