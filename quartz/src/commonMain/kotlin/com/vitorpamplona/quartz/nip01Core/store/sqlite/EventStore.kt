@@ -87,6 +87,11 @@ class EventStore(
 
     override suspend fun liveNegentropySnapshot(maxEntries: Int) = store.liveNegentropySnapshot(maxEntries)
 
+    override suspend fun sealedNegentropyStorage(
+        filters: List<Filter>,
+        maxEntries: Int,
+    ) = store.sealedNegentropyStorage(filters, maxEntries)
+
     override val needsFtsCatchUp: Boolean get() = store.needsFtsCatchUp
 
     override suspend fun ftsCatchUp(batchSize: Int) = store.ftsCatchUp(batchSize)

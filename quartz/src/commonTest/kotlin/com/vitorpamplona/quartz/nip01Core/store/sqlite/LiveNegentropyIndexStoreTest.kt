@@ -282,7 +282,7 @@ class LiveNegentropyIndexStoreTest {
         }
 
     @Test
-    fun effectiveDeletionStillInvalidates() =
+    fun effectiveDeletionIsItemized() =
         runTest {
             val store = newStore()
             val author = pubkey(3)
@@ -294,7 +294,9 @@ class LiveNegentropyIndexStoreTest {
                 event(2, kind = 5, createdAt = 120, pubKey = author, tags = arrayOf(arrayOf("e", target.id))),
             )
             val index = assertNotNull(store.store.liveNegentropyIndex)
-            assertTrue(!index.isPopulated(), "a kind-5 that deleted rows must invalidate")
+            // The rows it deleted are removed one by one: an author deleting their own note no
+            // longer costs every NEG-OPEN a rebuild scan.
+            assertTrue(index.isPopulated(), "a kind-5 that deleted rows is itemized, not rebuilt")
             assertIndexMatchesScan(store)
 
             store.close()

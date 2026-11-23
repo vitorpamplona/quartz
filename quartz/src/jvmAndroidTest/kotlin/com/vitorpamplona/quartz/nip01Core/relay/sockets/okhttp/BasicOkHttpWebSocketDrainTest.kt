@@ -184,7 +184,8 @@ class BasicOkHttpWebSocketDrainTest {
 
             val expected = (0 until 50).map { "m$it" } + "failure"
             assertEquals("every message, in order, then the end", expected, recorder.events.toList())
-            assertTrue("an ended session needs a fresh dial", socket.needsReconnect())
+            // The end is reported from the listener call just above: once it returns, the session is over.
+            assertTrue("an ended session needs a fresh dial", eventually { socket.needsReconnect() })
 
             client.dispatcher.executorService.shutdown()
         }
@@ -249,7 +250,7 @@ class BasicOkHttpWebSocketDrainTest {
             assertTrue("a draining session must not be torn down", !socket.needsReconnect())
 
             assertTrue("the end was never reported", recorder.ended.await(10, TimeUnit.SECONDS))
-            assertTrue("an ended session is reconnected", socket.needsReconnect())
+            assertTrue("an ended session is reconnected", eventually { socket.needsReconnect() })
         }
     }
 
@@ -273,5 +274,15 @@ class BasicOkHttpWebSocketDrainTest {
 
             socket.disconnect()
         }
+    }
+
+    /** [check] within a second: an end is over once its report returns, on the delivering thread. */
+    private fun eventually(check: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + 1_000
+        while (!check()) {
+            if (System.currentTimeMillis() > deadline) return false
+            Thread.sleep(5)
+        }
+        return true
     }
 }

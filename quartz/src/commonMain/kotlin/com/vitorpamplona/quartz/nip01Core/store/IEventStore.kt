@@ -259,13 +259,19 @@ interface IEventStore : AutoCloseable {
         maxEntries: Int? = null,
         onProgress: ((collected: Int) -> Unit)? = null,
     ): List<IdAndTime> {
-        val all = ArrayList<IdAndTime>()
-        query<Event>(filters) { event ->
-            all.add(IdAndTime(event.createdAt, event.id))
-            if (onProgress != null && all.size % NEGENTROPY_PROGRESS_EVERY == 0) onProgress(all.size)
-        }
         // One past the cap is the overflow sentinel; at Int.MAX_VALUE there is no room for it, so no cap.
         val sentinel = maxEntries?.takeIf { it < Int.MAX_VALUE }?.plus(1)
+        val all = ArrayList<IdAndTime>()
+        try {
+            query<Event>(filters) { event ->
+                all.add(IdAndTime(event.createdAt, event.id))
+                if (onProgress != null && all.size % NEGENTROPY_PROGRESS_EVERY == 0) onProgress(all.size)
+                // Stops the walk at the sentinel: it used to decode, and hold, every match first.
+                if (sentinel != null && all.size >= sentinel) throw SnapshotFull()
+            }
+        } catch (_: SnapshotFull) {
+            // the sentinel was reached
+        }
         return if (sentinel != null && all.size > sentinel) all.subList(0, sentinel) else all
     }
 
@@ -388,3 +394,6 @@ interface IEventStore : AutoCloseable {
 
     override fun close()
 }
+
+/** Ends [IEventStore.snapshotIdsForNegentropy]'s default walk once it holds the overflow sentinel. */
+private class SnapshotFull : RuntimeException("negentropy snapshot is full")

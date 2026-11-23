@@ -347,11 +347,14 @@ internal object MergeQueryExecutor {
     }
 
     /**
-     * Heap-free k-way merge over the prepared [stmts]: repeatedly emits the
-     * newest live head (`created_at DESC`, tie `id ASC`) until [limit] rows
-     * are emitted or every stream is drained. When [dedup] is set an event id
-     * already emitted is skipped (its cursor still advances), so a row that
-     * surfaces in several streams is emitted once.
+     * k-way merge over the prepared [stmts]: repeatedly emits the newest live head
+     * (`created_at DESC`, tie `id ASC`) until [limit] rows are emitted or every stream is
+     * drained. When [dedup] is set an event id already emitted is skipped (its cursor still
+     * advances), so a row that surfaces in several streams is emitted once.
+     *
+     * The live heads sit in a binary heap of stream indices, so each emitted row costs
+     * O(log k): picking the newest by scanning every head cost O(k) per row, up to 2048 heads
+     * for a wide author or tag fan-out.
      */
     private fun mergeStreams(
         stmts: List<SQLiteStatement>,
@@ -363,32 +366,58 @@ internal object MergeQueryExecutor {
             val k = stmts.size
             val headCreatedAt = LongArray(k)
             val headId = arrayOfNulls<String>(k)
-            val live = BooleanArray(k)
+
+            // true when stream a's head goes before stream b's.
+            fun before(
+                a: Int,
+                b: Int,
+            ): Boolean = headCreatedAt[a] > headCreatedAt[b] || (headCreatedAt[a] == headCreatedAt[b] && headId[a]!! < headId[b]!!)
+
+            val heap = IntArray(k)
+            var size = 0
+
+            fun siftDown(start: Int) {
+                var i = start
+                while (true) {
+                    val l = 2 * i + 1
+                    if (l >= size) return
+                    val r = l + 1
+                    val c = if (r < size && before(heap[r], heap[l])) r else l
+                    if (!before(heap[c], heap[i])) return
+                    val t = heap[c]
+                    heap[c] = heap[i]
+                    heap[i] = t
+                    i = c
+                }
+            }
+
+            fun siftUp(start: Int) {
+                var i = start
+                while (i > 0) {
+                    val p = (i - 1) / 2
+                    if (!before(heap[i], heap[p])) return
+                    val t = heap[p]
+                    heap[p] = heap[i]
+                    heap[i] = t
+                    i = p
+                }
+            }
 
             // Position each cursor on its newest row.
             for (i in 0 until k) {
                 if (stmts[i].step()) {
                     headId[i] = stmts[i].getText(0)
                     headCreatedAt[i] = stmts[i].getLong(2)
-                    live[i] = true
+                    heap[size] = i
+                    size++
+                    siftUp(size - 1)
                 }
             }
 
             val seen = if (dedup) HashSet<String>() else null
             var emitted = 0
-            while (emitted < limit) {
-                // Pick the newest live head: created_at DESC, then id ASC.
-                var best = -1
-                for (i in 0 until k) {
-                    if (!live[i]) continue
-                    if (best == -1 ||
-                        headCreatedAt[i] > headCreatedAt[best] ||
-                        (headCreatedAt[i] == headCreatedAt[best] && headId[i]!! < headId[best]!!)
-                    ) {
-                        best = i
-                    }
-                }
-                if (best == -1) break
+            while (emitted < limit && size > 0) {
+                val best = heap[0]
 
                 // Emit unless this id was already emitted by another stream.
                 if (seen == null || seen.add(headId[best]!!)) {
@@ -401,8 +430,10 @@ internal object MergeQueryExecutor {
                     headId[best] = stmts[best].getText(0)
                     headCreatedAt[best] = stmts[best].getLong(2)
                 } else {
-                    live[best] = false
+                    size--
+                    heap[0] = heap[size]
                 }
+                siftDown(0)
             }
         } finally {
             for (s in stmts) s.close()

@@ -158,6 +158,16 @@ class RelaySession(
      */
     private var lanesOrNull: LargeCache<String, Lane>? = null
 
+    /**
+     * COUNTs whose coroutine is still running. They count against
+     * [IRelayPolicy.acceptSubscription]'s cap beside the open REQs: with no bound a client could
+     * keep any number of slow COUNTs running on one connection, each a store query.
+     */
+    private val runningCounts = AtomicInt(0)
+
+    /** What [IRelayPolicy.acceptSubscription] is told is open: REQs and running COUNTs. Command loop only. */
+    private fun openRequests(): Int = subscriptions.size() + runningCounts.load()
+
     /** Entries the command loop added to [counts] and the lanes since it last dropped ended ones. */
     private var entriesAdded = 0
 
@@ -210,7 +220,7 @@ class RelaySession(
         }
 
     /** NIP-77 negentropy state for this connection. */
-    private val negentropy = NegSessionRegistry(store, ::send, negentropySettings)
+    private val negentropy = NegSessionRegistry(store, ::send, negentropySettings, requestContext, scope)
 
     /** Command loop only: the REQ on [subId] is cancelled, and what follows on the id waits for its last frame. */
     private fun cancelSubscription(subId: String): Boolean =
@@ -674,6 +684,16 @@ class RelaySession(
 
         // A REQ that failed on this id: its CLOSED goes before anything that follows on the id.
         dropFailedReqs()
+
+        // A new COUNT is one more running request, held to the same cap as a REQ; one that replaces
+        // a COUNT still running on its id does not grow the count.
+        if (countsOrNull?.get(queryId)?.isEnded != false) {
+            policy.acceptSubscription(queryId, openRequests())?.let { reason ->
+                refuse(queryId, ClosedMessage(queryId, reason))
+                return
+            }
+        }
+
         // Before the policy, so the replaced COUNT's answer follows neither this one's nor its refusal.
         cancelCount(queryId)
 
@@ -690,6 +710,7 @@ class RelaySession(
         val count = PendingCount(turnOn(queryId))
         counts.put(queryId, count)
         noteAdded()
+        runningCounts.addAndFetch(1)
         // UNDISPATCHED: a count that does not suspend answers inline, as it did on the loop.
         val job =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -710,6 +731,8 @@ class RelaySession(
                     }
                 count.answer(answer)
             }
+        // Runs once however the job ends, at once if it already has.
+        job.invokeOnCompletion { runningCounts.addAndFetch(-1) }
         count.attach(job)
         // A disconnect on another thread may have swept [counts] before this landed in it.
         if (sessionEnded) count.cancel()
@@ -844,7 +867,7 @@ class RelaySession(
         // reject its replacement, and before [IRelayPolicy.accept], so a REQ the
         // cap refuses spends none of the client's rate limit.
         if (!subscriptions.containsKey(cmd.subId)) {
-            policy.acceptSubscription(cmd.subId, subscriptions.size())?.let { reason ->
+            policy.acceptSubscription(cmd.subId, openRequests())?.let { reason ->
                 // A new id, so no REQ to end, but a COUNT running on it ends with the refusal.
                 refuse(cmd.subId, ClosedMessage(cmd.subId, reason))
                 return

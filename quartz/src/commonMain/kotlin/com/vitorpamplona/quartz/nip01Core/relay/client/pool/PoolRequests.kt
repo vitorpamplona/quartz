@@ -82,6 +82,12 @@ class PoolRequests(
      */
     private val desiredRelaysLock = PlatformLock()
 
+    /** Per sub, the relays it makes wanted (a non-suppressed filter for them). Under [desiredRelaysLock]. */
+    private val wantedBySub = HashMap<String, Set<NormalizedRelayUrl>>()
+
+    /** Per relay, how many subs make it wanted; its keys are [desiredRelays]. Under [desiredRelaysLock]. */
+    private val relayRefs = HashMap<NormalizedRelayUrl, Int>()
+
     /**
      * Relay states map what we think the relay is doing
      *
@@ -140,22 +146,80 @@ class PoolRequests(
         // drops it here so the pool disconnects — closing the idle socket rather than keeping
         // it open with every REQ suppressed. This is per-filter/capability, so a search-only
         // relay stays connected as long as some sub carries a search filter for it.
+        //
+        // The full rebuild, for when what is suppressed changed (a relay newly blocked); a
+        // subscribe or unsubscribe updates only its own sub ([updateRelaysOf]).
         desiredRelaysLock.lock()
         try {
-            val myRelays = mutableSetOf<NormalizedRelayUrl>()
+            wantedBySub.clear()
+            relayRefs.clear()
             desiredSubs.forEach { sub, perRelayFilters ->
-                perRelayFilters.forEach { (relay, filters) ->
-                    if (!relayRefusals.shouldSuppress(relay, filters)) {
-                        myRelays.add(relay)
+                val wanted = wantedRelaysOf(perRelayFilters)
+                if (wanted.isNotEmpty()) {
+                    wantedBySub[sub] = wanted
+                    wanted.forEach { relayRefs[it] = (relayRefs[it] ?: 0) + 1 }
+                }
+            }
+            publishDesiredRelaysLocked()
+        } finally {
+            desiredRelaysLock.unlock()
+        }
+    }
+
+    private fun wantedRelaysOf(perRelayFilters: Map<NormalizedRelayUrl, List<Filter>>?): Set<NormalizedRelayUrl> {
+        if (perRelayFilters.isNullOrEmpty()) return emptySet()
+        val wanted = HashSet<NormalizedRelayUrl>(perRelayFilters.size)
+        perRelayFilters.forEach { (relay, filters) ->
+            if (!relayRefusals.shouldSuppress(relay, filters)) wanted.add(relay)
+        }
+        return wanted
+    }
+
+    /**
+     * [updateRelays] for one sub: moves only its own relays' counts. Reads the sub's filters
+     * under the lock, so whichever call runs last has seen the latest change to it. The full
+     * rescan this replaces walked every desired sub, under the lock, on every subscribe.
+     */
+    private fun updateRelaysOf(subId: String) {
+        desiredRelaysLock.lock()
+        try {
+            val now = wantedRelaysOf(desiredSubs.get(subId))
+            val before = wantedBySub[subId] ?: emptySet()
+            if (now == before) return
+            var changed = false
+            before.forEach { relay ->
+                if (relay !in now) {
+                    val left = (relayRefs[relay] ?: 1) - 1
+                    if (left <= 0) {
+                        relayRefs.remove(relay)
+                        changed = true
+                    } else {
+                        relayRefs[relay] = left
                     }
                 }
             }
-
-            if (desiredRelays.value != myRelays) {
-                desiredRelays.tryEmit(myRelays)
+            now.forEach { relay ->
+                if (relay !in before) {
+                    val refs = relayRefs[relay]
+                    if (refs == null) {
+                        relayRefs[relay] = 1
+                        changed = true
+                    } else {
+                        relayRefs[relay] = refs + 1
+                    }
+                }
             }
+            if (now.isEmpty()) wantedBySub.remove(subId) else wantedBySub[subId] = now
+            if (changed) publishDesiredRelaysLocked()
         } finally {
             desiredRelaysLock.unlock()
+        }
+    }
+
+    /** Under [desiredRelaysLock]. */
+    private fun publishDesiredRelaysLocked() {
+        if (desiredRelays.value.size != relayRefs.size || !desiredRelays.value.containsAll(relayRefs.keys)) {
+            desiredRelays.tryEmit(relayRefs.keys.toSet())
         }
     }
 
@@ -193,7 +257,7 @@ class PoolRequests(
         // create sub state
         subState(subId)
         // update relays for pool
-        updateRelays()
+        updateRelaysOf(subId)
         // return all affected relays
         return oldRelays + filters.keys
     }
@@ -211,7 +275,7 @@ class PoolRequests(
             // update listener
             desiredSubListeners.remove(subId)
             // update relays for pool
-            updateRelays()
+            updateRelaysOf(subId)
             // NOTE: the state row deliberately survives until [sendToRelayIfChanged]
             // flushes the CLOSE -- that decision reads the filters this relay still
             // believes are in flight. Dropping the row here makes the CLOSE frame
@@ -308,6 +372,7 @@ class PoolRequests(
                     relayState.get(msg.subId)?.let { state ->
                         state.withLock(relay.url) {
                             state.onEose(relay.url)
+                            if (msg.needsAuth()) state.onAuthHint(relay.url)
                             forFilters = state.lastKnownFilterStates(relay.url)
                             // Decide (and pre-mark) the resend while still holding the
                             // lock, so a concurrent subscribe/unsubscribe on the app
@@ -354,7 +419,11 @@ class PoolRequests(
                 // Relay-wide capability tracking is independent of any single sub's lock. Run
                 // it first so decideCommandLocked below already sees the block; if it newly
                 // blocked the relay, drop it from the desired set so the pool disconnects.
+                val kindsRefusedBefore = relayRefusals.disallowedKinds(relay.url).size
                 val newlyBlocked = relayRefusals.onRefused(relay.url, msg.message)
+                // A kind the relay named as refused can leave a sub with nothing to send there:
+                // the per-sub relay counts are rebuilt, as for a block.
+                val learnedKinds = relayRefusals.disallowedKinds(relay.url).size != kindsRefusedBefore
 
                 // A `rate-limited:` CLOSED that states a back-off is not re-decided here: the
                 // client hands the current filters to [retryRateLimited], and the relay's
@@ -371,7 +440,7 @@ class PoolRequests(
                         }
                     }
 
-                if (newlyBlocked) updateRelays()
+                if (newlyBlocked || learnedKinds) updateRelays()
 
                 desiredSubListeners.get(msg.subId)?.onClosed(
                     message = msg.message,
@@ -523,6 +592,49 @@ class PoolRequests(
                         }
                     }
                 if (send) sync(ReqCmd(subId, filters))
+            }
+        }
+    }
+
+    /**
+     * The re-send an accepted AUTH is owed on [relay]: only the subscriptions the relay could not
+     * yet serve for want of it. Those it CLOSED (an `auth-required:` refusal keeps the sub CLOSED
+     * with its filters), those with no REQ on this connection, and LIVE ones whose EOSE carried the
+     * NIP-42 `"auth"` hint (the relay held matches back). A REQ in flight or LIVE without the hint
+     * is left alone: relays answer frames in order, so one sent before the AUTH was answered
+     * (refused or served) before the AUTH's `OK`, and one sent after it is served authenticated.
+     * [syncState] re-sent every desired REQ instead, restarting every LIVE subscription (its whole
+     * replay again) on every accepted AUTH.
+     */
+    fun syncAfterAuth(
+        relay: NormalizedRelayUrl,
+        sync: (Command) -> Unit,
+    ) {
+        desiredSubs.forEach { subId, perRelayFilters ->
+            val own = perRelayFilters[relay]?.let { relayRefusals.narrow(relay, it) }
+            if (!own.isNullOrEmpty()) {
+                val state = subState(subId)
+                val owed =
+                    state.withLock(relay) {
+                        val status = state.currentState(relay)
+                        status == null || status == ReqSubStatus.CLOSED || state.isAuthHinted(relay)
+                    }
+                if (owed) {
+                    val written = filtersForSync(subId, relay, own)
+                    val filters = if (written === own) own else relayRefusals.narrow(relay, written)
+                    val send =
+                        state.withLock(relay) {
+                            val status = state.currentState(relay)
+                            val stillOwed = status == null || status == ReqSubStatus.CLOSED || state.isAuthHinted(relay)
+                            if (!stillOwed || isStructurallyRefused(state, relay, own)) {
+                                false
+                            } else {
+                                state.onOpenReq(relay, filters, standsFor = own.takeIf { filters !== own })
+                                true
+                            }
+                        }
+                    if (send) sync(ReqCmd(subId, filters))
+                }
             }
         }
     }

@@ -24,6 +24,7 @@ import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.AuthMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.AuthCmd
@@ -51,8 +52,9 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * decisions read [scope].`authenticatedUsers`. A rejected AUTH simply never
  * reaches [onAuthenticated], so there is no rollback to reason about.
  *
- * It does not verify the AUTH event's signature or id: stack it after [VerifyPolicy]
- * (`VerifyPolicy + FullAuthPolicy(relay)`). On its own, anyone can AUTH as any pubkey.
+ * It verifies the AUTH event's id and signature itself, last, after the cheap checks: on its
+ * own, without a [VerifyPolicy] in front, it used to let anyone AUTH as any pubkey. Stacked
+ * after [VerifyPolicy], the AUTH is verified twice, which costs one signature check per login.
  *
  * To bridge to an external auth system, override [authorize] (a `suspend` hook)
  * and do the post-verification I/O there — e.g. exchange the verified event for
@@ -146,6 +148,10 @@ open class FullAuthPolicy(
 
         if (!namesThisRelay(event)) {
             return PolicyResult.Rejected("invalid: relay url does not match")
+        }
+
+        if (!event.verify()) {
+            return PolicyResult.Rejected("invalid: bad signature or id")
         }
 
         return PolicyResult.Accepted(cmd)

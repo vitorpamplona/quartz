@@ -335,6 +335,11 @@ use): fall back to an operator default, or no gate.
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
 
+- 2026-11-23 (pending) STORE-N02/O01 — the SQLite store now overrides `sealedNegentropyStorage`
+  (rows stream into the storage), and the relay builds a NEG-OPEN's storage under the caller's
+  `StoreQueryContext` (`SessionBackend.sealedNegentropyStorage(ctx, …)`), draining a deferred FTS
+  backlog first for a search filter and caching it per caller. Schema v7 adds
+  `query_by_owner_created (pubkey_owner_hash, created_at)` for the vanish delete.
 - 2026-10-30 (pending) F07 — the filesystem store now returns a multi-filter REQ in one merged
   `created_at DESC` order (it concatenated per filter); found by the conformance battery.
 

@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.EventSource
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
 import com.vitorpamplona.quartz.nip45Count.HllBuilder
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -48,7 +49,9 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EventSourceServerTest {
-    private val pubkey = "46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184b16bd8ce4d"
+    // A real key: FullAuthPolicy verifies the AUTH event's signature.
+    private val signer = NostrSignerSync()
+    private val pubkey = signer.pubKey
     private val sig = "4aa5264965018fa12a326686ad3d3bd8beae3218dcc83689b19ca1e6baeb791531943c15363aa6707c7c0c8b2d601deca1f20c32078b2872d356cdca03b04cce"
 
     private fun hexId(n: Int): String = n.toString().padStart(64, '0')
@@ -218,22 +221,20 @@ class EventSourceServerTest {
             }
         }
 
-    /** Builds a kind 22242 auth event; FullAuthPolicy checks challenge/relay/time, not the signature. */
+    /** Builds a kind 22242 auth event, signed: FullAuthPolicy checks the signature too. */
     private fun authEvent(
         challenge: String,
         relay: String,
-    ) = RelayAuthEvent(
-        id = hexId(99),
-        pubKey = pubkey,
-        createdAt = TimeUtils.now(),
-        tags =
+    ): RelayAuthEvent =
+        signer.sign(
+            TimeUtils.now(),
+            RelayAuthEvent.KIND,
             arrayOf(
                 arrayOf("relay", relay),
                 arrayOf("challenge", challenge),
             ),
-        content = "",
-        sig = sig,
-    )
+            "",
+        )
 
     private fun authJson(event: RelayAuthEvent) = OptimizedJsonMapper.toJson(AuthCmd(event))
 

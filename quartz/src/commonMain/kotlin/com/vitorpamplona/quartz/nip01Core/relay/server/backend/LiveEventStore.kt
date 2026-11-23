@@ -957,6 +957,32 @@ class LiveEventStore(
         filters: List<Filter>,
         maxEntries: Int,
     ): IStorage? {
+        drainFtsIfSearching(filters)
+        return cachedNegentropyStorage(filters, maxEntries, emptySet())
+    }
+
+    /**
+     * The NEG-OPEN snapshot as the caller sees it: under its [StoreQueryContext], as its REQs and
+     * COUNTs are, after draining a deferred FTS backlog for a search filter (STORE-S06), and
+     * cached per caller identity. Without it, an observer-gated store answered NEG-OPEN ungated,
+     * a search NEG-OPEN missed what the backlog held, and one caller's cached snapshot was handed
+     * to the next.
+     */
+    override suspend fun sealedNegentropyStorage(
+        ctx: RequestContext,
+        filters: List<Filter>,
+        maxEntries: Int,
+    ): IStorage? {
+        drainFtsIfSearching(filters)
+        val users = ctx.authenticatedUsers
+        return withCallerIdentity(ctx) { cachedNegentropyStorage(filters, maxEntries, users) }
+    }
+
+    private suspend fun cachedNegentropyStorage(
+        filters: List<Filter>,
+        maxEntries: Int,
+        users: Set<String>,
+    ): IStorage? {
         // Full-set NEG-OPENs — a single unconstrained filter, the shape
         // relay-relay sync sends by default — are served from the store's
         // always-current index when it maintains one: no scan, no
@@ -967,7 +993,8 @@ class LiveEventStore(
         }
 
         val generation = writeGeneration.load()
-        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries"
+        // Keyed by who asks too: an observer-relative store answers each caller its own set.
+        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries\u0000as=" + users.joinToString(",")
         val now = TimeUtils.now()
 
         val cached = snapshotCache.load()

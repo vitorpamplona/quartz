@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.OptionalAuthPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
@@ -50,8 +51,11 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NostrServerAuthTest {
-    private val pubkey = "46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184b16bd8ce4d"
-    private val pubkey2 = "32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245"
+    // Real keys: FullAuthPolicy verifies the AUTH event's signature itself.
+    private val signer1 = NostrSignerSync()
+    private val signer2 = NostrSignerSync()
+    private val pubkey = signer1.pubKey
+    private val pubkey2 = signer2.pubKey
     private val sig = "4aa5264965018fa12a326686ad3d3bd8beae3218dcc83689b19ca1e6baeb791531943c15363aa6707c7c0c8b2d601deca1f20c32078b2872d356cdca03b04cce"
     private val relayUrl = NormalizedRelayUrl("wss://relay.example.com/")
 
@@ -105,27 +109,22 @@ class NostrServerAuthTest {
         fun rawMessagesContaining(label: String) = messages.filter { it.contains("\"$label\"") }
     }
 
-    /**
-     * Builds a kind 22242 auth event for testing. Because verify = { true },
-     * the id and signature don't need to be real.
-     */
+    /** Builds a kind 22242 auth event for testing, signed by [pubKey]'s signer. */
     private fun authEvent(
         challenge: String,
         relay: String = relayUrl.url,
         pubKey: String = pubkey,
         createdAt: Long = TimeUtils.now(),
-    ) = RelayAuthEvent(
-        id = hexId(99),
-        pubKey = pubKey,
-        createdAt = createdAt,
-        tags =
+    ): RelayAuthEvent =
+        (if (pubKey == pubkey2) signer2 else signer1).sign(
+            createdAt,
+            RelayAuthEvent.KIND,
             arrayOf(
                 arrayOf("relay", relay),
                 arrayOf("challenge", challenge),
             ),
-        content = "",
-        sig = sig,
-    )
+            "",
+        )
 
     private fun authJson(event: RelayAuthEvent): String {
         val cmd = AuthCmd(event)

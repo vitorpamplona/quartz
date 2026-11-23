@@ -72,50 +72,22 @@ class PoolEventOutbox {
         private const val SWEEP_EVERY = 256
     }
 
-    fun needsToUpdateRelays(): Boolean {
-        val currentRelays = relays.value
-
-        var relaysToRemoveCounter = 0
-
-        currentRelays.forEach { currentRelay ->
-            if (eventOutbox.values().none { it.isSupposedToGo(currentRelay) }) {
-                relaysToRemoveCounter++
-            }
-        }
-
-        var relaysToAddCounter = 0
-        eventOutbox.values().forEach { outboxState ->
-            if (outboxState.relaysLeft().any { it !in currentRelays }) {
-                relaysToAddCounter++
-            }
-        }
-
-        return relaysToRemoveCounter > 0 || relaysToAddCounter > 0
+    /** Every relay some pending event is still owed: what [relays] should be. One pass over the outbox. */
+    private fun wantedRelays(): Set<NormalizedRelayUrl> {
+        val wanted = HashSet<NormalizedRelayUrl>()
+        eventOutbox.forEach { _, outboxState -> outboxState.addRemainingTo(wanted) }
+        return wanted
     }
 
+    fun needsToUpdateRelays(): Boolean = wantedRelays() != relays.value
+
+    /**
+     * Rebuilds [relays] from the outbox in one pass. It used to walk the outbox once per relay in
+     * the set, twice over (to decide, then to update): relays x outbox per sweep.
+     */
     fun updateRelays() {
-        if (needsToUpdateRelays()) {
-            relays.update { currentRelays ->
-                val relaysToRemove = mutableSetOf<NormalizedRelayUrl>()
-
-                currentRelays.forEach { currentRelay ->
-                    if (eventOutbox.values().none { it.isSupposedToGo(currentRelay) }) {
-                        relaysToRemove.add(currentRelay)
-                    }
-                }
-
-                val relaysToAdd = mutableSetOf<NormalizedRelayUrl>()
-                eventOutbox.values().forEach { outboxState ->
-                    outboxState.relaysLeft().forEach { relay ->
-                        if (relay !in relaysToAdd && relay !in currentRelays) {
-                            relaysToAdd.add(relay)
-                        }
-                    }
-                }
-
-                (currentRelays - relaysToRemove) + relaysToAdd
-            }
-        }
+        val wanted = wantedRelays()
+        relays.update { current -> if (current == wanted) current else wanted }
     }
 
     fun activeOutboxCacheFor(url: NormalizedRelayUrl): Set<HexKey> {
@@ -160,13 +132,18 @@ class PoolEventOutbox {
         if (currentOutbox == null) {
             eventOutbox.put(event.id, PoolEventOutboxState(event, relays, eventJson))
         } else {
-            currentOutbox.updateRelays(relays)
+            // A union: publishing an event again to some relays (a retry after an AUTH, say)
+            // must not drop the relays an earlier publish still waits on. Replacing the set did,
+            // and their answer, when it came, no longer counted.
+            currentOutbox.addRelays(relays)
             if (eventJson != null) currentOutbox.eventJson = eventJson
         }
         // Additions only, and only what is genuinely new: the union is over
         // this event's relays, never over the whole outbox.
         addRelays(relays)
-        return eventOutbox.get(event.id)?.remainingRelays() ?: emptySet()
+        // Sent to the relays asked for now, not to every relay still owed it: each send spends a
+        // try of that relay's retry budget.
+        return relays
     }
 
     /** Union [wanted] into [relays], touching the flow only when it actually changes. */
@@ -236,6 +213,22 @@ class PoolEventOutbox {
     ) {
         eventOutbox.forEach { _, outboxCache ->
             if (outboxCache.reachable(relay)) {
+                sync(outboxCache.command())
+            }
+        }
+    }
+
+    /**
+     * The re-send an accepted AUTH is owed on [relay]: the events it answered `auth-required:`.
+     * [syncState] re-sent every pending event, each send spending one of its tries, including
+     * events still in flight that the relay was about to answer.
+     */
+    fun syncAfterAuth(
+        relay: NormalizedRelayUrl,
+        sync: (Command) -> Unit,
+    ) {
+        eventOutbox.forEach { _, outboxCache ->
+            if (outboxCache.isWaitingForAuth(relay)) {
                 sync(outboxCache.command())
             }
         }

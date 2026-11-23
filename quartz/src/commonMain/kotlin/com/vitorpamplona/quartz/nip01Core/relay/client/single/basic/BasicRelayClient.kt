@@ -143,6 +143,11 @@ open class BasicRelayClient(
     // Makes sure only one socket is open for each url
     private var connectingMutex = AtomicBoolean(false)
 
+    // Orders a new [socket] being set by [connect] against an old session's end clearing it:
+    // without it, a late end that found no socket could clear the one [connect] had just set,
+    // leaving that socket open, unowned and never closed.
+    private val sessionLock = PlatformLock()
+
     // A fresh connection replays every subscription and pending EVENT from onOpen
     // (INostrClient.syncFilters, through [sendFromSync]). Commands sent through the normal paths
     // while that replay runs are held and sent right after it, in order: otherwise a REQ
@@ -187,7 +192,7 @@ open class BasicRelayClient(
             val newSocket = socketBuilder.build(url, listenerForSocket)
             listenerForSocket.owner = newSocket
             sessionListener = listenerForSocket
-            socket = newSocket
+            sessionLock.withLock { socket = newSocket }
             newSocket.connect()
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -217,6 +222,22 @@ open class BasicRelayClient(
 
         /** True when a newer socket replaced [owner]; an end with no socket at all is still ours. */
         private fun isReplaced() = socket != null && owner !== socket
+
+        /**
+         * Closes this session on the relay client unless a newer socket replaced it, as one step
+         * against [connect]: true when it did. Checked and cleared separately, a [connect] between
+         * the two had its new socket cleared by this old session's end.
+         */
+        private fun closeSession(): Boolean =
+            sessionLock.withLock {
+                val current = socket
+                if (current != null && current !== owner) {
+                    false
+                } else {
+                    markConnectionAsClosed()
+                    true
+                }
+            }
 
         // A socket reports one terminal callback, but a [disconnect] answering a failure may add a
         // close report of its own: the first end is the session's.
@@ -302,8 +323,8 @@ open class BasicRelayClient(
             reason: String,
         ) {
             if (isReplaced()) return
+            if (!closeSession()) return
             ended(RelayDisconnect.Side.RELAY, code, reason)
-            markConnectionAsClosed()
             listener.onDisconnected(this@BasicRelayClient)
         }
 
@@ -323,7 +344,8 @@ open class BasicRelayClient(
             } else {
                 // Before the disconnect below, whose own close report is this same end.
                 ended(RelayDisconnect.Side.TRANSPORT, code, failureText(t, response), t::class.simpleName)
-                socket?.disconnect()
+                // This session's socket, never whatever [socket] holds by now.
+                owner?.disconnect()
 
                 // suppression rules below must match the raw message; displayMsg is for listener output only.
                 // Always include the exception's class name: message text is
@@ -359,8 +381,8 @@ open class BasicRelayClient(
                     // listener.onServerError(this@BasicRelayClient, Error("Ignored Error $code $response. Exception: ${t.message}"))
                 }
 
-                // Failures disconnect the relay.
-                markConnectionAsClosed()
+                // Failures disconnect the relay, unless a reconnect already replaced this session.
+                if (!closeSession()) return
 
                 // A name that does not resolve is not a busy relay, it is very likely a relay
                 // whose domain is gone (lapsed registration, decommissioned host). Doubling
@@ -427,11 +449,17 @@ open class BasicRelayClient(
 
     override fun disconnect() {
         markClosing(DISCONNECT_REASON)
+        val hadSession = socket != null
         socket?.disconnect()
         // After the close report: an explicit disconnect is not an error, so whatever that report
-        // did to the backoff, prepare to reconnect as soon as requested.
-        lastConnectTentativeInSeconds = 0L
-        delayToConnectInSeconds = DELAY_TO_RECONNECT_IN_SECS
+        // did to the backoff, prepare to reconnect as soon as requested. Only when there was a
+        // session to end, though: a relay already down (a failed dial, backing off) keeps its
+        // backoff, or every disconnect-connect cycle of the client (each trip to the background)
+        // redialed every dead relay in the pool at once.
+        if (hadSession) {
+            lastConnectTentativeInSeconds = 0L
+            delayToConnectInSeconds = DELAY_TO_RECONNECT_IN_SECS
+        }
         connectedAtInSeconds = 0L
         socket = null
         isReady = false
@@ -457,6 +485,11 @@ open class BasicRelayClient(
             return
         }
 
+        // Waiting for the transport (Tor not up yet) is not a failed dial: checked here, before the
+        // backoff grows, since connect() returns at the same check without dialing. Growing it on
+        // every pass while Tor started doubled the wait the relay then served once Tor was up.
+        if (!socketBuilder.canConnect(url)) return
+
         // The exponential backoff: dials once its delay since the last attempt has passed.
         if (ignoreRetryDelays || nowInSeconds() > lastConnectTentativeInSeconds + delayToConnectInSeconds) {
             upRelayDelayToConnect()
@@ -475,10 +508,9 @@ open class BasicRelayClient(
     // The gate in connectAndSyncFiltersIfDisconnected opens once now > last + delay.
     override fun secondsUntilReconnect(): Long = (lastConnectTentativeInSeconds + delayToConnectInSeconds + 1 - nowInSeconds()).coerceAtLeast(0)
 
+    /** Doubles the backoff, up to five minutes: doubling while under it went from 256 s to 512 s. */
     fun upRelayDelayToConnect() {
-        if (delayToConnectInSeconds < TimeUtils.FIVE_MINUTES) {
-            delayToConnectInSeconds = delayToConnectInSeconds * 2
-        }
+        delayToConnectInSeconds = minOf(delayToConnectInSeconds * 2, TimeUtils.FIVE_MINUTES)
     }
 
     fun dontTryAgainForALongTime() {

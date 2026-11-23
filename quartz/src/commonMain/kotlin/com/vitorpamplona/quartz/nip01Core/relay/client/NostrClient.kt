@@ -217,6 +217,9 @@ class NostrClient(
     override fun connect() {
         isActiveFlow.value = true
         relayPool.connect()
+        // The pool dials only relays whose backoff has run out: each of the others is asked
+        // again the moment it does, rather than at the next keep-alive sweep.
+        relayPool.disconnectedRelays().forEach { if (isWanted(it.url)) retryWhenBackoffEnds(it) }
     }
 
     override fun disconnect() {
@@ -259,6 +262,9 @@ class NostrClient(
             .debounce(200)
             .onEach { emitted ->
                 val request = pendingReconnect.getAndUpdate { null } ?: emitted
+                // A reconnect asked for just before the host called disconnect() (a subscribe as
+                // the app backgrounds) must not dial once the client is inactive.
+                if (!isActive()) return@onEach
                 if (request.onlyIfChanged) {
                     relayPool.reconnectIfNeedsTo(request.ignoreRetryDelays)
                 } else {
@@ -506,6 +512,14 @@ class NostrClient(
             activeRequests.syncState(relay.url, relay::sendFromSync)
             activeCounts.syncState(relay.url, relay::sendFromSync)
             eventOutbox.syncState(relay.url, relay::sendFromSync)
+        }
+    }
+
+    override fun syncAfterAuth(relay: IRelayClient) {
+        if (isActive()) {
+            activeRequests.syncAfterAuth(relay.url, relay::sendFromSync)
+            activeCounts.syncAfterAuth(relay.url, relay::sendFromSync)
+            eventOutbox.syncAfterAuth(relay.url, relay::sendFromSync)
         }
     }
 

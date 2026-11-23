@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.nip01Core.relay.server
 
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.NoticeMessage
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.SessionBackend
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
@@ -31,6 +33,14 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegMsgCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegOpenCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegentropyServerSession
 import com.vitorpamplona.quartz.nip77Negentropy.NegentropySettings
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 
 /**
  * Per-connection NIP-77 negentropy state and dispatch.
@@ -40,9 +50,13 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegentropySettings
  * so the connection class only routes commands while this class owns
  * the negentropy lifecycle and error mapping.
  *
- * Plain [HashMap] is sufficient because the registry is mutated only
- * from [RelaySession.receive] — that path is single-threaded per the
- * WebSocket handler contract.
+ * With a [scope], a NEG-OPEN's snapshot is built off the command loop, like a COUNT: a scan of a
+ * large corpus held every frame behind it on the connection until it finished. NEG-MSGs on that
+ * subId wait for it, in order, without holding the loop either. The map is under a lock, since a
+ * disconnect clears it from another thread while an open is running.
+ *
+ * The snapshot is taken as the caller ([context]): an observer-relative store (STORE-O01)
+ * answers a NEG-OPEN the same set it answers that connection's REQ and COUNT.
  *
  * Defaults match strfry (`hoytech/strfry`) so a Geode relay reconciles
  * with the same round-trip shape and the same operator-visible
@@ -52,8 +66,39 @@ class NegSessionRegistry(
     private val store: SessionBackend,
     private val send: (Message) -> Unit,
     private val settings: NegentropySettings = NegentropySettings.Default,
+    /** The connection the snapshots are taken for; null takes them with no caller identity. */
+    private val context: RequestContext? = null,
+    /** Where NEG-OPENs build their snapshot; null builds them inline, on the caller's coroutine. */
+    private val scope: CoroutineScope? = null,
 ) {
-    private val sessions = HashMap<String, NegentropyServerSession>()
+    /** The constructor before [context] and [scope], kept so dependents compiled against it still link. */
+    @Deprecated("Use the constructor with context and scope.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        store: SessionBackend,
+        send: (Message) -> Unit,
+        settings: NegentropySettings = NegentropySettings.Default,
+    ) : this(store, send, settings, null, null)
+
+    /** One subId: its session once the snapshot is built, and the work queued on it. */
+    private class Entry {
+        @Volatile var session: NegentropyServerSession? = null
+
+        /** The last job queued on this subId (the open, then each message); null when none ran off the loop. */
+        @Volatile var tail: Job? = null
+    }
+
+    private val lock = PlatformLock()
+    private val sessions = HashMap<String, Entry>()
+
+    private fun entry(subId: String): Entry? = lock.withLock { sessions[subId] }
+
+    /** Drops [subId]'s entry if it is still [entry]. */
+    private fun dropIfCurrent(
+        subId: String,
+        entry: Entry,
+    ) {
+        lock.withLock { if (sessions[subId] === entry) sessions.remove(subId) }
+    }
 
     /**
      * Open a reconciliation session. The relay snapshots the matching
@@ -89,23 +134,58 @@ class NegSessionRegistry(
         }
         val filters = listOf((gate as PolicyResult.Accepted).cmd.filter)
 
-        // Per-connection cap. Only fires when this is a NEW subId —
-        // a same-subId re-open replaces the prior session 1-for-1.
-        val isReopen = sessions.containsKey(cmd.subId)
-        if (!isReopen && sessions.size >= settings.maxSessionsPerConnection) {
+        val entry = Entry()
+        val replaced =
+            lock.withLock {
+                // Per-connection cap. Only fires when this is a NEW subId —
+                // a same-subId re-open replaces the prior session 1-for-1.
+                val isReopen = sessions.containsKey(cmd.subId)
+                if (!isReopen && sessions.size >= settings.maxSessionsPerConnection) return@withLock null
+                // NIP-77: same-subId OPEN replaces any prior session.
+                sessions.put(cmd.subId, entry) ?: Entry()
+            }
+        if (replaced == null) {
             send(NoticeMessage("too many concurrent NEG requests"))
             return
         }
+        replaced.tail?.cancel()
 
-        // NIP-77: same-subId OPEN replaces any prior session.
-        sessions.remove(cmd.subId)
+        val runScope = scope
+        if (runScope == null) {
+            build(cmd, filters, entry)
+        } else {
+            entry.tail = runScope.launch(start = CoroutineStart.UNDISPATCHED) { build(cmd, filters, entry) }
+        }
+    }
 
+    private suspend fun build(
+        cmd: NegOpenCmd,
+        filters: List<Filter>,
+        entry: Entry,
+    ) {
         // Sealed storage may come from the backend's snapshot cache — a
         // repeated NEG-OPEN of the same filter with no writes in between
         // (the mirror-heartbeat pattern) skips the scan + sort entirely.
         // `null` = matching set exceeds the cap (strfry-parity error).
-        val sealedStorage = store.sealedNegentropyStorage(filters, maxEntries = settings.maxSyncEvents)
+        val sealedStorage =
+            try {
+                val ctx = context
+                if (ctx != null) {
+                    store.sealedNegentropyStorage(ctx, filters, maxEntries = settings.maxSyncEvents)
+                } else {
+                    store.sealedNegentropyStorage(filters, maxEntries = settings.maxSyncEvents)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                dropIfCurrent(cmd.subId, entry)
+                send(NegErrMessage(cmd.subId, "error: ${e.message ?: "snapshot failed"}"))
+                return
+            }
+        // Closed, replaced or cleared while the snapshot was built: nothing is owed.
+        if (entry(cmd.subId) !== entry) return
         if (sealedStorage == null) {
+            dropIfCurrent(cmd.subId, entry)
             // The cap rides along with the refusal. A client cannot discover
             // this number any other way — NIP-11 has no field for it — so
             // without it the only route to a window we WILL answer is guessing,
@@ -122,9 +202,9 @@ class NegSessionRegistry(
                 sealedStorage = sealedStorage,
                 frameSizeLimit = settings.frameSizeLimit,
             )
-        sessions[cmd.subId] = session
+        entry.session = session
 
-        runMessage(cmd.subId, session) { it.processMessage(cmd.initialMessage) }
+        runMessage(cmd.subId, entry, session) { it.processMessage(cmd.initialMessage) }
     }
 
     /**
@@ -132,12 +212,35 @@ class NegSessionRegistry(
      * unknown-subId case: `"closed: unknown subscription handle"`.
      */
     fun msg(cmd: NegMsgCmd) {
-        val session = sessions[cmd.subId]
-        if (session == null) {
+        val entry = entry(cmd.subId)
+        if (entry == null) {
             send(NegErrMessage(cmd.subId, "closed: unknown subscription handle"))
             return
         }
-        runMessage(cmd.subId, session) { it.processMessage(cmd.message) }
+        val before = entry.tail
+        val runScope = scope
+        if (before == null || before.isCompleted || runScope == null) {
+            process(cmd, entry)
+        } else {
+            // The open (or an earlier message) is still running: this one goes after it, in order.
+            entry.tail =
+                runScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    before.join()
+                    process(cmd, entry)
+                }
+        }
+    }
+
+    private fun process(
+        cmd: NegMsgCmd,
+        entry: Entry,
+    ) {
+        val session = entry.session
+        if (session == null || entry(cmd.subId) !== entry) {
+            send(NegErrMessage(cmd.subId, "closed: unknown subscription handle"))
+            return
+        }
+        runMessage(cmd.subId, entry, session) { it.processMessage(cmd.message) }
     }
 
     /**
@@ -146,19 +249,26 @@ class NegSessionRegistry(
      * error response in NIP-77 for an unknown close.
      */
     fun close(cmd: NegCloseCmd) {
-        sessions.remove(cmd.subId)
+        lock.withLock { sessions.remove(cmd.subId) }?.tail?.cancel()
     }
 
     /** Dropped on `RelaySession.cancelAllSubscriptions`. */
     fun clear() {
-        sessions.clear()
+        val dropped =
+            lock.withLock {
+                val all = sessions.values.toList()
+                sessions.clear()
+                all
+            }
+        dropped.forEach { it.tail?.cancel() }
     }
 
     /** Test/diagnostic accessor. */
-    val activeSessionCount: Int get() = sessions.size
+    val activeSessionCount: Int get() = lock.withLock { sessions.size }
 
     private inline fun runMessage(
         subId: String,
+        entry: Entry,
         session: NegentropyServerSession,
         block: (NegentropyServerSession) -> Message?,
     ) {
@@ -168,7 +278,7 @@ class NegSessionRegistry(
         } catch (_: Exception) {
             // strfry sends `PROTOCOL-ERROR` on library reconcile()
             // parse failure and tears the session down.
-            sessions.remove(subId)
+            dropIfCurrent(subId, entry)
             send(NegErrMessage(subId, "PROTOCOL-ERROR"))
         }
     }
