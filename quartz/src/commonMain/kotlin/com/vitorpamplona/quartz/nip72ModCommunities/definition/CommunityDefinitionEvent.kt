@@ -24,10 +24,14 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
@@ -70,7 +74,12 @@ class CommunityDefinitionEvent(
         visitor.visit(content)
     }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, ETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        return out ?: emptyList()
+    }
 
     /** `MENTION`: events tagged with `e` or quoted with `q` (NIP-72 defines neither on a community). */
     override fun linkedEventIds() = mentionedEventIds() + quotedEventIds()
@@ -81,9 +90,14 @@ class CommunityDefinitionEvent(
             tags.mapNotNull(RelayTag::parse).map { AddressHint(addressTag(), it.url) }
 
     /** `MENTION`: addresses tagged with `a` or quoted with `q` (NIP-72 defines neither on a community). */
-    override fun linkedAddressIds() = mentionedAddressIds() + quotedAddressIds()
+    override fun linkedAddressIds(): List<String> {
+        var out: ArrayList<String>? = null
+        out = mentionedAddressIds().appendTo(out)
+        out = quotedAddressIds().appendTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun pubKeyHints() = tags.mapNotNull(ModeratorTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(ModeratorTag::parseAsHint)
 
     /** `MODERATOR`: the moderators the `p` tags list. */
     override fun linkedPubKeys() = listedModeratorKeys()
@@ -92,13 +106,13 @@ class CommunityDefinitionEvent(
     fun mentionedEventIds(): List<HexKey> = tags.taggedEventIds()
 
     /** The ids of events quoted with `q` (NIP-18), in tag order. */
-    fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
 
     /** The ids of addresses tagged with `a`, in tag order. NIP-72 defines no `a` here; clients may add them. */
-    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+    fun mentionedAddressIds(): List<String> = tags.fastMapNotNull(ATag::parseAddressId)
 
     /** The ids of addresses quoted with `q` (NIP-18), in tag order. */
-    fun quotedAddressIds(): List<String> = tags.mapNotNull(QTag::parseAddressId)
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseAddressId)
 
     fun name() = tags.firstNotNullOfOrNull(NameTag::parse)
 

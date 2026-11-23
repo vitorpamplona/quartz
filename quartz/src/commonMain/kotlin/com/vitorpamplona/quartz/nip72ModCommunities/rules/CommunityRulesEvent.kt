@@ -24,6 +24,8 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
@@ -62,7 +64,7 @@ class CommunityRulesEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider,
     PubKeyHintProvider {
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // A rules document governs one community.
     override fun linkedAddressIds() = listOfNotNull(communityAddress())
@@ -71,7 +73,12 @@ class CommunityRulesEvent(
     // relay: there is nothing to hint, only keys to link.
     override fun pubKeyHints(): List<PubKeyHint> = emptyList()
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PubkeyRuleTag::parseKey) + tags.mapNotNull(WotTag::parseKey)
+    override fun linkedPubKeys(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = tags.fastMapNotNullTo(out, PubkeyRuleTag::parseKey)
+        out = tags.fastMapNotNullTo(out, WotTag::parseKey)
+        return out ?: emptyList()
+    }
 
     /** All `k` rules. May contain duplicates; callers usually want [allowedKinds]. */
     fun kindRules(): List<KindRuleTag> = tags.mapNotNull(KindRuleTag::parse)

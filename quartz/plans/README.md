@@ -5,6 +5,7 @@ _Audited 2026-09-17. 13 plans: 7 shipped (archived), 0 in-progress, 5 queued, 1 
 ## Queued
 | Plan | Summary |
 | ---- | ------- |
+| [2026-11-23-gc-pressure-audit.md](2026-11-23-gc-pressure-audit.md) | Allocation (not CPU) audit with `GcPressureBenchmark`: the parser and verify are lean (parse allocates what the Event keeps; verify 15 B), and the garbage comes after: hint providers ~600 B/event, kind-0 search 2.3 KB/profile/term, `ContactTag.parseValid` 532 B/p-tag (regex), SQLite ~1.6 KB/insert, 164 KB per 500-author REQ (writer buffer regrowth), a continuation per frame once listeners exist, an `EventInterner` that never drops dead entries. 25 ranked items, nearly all compatible. |
 | [2026-11-06-performance-review.md](2026-11-06-performance-review.md) | Library-wide perf review: verify is ~95% of ingest CPU (parse ~1 µs/event, verify ~37 µs). Shipped an 18x custom-emoji split (and its rendering bug), copy-free native id hashing, index-pulling parallel verify (unweighted `verifySchnorrBatch` left open); ranked backlog led by a covering `event_tags` index and multi-filter merge routing. |
 | [2026-05-08-local-headers-explorer.md](2026-05-08-local-headers-explorer.md) | Headers-only Bitcoin P2P client to verify NIP-03 OTS attestations without a trusted block explorer. |
 | [2026-06-12-giftwrap-deletion-requests.md](2026-06-12-giftwrap-deletion-requests.md) | Let a recipient-authored kind-5 delete/block a gift wrap (kind 1059) addressed to them. |

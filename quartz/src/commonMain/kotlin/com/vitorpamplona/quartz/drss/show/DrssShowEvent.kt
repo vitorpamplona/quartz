@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -81,7 +82,7 @@ class DrssShowEvent(
         visitor.visit(showName())
     }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `MEMBER`: the show's bot (`p`). */
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(showBotKey())

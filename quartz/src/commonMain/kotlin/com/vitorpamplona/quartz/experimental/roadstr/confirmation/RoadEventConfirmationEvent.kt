@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.experimental.roadstr.tags.roadGeohashes
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -63,7 +64,7 @@ class RoadEventConfirmationEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider {
-    override fun eventHints() = tags.mapNotNull(RoadReportTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(RoadReportTag::parseAsHint)
 
     // A confirmation answers one report: [build] writes a single `e`.
     override fun linkedEventIds() = listOfNotNull(reportId())

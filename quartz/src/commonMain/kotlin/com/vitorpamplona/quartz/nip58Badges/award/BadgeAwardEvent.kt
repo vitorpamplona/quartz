@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -47,17 +48,17 @@ class BadgeAwardEvent(
     EventHintProvider,
     AddressHintProvider,
     PubKeyHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `AWARDED`: the users the badge is awarded to (`p`). */
     override fun linkedPubKeys() = awardeeIds()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `MENTION`: events tagged with `e` (NIP-58 defines none on an award). */
     override fun linkedEventIds() = mentionedEventIds()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `BADGE_DEFINITION`: the badge definition being awarded (`a`). */
     override fun linkedAddressIds() = awardDefinitionIds()

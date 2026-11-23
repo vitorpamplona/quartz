@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -43,7 +44,7 @@ class GroupRemoveUserEvent(
     PubKeyHintProvider {
     // PTag only checks the key's length; a provider must hand over real keys (a hint's id
     // decodes its hex), so the hints check the digits as userPubKeys() does.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull { tag -> PTag.parseAsHint(tag)?.takeIf { Hex.isHex64(it.pubkey) } }
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull { tag -> PTag.parseAsHint(tag)?.takeIf { Hex.isHex64(it.pubkey) } }
 
     override fun linkedPubKeys(): List<HexKey> = userPubKeys()
 

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nipXXPushNotifications
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
@@ -55,9 +56,9 @@ abstract class PushServiceEvent(
 
     // The public `p` naming the service; the builder writes it without a relay hint, so
     // pubKeyHints() is normally empty. The encrypted payload is never read here.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun pushService() = tags.pushService()
 

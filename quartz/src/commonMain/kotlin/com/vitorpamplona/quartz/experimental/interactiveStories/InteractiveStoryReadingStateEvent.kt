@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.builder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
@@ -61,7 +62,7 @@ class InteractiveStoryReadingStateEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider {
     // The root story (`A`) and the scene being read (`a`), each with the relay it was found on.
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull { RootSceneTag.parseAsHint(it) ?: ATag.parseAsHint(it) }
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull { RootSceneTag.parseAsHint(it) ?: ATag.parseAsHint(it) }
 
     /**
      * The story ([rootAddressId], which falls back to the `d` coordinate on old states) and the

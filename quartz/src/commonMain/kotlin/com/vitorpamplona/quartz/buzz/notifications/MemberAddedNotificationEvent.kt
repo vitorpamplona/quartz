@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.buzz.ParseFailed
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -49,7 +50,7 @@ class MemberAddedNotificationEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider {
     // The actor sits in the relay-authored JSON body, which carries no relay hint.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     // The `p` target (the kind carries one), then the body's actor.
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(target(), actor())

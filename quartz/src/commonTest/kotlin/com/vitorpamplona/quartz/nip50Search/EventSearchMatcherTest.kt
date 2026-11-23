@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip50Search
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.utils.EventFactory
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -40,6 +41,75 @@ class EventSearchMatcherTest {
         search: String?,
         event: Event,
     ) = EventSearchMatcher(search).match(event)
+
+    private fun profile(json: String): Event = EventFactory.create(id, pubkey, 1683596206, 0, emptyArray(), json, "")
+
+    private val oneWalkEvents =
+        listOf(
+            profile("""{"name":"vitor","display_name":"Vitor Pamplona","about":"building amethyst and nostr apps","nip05":"vitor@vitorpamplona.com","lud16":"vitor@getalby.com","website":"https://vitorpamplona.com"}"""),
+            profile("""{"name":"bob","about":"spam spam spam"}"""),
+            profile("not json at all"),
+            profile(""),
+            note("Nostr apps are great, bitcoin too", arrayOf(arrayOf("subject", "weekly amethyst update"))),
+            note("gm"),
+        )
+
+    private val oneWalkQueries =
+        listOf(
+            "vitor amethyst",
+            "vitor bob",
+            "\"nostr apps\" vitor",
+            "\"nostr apps\" -spam",
+            "amethyst -spam",
+            "bitcoin -\"weekly amethyst\"",
+            "getalby pamplona website",
+            "gm -gm",
+            "nostr apps update",
+        )
+
+    /** Each part of a query on its own, ANDed: what the per-constraint walks used to answer. */
+    private fun partsMatch(
+        query: SearchQuery,
+        event: Event,
+    ): Boolean =
+        query.terms
+            .split(' ')
+            .filter { it.isNotBlank() }
+            .all { matches(it, event) } &&
+            query.phrases.all { matches("\"$it\"", event) } &&
+            query.notTerms.none { matches(it, event) } &&
+            query.notPhrases.none { matches("\"$it\"", event) }
+
+    @Test
+    fun oneWalkMatchesWhatEachConstraintMatchesAlone() {
+        for (q in oneWalkQueries) {
+            val query = SearchQuery.parse(q)
+            for (event in oneWalkEvents) {
+                assertEquals(partsMatch(query, event), matches(q, event), "\"$q\" on kind ${event.kind} ${event.content}")
+            }
+        }
+    }
+
+    @Test
+    fun aProfileMatchesTheSameOnceItsFieldsAreCached() {
+        val vitor = oneWalkEvents[0]
+        assertTrue(matches("pamplona", vitor))
+        assertTrue(matches("pamplona", vitor))
+        assertTrue(matches("vitor amethyst", vitor))
+        assertFalse(matches("bob", vitor))
+        assertFalse(matches("json", oneWalkEvents[2]))
+    }
+
+    @Test
+    fun caseFoldingMatchesTheStdlib() {
+        val fields = listOf("Straße", "İstanbul", "ΣΊΣΥΦΟΣ", "ǅungla", "MASSE", "café", "ﬁle", "")
+        val terms = listOf("STRASSE", "straße", "istanbul", "i̇stanbul", "σίσυφος", "ǆ", "Ǆ", "masse", "CAFÉ", "fi", "ﬁ", "x")
+        for (field in fields) {
+            for (term in terms) {
+                assertEquals(field.contains(term, ignoreCase = true), matches(term, note(field)), "\"$term\" in \"$field\"")
+            }
+        }
+    }
 
     @Test
     fun anEmptySearchConstrainsNothing() {

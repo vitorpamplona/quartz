@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip18Reposts.quotes
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -63,6 +64,17 @@ data class QAddressableTag(
             val address = Address.parse(tag[1]) ?: return null
             val hint = tag.getOrNull(2)?.let { RelayUrlNormalizer.normalizeHintOrNull(it) }
             return QAddressableTag(address, hint)
+        }
+
+        /**
+         * `parse(tag)?.address?.toValue()` without building the tag: the quoted address id in
+         * canonical form, an `naddr1…` decoded, or null. An already canonical id comes back as is.
+         */
+        fun parseAddressId(tag: Array<String>): String? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].length != 64) { return null }
+            return AddressSerializer.canonicalAddressIdOrNull(tag[1])
         }
 
         fun assemble(

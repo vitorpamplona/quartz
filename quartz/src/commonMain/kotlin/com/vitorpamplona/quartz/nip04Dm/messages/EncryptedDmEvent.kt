@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.experimental.inlineMetadata.Nip54InlineMetadata
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -53,13 +54,13 @@ class EncryptedDmEvent(
     ChatroomKeyable,
     PubKeyHintProvider,
     EventHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // NIP-04 addresses a single recipient.
     override fun linkedPubKeys() = listOfNotNull(recipientPubKey())
 
     // The reply `e` tag is public (only the content is NIP-04 encrypted).
-    override fun eventHints() = tags.mapNotNull(MarkedETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(MarkedETag::parseAsHint)
 
     override fun linkedEventIds() = listOfNotNull(replyTo())
 

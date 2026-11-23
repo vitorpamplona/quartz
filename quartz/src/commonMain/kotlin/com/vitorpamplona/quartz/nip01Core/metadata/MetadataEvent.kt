@@ -62,6 +62,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.concurrent.Volatile
 
 class MetadataEvent(
     id: HexKey,
@@ -141,18 +142,28 @@ class MetadataEvent(
             ).joinToString(" ")
         } ?: ""
 
-    // The read path. One JSON parse, then a field at a time — a name hit never reads the banner url.
+    /**
+     * The fields [forEachIndexableField] hands over, parsed from [content] on the first search and
+     * kept: a cache-wide search walks every profile on every keystroke, and each walk was a full
+     * kotlinx parse of the JSON (~2.3 KB of garbage per profile). Holds only those nine strings,
+     * which the parse made anyway; empty when the content does not parse.
+     */
+    @kotlinx.serialization.Transient
+    @kotlin.jvm.Transient
+    @Volatile
+    private var searchFields: Array<String?>? = null
+
+    // The read path. One JSON parse per event, then a field at a time — a name hit never reads the banner url.
     override fun forEachIndexableField(visitor: IndexableFieldVisitor) {
-        val data = contactMetaData() ?: return
-        if (!visitor.visit(data.name)) return
-        if (!visitor.visit(data.displayName)) return
-        if (!visitor.visit(data.about)) return
-        if (!visitor.visit(data.nip05)) return
-        if (!visitor.visit(data.lud06)) return
-        if (!visitor.visit(data.lud16)) return
-        if (!visitor.visit(data.website)) return
-        if (!visitor.visit(data.picture)) return
-        visitor.visit(data.banner)
+        val fields = searchFields ?: parseSearchFields().also { searchFields = it }
+        for (i in fields.indices) {
+            if (!visitor.visit(fields[i])) return
+        }
+    }
+
+    private fun parseSearchFields(): Array<String?> {
+        val data = contactMetaData() ?: return NO_SEARCH_FIELDS
+        return arrayOf(data.name, data.displayName, data.about, data.nip05, data.lud06, data.lud16, data.website, data.picture, data.banner)
     }
 
     override fun indexableSeparator() = " "
@@ -183,7 +194,8 @@ class MetadataEvent(
             UserMetadata()
         } else {
             try {
-                JsonMapper.fromJson<UserMetadata>(content)
+                // The serializer directly: the reified fromJson looks it up through typeOf per call.
+                JsonMapper.jsonInstance.decodeFromString(UserMetadata.serializer(), content)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.w("MetadataEvent") { "Content Parse Error: ${toNostrUri()} ${e.message}" }
@@ -196,6 +208,8 @@ class MetadataEvent(
         const val FIXED_D_TAG = ""
 
         private val EMPTY_METADATA_JSON = JsonObject(emptyMap())
+
+        private val NO_SEARCH_FIELDS = emptyArray<String?>()
 
         fun createAddress(pubKey: HexKey): Address = Address(KIND, pubKey, FIXED_D_TAG)
 

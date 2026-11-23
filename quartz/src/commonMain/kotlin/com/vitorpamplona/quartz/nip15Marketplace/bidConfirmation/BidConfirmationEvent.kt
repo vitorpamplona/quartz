@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.JsonMapper
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -58,12 +59,12 @@ class BidConfirmationEvent(
         visitor.visit(confirmationData()?.message)
     }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     // NIP-15: exactly two `e` tags, the bid and then its auction.
     override fun linkedEventIds() = listOfNotNull(bidId(), auctionId())
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // The builder notifies a single `p`, the bidder.
     override fun linkedPubKeys() = listOfNotNull(bidder())

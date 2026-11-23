@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
@@ -76,7 +77,7 @@ class ProjectEvent(
         visitor.visit(description())
     }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ProjectMemberTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ProjectMemberTag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = memberAddressIds()
 

@@ -57,6 +57,9 @@ class LimitsPolicy(
         subId: String,
         openSubscriptions: Int,
     ): String? {
+        // An over-long id is refused as invalid even at the cap: a client retries a rate-limited
+        // REQ, unchanged, forever. [accept] refuses it too, but runs after this hook.
+        limits.maxSubidLength?.let { if (subId.length > it) return invalid("subscription id too long (max $it)") }
         val max = limits.maxSubscriptions ?: return null
         return if (openSubscriptions >= max) {
             MachineReadablePrefix.RATE_LIMITED.format("too many concurrent subscriptions (max $max)")

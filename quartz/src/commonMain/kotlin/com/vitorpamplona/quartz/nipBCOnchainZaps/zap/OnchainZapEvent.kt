@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -70,16 +71,16 @@ class OnchainZapEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // One recipient, and at most one zapped event and one zapped address.
     override fun linkedPubKeys() = listOfNotNull(recipient())
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = listOfNotNull(zappedEvent())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = listOfNotNull(zappedAddress())
 

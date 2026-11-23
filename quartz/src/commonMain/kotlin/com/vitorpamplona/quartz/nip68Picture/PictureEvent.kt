@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.core.isValid
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -39,12 +40,12 @@ import com.vitorpamplona.quartz.nip10Notes.content.findNostrUris
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.addressIds
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
@@ -103,7 +104,12 @@ class PictureEvent(
     fun annotatedUsers(): List<HexKey> = imetaTags().flatMap { meta -> meta.annotations.mapNotNull { it.pubkey.takeIf { key -> key.isValid() } } }
 
     // NIP-68 `p` tags the people in the picture; imeta annotations place them on an image.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
+    }
 
     // linked*() run on every relay copy of the event, and each is two or three tag scans plus
     // concatenations; the event is immutable, so they are built once per instance.
@@ -127,7 +133,12 @@ class PictureEvent(
             linkedPubKeysCache = keys
         }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(QTag::parseEventAsHint) + citedNIP19().eventHints()
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
+    }
 
     override fun linkedEventIds(): List<HexKey> =
         linkedEventIdsCache ?: ArrayList<HexKey>().also { ids ->
@@ -136,7 +147,12 @@ class PictureEvent(
             linkedEventIdsCache = ids
         }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(QTag::parseAddressAsHint) + citedNIP19().addressHints()
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
+    }
 
     override fun linkedAddressIds(): List<String> =
         linkedAddressIdsCache ?: ArrayList<String>().also { ids ->

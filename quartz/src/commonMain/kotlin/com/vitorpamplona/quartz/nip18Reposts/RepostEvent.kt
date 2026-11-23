@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -55,16 +56,16 @@ class RepostEvent(
     PubKeyHintProvider,
     AddressHintProvider,
     BaseRepostEvent {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = originalAuthorKeys()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     // NIP-18: a repost carries one `e`, the reposted event.
     override fun linkedEventIds() = listOfNotNull(boostedEventId())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // NIP-18: and, for an addressable, one `a`.
     override fun linkedAddressIds() = listOfNotNull(boostedAddressIds())

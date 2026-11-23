@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -46,11 +47,11 @@ class PollResponseEvent(
     EventHintProvider,
     PubKeyHintProvider,
     RootScope {
-    override fun eventHints() = tags.mapNotNull(PollTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(PollTag::parseAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(PollTag::parseId)
+    override fun linkedEventIds() = tags.fastMapNotNull(PollTag::parseId)
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // The builder notifies the one poll author (`notifyAuthor`).
     override fun linkedPubKeys() = listOfNotNull(pollAuthor())

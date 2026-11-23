@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -144,7 +145,12 @@ class AppDefinitionEvent(
 
     // Related addressables (`a`: source repo, store listing, ...) and the publishing client's
     // own handler (`client` slot 2, relay in slot 3).
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(ClientTag::parseAddressAsHint)
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ClientTag::parseAddressAsHint)
+        return out ?: emptyList()
+    }
 
     override fun linkedAddressIds(): List<String> = relatedAddresses().map { it.toTag() } + tags.mapNotNull(ClientTag::parseAddressId)
 

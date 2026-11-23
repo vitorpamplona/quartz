@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -71,15 +72,15 @@ class UserStatusEvent(
     }
 
     // The profile / note / address a status points at (NIP-38 `p`, `e`, `a`): one of each at most.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(referencedProfile())
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(referencedEventId())
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = listOfNotNull(referencedAddressId())
 

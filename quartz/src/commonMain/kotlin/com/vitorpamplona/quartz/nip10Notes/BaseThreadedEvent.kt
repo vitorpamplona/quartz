@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.experimental.nipsOnNostr.NipTextEvent
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.taggedATags
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
@@ -32,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUsers
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
+import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip54Wiki.WikiArticleEvent
 import com.vitorpamplona.quartz.nip72ModCommunities.definition.CommunityDefinitionEvent
 import com.vitorpamplona.quartz.utils.lastNotNullOfOrNull
@@ -58,13 +60,19 @@ open class BaseThreadedEvent(
     fun mentions() = taggedUsers()
 
     /** The keys of [mentions] (`p`), in tag order. */
-    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun mentionKeys(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /** NIP-18 quotes (`q`) of regular events, in tag order. */
     fun quotedEvents(): List<QEventTag> = tags.mapNotNull(QEventTag::parse)
 
+    /** The ids [quotedEvents] quotes, without building the tags. */
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
+
     /** NIP-18 quotes (`q`) of addressable events, in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
+
+    /** The address ids [quotedAddresses] quotes, in canonical form (an `naddr1` decoded), without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QAddressableTag::parseAddressId)
 
     fun markedRoot() = tags.firstNotNullOfOrNull(MarkedETag::parseRoot)
 
@@ -81,7 +89,7 @@ open class BaseThreadedEvent(
     fun threadTags() = tags.mapNotNull(MarkedETag::parseAllThreadTags)
 
     /** The ids of [threadTags]: every well-formed `e` id (root, reply, mention, fork or positional), in tag order. */
-    fun threadEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
+    fun threadEventIds(): List<HexKey> = tags.fastMapNotNull(MarkedETag::parseId)
 
     /**
      * What this note points its thread at: every `e` id and `a` address id, in tag order, except

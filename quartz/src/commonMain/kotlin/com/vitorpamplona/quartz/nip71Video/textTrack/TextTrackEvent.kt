@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -70,7 +71,7 @@ class TextTrackEvent(
         if (WebVttText.hasCues(content)) WebVttText.forEachCueLine(content, visitor) else visitor.visit(content)
     }
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // A track belongs to one video.
     override fun linkedAddressIds() = listOfNotNull(video()?.toValue())

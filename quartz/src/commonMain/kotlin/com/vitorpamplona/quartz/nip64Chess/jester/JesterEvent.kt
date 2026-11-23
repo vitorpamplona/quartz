@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.JsonMapper
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -67,7 +68,7 @@ class JesterEvent(
     /** `ROOT`: the game's start event; `PARENT`: the move this one follows (`e`). */
     override fun linkedEventIds(): List<HexKey> = gameEventIds()
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `OPPONENT`: the other player of a private game (`p`). */
     override fun linkedPubKeys(): List<HexKey> = opponentKeys()

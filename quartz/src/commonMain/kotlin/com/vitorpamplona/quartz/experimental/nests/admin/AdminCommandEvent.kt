@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.experimental.nests.admin
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
@@ -62,12 +63,12 @@ class AdminCommandEvent(
     PubKeyHintProvider,
     AddressHintProvider {
     // The target (`p`) and the room (`a`), each with whatever relay the host attached.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     // One room (`a`) and one target (`p`) per command, as [build] writes them.
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(targetPubkey())
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = listOfNotNull(room())
 

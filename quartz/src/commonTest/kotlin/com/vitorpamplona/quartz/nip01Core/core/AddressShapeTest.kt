@@ -24,9 +24,11 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip22Comments.tags.ReplyAddressTag
 import com.vitorpamplona.quartz.nip22Comments.tags.RootAddressTag
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -53,6 +55,18 @@ class AddressShapeTest {
             "30023:$pk" + "0:x",
             "naddr1qqxnzd3cxqmrzv3exgmr2wfeqgsxu35yyt0mwjjh8pcz4zprhxegz69t4wr9t74vk6zne58wzh0waycrqsqqqa28pccpzu",
         )
+
+    /** The fast path must return exactly what the parse-and-reassemble round trip did. */
+    @Test
+    fun canonicalAddressIdMatchesTheParseRoundTrip() {
+        val padded = listOf("030023:$pk:x", "00:$pk:x", "0030:$pk:", "-1:$pk:x", "1e3:$pk:x", "30023: $pk:x")
+        (valid + invalid + padded).forEach { value ->
+            assertEquals(AddressSerializer.parse(value)?.toValue(), AddressSerializer.canonicalAddressIdOrNull(value), value)
+        }
+        // An address that is already canonical comes back as the same instance, not a copy.
+        val canonical = "30023:$pk:article"
+        assertSame(canonical, AddressSerializer.canonicalAddressIdOrNull(canonical))
+    }
 
     @Test
     fun shape() {

@@ -94,6 +94,9 @@ class EventSearchMatcher(
     val isEmpty: Boolean get() = terms.isEmpty() && phrases.isEmpty() && exclusions.isEmpty()
 
     fun match(event: Event): Boolean {
+        // A searchable kind walks its fields once for every constraint: a kind 0 parses its JSON
+        // on each walk, so walking once per term multiplied that parse by the terms.
+        if (event is SearchableEvent && terms.size + phrases.size + exclusions.size > 1) return visitor.matchesAll(event)
         for (i in terms.indices) {
             if (!holds(event, terms[i], null)) return false
         }
@@ -122,12 +125,19 @@ class EventSearchMatcher(
 
     /**
      * Carries the term or run into the walk on a field rather than in a closure, so no lambda is
-     * allocated per event, and stops the walk at the first field that holds it.
+     * allocated per event, and stops the walk at the first field that holds it. [matchesAll]
+     * checks every term, phrase and exclusion in one walk instead.
      */
-    private class FieldVisitor : IndexableFieldVisitor {
+    private inner class FieldVisitor : IndexableFieldVisitor {
         private var term: String? = null
         private var run: WordRun? = null
         private var found = false
+
+        private var all = false
+        private val termFound = BooleanArray(terms.size)
+        private val phraseFound = BooleanArray(phrases.size)
+        private var remaining = 0
+        private var excluded = false
 
         fun matches(
             event: SearchableEvent,
@@ -137,16 +147,51 @@ class EventSearchMatcher(
             this.term = term
             this.run = run
             found = false
+            all = false
             event.forEachIndexableField(this)
             return found
         }
 
+        /** Every term and phrase held by some field, and no field holding an exclusion. */
+        fun matchesAll(event: SearchableEvent): Boolean {
+            termFound.fill(false)
+            phraseFound.fill(false)
+            remaining = terms.size + phrases.size
+            excluded = false
+            all = true
+            event.forEachIndexableField(this)
+            return !excluded && remaining == 0
+        }
+
         override fun visit(field: String?): Boolean {
-            if (field != null && fieldHolds(field, term, run)) {
-                found = true
-                return false
+            if (field == null) return true
+            if (!all) {
+                if (fieldHolds(field, term, run)) {
+                    found = true
+                    return false
+                }
+                return true
             }
-            return true
+            for (i in exclusions.indices) {
+                if (fieldHolds(field, null, exclusions[i])) {
+                    excluded = true
+                    return false
+                }
+            }
+            for (i in terms.indices) {
+                if (!termFound[i] && fieldHolds(field, terms[i], null)) {
+                    termFound[i] = true
+                    remaining--
+                }
+            }
+            for (i in phrases.indices) {
+                if (!phraseFound[i] && fieldHolds(field, null, phrases[i])) {
+                    phraseFound[i] = true
+                    remaining--
+                }
+            }
+            // Done once everything is found, unless an exclusion could still turn up.
+            return remaining > 0 || exclusions.isNotEmpty()
         }
     }
 
@@ -184,11 +229,27 @@ class EventSearchMatcher(
             run: WordRun?,
         ): Boolean =
             when {
-                term != null -> field.contains(term, true)
+                term != null -> containsIgnoreCase(field, term)
                 run == null -> false
-                run.words.isEmpty() -> field.contains(run.literal, true)
+                run.words.isEmpty() -> containsIgnoreCase(field, run.literal)
                 else -> containsWordRun(field, run.words)
             }
+
+        /**
+         * `field.contains(term, ignoreCase = true)`, compared the same way (the stdlib walks each
+         * index with this `regionMatches`), without the `IntRange` it allocates per call: this runs
+         * per field per event of a scan.
+         */
+        private fun containsIgnoreCase(
+            field: String,
+            term: String,
+        ): Boolean {
+            val n = term.length
+            for (i in 0..field.length - n) {
+                if (term.regionMatches(0, field, i, n, ignoreCase = true)) return true
+            }
+            return false
+        }
 
         /**
          * True when [field] holds [run] as consecutive whole words (letter/digit runs), compared

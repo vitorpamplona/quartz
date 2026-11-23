@@ -24,6 +24,8 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -61,15 +63,20 @@ class GitReviewEvent(
 ) : BaseNoteEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider,
     PubKeyHintProvider {
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(MarkedETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, MarkedETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        return out ?: emptyList()
+    }
 
     /** `ROOT`: the reviewed patch or PR; `QUOTE`: the reviewer's comments it gathers. */
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(reviewedEventId()) + commentIds()
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `ROOT_AUTHOR`: the reviewed item's author. */
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    override fun linkedPubKeys(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /** The reviewed patch or PR: the `root`-marked `e`, else the first `e`. */
     fun reviewedEventId(): HexKey? = tags.firstNotNullOfOrNull(MarkedETag::parseRootId) ?: tags.firstNotNullOfOrNull(MarkedETag::parseId)

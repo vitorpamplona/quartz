@@ -26,10 +26,13 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.any
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.kinds.kind
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
@@ -52,24 +55,30 @@ class CommunityPostApprovalEvent(
     EventHintProvider,
     AddressHintProvider,
     PubKeyHintProvider {
-    override fun eventHints() = tags.mapNotNull(ApprovedEventTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ApprovedEventTag::parseAsHint)
 
-    override fun linkedEventIds() = tags.mapNotNull(ApprovedEventTag::parseId)
+    override fun linkedEventIds() = tags.fastMapNotNull(ApprovedEventTag::parseId)
 
-    override fun addressHints() =
-        tags.mapNotNull(ApprovedAddressTag::parseAsHint) +
-            tags.mapNotNull(CommunityTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ApprovedAddressTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, CommunityTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
-    override fun linkedAddressIds() =
-        tags.mapNotNull(ApprovedAddressTag::parseAddressId) +
-            tags.mapNotNull(CommunityTag::parseAddressId)
+    override fun linkedAddressIds(): List<String> {
+        var out: ArrayList<String>? = null
+        out = tags.fastMapNotNullTo(out, ApprovedAddressTag::parseAddressId)
+        out = tags.fastMapNotNullTo(out, CommunityTag::parseAddressId)
+        return out ?: emptyList()
+    }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = approvedPostAuthors()
 
     /** NIP-72: the authors of the approved posts, notified with a `p` tag. */
-    fun approvedPostAuthors(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun approvedPostAuthors(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun containedPost(): Event? =
         try {

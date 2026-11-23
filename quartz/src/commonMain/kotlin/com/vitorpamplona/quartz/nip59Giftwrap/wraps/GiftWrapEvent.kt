@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
@@ -70,7 +71,7 @@ open class GiftWrapEvent(
     PubKeyHintProvider {
     // The recipient `p` (NIP-17 lets it carry the recipient's DM inbox relay, see
     // [create]'s `recipientRelayHint`). Tags only: the content is never opened here.
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `RECIPIENT`: the user the wrap is addressed to (`p`). */
     override fun linkedPubKeys() = recipientKeys()

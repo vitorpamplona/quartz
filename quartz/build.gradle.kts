@@ -94,6 +94,8 @@ kotlin {
         // Opt-in gate for StageThroughputBenchmark: `-PstageBench=1` runs every stage, any
         // other value only the stages whose label contains it.
         (project.findProperty("stageBench") as? String)?.let { systemProperty("stageBench", it) }
+        // Opt-in gate for GcPressureBenchmark: `-PgcBench=1`.
+        (project.findProperty("gcBench") as? String)?.let { systemProperty("gcBench", it) }
         // Forward the negentropy-benchmark corpus size to the test JVM.
         System.getProperty("negBenchN")?.let { systemProperty("negBenchN", it) }
         System.getProperty("followBenchScale")?.let { systemProperty("followBenchScale", it) }

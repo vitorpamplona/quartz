@@ -24,13 +24,18 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CountCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.SessionBackend
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.EmptyPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -40,6 +45,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -70,6 +76,7 @@ class CountOffTheCommandLoopTest {
         val permit = Semaphore(1)
         var countGate: CompletableDeferred<Unit>? = null
         var countFailure: String? = null
+        var countError: Throwable? = null
         var countTimesOut = false
 
         override suspend fun query(
@@ -91,6 +98,7 @@ class CountOffTheCommandLoopTest {
             permit.withPermit {
                 countGate?.await()
                 countFailure?.let { throw IllegalStateException(it) }
+                countError?.let { throw it }
                 // A backend deadline that lets its TimeoutCancellationException out.
                 if (countTimesOut) withTimeout(1) { awaitCancellation() }
                 7
@@ -101,10 +109,11 @@ class CountOffTheCommandLoopTest {
     private class Connection(
         test: TestScope,
         backend: SessionBackend,
+        policy: IRelayPolicy = EmptyPolicy,
     ) {
         val scope = CoroutineScope(StandardTestDispatcher(test.testScheduler) + Job())
         val frames = Frames()
-        val session = RelaySession(backend, EmptyPolicy, scope, frames, onClose = {})
+        val session = RelaySession(backend, policy, scope, frames, onClose = {})
         val incoming = Channel<String>(Channel.UNLIMITED)
         val read = mutableListOf<String>()
 
@@ -210,4 +219,143 @@ class CountOffTheCommandLoopTest {
             assertEquals(emptyList(), connection.frames.messages)
             connection.end()
         }
+
+    @Test
+    fun aCountWhoseBackendThrowsAnErrorGetsOneClosedAndTheConnectionLives() =
+        runTest {
+            val backend = OnePermitBackend()
+            // TODO() in a backend: an Error, not an Exception.
+            backend.countError = NotImplementedError("not yet")
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+
+            val closed = connection.frames.messages.single() as ClosedMessage
+            assertEquals("c", closed.subId)
+            assertTrue(closed.message.startsWith("error:") && closed.message.contains("not yet"), closed.message)
+
+            // The Error did not take the session's scope down with it.
+            backend.countError = null
+            connection.incoming.send("""["COUNT","d",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+            assertEquals(listOf("d" to 7), connection.frames.counts().map { it.queryId to it.result.count })
+            connection.end()
+        }
+
+    /** Each count waits for the test to answer it; with [ignoresCancellation], even once cancelled. */
+    private class AnsweredByTheTest(
+        val ignoresCancellation: Boolean = true,
+    ) : SessionBackend {
+        val answers = mutableListOf<CompletableDeferred<Int>>()
+
+        override suspend fun query(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) = onEose()
+
+        override suspend fun count(
+            ctx: RequestContext,
+            filters: List<Filter>,
+        ): Int {
+            val answer = CompletableDeferred<Int>()
+            answers.add(answer)
+            return if (ignoresCancellation) withContext(NonCancellable) { answer.await() } else answer.await()
+        }
+    }
+
+    private fun Connection.onId(id: String) =
+        frames.messages
+            .filter { (it as? CountMessage)?.queryId == id || (it as? ClosedMessage)?.subId == id }
+            .map { it.toJson() }
+
+    @Test
+    fun aReCountCancelsTheRunningCount() =
+        runTest {
+            val backend = AnsweredByTheTest()
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            connection.incoming.send("""["COUNT","c",{"kinds":[7]}]""")
+            testScheduler.advanceUntilIdle()
+            // The replaced COUNT's store ignores its cancellation and returns anyway.
+            backend.answers[0].complete(1)
+            backend.answers[1].complete(2)
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("""["COUNT","c",{"count":2}]"""), connection.onId("c"))
+            connection.end()
+        }
+
+    @Test
+    fun aCloseCancelsTheRunningCountAndSendsNothing() =
+        runTest {
+            val backend = AnsweredByTheTest()
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            connection.incoming.send("""["CLOSE","c"]""")
+            testScheduler.advanceUntilIdle()
+            backend.answers[0].complete(1)
+            testScheduler.advanceUntilIdle()
+
+            // As a CLOSE on a REQ: no answer, and no "no such subscription".
+            assertEquals(emptyList(), connection.onId("c"))
+            connection.end()
+        }
+
+    @Test
+    fun aCloseAfterTheAnswerIsOnAnUnknownId() =
+        runTest {
+            val backend = AnsweredByTheTest()
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+            backend.answers[0].complete(1)
+            testScheduler.advanceUntilIdle()
+            connection.incoming.send("""["CLOSE","c"]""")
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("""["COUNT","c",{"count":1}]""", """["CLOSED","c","error: no such subscription"]"""), connection.onId("c"))
+            connection.end()
+        }
+
+    /** Refuses a COUNT on kind 9. */
+    private object NoKind9Counts : PassThroughPolicy() {
+        override fun accept(cmd: CountCmd): PolicyResult<CountCmd> = if (cmd.filters.any { it.kinds?.contains(9) == true }) PolicyResult.Rejected("blocked: no kind 9") else PolicyResult.Accepted(cmd)
+    }
+
+    /**
+     * A COUNT on "c", then [refused] on "c": the refusal cancels the running COUNT, so the client
+     * gets the refusal's CLOSED and nothing after it, even from a store that ignores cancellation.
+     */
+    private suspend fun TestScope.aRefusalOnTheIdCancelsTheRunningCount(
+        refused: String,
+        closed: String,
+        policy: IRelayPolicy = EmptyPolicy,
+    ) {
+        val backend = AnsweredByTheTest()
+        val connection = Connection(this, backend, policy)
+
+        connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+        connection.incoming.send(refused)
+        testScheduler.advanceUntilIdle()
+        backend.answers[0].complete(1)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf(closed), connection.onId("c"))
+        connection.end()
+    }
+
+    @Test
+    fun aReCountWithoutFiltersCancelsTheRunningCount() = runTest { aRefusalOnTheIdCancelsTheRunningCount("""["COUNT","c"]""", """["CLOSED","c","invalid: a COUNT needs at least one filter"]""") }
+
+    @Test
+    fun anUnparsableReCountCancelsTheRunningCount() = runTest { aRefusalOnTheIdCancelsTheRunningCount("""["COUNT","c",{"limit":"x"}]""", """["CLOSED","c","invalid: could not parse message"]""") }
+
+    @Test
+    fun aReCountThePolicyRefusesCancelsTheRunningCount() = runTest { aRefusalOnTheIdCancelsTheRunningCount("""["COUNT","c",{"kinds":[9]}]""", """["CLOSED","c","blocked: no kind 9"]""", NoKind9Counts) }
 }
