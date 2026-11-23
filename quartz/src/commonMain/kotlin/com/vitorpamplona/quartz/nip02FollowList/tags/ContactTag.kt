@@ -78,12 +78,28 @@ data class ContactTag(
 
             val hint = tag.getOrNull(2)?.let { RelayUrlNormalizer.normalizeHintOrNull(it) }
 
+            // A hex key, which is every well-formed follow, is already its canonical form once
+            // lower-cased: keep the tag's own string instead of running decodePublicKey's regex and
+            // a hex decode and re-encode per follow (~500 B per tag, a 1,000-follow list ~0.5 MB).
+            val key = tag[1]
+            if (Hex.isHex(key, 0, key.length)) {
+                return ContactTag(lowercaseHex(key), hint, tag.getOrNull(3))
+            }
+
             return try {
-                ContactTag(decodePublicKey(tag[1]).toHexKey(), hint, tag.getOrNull(3))
+                ContactTag(decodePublicKey(key).toHexKey(), hint, tag.getOrNull(3))
             } catch (e: Exception) {
                 Log.w("ContactTag", "Can't parse contact list p-tag ${tag.joinToString(", ")}", e)
                 null
             }
+        }
+
+        /** [hex] as `toHexKey()` would print its bytes: lower case, the same instance when it already is. */
+        private fun lowercaseHex(hex: String): String {
+            for (i in hex.indices) {
+                if (hex[i] in 'A'..'F') return hex.lowercase()
+            }
+            return hex
         }
 
         fun parseKey(tag: Array<String>): String? {
