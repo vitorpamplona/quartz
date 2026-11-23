@@ -27,7 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -78,7 +77,7 @@ class ProductCollectionEvent(
         }
     }
 
-    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
     /** `MEMBER`: the products in the collection (`a`). */
     override fun linkedAddressIds(): List<String> = itemAddressIds()

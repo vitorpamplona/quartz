@@ -52,15 +52,15 @@ class ReportEvent(
     AddressHintProvider {
     override fun pubKeyHints() = tags.fastMapNotNull(ReportedAuthorTag::parseAsHint)
 
-    override fun linkedPubKeys() = tags.fastMapNotNull(ReportedAuthorTag::parseKey)
+    override fun linkedPubKeys() = reportedAuthorKeys()
 
     override fun eventHints() = tags.fastMapNotNull(ReportedEventTag::parseAsHint)
 
-    override fun linkedEventIds() = tags.fastMapNotNull(ReportedEventTag::parseId)
+    override fun linkedEventIds() = reportedPostIds()
 
     override fun addressHints() = tags.fastMapNotNull(ReportedAddressTag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.fastMapNotNull(ReportedAddressTag::parseAddressId)
+    override fun linkedAddressIds() = reportedAddressIds()
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient
@@ -89,6 +89,15 @@ class ReportEvent(
     fun reportedAddresses() = tags.mapNotNull { ReportedAddressTag.parse(it, defaultReportType()) }
 
     fun reportedAuthor() = tags.mapNotNull { ReportedAuthorTag.parse(it, defaultReportType()) }
+
+    /** The ids of [reportedPost], without building the tags. */
+    fun reportedPostIds(): List<HexKey> = tags.fastMapNotNull(ReportedEventTag::parseId)
+
+    /** The address ids of [reportedAddresses], in canonical form, without building the tags. */
+    fun reportedAddressIds(): List<String> = tags.fastMapNotNull(ReportedAddressTag::parseAddressId)
+
+    /** The keys of [reportedAuthor], without building the tags. */
+    fun reportedAuthorKeys(): List<HexKey> = tags.fastMapNotNull(ReportedAuthorTag::parseKey)
 
     /**
      * Only the authors whose own `p` tag carries a report type, without the event-level fallback

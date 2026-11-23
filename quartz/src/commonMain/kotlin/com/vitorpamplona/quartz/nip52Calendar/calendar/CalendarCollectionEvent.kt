@@ -24,7 +24,6 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -67,7 +66,7 @@ class CalendarCollectionEvent(
     // A calendar is a list of `a` tags pointing at the appointments it collects. Surfacing them
     // lets the broadcaster route a published calendar to the relays those appointments live on,
     // and lets the hint index learn the calendar -> appointment links.
-    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = calendarEventAddressIds()
 

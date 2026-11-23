@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * JVM/Android actual: a [ConcurrentHashMap] of weak references, pre-sized for the expected hot
@@ -34,10 +35,20 @@ import java.util.concurrent.ConcurrentHashMap
  * scrolls past and is never asked for again), so sweeping a dead entry only when its own id is
  * looked up again would leave every one-off event's key, reference and map node in the map for
  * the life of the process (~170 B each).
+ *
+ * The sweep runs on the insert path only, once every [SWEEP_EVERY] inserts, by one thread at a
+ * time, and polls at most [SWEEP_MAX] references. Only inserts grow the map, so that bounds it
+ * the same; and a hit stays a lock-free map read. On Android, `ReferenceQueue.poll()` takes the
+ * queue's monitor on every call, even when the queue is empty, so polling on every `intern`
+ * would make every ingest thread contend on one lock.
  */
 actual class EventInterner {
     private val cache = ConcurrentHashMap<HexKey, Ref>(INITIAL_CAPACITY, LOAD_FACTOR)
     private val collected = ReferenceQueue<Event>()
+
+    // Racy on purpose: a lost increment only delays a sweep by one insert.
+    private var insertsSinceSweep = 0
+    private val sweeping = AtomicBoolean(false)
 
     /** Remembers its key, so the sweep can remove exactly this entry and not a newer one. */
     private class Ref(
@@ -47,8 +58,6 @@ actual class EventInterner {
     ) : WeakReference<Event>(event, queue)
 
     actual fun intern(event: Event): Event {
-        sweep()
-
         // Fast path: existing canonical is still alive.
         cache[event.id]?.get()?.let { return it }
 
@@ -57,7 +66,11 @@ actual class EventInterner {
         // (resolving the rare case where their ref was already GC'd
         // by retrying through the slow path).
         while (true) {
-            val existing = cache.putIfAbsent(event.id, Ref(event.id, event, collected)) ?: return event
+            val existing = cache.putIfAbsent(event.id, Ref(event.id, event, collected))
+            if (existing == null) {
+                if (++insertsSinceSweep >= SWEEP_EVERY) sweep()
+                return event
+            }
             existing.get()?.let { return it }
             // Existing entry's referent was GC'd; drop it and retry.
             cache.remove(event.id, existing)
@@ -65,11 +78,10 @@ actual class EventInterner {
     }
 
     actual fun get(id: HexKey): Event? {
-        sweep()
         val ref = cache[id] ?: return null
         val event = ref.get()
         if (event != null) return event
-        // Collected but not queued yet: drop the dead entry now.
+        // Self-cleaning: drop the dead entry now; its queued reference is a no-op later.
         cache.remove(id, ref)
         return null
     }
@@ -77,17 +89,23 @@ actual class EventInterner {
     actual fun size(): Int = cache.size
 
     actual fun clear() {
+        // References still queued are harmless: the sweep's two-argument remove skips an entry
+        // that is gone or was re-filled. Draining them here could drop the reference of an entry
+        // added after the clear, leaving that entry dead in the map.
         cache.clear()
-        while (collected.poll() != null) {
-            // drains the references the GC queued
-        }
     }
 
     /** Removes the entries whose event was collected. Two-argument remove spares a slot re-filled since. */
     private fun sweep() {
-        while (true) {
-            val ref = collected.poll() as? Ref ?: return
-            cache.remove(ref.id, ref)
+        if (!sweeping.compareAndSet(false, true)) return
+        try {
+            insertsSinceSweep = 0
+            for (i in 0 until SWEEP_MAX) {
+                val ref = collected.poll() as? Ref ?: return
+                cache.remove(ref.id, ref)
+            }
+        } finally {
+            sweeping.set(false)
         }
     }
 
@@ -96,5 +114,11 @@ actual class EventInterner {
 
         private const val INITIAL_CAPACITY = 5_000
         private const val LOAD_FACTOR = 0.75f
+
+        /** Inserts between sweeps. Each insert adds at most one entry, so a sweep of [SWEEP_MAX] keeps up. */
+        private const val SWEEP_EVERY = 64
+
+        /** Most references one sweep polls, so a large post-GC backlog never stalls a single caller. */
+        private const val SWEEP_MAX = 256
     }
 }

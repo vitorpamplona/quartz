@@ -27,7 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -103,7 +102,7 @@ class KanbanBoardEvent(
         visitor.visit(description())
     }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
     /** `MAINTAINER`: the board's maintainers (`p`), who may add and edit its cards. */
     override fun linkedPubKeys(): List<HexKey> = maintainerKeys()

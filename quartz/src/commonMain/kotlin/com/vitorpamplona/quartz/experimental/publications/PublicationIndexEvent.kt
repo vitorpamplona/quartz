@@ -31,7 +31,6 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -91,18 +90,18 @@ class PublicationIndexEvent(
     }
 
     // Sections listed by coordinate (`a`), plus the original a derivative work names (`A`).
-    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull { ATag.parseAsHint(it) ?: SourceAddressTag.parseAsHint(it) }
+    override fun addressHints(): List<AddressHint> = tags.mapNotNull { ATag.parseAsHint(it) ?: SourceAddressTag.parseAsHint(it) }
 
     override fun linkedAddressIds(): List<String> = sectionAddressIds() + listOfNotNull(originalAddressId())
 
     // Sections listed by id (`e`), plus the original a derivative work names (`E`). An `e`
     // entry's slot 2 may be an inline title ("Node.js") that passes for a schemeless host, so it
     // only hints with an explicit ws(s):// url.
-    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull { PublicationSectionRef.parseEventSectionAsHint(it) ?: SourceEventTag.parseAsHint(it) }
+    override fun eventHints(): List<EventIdHint> = tags.mapNotNull { PublicationSectionRef.parseEventSectionAsHint(it) ?: SourceEventTag.parseAsHint(it) }
 
     override fun linkedEventIds(): List<HexKey> = sectionEventIds() + listOfNotNull(originalEventId())
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
 
     // NKBIP-01 uses `p` only to name a derivative work's original author: one at most.
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(originalAuthor())

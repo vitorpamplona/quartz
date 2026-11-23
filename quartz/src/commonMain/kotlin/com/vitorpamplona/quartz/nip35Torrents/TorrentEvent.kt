@@ -145,8 +145,8 @@ class TorrentEvent(
     /** NIP-18 quotes (`q`) of addressable events the description cites, in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
 
-    /** The address ids [quotedAddresses] quotes, in canonical form, without building the tags. */
-    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseValidAddress)
+    /** The address ids [quotedAddresses] quotes, in canonical form (an `naddr1` decoded), without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QAddressableTag::parseAddressId)
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 

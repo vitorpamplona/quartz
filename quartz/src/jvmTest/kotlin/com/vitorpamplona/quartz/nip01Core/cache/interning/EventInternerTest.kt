@@ -128,27 +128,38 @@ class EventInternerTest {
     fun collectedEventsLeaveTheMapWithoutTheirIdsBeingLookedUpAgain() {
         // Ids seen once, as most are: nothing ever calls get() or intern() with them again, so
         // only the reference-queue sweep can remove their entries.
-        internAndDiscardMany(interner, 1_000)
+        internAndDiscardMany(interner, 1_000, "once")
         assertEquals(1_000, interner.size())
 
-        val keeper = signer.sign(TextNoteEvent.build("keeper", createdAt = 5_000))
-        for (i in 0..40) {
+        // The sweep rides on inserts, so keep inserting short-lived events while the GC queues
+        // the dead ones. Without the sweep the map would only grow (1,000 + 128 per round).
+        for (round in 0..40) {
             System.gc()
             Thread.sleep(20)
-            // Any intern sweeps whatever the GC has queued so far.
-            interner.intern(keeper)
-            if (interner.size() == 1) break
+            internAndDiscardMany(interner, 128, "round$round")
+            if (interner.size() < 300) break
         }
-        assertEquals(1, interner.size(), "entries of collected events should be swept")
+        assertTrue(interner.size() < 300, "entries of collected events should be swept, still ${interner.size()}")
+    }
+
+    @Test
+    fun hitsAndLookupsStayCorrectAcrossSweeps() {
+        val keeper = signer.sign(TextNoteEvent.build("keeper", createdAt = 5_000))
+        assertSame(keeper, interner.intern(keeper))
+        internAndDiscardMany(interner, 1_000, "churn")
+        System.gc()
+        internAndDiscardMany(interner, 1_000, "more")
         assertSame(keeper, interner.get(keeper.id))
+        assertSame(keeper, interner.intern(OptimizedJsonMapper.fromJson(keeper.toJson())))
     }
 
     private fun internAndDiscardMany(
         interner: EventInterner,
         count: Int,
+        prefix: String,
     ) {
         for (i in 0 until count) {
-            interner.intern(signer.sign(TextNoteEvent.build("once-$i", createdAt = 2_000L + i)))
+            interner.intern(signer.sign(TextNoteEvent.build("$prefix-$i", createdAt = 2_000L + i)))
         }
     }
 

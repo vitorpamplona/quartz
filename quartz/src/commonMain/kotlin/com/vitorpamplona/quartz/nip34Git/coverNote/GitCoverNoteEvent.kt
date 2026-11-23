@@ -155,7 +155,7 @@ class GitCoverNoteEvent(
     fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
 
     /** The validated `kind:pubkey:d` ids of addresses quoted with `q` (NIP-18), in tag order. */
-    fun quotedAddressIds(): List<String> = tags.fastMapNotNull { QAddressableTag.parse(it)?.address?.toValue() }
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QAddressableTag::parseAddressId)
 
     companion object {
         const val KIND = 1624

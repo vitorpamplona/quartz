@@ -27,7 +27,6 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
@@ -77,13 +76,13 @@ class BookshelfDirectoryEvent(
         visitor.visit(content)
     }
 
-    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = itemAddressIds()
 
     // Shelf items listed by id. Slot 2 may be an inline title instead of a relay, and a title
     // like "Node.js" passes for a schemeless host, so only an explicit ws(s):// url is a hint.
-    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(PublicationSectionRef::parseEventSectionAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(PublicationSectionRef::parseEventSectionAsHint)
 
     override fun linkedEventIds(): List<HexKey> = itemEventIds()
 

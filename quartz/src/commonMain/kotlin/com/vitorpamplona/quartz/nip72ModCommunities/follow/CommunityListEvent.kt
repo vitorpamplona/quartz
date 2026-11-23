@@ -26,7 +26,6 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
@@ -59,9 +58,9 @@ class CommunityListEvent(
         )
     }
 
-    override fun addressHints() = tags.fastMapNotNull(CommunityTag::parseAsHint)
+    override fun addressHints() = tags.mapNotNull(CommunityTag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.fastMapNotNull(CommunityTag::parseAddressId)
+    override fun linkedAddressIds() = tags.mapNotNull(CommunityTag::parseAddressId)
 
     fun publicCommunities() = tags.communities()
 

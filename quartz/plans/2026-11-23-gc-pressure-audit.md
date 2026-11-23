@@ -123,7 +123,10 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
      through the new `AddressSerializer.canonicalAddressIdOrNull`, `ReportEvent` reads ids
      directly, and `LiveActivitiesChatMessageEvent` no longer parses an `Address`.
    - Verified: the six hint lists of all 31,161 unique corpus events (43 kinds, 153,832 lines)
-     are byte-identical before and after. Pinned by `FastMapNotNullTest` and
+     are byte-identical before and after. The corpus has no `q` quoting an `naddr1`; a review
+     caught that the first version dropped those quotes from `linkedAddressIds()`.
+     `quotedAddressIds()` now reads through `QAddressableTag.parseAddressId`, which decodes them,
+     and `QuotedNaddrLinkTest` pins it. Pinned by `FastMapNotNullTest` and
      `AddressShapeTest.canonicalAddressIdMatchesTheParseRoundTrip`.
 2. **A continuation object on every frame once any message listener is registered.** *Est.*
    ~72 B per frame, plus ~48 B per listener whose override calls `super`.
@@ -299,8 +302,15 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
     an entry only when that id was looked up again. Each dead entry kept its map node, its
     `WeakReference` and the 104 B id String, about 170 B per event ever interned.
     - Repro: intern 100,000 events and drop them. After GC, 99,000 entries remained.
-    - Fix: entries now go through a `ReferenceQueue`, swept on `intern` and `get`, the same way
-      `RelayUrlInterner.jvmAndroid.kt` does it.
+    - Fix: entries go through a `ReferenceQueue`.
+      - The sweep runs on the insert path only, every 64 inserts, one thread at a time, at most
+        256 polls per sweep.
+      - Android's `ReferenceQueue.poll()` takes a monitor on every call, even when the queue is
+        empty (AOSP libcore; OpenJDK checks a volatile head first). Polling on every `intern`/
+        `get`, as `RelayUrlInterner` does on its rarer `intern`, would make the ingest threads
+        contend on one lock.
+      - `clear()` no longer drains the queue, which could have stranded an entry added during
+        it.
     - Pinned by `EventInternerTest.collectedEventsLeaveTheMapWithoutTheirIdsBeingLookedUpAgain`,
       which fails on the old code with 1,001 entries.
 21. **`BaseNoteEvent` keeps empty collections in its caches.** About 170 B retained per cached

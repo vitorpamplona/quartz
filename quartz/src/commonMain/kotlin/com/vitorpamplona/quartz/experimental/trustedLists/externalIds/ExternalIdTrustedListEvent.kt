@@ -26,7 +26,6 @@ import com.vitorpamplona.quartz.experimental.trustedLists.externalIds.tags.Exter
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.Tag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
-import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -56,11 +55,11 @@ class ExternalIdTrustedListEvent(
 
     override fun memberValueOf(tag: Tag) = ExternalIdMemberTag.parseId(tag)
 
-    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = aboutAddressIds()
 
-    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
 
     // [aboutKeys] plus the provenance keys, appended into the same list.
     override fun linkedPubKeys(): List<HexKey> = tags.aboutKeys().also(::addProvenancePubKeys)

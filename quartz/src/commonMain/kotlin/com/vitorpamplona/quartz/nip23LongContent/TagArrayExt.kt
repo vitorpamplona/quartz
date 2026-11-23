@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip23LongContent
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
@@ -29,22 +30,20 @@ import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
-import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.PublishedAtTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.SummaryTag
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeysTo
+import com.vitorpamplona.quartz.nip57Zaps.splits.ZapSplitSetupParser
 
 // Shared by the two NIP-23 kinds, long-form content (30023) and its draft (30024): the draft has
 // "the same structure", so both read their metadata, search text and references through these.
@@ -86,37 +85,50 @@ fun TagArray.forEachLongFormIndexableField(
 // adding tags for them. The hint providers read the `q` and `p` tags, the NIP-57 zap splits and
 // the URIs in [cited].
 
-fun TagArray.longFormEventHints(cited: List<Entity>): List<EventIdHint> = mapNotNull(QTag::parseEventAsHint) + cited.eventHints()
+// These run on every relay copy of every article and mostly find nothing: each fills one list,
+// created on the first match, in the order the old `q + nip19` / `p + zap + nip19` lists had.
+
+fun TagArray.longFormEventHints(cited: List<Entity>): List<EventIdHint> {
+    var out: ArrayList<EventIdHint>? = null
+    out = fastMapNotNullTo(out, QTag::parseEventAsHint)
+    out = cited.eventHintsTo(out)
+    return out ?: emptyList()
+}
 
 fun TagArray.longFormLinkedEventIds(cited: List<Entity>): List<HexKey> {
-    val result = ArrayList<HexKey>()
-    mapNotNullTo(result) { QEventTag.parse(it)?.eventId }
-    result.addAll(cited.eventIds())
-    return result
+    var out: ArrayList<HexKey>? = null
+    out = fastMapNotNullTo(out, QTag::parseEventId)
+    out = cited.eventIdsTo(out)
+    return out ?: emptyList()
 }
 
-fun TagArray.longFormAddressHints(cited: List<Entity>): List<AddressHint> = mapNotNull(QTag::parseAddressAsHint) + cited.addressHints()
+fun TagArray.longFormAddressHints(cited: List<Entity>): List<AddressHint> {
+    var out: ArrayList<AddressHint>? = null
+    out = fastMapNotNullTo(out, QTag::parseAddressAsHint)
+    out = cited.addressHintsTo(out)
+    return out ?: emptyList()
+}
 
-/** Only well-formed `kind:pubkey:d` quotes (parsed through [QAddressableTag]), never a raw `q` value. */
+/** Only well-formed `kind:pubkey:d` quotes (or an `naddr1`), as [QAddressableTag] reads them, never a raw `q` value. */
 fun TagArray.longFormLinkedAddressIds(cited: List<Entity>): List<String> {
-    val result = ArrayList<String>()
-    mapNotNullTo(result) { QAddressableTag.parse(it)?.address?.toValue() }
-    result.addAll(cited.addressIds())
-    return result
+    var out: ArrayList<String>? = null
+    out = fastMapNotNullTo(out, QAddressableTag::parseAddressId)
+    out = cited.addressIdsTo(out)
+    return out ?: emptyList()
 }
 
-// Runs on every relay copy of every article: one list, filled in the order the old
-// `p + zap + nip19` concatenation produced, instead of three lists and two copies.
 fun TagArray.longFormPubKeyHints(cited: List<Entity>): List<PubKeyHint> {
-    val result = mapNotNullTo(ArrayList(), PTag::parseAsHint)
-    zapSplitHintsTo(result)
-    result.addAll(cited.pubKeyHints())
-    return result
+    var out: ArrayList<PubKeyHint>? = null
+    out = fastMapNotNullTo(out, PTag::parseAsHint)
+    out = fastMapNotNullTo(out, ZapSplitSetupParser::parseAsHint)
+    out = cited.pubKeyHintsTo(out)
+    return out ?: emptyList()
 }
 
 fun TagArray.longFormLinkedPubKeys(cited: List<Entity>): List<HexKey> {
-    val result = mapNotNullTo(ArrayList(), PTag::parseKey)
-    zapSplitPubKeysTo(result)
-    result.addAll(cited.pubKeys())
-    return result
+    var out: ArrayList<HexKey>? = null
+    out = fastMapNotNullTo(out, PTag::parseKey)
+    out = fastMapNotNullTo(out, ZapSplitSetupParser::parseKey)
+    out = cited.pubKeysTo(out)
+    return out ?: emptyList()
 }

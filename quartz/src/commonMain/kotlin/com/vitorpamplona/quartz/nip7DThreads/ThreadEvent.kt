@@ -140,8 +140,8 @@ class ThreadEvent(
     /** Addressable events quoted with `q` tags (NIP-18), in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
 
-    /** The address ids [quotedAddresses] quotes, in canonical form, without building the tags. */
-    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseValidAddress)
+    /** The address ids [quotedAddresses] quotes, in canonical form (an `naddr1` decoded), without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QAddressableTag::parseAddressId)
 
     /**
      * The thread title. NIP-7D specifies a `title` tag (what we emit), but some
