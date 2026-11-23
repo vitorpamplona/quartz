@@ -29,8 +29,16 @@ import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
+import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.RelayLogger
+import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats.RelayReqStats
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip50Search.EventSearchMatcher
@@ -38,7 +46,11 @@ import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.SeenIds
 import kotlinx.coroutines.runBlocking
 import java.lang.management.ManagementFactory
+import java.lang.reflect.Proxy
 import java.util.zip.GZIPInputStream
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 
 /**
@@ -296,4 +308,53 @@ class GcPressureBenchmark {
         }
         println("  all listed kinds, B/event over the whole corpus: ${grand / events.size}")
     }
+
+    /**
+     * Bytes per EVENT frame that a client listener adds, driven straight through its
+     * `onIncomingMessage` with real frames and a reused continuation (the harness's own cost is
+     * the same for every row, so compare rows rather than read them as absolutes).
+     */
+    @Test
+    fun relayListenersPerFrame() {
+        if (!enabled) return
+        val events = corpus()
+        val relayUrl = RelayUrlNormalizer.normalizeOrNull("wss://relay.damus.io")!!
+        val relay =
+            Proxy.newProxyInstance(javaClass.classLoader, arrayOf(IRelayClient::class.java)) { _, m, _ ->
+                if (m.name == "getUrl") relayUrl else null
+            } as IRelayClient
+        var captured: RelayConnectionListener? = null
+        val client =
+            Proxy.newProxyInstance(javaClass.classLoader, arrayOf(INostrClient::class.java)) { _, m, args ->
+                if (m.name == "addConnectionListener") captured = args[0] as RelayConnectionListener
+                null
+            } as INostrClient
+        val frames = events.mapIndexed { i, e -> EventMessage("sub-${i % 8}", e) }
+        val texts = frames.map { it.event.toJson() }
+        val cont =
+            object : Continuation<Unit> {
+                override val context: CoroutineContext = EmptyCoroutineContext
+
+                override fun resumeWith(result: Result<Unit>) {}
+            }
+
+        fun measure(
+            label: String,
+            listener: RelayConnectionListener,
+        ) {
+            val call = RelayConnectionListener::class.java.getMethod("onIncomingMessage", IRelayClient::class.java, String::class.java, Message::class.java, Continuation::class.java)
+            val baseline =
+                threadAlloc(frames.size) { i -> call.invoke(NoOpListener, relay, texts[i], frames[i], cont) }
+            val bytes = threadAlloc(frames.size) { i -> call.invoke(listener, relay, texts[i], frames[i], cont) }
+            println("  %-40s %9d B/frame (harness %d B/frame subtracted)".format(label, (bytes - baseline) / frames.size, baseline / frames.size))
+        }
+
+        println("\n=== client listeners, per EVENT frame ===")
+        RelayLogger(client)
+        measure("RelayLogger (logging off)", captured!!)
+        RelayReqStats(client)
+        measure("RelayReqStats", captured!!)
+    }
+
+    private object NoOpListener : RelayConnectionListener
 }

@@ -21,8 +21,20 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats
 
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 
-class ReqStatsRepository {
+/**
+ * Events received per subscription and kind, for debugging which REQs bring in what.
+ *
+ * [add] runs for every received event, so it allocates nothing once a subscription is known: the
+ * counts are keyed by the frame's own subscription id, and each subscription keeps its kinds and
+ * counts in two small arrays. At most [maxSubscriptions] are kept, the oldest dropped first:
+ * fetch helpers open a fresh id per call, which grew the map for the life of the process.
+ */
+class ReqStatsRepository(
+    private val maxSubscriptions: Int = DEFAULT_MAX_SUBSCRIPTIONS,
+) {
     data class Counter(
         val subscriptionId: String,
         val eventKind: Int,
@@ -30,25 +42,69 @@ class ReqStatsRepository {
         var counter: Int = 0
     }
 
-    private var eventCounter = LargeCache<Int, Counter>()
+    /** One subscription's counts: [kinds] and [counts] side by side; a REQ brings few kinds. */
+    private class SubCounts(
+        val subscriptionId: String,
+    ) {
+        private val lock = PlatformLock()
+        private var kinds = IntArray(4)
+        private var counts = IntArray(4)
+        private var size = 0
 
-    private fun eventCounterIndex(
-        str1: String,
-        str2: Int,
-    ): Int = 31 * str1.hashCode() + str2.hashCode()
+        fun add(kind: Int) =
+            lock.withLock {
+                for (i in 0 until size) {
+                    if (kinds[i] == kind) {
+                        counts[i]++
+                        return@withLock
+                    }
+                }
+                if (size == kinds.size) {
+                    kinds = kinds.copyOf(size * 2)
+                    counts = counts.copyOf(size * 2)
+                }
+                kinds[size] = kind
+                counts[size] = 1
+                size++
+            }
+
+        /** A consistent copy, so [action] runs outside the lock; only the print path calls it. */
+        fun forEach(action: (subId: String, kind: Int, counter: Int) -> Unit) {
+            val (kindsNow, countsNow) = lock.withLock { kinds.copyOf(size) to counts.copyOf(size) }
+            for (i in kindsNow.indices) action(subscriptionId, kindsNow[i], countsNow[i])
+        }
+    }
+
+    private val bySubscription = LargeCache<String, SubCounts>()
+
+    /** Insertion order of [bySubscription]'s keys, for dropping the oldest; guarded by [trackLock]. */
+    private val order = ArrayDeque<String>()
+    private val trackLock = PlatformLock()
 
     fun add(
         subscriptionId: String,
         eventKind: Int,
     ) {
-        val key = eventCounterIndex(subscriptionId, eventKind)
-        val stats = eventCounter.getOrCreate(key) { Counter(subscriptionId, eventKind) }
-        stats.counter++
+        val counts = bySubscription.get(subscriptionId) ?: track(subscriptionId)
+        counts.add(eventKind)
     }
 
-    fun printCounter(action: (subId: String, kind: Int, counter: Int) -> Unit) {
-        eventCounter.forEach { _, stats ->
-            action(stats.subscriptionId, stats.eventKind, stats.counter)
+    /** The counts of a subscription seen for the first time; drops the oldest past the cap. */
+    private fun track(subscriptionId: String): SubCounts =
+        trackLock.withLock {
+            bySubscription.get(subscriptionId)?.let { return it }
+            val created = SubCounts(subscriptionId)
+            bySubscription.put(subscriptionId, created)
+            order.addLast(subscriptionId)
+            while (order.size > maxSubscriptions) bySubscription.remove(order.removeFirst())
+            created
         }
+
+    fun printCounter(action: (subId: String, kind: Int, counter: Int) -> Unit) {
+        bySubscription.forEach { _, counts -> counts.forEach(action) }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_SUBSCRIPTIONS = 1_000
     }
 }
