@@ -185,22 +185,22 @@ class NostrSignerRemote(
         tags: Array<Array<String>>,
         content: String,
     ): T {
+        val template =
+            EventTemplate<Event>(
+                createdAt = createdAt,
+                kind = kind,
+                tags = tags,
+                content = content,
+            )
         val result =
             manager.launchWaitAndParse(
                 bunkerRequestBuilder = {
-                    val template =
-                        EventTemplate<Event>(
-                            createdAt = createdAt,
-                            kind = kind,
-                            tags = tags,
-                            content = content,
-                        )
-
                     BunkerRequestSign(
                         event = template,
                     )
                 },
-                parser = SignResponse::parse,
+                // Bound to this request: the template we asked for, under the user's key once known.
+                parser = { SignResponse.parse(it, resolvedUserPubkey, template) },
             )
 
         if (result is SignerResult.RequestAddressed.Successful<SignResult>) {

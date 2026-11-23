@@ -20,13 +20,45 @@
  */
 package com.vitorpamplona.quartz.nip46RemoteSigner.signer
 
+import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
+import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseError
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseEvent
+import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
+import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
 
 class SignResponse {
     companion object {
+        /**
+         * [parse], then bound to the request: the event must be [template] signed by [pubKey] (by
+         * whoever signed it while the user's key is still unknown, null), its id the hash of exactly
+         * those fields. A valid signature alone only proves the bunker signed *something*: a buggy
+         * bunker (or a replayed response) could hand back a different event, or one under another
+         * key, and the caller would publish it as asked.
+         */
+        fun parse(
+            response: BunkerResponse,
+            pubKey: HexKey?,
+            template: EventTemplate<*>,
+        ): SignerResult.RequestAddressed<SignResult> {
+            val result = parse(response)
+            if (result !is SignerResult.RequestAddressed.Successful<SignResult>) return result
+            // An unsigned private zap is signed by a throwaway key over encrypted content: a
+            // different event by design (NIP-57 Appendix), so there is nothing to bind it to.
+            if (template.kind == ZapRequestEvent.KIND && template.tags.any(AnonTag::isUnsignedPrivate)) return result
+            val event = result.result.event
+            if (pubKey != null && event.pubKey != pubKey) return SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent(event)
+            val expectedId = EventHasher.hashId(event.pubKey, template.createdAt, template.kind, template.tags, template.content)
+            return if (event.id == expectedId) {
+                result
+            } else {
+                SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent(event)
+            }
+        }
+
         fun parse(response: BunkerResponse): SignerResult.RequestAddressed<SignResult> =
             if (response is BunkerResponseEvent) {
                 if (!response.event.verify()) {
