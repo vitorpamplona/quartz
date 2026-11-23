@@ -28,3 +28,9 @@ expect fun currentTimeMillis(): Long
 
 /** Processors this process may run on: how many CPU-bound workers a parallel stage should start. */
 internal expect fun availableProcessors(): Int
+
+/**
+ * A VM error nothing should catch and carry on after (out of memory, a stack overflow), which a
+ * catch-all must rethrow. False where the platform reports none as a throwable.
+ */
+internal expect fun isFatal(e: Throwable): Boolean
