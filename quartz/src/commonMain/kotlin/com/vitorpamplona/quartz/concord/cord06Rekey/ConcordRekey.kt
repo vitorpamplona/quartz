@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip44Encryption.Nip44
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -267,6 +268,10 @@ object ConcordRekey {
             val payload = RekeyPayload.decode(Base64.Default.decode(recipientSigner.nip44Decrypt(blob.wrapped, rotatorXOnly.toHexKey()))) ?: return null
             if (!payload.scopeId.contentEquals(scopeId) || payload.epoch != newEpoch) return null
             payload
+        } catch (e: CancellationException) {
+            // A cancelled caller (or a timeout around this call) must stop here, not read as
+            // "no blob for us": that answer makes a member conclude they were removed.
+            throw e
         } catch (_: Exception) {
             null
         }
