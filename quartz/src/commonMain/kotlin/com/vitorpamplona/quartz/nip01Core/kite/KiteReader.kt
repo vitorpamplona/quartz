@@ -87,6 +87,14 @@ internal class KiteReader {
     private var frameClosed = false
 
     private var inUse = false
+
+    /**
+     * Strings a caller already cut from the frame being read (see [readMessage] with hints),
+     * returned instead of a new copy where the frame holds exactly their characters. Cleared
+     * after every parse.
+     */
+    internal var subIdHint: String? = null
+    internal var idHint: String? = null
     private var cb: CharArray? = null
     private var tagScratch: Array<String?>? = null
     private var tagsScratch: Array<Array<String>?>? = null
@@ -117,6 +125,8 @@ internal class KiteReader {
         } finally {
             s = ""
             inUse = false
+            subIdHint = null
+            idHint = null
             if (!done) {
                 // A parse that failed partway left references in the scratch and the event fields.
                 tagsScratch?.fill(null)
@@ -202,6 +212,29 @@ internal class KiteReader {
         return readString()
     }
 
+    /** [requiredString], returning [hint] itself where the frame holds exactly it; see [readStringOr]. */
+    internal fun requiredString(hint: String?): String {
+        if (!nextElement()) fail("missing element")
+        return readStringOr(hint)
+    }
+
+    /**
+     * [readString], but [hint] itself, instead of a copy, when the string at the cursor holds
+     * exactly [hint]'s characters. [hint] must contain no quote or backslash, so a raw match is
+     * the decoded value.
+     */
+    internal fun readStringOr(hint: String?): String {
+        if (hint != null) {
+            val start = i + 1
+            val end = start + hint.length
+            if (end < n && s[i] == '"' && s[end] == '"' && s.regionMatches(start, hint, 0, hint.length)) {
+                i = end + 1
+                return hint
+            }
+        }
+        return readString()
+    }
+
     /** The next element, which must be an object; the cursor ends past it. */
     internal fun requiredObjectStart() {
         if (!nextElement()) fail("missing element")
@@ -256,7 +289,7 @@ internal class KiteReader {
                     if (!withIdentity) {
                         skipValue(base)
                     } else if (withSig) {
-                        fId = readString()
+                        fId = readStringOr(idHint)
                     } else {
                         fId = scalarTextOrNull()
                     }
@@ -929,6 +962,32 @@ internal class KiteReader {
 
         /** One relay-to-client frame; throws [IllegalArgumentException] on malformed or unsupported frames. */
         fun readMessage(json: String): Message = acquire().run { parse(json) { readMessageFrame() } }
+
+        /**
+         * [readMessage] for a frame whose subscription id and event id the caller already cut out
+         * (`CachingEventDecoder`'s scan): the message reuses those strings instead of copying them
+         * again. Either may be null; a hint the frame doesn't hold exactly is ignored.
+         */
+        internal fun readMessage(
+            json: String,
+            subIdHint: String?,
+            idHint: String?,
+        ): Message =
+            acquire().run {
+                // readStringOr may only match a hint without a quote or backslash.
+                this.subIdHint = subIdHint?.takeIf(::isPlainHint)
+                this.idHint = idHint?.takeIf(::isPlainHint)
+                parse(json) { readMessageFrame() }
+            }
+
+        /** A hint whose raw chars are its JSON value: no quote and no backslash. */
+        private fun isPlainHint(hint: String): Boolean {
+            for (k in hint.indices) {
+                val c = hint[k]
+                if (c == '"' || c == '\\') return false
+            }
+            return true
+        }
 
         /** One client-to-relay frame; throws [IllegalArgumentException] on malformed or unsupported frames. */
         fun readCommand(json: String): Command = acquire().run { parse(json) { readCommandFrame() } }

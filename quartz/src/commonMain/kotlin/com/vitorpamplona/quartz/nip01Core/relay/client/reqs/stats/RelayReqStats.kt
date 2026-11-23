@@ -42,7 +42,8 @@ class RelayReqStats(
                 msgStr: String,
                 msg: Message,
             ) {
-                super.onIncomingMessage(relay, msgStr, msg)
+                // No call to the empty super: a suspend call that isn't the last statement makes
+                // this a coroutine state machine, allocated for every frame.
                 if (msg is EventMessage) {
                     stats.add(msg.subId, msg.event.kind)
                 }
