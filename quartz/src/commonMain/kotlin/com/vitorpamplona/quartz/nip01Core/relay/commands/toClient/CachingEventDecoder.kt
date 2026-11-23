@@ -511,6 +511,7 @@ class CachingEventDecoder(
         live = ConcurrentHashCache()
         scrutinizedIds.clear()
         anyScrutinizedId = false
+        recentSubIds.fill(null)
     }
 
     /** Ids currently addressable across both generations. Observability + tests. */
@@ -518,8 +519,12 @@ class CachingEventDecoder(
 
     /**
      * Subscription ids seen recently, so the frames of one subscription share one instance
-     * instead of a copy per frame: a connection carries a handful of subscriptions at a time.
-     * Racy on purpose: a slot only ever holds an immutable String, and a lost write costs a copy.
+     * instead of a copy per frame. Only ids up to [MAX_SHARED_SUB_ID] chars, so a relay cannot
+     * pin long strings here; cleared with the cache.
+     *
+     * Racy on purpose: every relay's thread reads and writes the slots unlocked. That is safe
+     * because a slot is only ever reused after its length and every char were compared with the
+     * frame: a stale or torn read can only fail that check and cost a copy.
      */
     private val recentSubIds = arrayOfNulls<String>(RECENT_SUB_IDS)
 
@@ -532,7 +537,9 @@ class CachingEventDecoder(
         val end = ((scan ushr 32) and 0xFFFFL).toInt()
         val len = end - start
         if (len == 0) return ""
-        val slot = (len * 31 + text[end - 1].code) and (RECENT_SUB_IDS - 1)
+        if (len > MAX_SHARED_SUB_ID) return text.substring(start, end)
+        // Clients use random ids of one length, so the slot mixes the first, middle and last chars.
+        val slot = (len + text[start].code * 31 + text[start + len / 2].code * 961 + text[end - 1].code * 29791) and (RECENT_SUB_IDS - 1)
         val recent = recentSubIds[slot]
         if (recent != null && recent.length == len && text.regionMatches(start, recent, 0, len)) return recent
         return text.substring(start, end).also { recentSubIds[slot] = it }
@@ -671,8 +678,11 @@ class CachingEventDecoder(
         /** Past this the subscription id's end no longer packs into [scanEventFrame]'s 16 bits (kept positive). */
         private const val MAX_PACKED_SUB_END = 0x7FFF
 
-        /** Slots in [recentSubIds]; a power of two. */
-        private const val RECENT_SUB_IDS = 16
+        /** Slots in [recentSubIds]; a power of two, above the subscriptions a client keeps open. */
+        private const val RECENT_SUB_IDS = 64
+
+        /** Longest subscription id [recentSubIds] keeps. */
+        private const val MAX_SHARED_SUB_ID = 64
 
         private const val EVENT_LABEL = "\"EVENT\""
         private const val ID_KEY = "\"id\""

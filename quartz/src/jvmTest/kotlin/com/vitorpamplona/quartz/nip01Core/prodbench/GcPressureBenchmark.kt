@@ -49,6 +49,7 @@ import com.vitorpamplona.quartz.utils.SeenIds
 import kotlinx.coroutines.runBlocking
 import java.lang.management.ManagementFactory
 import java.lang.reflect.Proxy
+import java.util.Random
 import java.util.zip.GZIPInputStream
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.CoroutineContext
@@ -371,7 +372,12 @@ class GcPressureBenchmark {
             javaClass.classLoader?.getResourceAsStream(CORPUS)
                 ?: throw IllegalStateException("corpus $CORPUS missing from the test classpath")
         val all = GZIPInputStream(stream).use { OptimizedJsonMapper.fromJsonToEventList(it.readBytes().toString(Charsets.UTF_8)) }
-        val frames = all.take(50_000).mapIndexed { i, e -> "[\"EVENT\",\"sub-${i % 8}\",${e.toJson()}]" }
+        // Subscription ids as clients name them: random, one length (Amethyst's newSubId() is 10
+        // chars), and more of them open than a small table could hold.
+        val rnd = Random(42)
+        val alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val subIds = List(40) { String(CharArray(10) { alphabet[rnd.nextInt(alphabet.length)] }) }
+        val frames = all.take(50_000).mapIndexed { i, e -> "[\"EVENT\",\"${subIds[(i * 7 + i / 3) % subIds.size]}\",${e.toJson()}]" }
 
         // warm the JIT on throwaway decoders
         repeat(3) {

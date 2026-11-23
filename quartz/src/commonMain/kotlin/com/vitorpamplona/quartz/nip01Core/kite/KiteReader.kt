@@ -967,10 +967,20 @@ internal class KiteReader {
             idHint: String?,
         ): Message =
             acquire().run {
-                this.subIdHint = subIdHint
-                this.idHint = idHint
+                // readStringOr may only match a hint without a quote or backslash.
+                this.subIdHint = subIdHint?.takeIf(::isPlainHint)
+                this.idHint = idHint?.takeIf(::isPlainHint)
                 parse(json) { readMessageFrame() }
             }
+
+        /** A hint whose raw chars are its JSON value: no quote and no backslash. */
+        private fun isPlainHint(hint: String): Boolean {
+            for (k in hint.indices) {
+                val c = hint[k]
+                if (c == '"' || c == '\\') return false
+            }
+            return true
+        }
 
         /** One client-to-relay frame; throws [IllegalArgumentException] on malformed or unsupported frames. */
         fun readCommand(json: String): Command = acquire().run { parse(json) { readCommandFrame() } }

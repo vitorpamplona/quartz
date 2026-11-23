@@ -62,6 +62,14 @@ class KiteReaderHintTest {
     }
 
     @Test
+    fun aHintWithAQuoteOrBackslashIsNotUsed() {
+        // the frame's raw chars a\"b decode to a"b; a raw-char hint must not stand in for that
+        val escaped = frame.replace("\"feed-1\"", "\"a\\\"b\"")
+        val msg = KiteReader.readMessage(escaped, "a\\\"b", null) as EventMessage
+        assertEquals("a\"b", msg.subId)
+    }
+
+    @Test
     fun hintsDoNotOutliveTheirParse() {
         read("feed-1", StringBuilder(id).toString())
         val plain = OptimizedJsonMapper.fromJsonToMessage(frame) as EventMessage

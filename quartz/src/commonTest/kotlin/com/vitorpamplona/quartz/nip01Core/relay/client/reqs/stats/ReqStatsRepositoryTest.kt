@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class ReqStatsRepositoryTest {
     private fun ReqStatsRepository.snapshot(): Map<Pair<String, Int>, Int> {
@@ -48,14 +49,24 @@ class ReqStatsRepositoryTest {
     }
 
     @Test
-    fun keepsOnlyTheNewestSubscriptionsPastTheCap() {
+    fun pastTheCapTheSubscriptionWithTheFewestEventsGoes() {
         val stats = ReqStatsRepository(maxSubscriptions = 3)
-        for (i in 1..5) stats.add("fetch-$i", 1)
-        // the oldest two were dropped; a known one keeps counting
-        stats.add("fetch-5", 1)
+        repeat(100) { stats.add("feed", 1) }
+        repeat(50) { stats.add("notifications", 1) }
+        stats.add("fetch-1", 1)
+        // one-off fetches churn through the last slot; the long-lived feeds stay
+        for (i in 2..10) stats.add("fetch-$i", 1)
 
         val counts = stats.snapshot()
-        assertEquals(setOf("fetch-3", "fetch-4", "fetch-5"), counts.keys.map { it.first }.toSet())
-        assertEquals(2, counts["fetch-5" to 1])
+        assertEquals(setOf("feed", "notifications", "fetch-10"), counts.keys.map { it.first }.toSet())
+        assertEquals(100, counts["feed" to 1])
+        assertEquals(50, counts["notifications" to 1])
+    }
+
+    @Test
+    fun aNonPositiveCapIsRefused() {
+        assertFailsWith<IllegalArgumentException> { ReqStatsRepository(maxSubscriptions = 0) }
+        // the no-argument constructor native and Swift callers use is still there
+        assertEquals(0, ReqStatsRepository().snapshot().size)
     }
 }

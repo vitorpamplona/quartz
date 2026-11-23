@@ -151,16 +151,19 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
 4. **Fixed: `RelayReqStats` boxed, allocated a lambda and leaked per EVENT.** *Measured*: 40 → 0 B
    per frame on HotSpot, which had already scalarized part of it.
    - The empty `super.onIncomingMessage` call, which made the override a state machine, is gone.
-   - `ReqStatsRepository` keys by the frame's subscription id with per-kind `IntArray`s, so two
-     subscriptions no longer share a hashed counter.
-   - It keeps at most 1,000 subscriptions, the oldest dropped first.
+   - `ReqStatsRepository` keys by the frame's subscription id with a per-kind atomic count, so
+     two subscriptions no longer share a hashed counter. A REQ shares one id across every relay,
+     so the hot path takes no lock; only a new subscription or kind does.
+   - It keeps at most 1,000 subscriptions; past that, the one with the fewest events goes, so
+     long-lived feeds outlast one-off fetches.
 5. **Fixed in part: `CachingEventDecoder` materialized the subId and id twice for new events.**
-   *Measured* over 50,000 raw capture frames (27% new, 73% duplicates): 604 → 492 B per frame.
+   *Measured* over 50,000 capture frames (27% new, 73% duplicates) under 40 random 10-char
+   subscription ids: 614 → 505 B per frame.
    - The scan returns its positions packed in a `Long`, not a holder.
    - A new event's parse reuses the id string the scan cut for the lookup, through an internal
      Kite hint that applies only where the frame holds exactly those characters.
-   - Subscription ids come from a 16-slot table of recent ones, so a subscription's frames
-     share one instance.
+   - Subscription ids come from a 64-slot table of recent ones (ids up to 64 chars, cleared
+     with the cache), so a subscription's frames share one instance.
    - Still open: a duplicate still cuts a 104 B id string to look it up. Avoiding it means
      keying the cache by the id's bits rather than by String.
 6. **The `by lazy` delegates in `ZapReceiptEvent` cost 80 B per receipt at construction.**
