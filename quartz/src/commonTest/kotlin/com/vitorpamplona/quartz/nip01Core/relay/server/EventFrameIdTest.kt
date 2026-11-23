@@ -73,4 +73,24 @@ class EventFrameIdTest {
         assertNull(eventIdOfFrame("""["CLOSE","$id"]"""))
         assertNull(eventIdOfFrame("""["AUTH","$id"]"""))
     }
+
+    @Test
+    fun readsTheSubIdOfAReqCountOrCloseWhoseRestDoesNotParse() {
+        assertEquals("REQ" to "sub", subIdOfFrame("""["REQ","sub",{"limit":"10"}]""")?.let { it.label to it.subId })
+        assertEquals("COUNT" to "q", subIdOfFrame(""" [ "COUNT" , "q" , 5 ]""")?.let { it.label to it.subId })
+        assertEquals("CLOSE" to "c", subIdOfFrame("""["CLOSE","c"""")?.let { it.label to it.subId })
+        // Escapes are decoded, so the CLOSED names the sub id the client sent.
+        assertEquals("a\"b\u00e9", subIdOfFrame("""["REQ","a\"b\u00e9",{"kinds":"x"}]""")?.subId)
+    }
+
+    @Test
+    fun answersNoSubIdForOtherFrames() {
+        assertNull(subIdOfFrame("""["EVENT",{"id":"$id"}]"""))
+        assertNull(subIdOfFrame("""["NEG-OPEN","sub",{},"00"]"""))
+        assertNull(subIdOfFrame("""["REQ",5,{}]"""))
+        assertNull(subIdOfFrame("""["REQ","",{}]"""))
+        assertNull(subIdOfFrame("""["REQ"]"""))
+        assertNull(subIdOfFrame("""["REQ","unterminated"""))
+        assertNull(subIdOfFrame("not json"))
+    }
 }

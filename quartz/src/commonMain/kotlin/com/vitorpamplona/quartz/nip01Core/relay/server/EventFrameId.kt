@@ -21,6 +21,10 @@
 package com.vitorpamplona.quartz.nip01Core.relay.server
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CloseCmd
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CountCmd
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 
 /**
  * The event id of a raw `["EVENT", {...}]` or `["AUTH", {...}]` frame, read without parsing
@@ -86,6 +90,31 @@ internal fun eventIdOfFrame(frame: String): HexKey? {
     }
     return null
 }
+
+/** The label (`REQ`, `COUNT` or `CLOSE`) and the sub id of a frame read by [subIdOfFrame]. */
+internal class FrameSubId(
+    val label: String,
+    val subId: String,
+)
+
+/**
+ * The label and sub id of a raw `["REQ", "<id>", …]`, `["COUNT", "<id>", …]` or
+ * `["CLOSE", "<id>", …]` frame, read without the rest of it, or null when [frame] is none of
+ * these or its sub id is not a non-empty string. For the frames a relay refuses before parsing
+ * (an oversized one) or cannot use (filters that do not parse), which NIP-01 (REQ, CLOSE) and
+ * NIP-45 (COUNT) still answer with a `CLOSED` on that id.
+ */
+internal fun subIdOfFrame(frame: String): FrameSubId? =
+    try {
+        KiteReader.read(frame) {
+            when (val label = openFrame()) {
+                ReqCmd.LABEL, CountCmd.LABEL, CloseCmd.LABEL -> requiredString().ifEmpty { null }?.let { FrameSubId(label, it) }
+                else -> null
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
 
 private fun skipSpace(
     s: String,

@@ -385,7 +385,7 @@ class HttpRelayHandlerTest {
         val limited = MemoryRelay(backend, { LimitsPolicy(RelayLimits(maxMessageLength = 4096)) + VerifyPolicy }, limits = null)
         val answer = HttpRelayHandler(limited, origins = { listOf(origin) }).ask(req("""{"search":"${"x".repeat(20_000)}"}"""))
         assertEquals(400, answer.status, answer.lines.toString())
-        assertTrue(answer.lines.single().startsWith("""["NOTICE","invalid: message too large"""), answer.lines.toString())
+        assertTrue(answer.lines.single().startsWith("""["CLOSED","q","invalid: message too large"""), answer.lines.toString())
     }
 
     @Test
