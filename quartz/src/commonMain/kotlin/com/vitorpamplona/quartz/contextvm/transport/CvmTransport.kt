@@ -34,6 +34,7 @@ import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcSuccess
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.Tag
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeout
@@ -286,14 +287,21 @@ class CvmTransport(
                 is JsonRpcNotification -> onNotification(decoded)?.let { return it }
 
                 // Correlate on both layers: the `e` tag ties the response to our
-                // request event, and the JSON-RPC id ties it to our call. Either
-                // alone is weaker -- a peer may omit the tag on a wrap, and ids
-                // are only unique within a session.
+                // request event, and the JSON-RPC id ties it to our call. The tag
+                // is required: ContextVM responses carry it, and an id alone is
+                // only unique within a session.
                 is JsonRpcSuccess ->
                     if (matches(wrapped, requestEventId, decoded.id, requestId)) return decoded
 
+                // A null id (the peer could not read our request's) still ends the call, but only
+                // when the `e` tag ties it to our request event: otherwise any failure the peer sent
+                // about anything would end whatever call happened to be open.
                 is JsonRpcFailure ->
-                    if (decoded.id == null || matches(wrapped, requestEventId, decoded.id, requestId)) return decoded
+                    if (decoded.id == null) {
+                        if (repliesTo(wrapped, requestEventId)) return decoded
+                    } else if (matches(wrapped, requestEventId, decoded.id, requestId)) {
+                        return decoded
+                    }
 
                 else -> Unit
             }
@@ -308,27 +316,27 @@ class CvmTransport(
      * on the relay can gift-wrap a well-formed JSON-RPC response to us; the
      * wrap's own signature proves only that its throwaway key signed it, and
      * `CvmGiftWrap.unwrap` verifies the INNER signature without knowing who
-     * the inner signer ought to be. Without this, correlation rests on an `e`
-     * tag a forger simply omits (the check below skips a missing one) and a
-     * JSON-RPC id that is small and guessable — so a stranger could answer
+     * the inner signer ought to be. Without this, a stranger could answer
      * `kp_take` with their own KeyPackage, or `msg_fetch_many` with a stream
      * of their choosing.
      *
      * `serverPubKey` is the coordinator's identity and the only thing that
      * identifies it (`spec/00.md` §8.5), so it is exactly the right thing to
-     * compare against.
+     * compare against. The `e` tag must then name our request event: a
+     * response that omits it is not an answer to anything in particular.
      */
     private fun matches(
         message: CvmMessageEvent,
         requestEventId: HexKey,
         responseId: JsonRpcId,
         requestId: JsonRpcId,
-    ): Boolean {
-        if (message.pubKey != serverPubKey) return false
-        val inReplyTo = message.inReplyTo()
-        if (inReplyTo != null && inReplyTo != requestEventId) return false
-        return responseId == requestId
-    }
+    ): Boolean = repliesTo(message, requestEventId) && responseId == requestId
+
+    /** [message] is from the peer we called and its `e` tag names [requestEventId]. */
+    private fun repliesTo(
+        message: CvmMessageEvent,
+        requestEventId: HexKey,
+    ): Boolean = message.pubKey == serverPubKey && message.inReplyTo() == requestEventId
 
     private suspend fun decryptOrNull(
         event: Event,
@@ -343,6 +351,13 @@ class CvmTransport(
                 // one would let anyone disrupt a call.
                 null
             }
+        } else if (!crypto.acceptsPlaintext()) {
+            // Under EncryptionMode.REQUIRED a bare message is refused outright: we asked encrypted.
+            null
+        } else if (!event.verify()) {
+            // A bare message carries its sender in the clear, so its signature is all that proves
+            // it: without this check anyone could publish a "response" with the server's pubkey.
+            null
         } else {
             event
         }

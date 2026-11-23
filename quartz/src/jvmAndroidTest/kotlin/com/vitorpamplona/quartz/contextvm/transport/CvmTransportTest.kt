@@ -31,13 +31,17 @@ import com.vitorpamplona.quartz.contextvm.fixture.CvmFixtureServer
 import com.vitorpamplona.quartz.contextvm.fixture.CvmRequest
 import com.vitorpamplona.quartz.contextvm.fixture.FixtureFaults
 import com.vitorpamplona.quartz.contextvm.fixture.InMemoryRelayPool
+import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcError
+import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcFailure
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcId
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcMessage
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcRequest
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcSuccess
 import com.vitorpamplona.quartz.contextvm.mcp.McpParams
+import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -169,16 +173,110 @@ class CvmTransportTest {
         }
 
     @Test
-    fun `CVM-CORE-15 accepts a response that omits the e tag but matches by id`() =
+    fun `CVM-CORE-15 ignores a response that omits the e tag even when the id matches`() =
         runTest {
-            // The `e` tag is the stronger signal but a peer may omit it; the
-            // JSON-RPC id still correlates.
+            // A response names the request event it answers. Without the tag
+            // only the JSON-RPC id correlated, and an id is only unique within
+            // a session (and was small and sequential).
             val fixture = server(faults = FixtureFaults(omitCorrelationTag = true))
             fixture.start()
 
-            val response = exchange(fixture, transport(), JsonRpcRequest(JsonRpcId.Num(0), "ping"))
-            assertIs<JsonRpcSuccess>(response)
+            assertFailsWith<TimeoutCancellationException> {
+                exchange(fixture, transport(), JsonRpcRequest(JsonRpcId.Num(0), "ping"), timeoutMs = 200)
+            }
         }
+
+    @Test
+    fun `CVM-CORE-15c ignores an unsigned bare response carrying the server pubkey`() =
+        runTest {
+            // Bare 25910 events were taken on their pubkey alone, with no
+            // signature check, even under EncryptionMode.REQUIRED: anyone who
+            // saw the request's `p` tag could answer as the server.
+            val transport = transport()
+            val pending = async { transport.request(JsonRpcRequest(JsonRpcId.Num(0), "initialize"), timeoutMs = 300) }
+            yield()
+            val inner = CvmGiftWrap().unwrap(relays.published.last(), serverSigner)
+            relays.publish(forgedBareResponse(inner.id))
+
+            assertFailsWith<TimeoutCancellationException> { pending.await() }
+        }
+
+    @Test
+    fun `CVM-CORE-15d a plaintext client still refuses a bare response with a bad signature`() =
+        runTest {
+            val plaintext = CvmGiftWrap(encryptionMode = EncryptionMode.OPTIONAL)
+            val transport = transport(plaintext)
+            val pending = async { transport.request(JsonRpcRequest(JsonRpcId.Num(0), "initialize"), timeoutMs = 300) }
+            yield()
+            // The request went out wrapped (the peer is assumed to encrypt), so read its inner id.
+            val inner = plaintext.unwrap(relays.published.last(), serverSigner)
+            relays.publish(forgedBareResponse(inner.id))
+
+            assertFailsWith<TimeoutCancellationException> { pending.await() }
+        }
+
+    @Test
+    fun `CVM-CORE-15e a signed bare response is refused under REQUIRED`() =
+        runTest {
+            // The default client only sends wraps; a plaintext answer is a downgrade.
+            val transport = transport()
+            val pending = async { transport.request(JsonRpcRequest(JsonRpcId.Num(0), "initialize"), timeoutMs = 300) }
+            yield()
+            val inner = CvmGiftWrap().unwrap(relays.published.last(), serverSigner)
+            val bare =
+                CvmMessageEvent.create(
+                    JsonRpcSuccess(JsonRpcId.Num(0), buildJsonObject { put("ok", JsonPrimitive(true)) }),
+                    ephemeralSigner.pubKey,
+                    serverSigner,
+                    inReplyTo = inner.id,
+                )
+            relays.publish(bare)
+
+            assertFailsWith<TimeoutCancellationException> { pending.await() }
+        }
+
+    @Test
+    fun `CVM-CORE-15f a failure with a null id ends the call only when it names our request`() =
+        runTest {
+            val transport = transport()
+            val pending = async { transport.request(JsonRpcRequest(JsonRpcId.Num(0), "ping"), timeoutMs = 300) }
+            yield()
+            val inner = CvmGiftWrap().unwrap(relays.published.last(), serverSigner)
+            // From the server, but about nothing in particular: must not end this call.
+            val loose =
+                CvmMessageEvent.create(
+                    JsonRpcFailure(null, JsonRpcError(JsonRpcError.PARSE_ERROR, "parse error")),
+                    ephemeralSigner.pubKey,
+                    serverSigner,
+                )
+            relays.publish(CvmGiftWrap().wrap(loose, ephemeralSigner.pubKey))
+            assertFailsWith<TimeoutCancellationException> { pending.await() }
+
+            val second = async { transport.request(JsonRpcRequest(JsonRpcId.Num(1), "ping"), timeoutMs = 5_000) }
+            yield()
+            val secondInner = CvmGiftWrap().unwrap(relays.published.last(), serverSigner)
+            val tied =
+                CvmMessageEvent.create(
+                    JsonRpcFailure(null, JsonRpcError(JsonRpcError.PARSE_ERROR, "parse error")),
+                    ephemeralSigner.pubKey,
+                    serverSigner,
+                    inReplyTo = secondInner.id,
+                )
+            relays.publish(CvmGiftWrap().wrap(tied, ephemeralSigner.pubKey))
+            assertIs<JsonRpcFailure>(second.await())
+        }
+
+    /** A bare 25910 "from" the server answering [requestId], with a zero id and signature. */
+    private fun forgedBareResponse(requestId: String) =
+        Event(
+            "00".repeat(32),
+            serverSigner.pubKey,
+            TimeUtils.now(),
+            CvmKinds.MESSAGE,
+            arrayOf(arrayOf("p", ephemeralSigner.pubKey), arrayOf("e", requestId)),
+            "{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"forged\":true}}",
+            "00".repeat(64),
+        )
 
     @Test
     fun `CVM-CORE-15b ignores a correctly correlated response from the wrong signer`() =

@@ -26,11 +26,13 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.Kind
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
+import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
-import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip44Encryption.Nip44
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -179,16 +181,26 @@ class CvmGiftWrap(
             throw CvmEncryptionException("$kind is not a gift wrap kind")
         }
 
-        val wrapSigner = NostrSignerInternal(KeyPair())
-        val ciphertext = wrapSigner.nip44Encrypt(OptimizedJsonMapper.toJson(inner), recipient)
+        // The throwaway key is used once, so its conversation key stays out of the shared cache,
+        // where it would only evict a real peer's and keep a private key alive process-wide.
+        val wrapKey = KeyPair()
+        val ciphertext = Nip44.encryptOnce(OptimizedJsonMapper.toJson(inner), wrapKey.privKey!!, recipient.hexToByteArray()).encodePayload()
 
-        return wrapSigner.sign(
+        return NostrSignerSync(wrapKey).sign(
             createdAt = TimeUtils.now(),
             kind = kind,
             tags = arrayOf(PTag.assemble(recipient, relayHint = null)),
             content = ciphertext,
         )
     }
+
+    /**
+     * Whether a bare (unwrapped) kind-25910 message may be accepted at all. Not under
+     * [EncryptionMode.REQUIRED]: a client that only ever sends wraps has nothing to gain from a
+     * plaintext answer, and accepting one would let anyone answer in the clear what was asked
+     * encrypted.
+     */
+    fun acceptsPlaintext(): Boolean = encryptionMode != EncryptionMode.REQUIRED
 
     /**
      * Unwraps [giftWrap] and returns the signed inner event.
@@ -205,9 +217,15 @@ class CvmGiftWrap(
             throw CvmEncryptionException("${giftWrap.kind} is not a gift wrap kind")
         }
 
+        // NIP-44 v2 only: the wrap's key is a throwaway, so the inner signature is the only
+        // authentication, and nothing older than v2 was ever a ContextVM wrap.
+        if (!Nip44.isV2Payload(giftWrap.content)) {
+            throw CvmEncryptionException("gift wrap is not a NIP-44 v2 payload")
+        }
+
         val json =
             try {
-                signer.nip44Decrypt(giftWrap.content, giftWrap.pubKey)
+                signer.nip44DecryptOnce(giftWrap.content, giftWrap.pubKey)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
