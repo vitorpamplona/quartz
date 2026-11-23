@@ -160,6 +160,11 @@ class RelayLimitsServerTest {
             server.close()
         }
 
+    /**
+     * Regression guard: upstream already checked the cap before the policy's accept, so this
+     * passes there too. It pins that order, which a change here once broke: a REQ the cap
+     * refuses must not spend the client's RateLimitPolicy budget.
+     */
     @Test
     fun aReqTheCapRefusesSpendsNoRateLimitToken() =
         runTest {

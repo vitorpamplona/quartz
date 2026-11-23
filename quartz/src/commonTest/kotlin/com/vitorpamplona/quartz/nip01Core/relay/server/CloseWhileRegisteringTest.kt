@@ -267,4 +267,84 @@ class CloseWhileRegisteringTest {
                 f.scope.cancel()
             }
         }
+
+    /**
+     * Ends the session from inside its read, as a disconnect on another thread does while the
+     * store works, then answers without suspending: rows and EOSE for a REQ, 5 for a COUNT.
+     */
+    private inner class EndsDuringRead : SessionBackend {
+        var session: RelaySession? = null
+
+        override suspend fun query(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) {
+            session?.close()
+            onEach(Event("3".padStart(64, '0'), PUBKEY, 1003, 1, emptyArray(), "after end", SIG))
+            onEose()
+        }
+
+        override suspend fun count(
+            ctx: RequestContext,
+            filters: List<Filter>,
+        ): Int {
+            session?.close()
+            return 5
+        }
+    }
+
+    private class RawFrames : SessionSink {
+        val frames = mutableListOf<String>()
+
+        override fun message(message: Message) {
+            frames.add(message.toJson())
+        }
+
+        override fun raw(json: String) {
+            frames.add(json)
+        }
+    }
+
+    @Test
+    fun aParkedReqWhoseSessionEndsMidReadSendsNothingAfter() =
+        runTest {
+            val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+            val backend = EndsDuringRead()
+            val frames = RawFrames()
+            val session = RelaySession(backend, PassThroughPolicy(), scope, frames, onClose = {})
+            backend.session = session
+            try {
+                session.receive("""["REQ","s",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertEquals(emptyList(), frames.frames, "rows or EOSE went out after the session ended")
+            } finally {
+                scope.cancel()
+            }
+        }
+
+    @Test
+    fun aCountWhoseSessionEndsMidReadSendsNothingAfter() =
+        runTest {
+            val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+            val backend = EndsDuringRead()
+            val frames = RawFrames()
+            val session = RelaySession(backend, PassThroughPolicy(), scope, frames, onClose = {})
+            backend.session = session
+            try {
+                session.receive("""["COUNT","c",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertEquals(emptyList(), frames.frames, "the COUNT answered after the session ended")
+            } finally {
+                scope.cancel()
+            }
+        }
+
+    private companion object {
+        const val PUBKEY = "46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184b16bd8ce4d"
+        const val SIG = "4aa5264965018fa12a326686ad3d3bd8beae3218dcc83689b19ca1e6baeb791531943c15363aa6707c7c0c8b2d601deca1f20c32078b2872d356cdca03b04cce"
+    }
 }
