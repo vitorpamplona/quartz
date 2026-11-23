@@ -24,12 +24,16 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.forEachIndexInParallel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlin.concurrent.Volatile
 
@@ -47,7 +51,7 @@ import kotlin.concurrent.Volatile
  *
  *  - [submit] is cheap (a channel send) and returns immediately, freeing the
  *    receiver coroutine for the next frame;
- *  - one drain coroutine (on [Dispatchers.IO]) pulls a batch greedily (up to
+ *  - one drain coroutine (on its own view of [Dispatchers.IO], see [drainDispatcher]) pulls a batch greedily (up to
  *    [maxBatch]), fans the batch's verifies across [Dispatchers.Default],
  *    then dispatches [onVerified]/[onInvalid] in submission order. Nothing
  *    but the pure Schnorr verify ever runs on Default: [preVerified] and the
@@ -63,8 +67,8 @@ import kotlin.concurrent.Volatile
  *    (LocalCache-style dedup: an id already consumed doesn't need another
  *    verify) without paying the CPU;
  *  - the submit channel is bounded: a verify backlog beyond [capacity]
- *    blocks the submitting receiver coroutine, which backpressures the
- *    socket instead of growing the heap.
+ *    makes [send] suspend (and [submit] block) the submitting receiver,
+ *    which backpressures the socket instead of growing the heap.
  *
  * Typical wiring (replacing an inline-verify EventCollector):
  * ```
@@ -105,8 +109,19 @@ class ParallelEventVerifier<C>(
     var invalidCount: Long = 0
         private set
 
+    /**
+     * Where the drain runs: a one-thread view of [Dispatchers.IO] with its own permit. Submitters
+     * are usually relay delivery coroutines on [Dispatchers.IO] itself, and [submit] blocks its
+     * thread on a full backlog. On the shared IO pool, 64 such blocked submitters held every IO
+     * permit, and the drain, suspended on the Default fan-out, could never resume to take from
+     * the backlog: every submitter and the drain waited on each other for good, and the relays'
+     * unbounded delivery channels grew behind them. A view of IO does not count against IO's own
+     * limit, so the drain always has a thread to resume on.
+     */
+    private val drainDispatcher = Dispatchers.IO.limitedParallelism(1)
+
     private val drainJob =
-        scope.launch(Dispatchers.IO) {
+        scope.launch(drainDispatcher) {
             val batch = ArrayList<Pending<C>>(maxBatch)
             try {
                 while (true) {
@@ -132,14 +147,35 @@ class ParallelEventVerifier<C>(
 
     /**
      * Hands one event to the verify stage. Returns fast (a channel send);
-     * blocks only when the verify backlog exceeds the capacity — that is the
-     * backpressure path, by design.
+     * blocks the calling thread only when the verify backlog exceeds the
+     * capacity — that is the backpressure path, by design. From a coroutine,
+     * prefer [send], which suspends there instead of holding the thread.
      */
     fun submit(
         event: Event,
         context: C,
     ) {
         incoming.trySendBlocking(Pending(event, context))
+    }
+
+    /**
+     * [submit] for callers that can suspend: waits for room in the backlog
+     * without blocking a thread. Returns without queuing once the verifier
+     * was closed or its scope cancelled.
+     */
+    suspend fun send(
+        event: Event,
+        context: C,
+    ) {
+        try {
+            incoming.send(Pending(event, context))
+        } catch (_: ClosedSendChannelException) {
+            // closed: nothing more is verified
+        } catch (e: CancellationException) {
+            // The verifier's scope went (the channel was cancelled under the send): nothing more
+            // is verified. The caller's own cancellation is rethrown.
+            currentCoroutineContext().ensureActive()
+        }
     }
 
     private suspend fun processBatch(batch: List<Pending<C>>) {
