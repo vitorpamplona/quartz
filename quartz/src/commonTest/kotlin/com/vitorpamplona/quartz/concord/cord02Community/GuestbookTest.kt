@@ -57,6 +57,18 @@ class GuestbookTest {
     }
 
     @Test
+    fun anUnlabelledInviteStillWritesThreeElements() {
+        // CORD-02 §5: `["invite", creator, label]`, "always three elements, \"\" when unlabelled".
+        // Armada reads attribution only from a three-element tag, so a two-element one was lost.
+        val rumor = Guestbook.join(member, createdAt = 1_700_000_000L, subMs = 0, inviteCreator = creator)
+        assertEquals(listOf("invite", creator, ""), rumor.tags.first { it[0] == "invite" }.toList())
+
+        val entry = Guestbook.parse(rumor)
+        assertEquals(creator, entry?.inviteCreator)
+        assertNull(entry?.inviteLabel, "an empty label reads as none")
+    }
+
+    @Test
     fun leaveParses() {
         val entry = Guestbook.parse(Guestbook.leave(member, createdAt = 1L))
         assertEquals(GuestbookAction.LEAVE, entry?.action)
@@ -166,6 +178,20 @@ class GuestbookTest {
         assertFalse(Guestbook.canKick(r, kickBy(plain, other, r))) // no KICK bit
         assertFalse(Guestbook.canKick(r, kickBy(admin, owner, r))) // the owner is never a target
         assertFalse(Guestbook.canKick(r, kickBy(mod, mod, r))) // equal cannot act on equal
+    }
+
+    @Test
+    fun kickFromABanHolderIsHonoredAsOneFromAKickHolder() {
+        // CORD-04 §6, Lifting a Ban: "A Kick from a BAN holder is honored as one from a KICK holder".
+        val banOnly = "e5".repeat(32)
+        val bannerRole = "33".repeat(32)
+        val r =
+            roster(
+                role(bannerRole, """{"name":"Banner","position":3,"permissions":"16"}"""),
+                grant(banOnly, listOf(bannerRole)),
+            )
+        assertTrue(Guestbook.canKick(r, kickBy(banOnly, plain, r)))
+        assertFalse(Guestbook.canKick(r, kickBy(banOnly, admin, r)), "still needs the strict outrank")
     }
 
     @Test
