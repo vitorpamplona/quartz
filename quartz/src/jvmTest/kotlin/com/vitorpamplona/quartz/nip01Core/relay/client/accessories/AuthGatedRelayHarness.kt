@@ -78,6 +78,8 @@ class AuthGatedRelayHarness(
     private val signer: NostrSigner? = NostrSignerInternal(KeyPair()),
     attachAuthenticator: Boolean = true,
     private val signDelayMs: Long = 0,
+    /** More logged-in accounts, each answering the challenge with its own AUTH beside [signer]'s. */
+    private val otherAccounts: List<NostrSigner> = emptyList(),
 ) : AutoCloseable {
     private val store = EventStore(null)
 
@@ -122,8 +124,10 @@ class AuthGatedRelayHarness(
                     if (s == null) {
                         emptyList()
                     } else {
-                        signedAuths.incrementAndGet()
-                        listOf(s.sign(template))
+                        (listOf(s) + otherAccounts).map {
+                            signedAuths.incrementAndGet()
+                            it.sign(template)
+                        }
                     }
                 },
             )

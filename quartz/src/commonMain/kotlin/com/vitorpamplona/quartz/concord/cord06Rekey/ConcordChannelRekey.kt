@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.VacTag
 import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.GroupKey
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
+import com.vitorpamplona.quartz.concord.envelope.StreamWrapOpener
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
@@ -185,12 +186,20 @@ object ConcordChannelRekey {
         wraps: Collection<Event>,
         keys: Map<HexKey, GroupKey>,
         channelIdHex: HexKey,
+    ): List<ChannelRotation> = rotations(wraps, keys, channelIdHex, StreamWrapOpener.DIRECT)
+
+    /** [rotations] opening each wrap through [open], which may remember what it opened before. */
+    fun rotations(
+        wraps: Collection<Event>,
+        keys: Map<HexKey, GroupKey>,
+        channelIdHex: HexKey,
+        open: StreamWrapOpener,
     ): List<ChannelRotation> {
         val scope = channelIdHex.lowercase()
         val groups = LinkedHashMap<String, MutableList<Parsed>>()
         for (wrap in wraps.distinctBy { it.id }) {
             val key = keys[wrap.pubKey] ?: continue
-            val opened = ConcordStreamEnvelope.openOrNull(wrap, key) ?: continue
+            val opened = open.openOrNull(wrap, key) ?: continue
             if (opened.sealKind != ConcordStreamEnvelope.KIND_SEAL_ENCRYPTED) continue
             val rumor = opened.rumor
             if (rumor.kind != ConcordRekey.KIND) continue
