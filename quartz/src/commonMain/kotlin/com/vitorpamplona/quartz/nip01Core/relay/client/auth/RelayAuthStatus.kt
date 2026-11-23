@@ -70,6 +70,19 @@ class RelayAuthStatus {
     // AUTHs accepted on this connection — see [RelayAuthSnapshot.successCount].
     private val successCount = AtomicInt(0)
 
+    // 1 while an accepted AUTH is owed a re-sync of the connection's filters and outbox. One
+    // round can authenticate several identities, and re-syncing on each accepted one sent every
+    // refused event once per identity. See [RelayAuthenticator]'s checkAuthResults.
+    private val resyncOwed = AtomicInt(0)
+
+    /** An AUTH was accepted: the connection is owed one re-sync, whatever else lands first. */
+    fun oweResync() {
+        resyncOwed.store(1)
+    }
+
+    /** Takes the owed re-sync, if any: true for exactly one caller per [oweResync]. */
+    fun takeResync(): Boolean = resyncOwed.compareAndSet(1, 0)
+
     fun rememberChallenge(challenge: String) {
         lastChallenge = challenge
     }

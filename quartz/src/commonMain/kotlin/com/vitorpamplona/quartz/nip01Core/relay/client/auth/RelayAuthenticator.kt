@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -229,6 +230,8 @@ class RelayAuthenticator(
                 // indefinite silence this whole state exists to end.
                 status?.signingFinished()
                 publishSnapshot(relay.url)
+                // An AUTH of this round may have been accepted while later identities were signing.
+                resyncIfSettled(relay)
             }
         }
     }
@@ -308,14 +311,34 @@ class RelayAuthenticator(
         relay: IRelayClient,
         msg: OkMessage,
     ) {
-        val transitioned = authStatus.get(relay.url)?.checkAuthResults(msg.eventId, msg.success) == true
+        val status = authStatus.get(relay.url) ?: return
+        val transitioned = status.checkAuthResults(msg.eventId, msg.success)
         // Publish even on failure transitions so the UI can clear "AUTHENTICATING"
         // banners and reflect AUTH_FAILED state.
         publishSnapshot(relay.url)
-        // if this is the OK of an auth event, renew all subscriptions and resend all outgoing events.
-        if (transitioned) {
-            client.syncFilters(relay)
+        // The OK of an AUTH: renew all subscriptions and resend all outgoing events, once per
+        // round. Every logged-in identity answers the challenge, and re-syncing on each accepted
+        // AUTH sent every refused event once per identity, the copies racing on the relay (one
+        // applied, the rest answered `duplicate:`). So the re-sync waits until the round's last
+        // AUTH is answered and nothing is still being signed.
+        if (transitioned) status.oweResync()
+        if (!resyncIfSettled(relay) && transitioned) {
+            // An AUTH the relay never answers would hold the round open: re-sync anyway after a grace.
+            signingScope.launch {
+                delay(RESYNC_GRACE_MS)
+                if (authStatus.get(relay.url) === status && status.takeResync()) client.syncFilters(relay)
+            }
         }
+    }
+
+    /** The re-sync an accepted AUTH is owed, once no AUTH of [relay]'s round is pending or being signed. */
+    private fun resyncIfSettled(relay: IRelayClient): Boolean {
+        val status = authStatus.get(relay.url) ?: return false
+        if (status.hasFinishedAllAuths() && !status.isSigning() && status.takeResync()) {
+            client.syncFilters(relay)
+            return true
+        }
+        return false
     }
 
     override fun hasFinishedAuthentication(relay: NormalizedRelayUrl) = authStatus.get(relay)?.hasFinishedAllAuths() != false
@@ -326,6 +349,11 @@ class RelayAuthenticator(
         // Publishes "AUTH is being answered on this client" so accessories can decide
         // whether waiting out an `auth-required:` refusal is worth anything.
         client.addAuthResponder(this)
+    }
+
+    private companion object {
+        /** How long an accepted AUTH waits for the rest of its round before re-syncing anyway. */
+        const val RESYNC_GRACE_MS = 3_000L
     }
 
     fun destroy() {
