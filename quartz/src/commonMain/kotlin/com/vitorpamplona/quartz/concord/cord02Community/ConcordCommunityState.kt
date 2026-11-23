@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.concord.cord02Community
 
+import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChannelOrder
 import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChannelSeal
 import com.vitorpamplona.quartz.concord.cord03Channels.ConcordWritersLedger
 import com.vitorpamplona.quartz.concord.cord03Channels.OpenedChannelSeal
@@ -42,11 +43,28 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.TimeUtils
 
-/** A channel id paired with its current folded definition. */
+/**
+ * A channel id paired with its current folded definition, and the two orders the sidebar sorts it by
+ * ([ConcordChannelOrder]): the CORD-03 §2 [position] rank key and Armada's legacy [armadaOrder].
+ */
 data class ConcordChannel(
     val channelIdHex: String,
     val definition: ChannelEntity,
-)
+    /** The Channel's CORD-03 §2 `position` (a rank key), or null when it carries none or a malformed one. */
+    val position: String? = null,
+    /** Armada's legacy `custom["armada.order"].position`, or null ([ConcordChannelOrder.armadaOrderOf]). */
+    val armadaOrder: Long? = null,
+) {
+    @Deprecated("Use the primary constructor. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    constructor(channelIdHex: String, definition: ChannelEntity) : this(channelIdHex, definition, null, null)
+
+    /** The `copy` this data class had before the order fields, kept so a caller compiled against it still links. */
+    @Deprecated("Use copy with the order fields. Removed in 3.0.0.", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        channelIdHex: String = this.channelIdHex,
+        definition: ChannelEntity = this.definition,
+    ): ConcordChannel = ConcordChannel(channelIdHex, definition, position, armadaOrder)
+}
 
 /**
  * The current, folded state of a Concord community's Control Plane (CORD-02).
@@ -188,6 +206,9 @@ data class ConcordCommunityState(
         val p = if (row != null) (everyone minus row.deny) union row.allow else everyone
         return p.has(ConcordPermissions.SEND_MESSAGES)
     }
+
+    /** The live [channels] in sidebar order ([ConcordChannelOrder]): `position`, Armada's legacy order, name, id. */
+    val orderedChannels: List<ConcordChannel> by lazy { ConcordChannelOrder.sorted(channels.values) }
 
     /** The ids of the live (non-deleted) Private Channels (CORD-03), lowercase hex. */
     val privateChannelIds: Set<HexKey> by lazy { channels.filterValues { it.definition.private }.keys.mapTo(HashSet()) { it.lowercase() } }
@@ -450,12 +471,19 @@ data class ConcordCommunityState(
                     if (opened != null) openedChannels[head.entityIdHex] = opened
                     // ChannelEntity models only the name and the Private flag; a sealed Channel's other
                     // opened fields (topic, position, category, ...) are in [openedChannels].
-                    channels[head.entityIdHex] = ConcordChannel(head.entityIdHex, ChannelEntity(name = opened?.name ?: "", private = true))
+                    channels[head.entityIdHex] =
+                        ConcordChannel(
+                            head.entityIdHex,
+                            ChannelEntity(name = opened?.name ?: "", private = true),
+                            opened?.fields?.let(ConcordChannelOrder::positionOf),
+                            opened?.fields?.let(ConcordChannelOrder::armadaOrderOf),
+                        )
                     continue
                 }
                 val def = ConcordJson.decodeOrNull<ChannelEntity>(head.content) ?: continue
                 if (def.deleted) continue
-                channels[head.entityIdHex] = ConcordChannel(head.entityIdHex, def)
+                val (position, armadaOrder) = ConcordChannelOrder.ordersOf(head.content)
+                channels[head.entityIdHex] = ConcordChannel(head.entityIdHex, def, position, armadaOrder)
             }
 
             // Role definitions come from the authority-gated fold (not the raw structural heads): a

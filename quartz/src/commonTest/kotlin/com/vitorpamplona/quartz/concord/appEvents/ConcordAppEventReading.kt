@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.concord.cord02Community.Guestbook
 import com.vitorpamplona.quartz.concord.cord02Community.GuestbookEntry
 import com.vitorpamplona.quartz.concord.cord03Channels.ChannelChat
 import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChatEditEvent
+import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChatFold
+import com.vitorpamplona.quartz.concord.cord03Channels.ConcordChatRules
 import com.vitorpamplona.quartz.concord.cord04Roles.ConcordJson
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEdition
 import com.vitorpamplona.quartz.concord.cord04Roles.ControlEntityKind
@@ -38,7 +40,6 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip22Comments.CommentEvent
 import com.vitorpamplona.quartz.nip25Reactions.ReactionEvent
-import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import com.vitorpamplona.quartz.nipC7Chats.ChatEvent
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -57,12 +58,11 @@ import kotlinx.serialization.json.put
  * and reaction targets, deletes and their `vac`), [Guestbook.coalesce] with its Kick gate, the
  * Control fold ([ConcordCommunityState.fold]) and [ConcordCommunityState.honorsModerationHide].
  *
- * The `after` readings (what a timeline shows once the rumor lands) need a chat fold, which
- * Quartz does not have: Amethyst folds edits (`NoteEditOverlays.latestConcordEdit`), deletes and
- * reaction tallies in its own cache. [ChatFold] restates the rules Quartz's builders document
- * (an edit applies only from the original's author, newest by ordering time; a delete removes the
- * deleter's own rumor, or another's when [ConcordCommunityState.honorsModerationHide] says so),
- * so the vectors pin those rules until a shared fold moves here.
+ * The `after` readings (what a timeline shows once the rumor lands) are Quartz's chat fold,
+ * [ConcordChatFold], the one Amethyst and `amy` read channels through: edits from the original's
+ * author only, newest by ordering time; a delete removes the deleter's own rumor, or another's when
+ * [com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityState.honorsModerationHide] says
+ * so; reactions tallied once per reactor and display key.
  */
 object ConcordAppEventReading {
     private fun str(value: String?): JsonElement = if (value == null) JsonNull else JsonPrimitive(value)
@@ -72,51 +72,16 @@ object ConcordAppEventReading {
     /** A rumor opened from a Chat Plane wrap with an encrypted seal, as the envelope hands it over. */
     private fun opened(rumor: Event) = OpenedStreamEvent(rumor, ConcordStreamEnvelope.KIND_SEAL_ENCRYPTED, rumor.pubKey, rumor)
 
-    /** The reference chat fold the `after` readings are judged by (see the class doc). */
-    class ChatFold(
-        private val state: ConcordCommunityState,
-        private val channel: String,
-    ) {
-        val seen = ArrayList<Event>()
-
-        private fun byId(id: String) = seen.firstOrNull { it.id == id }
-
-        private fun removedBy(
-            target: Event,
-            delete: Event,
-        ): Boolean {
-            if (delete !is DeletionRequestEvent || target.id !in delete.deleteEventIds()) return false
-            if (delete.pubKey == target.pubKey) return true
-            val citation = delete.tags.firstOrNull(VacTag::isTag)?.let(VacTag::parse)
-            return target.kind != ReactionEvent.KIND && state.honorsModerationHide(delete.pubKey, target.pubKey, channel, citation)
-        }
-
-        fun removed(target: Event) = seen.any { removedBy(target, it) }
-
-        fun visible(id: String): Boolean {
-            val t = byId(id) ?: return false
-            return (t is ChatEvent || t is CommentEvent) && !removed(t)
-        }
-
-        fun latestEdit(target: Event): ConcordChatEditEvent? =
-            seen
-                .filterIsInstance<ConcordChatEditEvent>()
-                .filter { it.editedMessageId() == target.id && it.pubKey == target.pubKey }
-                .maxWithOrNull(compareBy({ it.orderingMs() }, { it.id }))
-
-        fun target(id: String?) = id?.let { byId(it) }
-    }
-
     fun chat(
         rumors: List<Event>,
         state: ConcordCommunityState,
         channel: String,
         epoch: Long,
     ): List<JsonObject> {
-        val fold = ChatFold(state, channel)
+        val fold = ConcordChatFold(channel)
         return rumors.map { rumor ->
             val accepted = ChannelChat.acceptOpened(opened(rumor), channel, epoch) != null
-            if (accepted) fold.seen.add(rumor)
+            if (accepted) fold.add(rumor, state)
             buildJsonObject {
                 put("accepted", accepted)
                 put("ms", ChannelChat.orderingMs(rumor)?.let(::JsonPrimitive) ?: JsonNull)
@@ -127,13 +92,13 @@ object ConcordAppEventReading {
                         put("thread_root", str((rumor as? CommentEvent)?.rootEventIds()?.firstOrNull()))
                         put("thread_parent", str((rumor as? CommentEvent)?.replyEventIds()?.firstOrNull()))
                         put("mentions", buildJsonArray { pTags(rumor).forEach { add(JsonPrimitive(it)) } })
-                        put("visible", fold.visible(rumor.id))
+                        put("visible", fold.isVisible(rumor.id, state))
                     }
                     is ConcordChatEditEvent -> {
                         put("target", str(rumor.editedMessageId()))
-                        val target = fold.target(rumor.editedMessageId())
-                        val shown = target?.takeIf { fold.visible(it.id) }
-                        val edit = shown?.let { fold.latestEdit(it) }
+                        val target = rumor.editedMessageId()?.let(fold::rumor)
+                        val shown = target?.takeIf { fold.isVisible(it.id, state) }
+                        val edit = shown?.let { fold.latestEdit(it.id) }
                         put(
                             "after",
                             buildJsonObject {
@@ -143,21 +108,24 @@ object ConcordAppEventReading {
                         )
                     }
                     is ReactionEvent -> {
-                        put("target", str(rumor.originalPost().firstOrNull()))
-                        val code = Regex("^:(.+):$").find(rumor.content)?.groupValues?.get(1)
-                        val url = code?.let { c -> rumor.tags.firstNotNullOfOrNull { EmojiUrlTag.parse(it)?.takeIf { e -> e.code == c } }?.url }
+                        val target = ConcordChatRules.reactionTarget(rumor)
+                        put("target", str(target))
+                        val key = ConcordChatRules.reactionKey(rumor.content)
                         put(
                             "reaction",
                             buildJsonObject {
                                 put("content", rumor.content)
-                                put("custom_emoji_url", str(url))
+                                put("key", key)
+                                put("custom_emoji_url", str(ConcordChatRules.customEmojiUrl(rumor)))
+                                put("renderable", ConcordChatRules.isRenderableReaction(rumor.content))
                             },
                         )
+                        val tally = target?.let { fold.reactions(it, state).firstOrNull { t -> t.key == key } }
                         put(
                             "after",
                             buildJsonObject {
-                                put("tallied", !fold.removed(rumor))
-                                put("url", str(url))
+                                put("tallied", tally?.reactors?.containsKey(rumor.pubKey) == true)
+                                put("url", str(tally?.url))
                             },
                         )
                     }
@@ -168,12 +136,12 @@ object ConcordAppEventReading {
                             "after",
                             buildJsonObject {
                                 rumor.deleteEventIds().forEach { id ->
-                                    val target = fold.target(id)
+                                    val target = fold.rumor(id)
                                     put(
                                         id,
                                         when {
                                             target == null -> "unknown"
-                                            fold.removed(target) -> "removed"
+                                            fold.isRemoved(target, state) -> "removed"
                                             else -> "kept"
                                         },
                                     )
