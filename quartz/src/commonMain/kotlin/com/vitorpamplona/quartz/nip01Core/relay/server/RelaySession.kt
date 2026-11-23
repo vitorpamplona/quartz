@@ -679,6 +679,7 @@ class RelaySession(
             event: Event,
             body: String,
         ) {
+            if (closed) return
             if (framePrefix == null) sendScreened(subId, event) else sendLive(framePrefix, body)
         }
 
@@ -743,16 +744,18 @@ class RelaySession(
                     store.query(
                         ctx = requestContext,
                         filters = filters,
-                        onEach = { event -> sendScreened(req.subId, event) },
-                        onEose = { eose() },
+                        // Guarded as the live-backend path is: a backend that answers after its
+                        // cancellation must not reach a client that closed this sub.
+                        onEach = { event -> if (!req.closed) sendScreened(req.subId, event) },
+                        onEose = { if (!req.closed) eose() },
                     )
                 } else {
                     store.queryRaw(
                         ctx = requestContext,
                         filters = filters,
-                        onEachStored = { raw -> sendStored(framePrefix, raw, probe) },
+                        onEachStored = { raw -> if (!req.closed) sendStored(framePrefix, raw, probe) },
                         onEachLive = { event, body -> req.onLive(event, body) },
-                        onEose = { eose() },
+                        onEose = { if (!req.closed) eose() },
                     )
                 }
             } catch (e: CancellationException) {
