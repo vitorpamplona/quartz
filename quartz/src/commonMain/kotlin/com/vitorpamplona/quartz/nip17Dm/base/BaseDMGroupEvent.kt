@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.any
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import kotlinx.collections.immutable.toImmutableSet
@@ -41,7 +42,7 @@ open class BaseDMGroupEvent(
     ChatroomKeyable,
     NIP17Group,
     PubKeyHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = recipientsPubKey()
 
@@ -49,7 +50,7 @@ open class BaseDMGroupEvent(
     fun recipients() = tags.mapNotNull(PTag::parse)
 
     /** Recipients intended to receive this conversation */
-    fun recipientsPubKey() = tags.mapNotNull(PTag::parseKey)
+    fun recipientsPubKey() = tags.fastMapNotNull(PTag::parseKey)
 
     fun talkingWith(oneSideHex: String): Set<HexKey> {
         val listedPubKeys = recipientsPubKey()

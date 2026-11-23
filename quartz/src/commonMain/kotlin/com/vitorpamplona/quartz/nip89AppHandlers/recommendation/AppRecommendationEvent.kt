@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -43,9 +44,9 @@ class AppRecommendationEvent(
     sig: HexKey,
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider {
-    override fun addressHints() = tags.mapNotNull(RecommendationTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(RecommendationTag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(RecommendationTag::parseAddressId)
+    override fun linkedAddressIds() = tags.fastMapNotNull(RecommendationTag::parseAddressId)
 
     fun recommendations() = tags.mapNotNull(RecommendationTag::parse)
 

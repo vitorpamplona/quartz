@@ -24,6 +24,7 @@ import androidx.compose.runtime.Stable
 import com.vitorpamplona.quartz.experimental.interactiveStories.tags.StoryOptionTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip23LongContent.tags.ImageTag
@@ -61,9 +62,9 @@ open class InteractiveStoryBaseEvent(
     }
 
     // The story graph: every option points at the next scene's coordinate, usually with a relay.
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(StoryOptionTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(StoryOptionTag::parseAsHint)
 
-    override fun linkedAddressIds(): List<String> = tags.mapNotNull(StoryOptionTag::parseAddressId)
+    override fun linkedAddressIds(): List<String> = tags.fastMapNotNull(StoryOptionTag::parseAddressId)
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 

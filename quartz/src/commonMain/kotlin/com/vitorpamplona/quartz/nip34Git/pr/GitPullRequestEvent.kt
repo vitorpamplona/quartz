@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -84,16 +85,16 @@ class GitPullRequestEvent(
         }
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = notifiedUsers()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     // NIP-34: at most one `e`, the root patch this PR revises.
     override fun linkedEventIds() = listOfNotNull(rootPatchId())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // NIP-34: a PR names a single repository (`a`).
     override fun linkedAddressIds() = listOfNotNull(repositoryAddress()?.toValue())
@@ -128,7 +129,7 @@ class GitPullRequestEvent(
     fun rootPatchId(): HexKey? = tags.firstNotNullOfOrNull(ETag::parseId)
 
     /** The users this PR notifies (`p`): the repository owner first, then the `notify` list, in tag order. */
-    fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun notifiedUsers(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     companion object {
         const val KIND = 1618

@@ -91,7 +91,7 @@ CHECKS = [
     (
         "linkedXxx() reads raw tags instead of a semantic method",
         lambda src, parents, name: any(
-            re.search(r"tags\.(mapNotNull|firstNotNullOfOrNull)\(" + REFERENCE_PARSERS, body)
+            re.search(r"tags\.(?:fast)?(?:mapNotNull|firstNotNullOfOrNull|MapNotNull|FirstNotNullOfOrNull)(?:To)?\((?:out, )?" + REFERENCE_PARSERS, body)
             for body in re.findall(r"override fun linked(?:EventIds|AddressIds|PubKeys)\(\)[^\n]*=\s*([^\n]+)", src)
         ),
     ),

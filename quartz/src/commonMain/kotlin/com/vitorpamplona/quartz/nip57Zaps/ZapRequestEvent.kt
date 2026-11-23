@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstOrNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
@@ -71,24 +72,24 @@ class ZapRequestEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = zappedAuthor()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = zappedPost()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = zappedAddresses()
 
-    fun zappedPost() = tags.mapNotNull(ETag::parseId)
+    fun zappedPost() = tags.fastMapNotNull(ETag::parseId)
 
-    fun zappedAuthor() = tags.mapNotNull(PTag::parseKey)
+    fun zappedAuthor() = tags.fastMapNotNull(PTag::parseKey)
 
     /** The zapped addressables (`a`), as validated address ids. */
-    fun zappedAddresses(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    fun zappedAddresses(): List<String> = tags.fastMapNotNull(ATag::parseValidAddress)
 
     fun isPrivateZap() = tags.fastAny { AnonTag.parse(it) != null }
 

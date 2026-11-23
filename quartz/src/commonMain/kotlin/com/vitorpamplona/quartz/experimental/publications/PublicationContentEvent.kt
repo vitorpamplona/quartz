@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -80,11 +81,11 @@ class PublicationContentEvent(
     }
 
     // `wikilink` tags carry an author, a relay and an event id for each `[[reference]]`.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(WikilinkTag::parseKeyAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(WikilinkTag::parseKeyAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = wikilinkedPubKeys()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(WikilinkTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(WikilinkTag::parseEventAsHint)
 
     override fun linkedEventIds(): List<HexKey> = wikilinkedEventIds()
 

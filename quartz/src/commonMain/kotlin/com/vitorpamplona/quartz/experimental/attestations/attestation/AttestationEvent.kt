@@ -29,6 +29,8 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -62,13 +64,18 @@ class AttestationEvent(
         visitor.visit(content)
     }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     // The builders write the attested event and the request with addUnique: one of each at most.
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(assertionEventId())
 
     // The attested assertion is an `a`; the request it answers (kind 31872) is a `request` tag.
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(RequestTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, RequestTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
     override fun linkedAddressIds(): List<String> = listOfNotNull(assertionAddrId(), requestId())
 

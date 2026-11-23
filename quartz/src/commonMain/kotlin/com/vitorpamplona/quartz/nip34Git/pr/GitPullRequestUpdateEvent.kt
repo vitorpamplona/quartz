@@ -24,10 +24,13 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
@@ -61,22 +64,27 @@ class GitPullRequestUpdateEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint) + tags.mapNotNull(RootAuthorTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, RootAuthorTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
     // NIP-22 roots: a single `E` (the pull request) and a single `P` (its author).
     override fun linkedPubKeys() = notifiedUsers() + listOfNotNull(parentPullRequestAuthor())
 
-    override fun eventHints() = tags.mapNotNull(RootEventTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(RootEventTag::parseAsHint)
 
     override fun linkedEventIds() = listOfNotNull(parentPullRequestId())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // NIP-34: the update names a single repository (`a`).
     override fun linkedAddressIds() = listOfNotNull(repositoryAddress()?.toValue())
 
     /** The users this update notifies (`p`): the repository owner first, then the `notify` list, in tag order. */
-    fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun notifiedUsers(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 

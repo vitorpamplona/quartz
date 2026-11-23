@@ -30,6 +30,8 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -90,17 +92,22 @@ class EntityRatingEvent(
         visitor.visit(content)
     }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `RATED`: the rated event (`e`); [build] writes one. */
     override fun linkedEventIds() = listOfNotNull(targetEventId())
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(RootAddressTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, RootAddressTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
     /** `RATED`: the rated coordinate (`a`, then `A`, which [build] writes with the same value). */
     override fun linkedAddressIds(): List<String> = targetAddressIds()
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `RATED_AUTHOR`: the rated entity's author (`p`); [build] writes one. */
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(targetAuthor())

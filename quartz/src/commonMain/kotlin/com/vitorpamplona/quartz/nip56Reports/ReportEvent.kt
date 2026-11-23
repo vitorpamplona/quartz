@@ -26,6 +26,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -49,17 +50,17 @@ class ReportEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(ReportedAuthorTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(ReportedAuthorTag::parseAsHint)
 
-    override fun linkedPubKeys() = reportedAuthor().map { it.pubKey }
+    override fun linkedPubKeys() = reportedAuthorKeys()
 
-    override fun eventHints() = tags.mapNotNull(ReportedEventTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ReportedEventTag::parseAsHint)
 
-    override fun linkedEventIds() = reportedPost().map { it.eventId }
+    override fun linkedEventIds() = reportedPostIds()
 
-    override fun addressHints() = tags.mapNotNull(ReportedAddressTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ReportedAddressTag::parseAsHint)
 
-    override fun linkedAddressIds() = reportedAddresses().map { it.address.toValue() }
+    override fun linkedAddressIds() = reportedAddressIds()
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient
@@ -88,6 +89,15 @@ class ReportEvent(
     fun reportedAddresses() = tags.mapNotNull { ReportedAddressTag.parse(it, defaultReportType()) }
 
     fun reportedAuthor() = tags.mapNotNull { ReportedAuthorTag.parse(it, defaultReportType()) }
+
+    /** The ids of [reportedPost], without building the tags. */
+    fun reportedPostIds(): List<HexKey> = tags.fastMapNotNull(ReportedEventTag::parseId)
+
+    /** The address ids of [reportedAddresses], in canonical form, without building the tags. */
+    fun reportedAddressIds(): List<String> = tags.fastMapNotNull(ReportedAddressTag::parseAddressId)
+
+    /** The keys of [reportedAuthor], without building the tags. */
+    fun reportedAuthorKeys(): List<HexKey> = tags.fastMapNotNull(ReportedAuthorTag::parseKey)
 
     /**
      * Only the authors whose own `p` tag carries a report type, without the event-level fallback

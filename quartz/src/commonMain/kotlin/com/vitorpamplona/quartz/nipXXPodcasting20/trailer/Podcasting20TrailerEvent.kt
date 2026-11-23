@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -71,7 +72,7 @@ class Podcasting20TrailerEvent(
     // The `edit` tag names the original publication by id only: there is no relay slot.
     override fun eventHints(): List<EventIdHint> = emptyList()
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(EditTag::parse)
+    override fun linkedEventIds(): List<HexKey> = tags.fastMapNotNull(EditTag::parse)
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 

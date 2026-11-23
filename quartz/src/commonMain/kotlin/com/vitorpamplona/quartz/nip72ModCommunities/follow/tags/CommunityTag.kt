@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip72ModCommunities.follow.tags
 
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
@@ -79,7 +80,7 @@ class CommunityTag(
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(Address.isOfKind(tag[1], CommunityDefinitionEvent.KIND_STR)) { return null }
-            return Address.parse(tag[1])?.toValue()
+            return AddressSerializer.canonicalAddressIdOrNull(tag[1])
         }
 
         fun parseAddress(tag: Array<String>): Address? {
