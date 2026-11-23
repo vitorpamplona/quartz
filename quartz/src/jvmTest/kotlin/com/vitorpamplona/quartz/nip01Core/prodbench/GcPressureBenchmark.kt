@@ -21,15 +21,19 @@
 package com.vitorpamplona.quartz.nip01Core.prodbench
 
 import com.sun.management.ThreadMXBean
+import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.OptimizedJsonMapper
 import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
+import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
+import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.SeenIds
 import kotlinx.coroutines.runBlocking
 import java.lang.management.ManagementFactory
@@ -160,6 +164,23 @@ class GcPressureBenchmark {
                 seen
             },
             per = n,
+        )
+
+        val contactLists = events.filterIsInstance<ContactListEvent>()
+        if (contactLists.isNotEmpty()) {
+            val pTags = contactLists.sumOf { it.tags.size }
+            row("ContactListEvent.follows() (per p tag)", threadAlloc(contactLists.size) { i -> contactLists[i].follows() }, per = pTags)
+            row("ContactListEvent.linkedPubKeys() (per tag)", threadAlloc(contactLists.size) { i -> contactLists[i].linkedPubKeys() }, per = pTags)
+        }
+        val profiles = events.filterIsInstance<MetadataEvent>()
+        if (profiles.isNotEmpty()) {
+            row("MetadataEvent.contactMetaData() (kind 0)", threadAlloc(profiles.size) { i -> profiles[i].contactMetaData() }, per = profiles.size)
+        }
+        val searchable = events.filterIsInstance<SearchableEvent>()
+        row("indexableContent() (searchable kinds)", threadAlloc(searchable.size) { i -> searchable[i].indexableContent() }, per = searchable.size)
+        row(
+            "AddressSerializer.assemble (30023 + d)",
+            threadAlloc(n) { i -> AddressSerializer.assemble(30023, events[i].pubKey, "my-article-slug-20c") },
         )
 
         val req = ReqCmd("sub-1", listOf(follow, notif))
