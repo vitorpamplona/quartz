@@ -249,7 +249,7 @@ class RelaySession(
      */
     suspend fun receive(command: String) {
         policy.acceptMessage(command)?.let { reason ->
-            refuseUnparsed(command, reason)
+            refuseFrame(command, reason)
             return
         }
 
@@ -257,12 +257,10 @@ class RelaySession(
             try {
                 OptimizedJsonMapper.fromJsonToCommand(command)
             } catch (_: Exception) {
-                // An EVENT or AUTH is owed its OK even when it does not parse (NIP-01, NIP-42):
-                // a client pipelining EVENTs pairs OKs by id, and an AUTH carrying an event of
-                // the wrong kind fails here, not in the auth policy. Only a frame whose id
-                // cannot be read gets the NOTICE.
-                val id = eventIdOfFrame(command)
-                send(if (id != null) OkMessage(id, false, "invalid: could not parse message") else NoticeMessage("error: could not parse message"))
+                // An AUTH carrying an event of the wrong kind fails here, not in the auth
+                // policy, and a REQ whose filter has a bad field fails here too: each is still
+                // owed its answer by id.
+                refuseFrame(command, "invalid: could not parse message", notice = "error: could not parse message")
                 return
             }
 
@@ -279,23 +277,51 @@ class RelaySession(
         parsed: Command,
     ) {
         policy.acceptMessage(command)?.let { reason ->
-            refuseUnparsed(command, reason)
+            refuseFrame(command, reason)
             return
         }
         receive(parsed)
     }
 
     /**
-     * Answers a frame [IRelayPolicy.acceptMessage] refused. An EVENT is owed its `OK` (NIP-01),
-     * as is an AUTH (NIP-42), and a client pipelining EVENTs pairs OKs by id, so a refused EVENT
-     * or AUTH whose id can be read gets `OK false`; anything else gets a NOTICE.
+     * Answers a frame that [IRelayPolicy.acceptMessage] refused or that did not parse, by the id
+     * it carries wherever that id can be read. An EVENT is owed its `OK` (NIP-01), as is an AUTH
+     * (NIP-42), and a client pipelining EVENTs pairs OKs by id; a REQ, COUNT or CLOSE is answered
+     * with `CLOSED` on its sub id, since a NOTICE names no subscription and the client would wait
+     * for that REQ's EOSE or COUNT forever. Only a frame with no readable id gets a NOTICE, with
+     * [notice] as its text.
      */
-    private fun refuseUnparsed(
+    private fun refuseFrame(
         command: String,
         reason: String,
+        notice: String = reason,
     ) {
-        val id = eventIdOfFrame(command)
-        send(if (id != null) OkMessage(id, false, reason) else NoticeMessage(reason))
+        val eventId = eventIdOfFrame(command)
+        if (eventId != null) {
+            send(OkMessage(eventId, false, reason))
+            return
+        }
+        val frame = subIdOfFrame(command)
+        if (frame == null) {
+            send(NoticeMessage(notice))
+            return
+        }
+        closeRefused(frame.label, frame.subId, reason)
+    }
+
+    /**
+     * Answers a REQ, COUNT or CLOSE (by its [label]) that cannot run with `CLOSED` [reason] on
+     * [subId]. The client takes that CLOSED as the end of [subId], so a REQ that would have
+     * replaced an open subscription, or a CLOSE, ends it here too. A COUNT's id names no
+     * subscription and ends none.
+     */
+    private fun closeRefused(
+        label: String,
+        subId: String,
+        reason: String,
+    ) {
+        if (label != CountCmd.LABEL) cancelSubscription(subId)
+        send(ClosedMessage(subId, reason))
     }
 
     /**
@@ -305,7 +331,12 @@ class RelaySession(
      */
     suspend fun receive(cmd: Command) {
         if (!cmd.isValid()) {
-            send(NoticeMessage("error: invalid command"))
+            // A REQ or COUNT with a sub id but no filter is still answered on that id.
+            when {
+                cmd is ReqCmd && cmd.subId.isNotEmpty() -> closeRefused(ReqCmd.LABEL, cmd.subId, "invalid: a REQ needs at least one filter")
+                cmd is CountCmd && cmd.queryId.isNotEmpty() -> closeRefused(CountCmd.LABEL, cmd.queryId, "invalid: a COUNT needs at least one filter")
+                else -> send(NoticeMessage("error: invalid command"))
+            }
             return
         }
 

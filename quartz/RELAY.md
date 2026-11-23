@@ -491,9 +491,13 @@ like any other policy — you can also split them across several policies:
   `maxLimit` (substituting `defaultLimit` when none is given). Rejections use
   the `invalid:` machine-readable prefix.
 - **Per-connection** (the `acceptMessage` / `acceptSubscription` policy hooks):
-  oversized frames get a `NOTICE` (`maxMessageLength`); a new subscription past
-  `maxSubscriptions` is `CLOSED` with `rate-limited:`. These hooks exist because
-  a policy otherwise can't see the raw frame or the live subscription count.
+  oversized frames (`maxMessageLength`) are answered by the id they carry, as a
+  frame that does not parse is: an EVENT or AUTH with `OK false`, a REQ, COUNT
+  or CLOSE with `CLOSED` on its sub id (a REQ so refused also ends the open
+  subscription it would have replaced), and only a frame with no readable id
+  with a `NOTICE`; a new subscription past `maxSubscriptions` is `CLOSED` with
+  `rate-limited:`. These hooks exist because a policy otherwise can't see the
+  raw frame or the live subscription count.
 - **Advertised only**: `minPowDifficulty` (enforce with a PoW policy),
   `authRequired` (use `FullAuthPolicy`), `paymentRequired`, `restrictedWrites`.
 

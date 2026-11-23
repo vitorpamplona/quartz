@@ -78,7 +78,7 @@ class RelayLimitsServerTest {
         }
 
     @Test
-    fun rejectsOversizedMessageWithNotice() =
+    fun rejectsOversizedReqWithClosedOnItsSubId() =
         runTest {
             val dispatcher = UnconfinedTestDispatcher(testScheduler)
             val server = EventSourceServer(emptySource, parentContext = dispatcher, limits = RelayLimits(maxMessageLength = 30))
@@ -87,10 +87,17 @@ class RelayLimitsServerTest {
 
             session.receive("""["REQ","sub1",{"kinds":[1,2,3,4,5,6,7,8,9,10,11]}]""") // > 30 chars
 
-            val notices = collector.containing("NOTICE")
-            assertEquals(1, notices.size)
-            assertTrue(notices[0].contains("too large"))
+            // A NOTICE names no subscription: the client would wait for sub1's EOSE forever.
+            val closed = collector.containing("CLOSED")
+            assertEquals(1, closed.size)
+            assertTrue(closed[0].startsWith("""["CLOSED","sub1","invalid:"""), closed[0])
+            assertTrue(closed[0].contains("too large"))
+            assertTrue(collector.containing("NOTICE").isEmpty())
             assertTrue(collector.containing("EOSE").isEmpty())
+
+            // A frame with no readable id still gets the NOTICE.
+            session.receive("""["XYZ","${"x".repeat(40)}"]""")
+            assertEquals(1, collector.containing("NOTICE").size)
 
             server.close()
         }
