@@ -42,6 +42,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -61,6 +62,12 @@ class RelaySessionCountRaceTest {
         @Volatile
         var beforeCount: (CountMessage) -> Unit = {}
 
+        /** Runs after a COUNT answer is recorded, still inside the send. */
+        @Volatile
+        var afterCount: (CountMessage) -> Unit = {}
+
+        val rateLimited = AtomicInteger()
+
         override fun message(message: Message) {
             if (message is CountMessage) beforeCount(message)
             record(
@@ -70,6 +77,8 @@ class RelaySessionCountRaceTest {
                     else -> message.toJson()
                 },
             )
+            if (message is ClosedMessage && message.message.startsWith("rate-limited:")) rateLimited.incrementAndGet()
+            if (message is CountMessage) afterCount(message)
         }
 
         override fun raw(json: String) {}
@@ -77,6 +86,17 @@ class RelaySessionCountRaceTest {
         fun record(line: String) = synchronized(lines) { lines.add(line) }
 
         fun snapshot() = synchronized(lines) { lines.toList() }
+
+        fun waitFor(
+            what: String,
+            done: (List<String>) -> Boolean,
+        ) = runBlocking {
+            try {
+                withTimeout(10_000) { while (!done(snapshot())) delay(5) }
+            } catch (e: Exception) {
+                fail("never saw $what in ${snapshot()}")
+            }
+        }
     }
 
     /** Counts to the filter's `since`, the generation the test gave the query. */
@@ -127,37 +147,82 @@ class RelaySessionCountRaceTest {
                 session.receive(count("c", 1))
                 assertTrue(answering.await(5, TimeUnit.SECONDS), "generation 1 never answered")
                 session.receive(count("c", 2))
-                log.record("handled re-COUNT")
-                withTimeout(5000) { while (log.snapshot().none { it == "COUNT c 2" }) delay(5) }
-                delay(400)
             }
-            // The old answer was already going out, so it may arrive, but only before the reader is
-            // done with the re-COUNT, never after it and never after the replacement's answer.
-            assertEquals(listOf("COUNT c 1", "handled re-COUNT", "COUNT c 2"), log.snapshot())
+            log.waitFor("the replacement's answer") { it.contains("COUNT c 2") }
+            Thread.sleep(400)
+            // The old answer was already going out, so it arrives, but before its replacement's
+            // answer, and only once.
+            assertEquals(listOf("COUNT c 1", "COUNT c 2"), log.snapshot())
         } finally {
             scope.cancel()
         }
     }
 
     @Test
-    fun countsReCountsAndClosesOnRealThreadsLeaveNothingBehind() {
-        val ids = (0 until 8).map { "q$it" }
+    fun aCloseWhileTheAnswerIsGoingOutIsOnAnUnknownId() {
         val log = Log()
-        val random = Random(42)
+        val backend = GenerationBackend { yield() }
+        val scope = CoroutineScope(Dispatchers.Default + Job())
+        val session = RelaySession(backend, EmptyPolicy, scope, log, onClose = {})
+
+        // The answer is recorded, and the send lingers, as a socket write finishing does.
+        val answered = CountDownLatch(1)
+        log.afterCount = {
+            answered.countDown()
+            Thread.sleep(300)
+        }
+        try {
+            runBlocking {
+                session.receive(count("c", 1))
+                assertTrue(answered.await(5, TimeUnit.SECONDS), "never answered")
+                session.receive("""["CLOSE","c"]""")
+            }
+            log.waitFor("a reply to the CLOSE") { it.size >= 2 }
+            Thread.sleep(400)
+            assertEquals(listOf("COUNT c 1", "CLOSED c error: no such subscription"), log.snapshot())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun countsReCountsAndClosesOnRealThreadsStayOrderedAndCapped() {
+        val seed = System.nanoTime()
+        try {
+            storm(seed)
+        } catch (e: AssertionError) {
+            throw AssertionError("seed $seed: ${e.message}", e)
+        }
+    }
+
+    private fun storm(seed: Long) {
+        val ids = (0 until 8).map { "q$it" }
+        val cap = 4
+        val log = Log()
+        val random = Random(seed)
+        val running = AtomicInteger()
+        val mostRunning = AtomicInteger()
         val backend =
-            GenerationBackend {
-                when (Random.nextInt(4)) {
-                    0 -> {}
-                    1 -> yield()
-                    2 -> delay(Random.nextLong(0, 2))
-                    else -> withContext(NonCancellable) { delay(Random.nextLong(0, 2)) }
+            GenerationBackend { generation ->
+                mostRunning.accumulateAndGet(running.incrementAndGet(), ::maxOf)
+                try {
+                    val r = Random(seed + generation)
+                    when (r.nextInt(4)) {
+                        0 -> {}
+                        1 -> yield()
+                        2 -> delay(r.nextLong(0, 2))
+                        // A store that finishes its read whatever the client says.
+                        else -> withContext(NonCancellable) { delay(r.nextLong(0, 5)) }
+                    }
+                } finally {
+                    running.decrementAndGet()
                 }
             }
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        val session = RelaySession(backend, LimitsPolicy(RelayLimits(maxSubscriptions = ids.size)), scope, log, onClose = {})
+        val session = RelaySession(backend, LimitsPolicy(RelayLimits(maxSubscriptions = cap)), scope, log, onClose = {})
 
-        val generation = ids.associateWith { 0 }.toMutableMap()
-        val lastWasCount = ids.associateWith { false }.toMutableMap()
+        // The generation each id still owes an answer for, if any.
+        val owed = mutableMapOf<String, Int?>()
         var next = 1000
         try {
             runBlocking(Dispatchers.Default) {
@@ -165,45 +230,45 @@ class RelaySessionCountRaceTest {
                     val id = ids[random.nextInt(ids.size)]
                     if (random.nextInt(10) == 0) {
                         session.receive("""["CLOSE","$id"]""")
-                        // Every generation issued so far is over for this id.
-                        log.record("handled CLOSE $id $next")
-                        lastWasCount[id] = false
+                        owed[id] = null
                     } else {
                         val g = next++
-                        generation[id] = g
+                        val refusedBefore = log.rateLimited.get()
                         session.receive(count(id, g))
-                        log.record("handled COUNT $id $g")
-                        lastWasCount[id] = true
+                        // A refusal is sent while the reader handles the COUNT; the count it would
+                        // have replaced keeps running and is still owed.
+                        if (log.rateLimited.get() == refusedBefore) owed[id] = g
                     }
                 }
                 withTimeout(10_000) { while (scope.coroutineContext[Job]!!.children.any()) delay(5) }
             }
 
+            assertTrue(mostRunning.get() <= cap + 1, "${mostRunning.get()} store reads at once with a cap of $cap")
+
             val lines = log.snapshot()
             for (id in ids) {
-                // Once a newer COUNT or a CLOSE on the id was handled, no older answer follows it.
-                var floor = 0
-                var answered = 0
+                // An id's answers arrive in the order its COUNTs were sent, each at most once.
+                var last = 0
+                var owedAnswers = 0
                 for (line in lines) {
                     val parts = line.split(' ')
                     when {
-                        parts[0] == "handled" && parts[2] == id -> floor = maxOf(floor, parts[3].toInt())
                         parts[0] == "COUNT" && parts[1] == id -> {
                             val g = parts[2].toInt()
-                            if (g < floor) fail("$id answered generation $g after a newer COUNT or a CLOSE was handled (floor $floor)")
-                            if (g == generation[id]) answered++
-                            if (g >= floor) floor = g + 1
+                            if (g <= last) fail("$id answered generation $g after generation $last")
+                            last = g
+                            if (g == owed[id]) owedAnswers++
                         }
-                        // A CLOSE that lands after its count answered is on an unknown id.
-                        parts[0] == "CLOSED" && !line.endsWith("error: no such subscription") -> fail("unexpected $line")
+                        parts[0] == "CLOSED" && parts[1] == id ->
+                            if (!line.endsWith("error: no such subscription") && !parts[2].startsWith("rate-limited:")) fail("unexpected $line")
                     }
                 }
-                if (lastWasCount[id] == true) assertEquals(1, answered, "$id's last count was answered once")
+                if (owed[id] != null) assertEquals(1, owedAnswers, "$id's last admitted count was answered once")
             }
 
             // Nothing leaked a slot: as many fresh counts as the cap are all admitted.
-            runBlocking { ids.forEach { session.receive(count("fresh-$it", 1)) } }
-            runBlocking { withTimeout(10_000) { while (log.snapshot().count { it.startsWith("COUNT fresh-") } < ids.size) delay(5) } }
+            runBlocking { ids.take(cap).forEach { session.receive(count("fresh-$it", 1)) } }
+            log.waitFor("$cap fresh answers") { lines2 -> lines2.count { it.startsWith("COUNT fresh-") } == cap }
             assertTrue(log.snapshot().none { it.startsWith("CLOSED fresh-") }, "a fresh count was refused")
         } finally {
             scope.cancel()

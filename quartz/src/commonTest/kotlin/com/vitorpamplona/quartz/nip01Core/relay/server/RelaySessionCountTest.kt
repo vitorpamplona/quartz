@@ -587,6 +587,75 @@ class RelaySessionCountTest {
         }
 
     @Test
+    fun aClosedCountTheStoreStillRunsKeepsItsSlot() =
+        countTest(policy = LimitsPolicy(RelayLimits(maxSubscriptions = 2))) { f ->
+            f.slow.ignoreCancellation = true
+            f.send(count("x"))
+            f.send("""["CLOSE","x"]""")
+            f.send(count("x"))
+            f.send("""["CLOSE","x"]""")
+            f.send(count("x"))
+            testScheduler.advanceUntilIdle()
+
+            // Both closed counts are still reading, so the third waits for a slot.
+            assertEquals(2, f.slow.calls.size)
+            assertEquals(listOf("x" to "rate-limited: too many concurrent subscriptions (max 2)"), f.closed())
+
+            // Once the store lets go of one, its slot is free again.
+            f.slow.calls[0]
+                .answer
+                .complete(0)
+            testScheduler.advanceUntilIdle()
+            f.send(count("x"))
+            testScheduler.advanceUntilIdle()
+            assertEquals(3, f.slow.calls.size)
+            assertEquals(1, f.closed().size, "got ${f.closed()}")
+            assertTrue(f.counts().isEmpty(), "a cancelled count never answers")
+        }
+
+    @Test
+    fun reCountsOnACountTheStoreStillRunsAreCapped() =
+        countTest(policy = LimitsPolicy(RelayLimits(maxSubscriptions = 2))) { f ->
+            f.slow.ignoreCancellation = true
+            repeat(50) { f.send(count("y", kind = it + 1)) }
+            testScheduler.advanceUntilIdle()
+
+            // Each replaced count keeps reading. A replacement may run beside the one it replaces
+            // (one over the cap) while that one stops, and no further.
+            assertEquals(3, f.slow.calls.size)
+            assertEquals(47, f.closed().size)
+            assertTrue(f.closed().all { it.second.startsWith("rate-limited:") }, "got ${f.closed()}")
+        }
+
+    @Test
+    fun anInvalidIdAtTheCapIsRefusedAsInvalid() =
+        countTest(policy = LimitsPolicy(RelayLimits(maxSubscriptions = 1, maxSubidLength = 4))) { f ->
+            f.send(count("a"))
+            f.send(count("too-long"))
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("too-long" to "invalid: subscription id too long (max 4)"), f.closed())
+        }
+
+    @Test
+    fun aStoreErrorThatIsNotAnExceptionAnswersClosedError() =
+        countTest { f ->
+            f.send(count("c"))
+            testScheduler.advanceUntilIdle()
+            // TODO() in a store throws NotImplementedError, an Error, not an Exception.
+            f.slow.calls[0]
+                .answer
+                .completeExceptionally(NotImplementedError("boom"))
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("c" to "error: boom"), f.closed())
+            assertTrue(f.reader.isActive, "the connection keeps reading")
+            f.send(count("d"))
+            testScheduler.advanceUntilIdle()
+            assertEquals(2, f.slow.calls.size)
+        }
+
+    @Test
     fun aFastCountStillAnswersBeforeTheNextFrame() =
         countTest(backend = InstantCountBackend) { f ->
             f.session.receive(count("c"))

@@ -546,18 +546,36 @@ its answer may arrive after theirs (NIP-45 pairs it by id).
 
 - The engine does not pace a connection's counts: they run at once, and how
   many reach the store together, or in what order, is the backend's call (a
-  read gate in the app). The policy's `acceptSubscription` caps how many may be
-  pending (`RelayLimits.maxSubscriptions`), counted apart from REQs; the excess
-  gets `CLOSED rate-limited:`.
+  read gate in the app). The policy's `acceptSubscription` caps how many a
+  connection holds (`RelayLimits.maxSubscriptions`), counted apart from REQs;
+  the excess gets `CLOSED rate-limited:`.
+- A count or REQ replay the client cancelled keeps its slot until the store
+  lets go of it, so a store that ignores cancellation (a blocking read) cannot
+  be piled onto by closing and reopening. A replacement (re-COUNT, re-REQ) may
+  run beside the read it replaces while that one stops: at most one over the cap.
 - A COUNT on an id still pending replaces the earlier one, and a CLOSE on that
   id (which also ends a REQ of the same id) or a disconnect cancels it. A
-  cancelled count's answer never follows the frame that cancelled it, even
-  from a store that ignores cancellation.
+  cancelled count is never answered. One whose answer was already going out is
+  not cancelled: it is answered once, before its replacement's answer, and a
+  CLOSE that came too late is told `no such subscription` after it.
 - The store is asked with the identities authenticated when the COUNT arrived,
-  however long it waits.
-- A store that throws its own `CancellationException` (a timeout on its read)
-  fails the COUNT, or a REQ, with `CLOSED error:`; only the request's own
-  cancellation ends it without an answer.
+  however long it waits. It runs in the session's scope, as a REQ's replay
+  does, so `CoroutineContext` elements a host sets around `receive` (an MDC or
+  other `ThreadContextElement`) do not reach `countResult`.
+- A store that throws its own `CancellationException` (a timeout on its read),
+  or an `Error` such as `TODO()`'s, fails the COUNT or REQ with
+  `CLOSED error:`; only the request's own cancellation, or a fatal VM error,
+  ends it without an answer. A REQ the relay ends this way gives up its slot.
+- Answers are sent outside any lock, so a sink may end its session from inside
+  `SessionSink.message` (a transport hanging up once it has its answer).
+- A REQ or COUNT that registers while the session is closing (a disconnect on
+  another thread) is stopped as it registers.
+
+Behaviour changes for policies (after 2.22.1): `acceptSubscription` now also sees COUNT
+query ids, so a `maxSubscriptions` cap (vespa-relay's default 50 included) also
+caps a connection's unanswered counts. It runs after `accept`, so an id that is
+both invalid and over the cap is refused `invalid:`, not `rate-limited:`, and a
+`RateLimitPolicy` token is spent on a REQ the cap then refuses.
 
 ## NIP-86 admin over HTTP
 

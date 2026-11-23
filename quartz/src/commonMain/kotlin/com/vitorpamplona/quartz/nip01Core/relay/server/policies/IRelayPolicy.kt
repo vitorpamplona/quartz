@@ -157,17 +157,24 @@ interface IRelayPolicy {
 
     /**
      * Decides whether a new subscription may open on this connection, given how
-     * many are already open ([openSubscriptions]). Called only for a genuinely
-     * new subscription id — a REQ that replaces an existing id does not grow the
-     * count. Return a reason string to reject it (the engine sends a `CLOSED`),
-     * or null to allow it. This is where a `max_subscriptions` cap lives, since
-     * a policy otherwise can't see the per-connection subscription count.
+     * many are already open ([openSubscriptions]). Return a reason string to
+     * reject it (the engine sends a `CLOSED`), or null to allow it. This is where
+     * a `max_subscriptions` cap lives, since a policy otherwise can't see the
+     * per-connection subscription count. Runs after [accept], so a frame the
+     * policy refuses (an invalid id) is refused for that reason, not for the cap.
+     *
+     * [openSubscriptions] also counts the reads the client cancelled (a CLOSE, a
+     * replaced id, a disconnect) that the store is still running: a store that
+     * ignores cancellation keeps working, so each keeps its slot until it stops.
+     * A REQ that replaces an existing id 1-for-1 does not grow the count, so it
+     * is not asked about, unless such reads are running: then it is asked with
+     * the count less the one it replaces.
      *
      * Also called for a new NIP-45 COUNT, with [subId] its query id and
-     * [openSubscriptions] the counts on this connection still waiting for an
-     * answer: a COUNT runs beside the connection's reader, so without a cap a
-     * client could queue them without bound. Counts and REQs are counted apart,
-     * so a connection holding its REQs at the cap can still COUNT.
+     * [openSubscriptions] the counts on this connection not yet answered (and
+     * those still draining): a COUNT runs beside the connection's reader, so
+     * without a cap a client could queue them without bound. Counts and REQs are
+     * counted apart, so a connection holding its REQs at the cap can still COUNT.
      *
      * Default: accept.
      */
