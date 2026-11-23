@@ -22,6 +22,10 @@ package com.vitorpamplona.quartz.nip11RelayInfo
 
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -121,5 +125,25 @@ class CachedNip11FetcherTest {
             now = 100
             assertNull(fetcher.cachedOrNull(relay), "a stale hit must not be served")
             assertEquals(1, net.calls)
+        }
+
+    @Test
+    fun concurrentFetchesOfOneRelayShareOneNetworkFetch() =
+        runBlocking {
+            val gate = CompletableDeferred<Unit>()
+            var calls = 0
+            val slow =
+                object : Nip11Fetcher {
+                    override suspend fun fetch(relay: NormalizedRelayUrl): Nip11RelayInformation {
+                        calls++
+                        gate.await()
+                        return Nip11RelayInformation(name = "shared")
+                    }
+                }
+            val fetcher = CachedNip11Fetcher(slow)
+            val waiting = List(5) { async(start = CoroutineStart.UNDISPATCHED) { fetcher.fetch(relay) } }
+            gate.complete(Unit)
+            assertEquals(List(5) { "shared" }, waiting.awaitAll().map { it.name })
+            assertEquals(1, calls, "one network fetch for five callers")
         }
 }
