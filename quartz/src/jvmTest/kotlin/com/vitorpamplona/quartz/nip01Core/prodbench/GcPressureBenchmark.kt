@@ -34,8 +34,10 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.RelayLogger
 import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats.RelayReqStats
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
@@ -357,4 +359,37 @@ class GcPressureBenchmark {
     }
 
     private object NoOpListener : RelayConnectionListener
+
+    /**
+     * Bytes per frame through [CachingEventDecoder] over the raw capture, duplicates and all (it
+     * spans many relays), with a fresh decoder so new events and duplicates mix as on a cold start.
+     */
+    @Test
+    fun cachingDecoderPerFrame() {
+        if (!enabled) return
+        val stream =
+            javaClass.classLoader?.getResourceAsStream(CORPUS)
+                ?: throw IllegalStateException("corpus $CORPUS missing from the test classpath")
+        val all = GZIPInputStream(stream).use { OptimizedJsonMapper.fromJsonToEventList(it.readBytes().toString(Charsets.UTF_8)) }
+        val frames = all.take(50_000).mapIndexed { i, e -> "[\"EVENT\",\"sub-${i % 8}\",${e.toJson()}]" }
+
+        // warm the JIT on throwaway decoders
+        repeat(3) {
+            val warm = CachingEventDecoder()
+            for (f in frames) keep = warm.decode(f)
+        }
+        val decoder = CachingEventDecoder()
+        val id = Thread.currentThread().threadId()
+        val before = threads.getThreadAllocatedBytes(id)
+        for (f in frames) keep = decoder.decode(f)
+        val after = threads.getThreadAllocatedBytes(id)
+
+        val plainBefore = threads.getThreadAllocatedBytes(id)
+        for (f in frames) keep = MessageDecoder.Default.decode(f)
+        val plainAfter = threads.getThreadAllocatedBytes(id)
+
+        println("\n=== CachingEventDecoder over ${frames.size} raw frames: ${decoder.parsedCount} parsed, ${decoder.reusedCount} reused ===")
+        println("  %-40s %9d B/frame".format("CachingEventDecoder.decode", (after - before) / frames.size))
+        println("  %-40s %9d B/frame".format("full parse of every frame (reference)", (plainAfter - plainBefore) / frames.size))
+    }
 }
