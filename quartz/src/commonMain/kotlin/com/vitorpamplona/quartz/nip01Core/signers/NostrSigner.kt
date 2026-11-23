@@ -67,6 +67,16 @@ abstract class NostrSigner(
         fromPublicKey: HexKey,
     ): String
 
+    /**
+     * [nip44Decrypt] of a ciphertext from a key used once, such as a gift wrap's throwaway key. A
+     * signer holding the private key may skip caching the conversation key, which could only evict
+     * a real peer's. Remote signers decrypt as [nip44Decrypt] does.
+     */
+    open suspend fun nip44DecryptOnce(
+        ciphertext: String,
+        fromPublicKey: HexKey,
+    ): String = nip44Decrypt(ciphertext, fromPublicKey)
+
     abstract suspend fun decryptZapEvent(event: ZapRequestEvent): PrivateZapEvent
 
     abstract suspend fun deriveKey(nonce: HexKey): HexKey

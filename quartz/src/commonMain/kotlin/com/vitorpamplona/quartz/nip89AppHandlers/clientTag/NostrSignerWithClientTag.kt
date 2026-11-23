@@ -94,6 +94,11 @@ class NostrSignerWithClientTag(
         fromPublicKey: HexKey,
     ): String = inner.nip44Decrypt(ciphertext, fromPublicKey)
 
+    override suspend fun nip44DecryptOnce(
+        ciphertext: String,
+        fromPublicKey: HexKey,
+    ): String = inner.nip44DecryptOnce(ciphertext, fromPublicKey)
+
     override suspend fun decryptZapEvent(event: ZapRequestEvent): PrivateZapEvent = inner.decryptZapEvent(event)
 
     override suspend fun deriveKey(nonce: HexKey): HexKey = inner.deriveKey(nonce)

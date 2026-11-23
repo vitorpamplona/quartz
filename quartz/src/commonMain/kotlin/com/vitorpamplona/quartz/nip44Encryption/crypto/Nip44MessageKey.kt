@@ -23,7 +23,6 @@ package com.vitorpamplona.quartz.nip44Encryption.crypto
 import com.vitorpamplona.crypto.equalsConstantTime
 import com.vitorpamplona.crypto.kdf.Hkdf
 import com.vitorpamplona.crypto.mac.MacInstance
-import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 
 /** The NIP-44 v2 per-message keys: HKDF-Expand of the conversation key to 76 bytes, split three ways. */
 class MessageKey(
@@ -79,9 +78,8 @@ fun Hkdf.fastExpand(
         mac.update(ciphertext)
         val calculatedMac = mac.doFinal()
 
-        check(calculatedMac.equalsConstantTime(ciphertextMac)) {
-            "Invalid Mac: Calculated ${calculatedMac.toHexKey()}, decoded: ${ciphertextMac.toHexKey()}"
-        }
+        // Never print the expected MAC: it is what a forger needs to make the next try pass.
+        check(calculatedMac.equalsConstantTime(ciphertextMac)) { "Invalid Mac" }
     }
 
     return MessageKey(
