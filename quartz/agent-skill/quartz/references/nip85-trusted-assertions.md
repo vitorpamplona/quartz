@@ -109,6 +109,11 @@ NIP-09 kind 5 `a`-tagging `30382:<provider>:<subject>` (`GrapeRankPublisher` in
 `reconcileTrustNetwork` (`TrustNetworkSync.kt`) fetch it; `TrustNetworkBuilder` applies
 supersession, rank-0/kind-5 removal and tombstones; `TrustNetworkCodec` persists it.
 
+An update asks the relay three NIP-45 `COUNT`s first and ends there when they match. When they
+do not, it REQs the cards and kind 5s newer than the header's `syncCursor` (every card held is at
+or before it), counts again, and only reconciles over NIP-77 when the counts still disagree, so
+a provider's routine recompute costs a `REQ`, not a negentropy session over the whole set.
+
 ## Stability (2026-10)
 
 - Settled: the kind map, the 10040 entry shape, `rank` / `followers` / `hops` on 30382,

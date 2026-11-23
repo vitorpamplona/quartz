@@ -74,6 +74,23 @@ interface NegentropyLocalIndex {
     /** The `(created_at, id)` pairs inside [window]. Order does not matter. */
     suspend fun entriesFor(window: Filter): List<IdAndTime>
 
+    /**
+     * Where to cut [window] into [pieces] holding about the same number of local events:
+     * ascending `created_at` seconds, each the last second of a piece (piece one is
+     * `[since, cuts[0]]`, the next `[cuts[0] + 1, cuts[1]]`, the last `[cuts.last() + 1, until]`).
+     * Empty when this side cannot be cut there (it all sits in one second): the engine then
+     * sends the window whole, and only the relay's refusal splits it further. Null when the index
+     * cannot tell cheaply: the engine cuts the window into equal spans of time instead.
+     *
+     * Equal spans of time put most pieces where nothing is. A set signed within a few seconds,
+     * at the end of a range that starts at 0, split that way into 36 windows, 25 of them empty
+     * on this side, each one a `NEG-OPEN` the relay builds a negentropy state for.
+     */
+    suspend fun cutsFor(
+        window: Filter,
+        pieces: Int,
+    ): List<Long>? = null
+
     companion object {
         /** Nothing held locally: the sync downloads the relay's whole matched set. */
         val Empty: NegentropyLocalIndex =
@@ -212,6 +229,11 @@ private class RemoteCountedIndex(
     private suspend fun ask(window: Filter): Int? = if (asked.fetchAndAdd(1) >= maxRemoteCounts) null else remoteCount(window)
 
     override suspend fun entriesFor(window: Filter): List<IdAndTime> = local.entriesFor(window)
+
+    override suspend fun cutsFor(
+        window: Filter,
+        pieces: Int,
+    ): List<Long>? = local.cutsFor(window, pieces)
 }
 
 private class SortedListIndex(
@@ -220,6 +242,14 @@ private class SortedListIndex(
     override suspend fun count(window: Filter): Int = slice(window).size
 
     override suspend fun entriesFor(window: Filter): List<IdAndTime> = slice(window)
+
+    override suspend fun cutsFor(
+        window: Filter,
+        pieces: Int,
+    ): List<Long>? {
+        val slice = slice(window)
+        return countQuantileCuts(slice.size, pieces, window.since ?: 0L, window.until ?: Long.MAX_VALUE) { slice[it].createdAt }
+    }
 
     /**
      * The `createdAt`-range slice of [sorted] (ascending by `createdAt`) that
@@ -268,4 +298,25 @@ private class StoreIndex(
         }
 
     override suspend fun entriesFor(window: Filter): List<IdAndTime> = store.snapshotIdsForNegentropy(listOf(window))
+}
+
+/**
+ * [NegentropyLocalIndex.cutsFor] over [size] events sorted by `created_at` ([createdAt] reads the
+ * i-th), inside the window `[lo, hi]`: the second before each piece's first event, so events of
+ * one second stay together. Null when there are too few events to say where they are.
+ */
+internal inline fun countQuantileCuts(
+    size: Int,
+    pieces: Int,
+    lo: Long,
+    hi: Long,
+    createdAt: (Int) -> Long,
+): List<Long>? {
+    if (size < 2 || pieces < 2) return null
+    val cuts = ArrayList<Long>(pieces - 1)
+    for (k in 1 until pieces) {
+        val cut = createdAt(((size.toLong() * k) / pieces).toInt()) - 1
+        if (cut >= lo && cut < hi && (cuts.isEmpty() || cut > cuts.last())) cuts.add(cut)
+    }
+    return cuts
 }
