@@ -1,0 +1,9 @@
+{
+  "name": "quartz-nip17-vector-gen",
+  "private": true,
+  "description": "Regenerates quartz's NIP-17 interop vectors with nostr-tools (see README.md).",
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "2.26.1"
+  }
+}
