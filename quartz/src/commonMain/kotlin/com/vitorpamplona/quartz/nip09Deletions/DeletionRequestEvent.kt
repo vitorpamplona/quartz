@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -61,20 +62,20 @@ class DeletionRequestEvent(
     // NIP-09: the content is an optional, human-written reason for the deletion.
     override fun indexableContent() = content
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = deleteEventIds()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = deleteAddressIds()
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = deletedEventAuthors()
 
     /** The authors of the deleted events (`p`), normally the signer itself. */
-    fun deletedEventAuthors(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun deletedEventAuthors(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun deleteEvents() = taggedEvents()
 
@@ -86,7 +87,7 @@ class DeletionRequestEvent(
 
     fun deleteAddresses() = taggedAddresses()
 
-    fun deleteAddressIds() = tags.mapNotNull(ATag::parseAddressId)
+    fun deleteAddressIds() = tags.fastMapNotNull(ATag::parseAddressId)
 
     companion object {
         const val KIND = 5

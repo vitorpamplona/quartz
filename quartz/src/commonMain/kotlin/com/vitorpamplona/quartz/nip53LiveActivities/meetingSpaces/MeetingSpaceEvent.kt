@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.any
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -64,7 +65,7 @@ class MeetingSpaceEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(ParticipantTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(ParticipantTag::parseAsHint)
 
     override fun linkedPubKeys() = participantKeys()
 

@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
@@ -74,7 +75,7 @@ class DrssEventListEvent(
         visitor.visit(title())
     }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ListItemTag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ListItemTag::parseAsHint)
 
     /** `CURATED`: the listed events (`e`). */
     override fun linkedEventIds(): List<HexKey> = itemIds()

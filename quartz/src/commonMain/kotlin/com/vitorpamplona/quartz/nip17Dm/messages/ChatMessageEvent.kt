@@ -23,9 +23,14 @@ package com.vitorpamplona.quartz.nip17Dm.messages
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -79,34 +84,50 @@ class ChatMessageEvent(
         return if (tags.hasZapSplitSetup()) tags.zapSplitPubKeysTo(base.toMutableList()) else base
     }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, ETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        return out ?: emptyList()
+    }
 
     override fun linkedEventIds(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(replyTo())
-        quotedEvents().mapTo(result) { it.eventId }
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = replyTo().appendTo(out)
+        out = quotedEventIds().appendTo(out)
+        return out ?: emptyList()
     }
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint) + tags.mapNotNull(QTag::parseAddressAsHint)
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        return out ?: emptyList()
+    }
 
     override fun linkedAddressIds(): List<String> {
-        val result = ArrayList<String>()
-        result.addAll(referencedAddresses())
-        quotedAddresses().mapTo(result) { it.address.toValue() }
-        return result
+        var out: ArrayList<String>? = null
+        out = referencedAddresses().appendTo(out)
+        out = quotedAddressIds().appendTo(out)
+        return out ?: emptyList()
     }
 
-    fun replyTo() = tags.mapNotNull(ETag::parseId)
+    fun replyTo() = tags.fastMapNotNull(ETag::parseId)
 
     /** NIP-18 quotes (`q`) of regular events, in tag order. */
     fun quotedEvents(): List<QEventTag> = tags.mapNotNull(QEventTag::parse)
 
+    /** The ids [quotedEvents] quotes, without building the tags. */
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
+
     /** NIP-18 quotes (`q`) of addressable events, in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
 
+    /** The address ids [quotedAddresses] quotes, in canonical form, without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseValidAddress)
+
     /** The addressables this message references (`a`), as canonical address ids in tag order. */
-    fun referencedAddresses(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    fun referencedAddresses(): List<String> = tags.fastMapNotNull(ATag::parseValidAddress)
 
     companion object {
         const val KIND = 14

@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -65,7 +66,7 @@ class ChannelCreateEvent(
 
     override fun indexableSeparator() = " "
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `MENTION`: addresses tagged with `a` (NIP-28 defines none on kind 40). */
     override fun linkedAddressIds() = mentionedAddressIds()
@@ -74,7 +75,7 @@ class ChannelCreateEvent(
     fun mentionedAddresses(): List<ATag> = tags.taggedATags()
 
     /** Every non-empty `a` value, in tag order, unvalidated: a superset of [mentionedAddresses]. */
-    fun mentionedAddressIds(): List<String> = tags.mapNotNull(ATag::parseAddressId)
+    fun mentionedAddressIds(): List<String> = tags.fastMapNotNull(ATag::parseAddressId)
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient

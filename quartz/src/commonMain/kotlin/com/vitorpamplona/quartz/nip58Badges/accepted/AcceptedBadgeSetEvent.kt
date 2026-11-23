@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.tagArray
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -71,17 +72,17 @@ class AcceptedBadgeSetEvent(
         visitor.visit(description())
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `MENTION`: users tagged with `p` (NIP-58 defines none on a badge set). */
     override fun linkedPubKeys() = mentionKeys()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `BADGE_AWARD`: the kind-8 awards the set accepts (`e`). */
     override fun linkedEventIds() = badgeAwardEvents().map { it.eventId }
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `BADGE_DEFINITION`: the badge definitions the set accepts (`a`). */
     override fun linkedAddressIds() = badgeAwardDefinitions().map { it.toValue() }

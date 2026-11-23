@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.concord.cord03Channels.tags.MsTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -64,7 +65,7 @@ class ConcordChatEditEvent(
         visitor.visit(content)
     }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     // CORD-02 Appendix B names the target with a single `e` tag, so the edited message is the only link.
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(editedMessageId())

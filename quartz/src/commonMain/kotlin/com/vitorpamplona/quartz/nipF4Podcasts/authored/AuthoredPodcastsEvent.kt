@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseReplaceableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -54,9 +55,9 @@ class AuthoredPodcastsEvent(
 
     fun authors(podcastPubKey: HexKey) = tags.any { UserTag.isTagged(it, podcastPubKey) }
 
-    override fun linkedPubKeys() = tags.mapNotNull(UserTag::parseKey)
+    override fun linkedPubKeys() = tags.fastMapNotNull(UserTag::parseKey)
 
-    override fun pubKeyHints() = tags.mapNotNull(UserTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(UserTag::parseAsHint)
 
     companion object {
         const val KIND = 10064

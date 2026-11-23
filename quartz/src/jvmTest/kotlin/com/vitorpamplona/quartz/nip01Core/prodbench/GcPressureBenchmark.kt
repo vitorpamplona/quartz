@@ -241,4 +241,35 @@ class GcPressureBenchmark {
             store.close()
         }
     }
+
+    /** The hint-provider row split by kind and by method, to show where its bytes go. */
+    @Test
+    fun hintProvidersByKindAndMethod() {
+        if (!enabled) return
+        val events = corpus()
+        val byKind =
+            events
+                .groupBy { it.kind }
+                .entries
+                .sortedByDescending { it.value.size }
+                .take(14)
+        val methods =
+            listOf<Pair<String, (Event) -> Any?>>(
+                "eventHints" to { e -> (e as? EventHintProvider)?.eventHints() },
+                "linkedEventIds" to { e -> (e as? EventHintProvider)?.linkedEventIds() },
+                "addressHints" to { e -> (e as? AddressHintProvider)?.addressHints() },
+                "linkedAddressIds" to { e -> (e as? AddressHintProvider)?.linkedAddressIds() },
+                "pubKeyHints" to { e -> (e as? PubKeyHintProvider)?.pubKeyHints() },
+                "linkedPubKeys" to { e -> (e as? PubKeyHintProvider)?.linkedPubKeys() },
+            )
+        println("\n=== hint providers, B/event by kind and method ===")
+        println("  %-7s %6s %s".format("kind", "count", methods.joinToString(" ") { "%16s".format(it.first) }) + "   total")
+        var grand = 0L
+        for ((kind, list) in byKind) {
+            val cells = methods.map { (_, call) -> threadAlloc(list.size) { i -> call(list[i]) } }
+            grand += cells.sum()
+            println("  %-7d %6d %s".format(kind, list.size, cells.joinToString(" ") { "%16d".format(it / list.size) }) + "   %5d".format(cells.sum() / list.size))
+        }
+        println("  all listed kinds, B/event over the whole corpus: ${grand / events.size}")
+    }
 }

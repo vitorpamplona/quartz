@@ -23,6 +23,9 @@ package com.vitorpamplona.quartz.nipC7Chats
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -38,12 +41,12 @@ import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.quote
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -75,14 +78,20 @@ class ChatEvent(
     /** Events quoted with `q` tags (NIP-18), in tag order. The last one is the message replied to. */
     fun quotedEvents(): List<QEventTag> = tags.mapNotNull(QEventTag::parse)
 
+    /** The ids [quotedEvents] quotes, without building the tags. */
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
+
     /** Addressable events quoted with `q` tags (NIP-18), in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
+
+    /** The address ids [quotedAddresses] quotes, in canonical form, without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseValidAddress)
 
     /** Users mentioned with `p` tags, in tag order. */
     fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
 
     /** The keys of [mentions] (`p`), in tag order. */
-    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun mentionKeys(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /** NIP-C7: the message this one replies to, the last `q` that quotes an event. */
     fun replyingTo(): HexKey? = tags.lastNotNullOfOrNull(QTag::parseEventId)
@@ -98,44 +107,47 @@ class ChatEvent(
     }
 
     override fun eventHints(): List<EventIdHint> {
-        val qHints = tags.mapNotNull(QTag::parseEventAsHint)
-        val nip19Hints = citedNIP19().eventHints()
-        return qHints + nip19Hints
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedEventIds(): List<HexKey> {
-        val ids = ArrayList<HexKey>()
-        quotedEvents().mapTo(ids) { it.eventId }
-        ids.addAll(citedNIP19().eventIds())
-        return ids
+        var out: ArrayList<HexKey>? = null
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
     }
 
     // q tags may quote an addressable event ("kind:pubkey:dtag") instead of an id,
     // and the content may cite naddrs: both are address references.
     override fun addressHints(): List<AddressHint> {
-        val qHints = tags.mapNotNull(QTag::parseAddressAsHint)
-        val nip19Hints = citedNIP19().addressHints()
-        return qHints + nip19Hints
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedAddressIds(): List<String> {
-        val ids = ArrayList<String>()
-        quotedAddresses().mapTo(ids) { it.address.toValue() }
-        ids.addAll(citedNIP19().addressIds())
-        return ids
+        var out: ArrayList<String>? = null
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
     }
 
     override fun pubKeyHints(): List<PubKeyHint> {
-        val pHints = tags.mapNotNull(PTag::parseAsHint)
-        val nip19Hints = citedNIP19().pubKeyHints()
-        return pHints + nip19Hints
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedPubKeys(): List<HexKey> {
-        val keys = ArrayList<HexKey>()
-        keys.addAll(mentionKeys())
-        keys.addAll(citedNIP19().pubKeys())
-        return keys
+        var out: ArrayList<HexKey>? = null
+        out = mentionKeys().appendTo(out)
+        out = citedNIP19().pubKeysTo(out)
+        return out ?: emptyList()
     }
 
     companion object {

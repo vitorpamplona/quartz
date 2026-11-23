@@ -24,6 +24,9 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -39,10 +42,10 @@ import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -82,16 +85,33 @@ class GitCoverNoteEvent(
     SearchableEvent {
     override fun indexableContent() = content
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(MarkedETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint) + citedNIP19().eventHints()
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, MarkedETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
+    }
 
     /**
      * `ROOT`: the issue, patch or PR this note covers (the `e` tag);
      * `QUOTE`: events quoted with NIP-18 `q`;
      * `MENTION`: `nostr:` event URIs in the markdown body (`via: content`).
      */
-    override fun linkedEventIds(): List<HexKey> = rootEventIds() + quotedEventIds() + citedNIP19().eventIds()
+    override fun linkedEventIds(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = rootEventIds().appendTo(out)
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
+    }
 
     /**
      * `ROOT_AUTHOR`: the covered item's author (the `p` tag);
@@ -105,7 +125,12 @@ class GitCoverNoteEvent(
      * `QUOTE`: addresses quoted with NIP-18 `q` (validated `kind:pubkey:d`);
      * `MENTION`: `nostr:naddr` URIs in the markdown body (`via: content`).
      */
-    override fun linkedAddressIds(): List<String> = quotedAddressIds() + citedNIP19().addressIds()
+    override fun linkedAddressIds(): List<String> {
+        var out: ArrayList<String>? = null
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
+    }
 
     /** The covered issue, patch or PR: the `root`-marked `e`, else the first well-formed `e`. */
     fun rootEvent() = tags.coverNoteRoot()
@@ -121,16 +146,16 @@ class GitCoverNoteEvent(
     fun quotes() = tags.coverNoteQuotes()
 
     /** Every `e` id, marked or not, in tag order; [rootEvent] picks the covered item among them. */
-    fun rootEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
+    fun rootEventIds(): List<HexKey> = tags.fastMapNotNull(MarkedETag::parseId)
 
     /** Every `p` key, in tag order; [rootAuthor] is the first. */
     fun rootAuthorKeys(): List<HexKey> = tags.taggedUserIds()
 
     /** The ids of events quoted with `q` (NIP-18), in tag order. */
-    fun quotedEventIds(): List<HexKey> = tags.mapNotNull(QTag::parseEventId)
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
 
     /** The validated `kind:pubkey:d` ids of addresses quoted with `q` (NIP-18), in tag order. */
-    fun quotedAddressIds(): List<String> = tags.mapNotNull { QAddressableTag.parse(it)?.address?.toValue() }
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull { QAddressableTag.parse(it)?.address?.toValue() }
 
     companion object {
         const val KIND = 1624

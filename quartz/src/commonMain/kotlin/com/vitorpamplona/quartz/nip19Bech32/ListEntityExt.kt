@@ -39,62 +39,119 @@ fun NAddress.toAddressHint() = relay.map { AddressHint(aTag(), it) }
 
 fun NProfile.toPubKeyHint() = relay.map { PubKeyHint(hex, it) }
 
-fun List<Entity>.eventHints(): List<EventIdHint> =
-    mapNotNull { entity ->
+// The list readers below run in hint providers, on every relay copy of every event that can cite
+// NIP-19 entities, and almost all of them cite none. Each has a `…To(destination)` form that
+// appends to a caller's list, creating it on the first match and returning it (`null` while
+// nothing matched; see `fastMapNotNullTo`), and the plain form returns `emptyList()` without
+// allocating when nothing matches.
+
+fun List<Entity>.eventHints(): List<EventIdHint> = eventHintsTo(null) ?: emptyList()
+
+fun List<Entity>.eventHintsTo(destination: ArrayList<EventIdHint>?): ArrayList<EventIdHint>? {
+    var out = destination
+    for (i in indices) {
+        val entity = this[i]
         if (entity is NEvent) {
-            entity.toEventHint()
-        } else {
-            null
-        }
-    }.flatten()
-
-fun List<Entity>.eventIds(): List<HexKey> =
-    mapNotNull { entity ->
-        when (entity) {
-            is NEvent -> entity.hex
-            is NNote -> entity.hex
-            is NEmbed -> entity.event.id
-            else -> null
+            val relays = entity.relay
+            for (r in relays.indices) {
+                if (out == null) out = ArrayList(4)
+                out.add(EventIdHint(entity.hex, relays[r]))
+            }
         }
     }
+    return out
+}
 
-fun List<Entity>.addressHints(): List<AddressHint> =
-    mapNotNull { entity ->
+fun List<Entity>.eventIds(): List<HexKey> = eventIdsTo(null) ?: emptyList()
+
+fun List<Entity>.eventIdsTo(destination: ArrayList<HexKey>?): ArrayList<HexKey>? {
+    var out = destination
+    for (i in indices) {
+        val id =
+            when (val entity = this[i]) {
+                is NEvent -> entity.hex
+                is NNote -> entity.hex
+                is NEmbed -> entity.event.id
+                else -> null
+            } ?: continue
+        if (out == null) out = ArrayList(4)
+        out.add(id)
+    }
+    return out
+}
+
+fun List<Entity>.addressHints(): List<AddressHint> = addressHintsTo(null) ?: emptyList()
+
+fun List<Entity>.addressHintsTo(destination: ArrayList<AddressHint>?): ArrayList<AddressHint>? {
+    var out = destination
+    for (i in indices) {
+        val entity = this[i]
         if (entity is NAddress) {
-            entity.toAddressHint()
-        } else {
-            null
-        }
-    }.flatten()
-
-fun List<Entity>.addressIds(): List<String> =
-    mapNotNull { entity ->
-        when (entity) {
-            is NAddress -> entity.aTag()
-            is NEmbed -> if (entity.event is AddressableEvent) entity.event.addressTag() else null
-            else -> null
+            val relays = entity.relay
+            if (relays.isEmpty()) continue
+            val address = entity.aTag()
+            for (r in relays.indices) {
+                if (out == null) out = ArrayList(4)
+                out.add(AddressHint(address, relays[r]))
+            }
         }
     }
+    return out
+}
 
-fun List<Entity>.pubKeyHints(): List<PubKeyHint> =
-    mapNotNull { entity ->
+fun List<Entity>.addressIds(): List<String> = addressIdsTo(null) ?: emptyList()
+
+fun List<Entity>.addressIdsTo(destination: ArrayList<String>?): ArrayList<String>? {
+    var out = destination
+    for (i in indices) {
+        val address =
+            when (val entity = this[i]) {
+                is NAddress -> entity.aTag()
+                is NEmbed -> if (entity.event is AddressableEvent) entity.event.addressTag() else null
+                else -> null
+            } ?: continue
+        if (out == null) out = ArrayList(4)
+        out.add(address)
+    }
+    return out
+}
+
+fun List<Entity>.pubKeyHints(): List<PubKeyHint> = pubKeyHintsTo(null) ?: emptyList()
+
+fun List<Entity>.pubKeyHintsTo(destination: ArrayList<PubKeyHint>?): ArrayList<PubKeyHint>? {
+    var out = destination
+    for (i in indices) {
+        val entity = this[i]
         if (entity is NProfile) {
-            entity.relay.map { PubKeyHint(entity.hex, it) }
-        } else {
-            null
+            val relays = entity.relay
+            for (r in relays.indices) {
+                if (out == null) out = ArrayList(4)
+                out.add(PubKeyHint(entity.hex, relays[r]))
+            }
         }
-    }.flatten()
+    }
+    return out
+}
 
 /**
  * The pubkeys cited as `npub` / `nprofile`. An `nsec` is deliberately NOT here: its hex is a
  * PRIVATE key, so reporting a pasted one as a "linked pubkey" would publish the secret to every
  * index, hint store and relay filter that consumes this list.
  */
-fun List<Entity>.pubKeys(): List<HexKey> =
-    mapNotNull { entity ->
-        when (entity) {
-            is NProfile -> entity.hex
-            is NPub -> entity.hex
-            else -> null
-        }
+fun List<Entity>.pubKeys(): List<HexKey> = pubKeysTo(null) ?: emptyList()
+
+/** [pubKeys] appended to [destination]; see the note above [eventHints]. Never includes an `nsec`. */
+fun List<Entity>.pubKeysTo(destination: ArrayList<HexKey>?): ArrayList<HexKey>? {
+    var out = destination
+    for (i in indices) {
+        val key =
+            when (val entity = this[i]) {
+                is NProfile -> entity.hex
+                is NPub -> entity.hex
+                else -> null
+            } ?: continue
+        if (out == null) out = ArrayList(4)
+        out.add(key)
     }
+    return out
+}

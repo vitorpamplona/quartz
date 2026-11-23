@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip28PublicChat.admin
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -54,7 +55,7 @@ class ChannelMuteUserEvent(
     /** The reason for muting: the `reason` of NIP-28's JSON content, or the plain-text content. */
     fun reason(): String? = moderationReason(content)
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = usersToMute()
 

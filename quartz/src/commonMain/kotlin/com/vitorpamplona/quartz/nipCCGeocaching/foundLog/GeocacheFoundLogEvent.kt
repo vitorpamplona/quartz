@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -61,9 +62,9 @@ class GeocacheFoundLogEvent(
     SearchableEvent {
     override fun indexableContent() = content
 
-    override fun addressHints() = tags.mapNotNull(GeocacheTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(GeocacheTag::parseAsHint)
 
-    override fun linkedAddressIds() = tags.mapNotNull(GeocacheTag::parseAddressId)
+    override fun linkedAddressIds() = tags.fastMapNotNull(GeocacheTag::parseAddressId)
 
     fun geocache() = tags.geocache()
 

@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -71,23 +72,23 @@ class GitPatchEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `REPOSITORY_OWNER` and `MENTION`: the repository owner and the users notified (`p`). */
     override fun linkedPubKeys() = notifiedUsers()
 
-    override fun eventHints() = tags.mapNotNull(MarkedETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(MarkedETag::parseAsHint)
 
     /** `ROOT` and `PARENT`: the patches this one threads onto (`e`, `root` and `reply` markers). */
     override fun linkedEventIds() = threadEventIds()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `REPOSITORY`: the repository the patch is for; NIP-34 names a single one (`a`). */
     override fun linkedAddressIds() = listOfNotNull(repositoryAddress()?.toValue())
 
     /** Every `e` id, marked or not, in tag order: the series root and the patch this one replies to. */
-    fun threadEventIds(): List<HexKey> = tags.mapNotNull(MarkedETag::parseId)
+    fun threadEventIds(): List<HexKey> = tags.fastMapNotNull(MarkedETag::parseId)
 
     // The `a` marked `root` when there is one, else the first `a`.
     private fun innerRepository() =
@@ -108,7 +109,7 @@ class GitPatchEvent(
     fun previousPatchId(): HexKey? = tags.lastNotNullOfOrNull(MarkedETag::parseReply)?.eventId
 
     /** The users this patch notifies (`p`): the repository owner first, then the `notify` list, in tag order. */
-    fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun notifiedUsers(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun commit() = tags.firstNotNullOfOrNull(CommitTag::parse)
 

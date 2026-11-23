@@ -60,6 +60,56 @@ inline fun <T, R : Any> Array<out T>.fastMapNotNullDense(transform: (T) -> R?): 
     return destination
 }
 
+/**
+ * [mapNotNull] that allocates nothing when nothing matches: it returns the shared `emptyList()`
+ * and creates its list (small, capacity 4) on the first match. For the sparse scans event
+ * accessors and hint providers run on every relay copy of every event, which mostly find nothing.
+ * For a scan where most tags match, use [fastMapNotNullDense].
+ */
+inline fun <T, R : Any> Array<out T>.fastMapNotNull(transform: (T) -> R?): List<R> = fastMapNotNullTo(null, transform) ?: emptyList()
+
+/**
+ * Appends the non-null results of [transform] to [destination], creating it on the first one, and
+ * returns it (`null` while nothing matched). Chain scans through one variable and finish with
+ * `?: emptyList()`, so a result that finds nothing allocates nothing and one that finds
+ * something allocates one list:
+ *
+ * ```kotlin
+ * var out: ArrayList<EventIdHint>? = null
+ * out = tags.fastMapNotNullTo(out, MarkedETag::parseAsHint)
+ * out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+ * return out ?: emptyList()
+ * ```
+ *
+ * The stdlib's `mapNotNull` always allocates its list (capacity 10), and `a + b` a third one;
+ * hint providers run on every relay copy of every event and mostly find nothing.
+ */
+inline fun <T, R : Any> Array<out T>.fastMapNotNullTo(
+    destination: ArrayList<R>?,
+    transform: (T) -> R?,
+): ArrayList<R>? {
+    var out = destination
+    for (index in indices) {
+        val mapped = transform(this[index]) ?: continue
+        if (out == null) out = ArrayList(4)
+        out.add(mapped)
+    }
+    return out
+}
+
+/**
+ * Appends this list to [destination], creating it only when there is something to add, and
+ * returns it (`null` while both are empty). The [fastMapNotNullTo] chain's step for a semantic
+ * accessor that already returns a list (`mentionKeys()`, `quotedEventIds()`): linked-id providers
+ * read through those, and an empty one costs nothing here.
+ */
+fun <T> List<T>.appendTo(destination: ArrayList<T>?): ArrayList<T>? {
+    if (isEmpty()) return destination
+    val out = destination ?: ArrayList(size + 2)
+    out.addAll(this)
+    return out
+}
+
 inline fun <T, R : Any> Array<out T>.fastFirstNotNullOfOrNull(transform: (T) -> R?): R? {
     for (index in indices) {
         val result = transform(get(index))

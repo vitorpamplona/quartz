@@ -24,6 +24,9 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -37,13 +40,13 @@ import com.vitorpamplona.quartz.nip10Notes.content.findNostrUris
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip22Comments.RootScope
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
@@ -80,29 +83,65 @@ class ThreadEvent(
     fun citedNIP19(): List<Entity> = citedNIP19Cache ?: findNostrUris(content).also { citedNIP19Cache = it }
 
     // Note-like: NIP-27 mentions in the body, plus the `p` / `q` tags clients add for them.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun linkedPubKeys(): List<HexKey> = mentionKeys() + citedNIP19().pubKeys()
+    override fun linkedPubKeys(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = mentionKeys().appendTo(out)
+        out = citedNIP19().pubKeysTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(QTag::parseEventAsHint) + citedNIP19().eventHints()
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun linkedEventIds(): List<HexKey> = quotedEvents().map { it.eventId } + citedNIP19().eventIds()
+    override fun linkedEventIds(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(QTag::parseAddressAsHint) + citedNIP19().addressHints()
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun linkedAddressIds(): List<String> = quotedAddresses().map { it.address.toValue() } + citedNIP19().addressIds()
+    override fun linkedAddressIds(): List<String> {
+        var out: ArrayList<String>? = null
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
+    }
 
     /** Users mentioned with `p` tags (NIP-27 / NIP-08), in tag order. */
     fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
 
     /** The keys of [mentions] (`p`), in tag order. */
-    fun mentionKeys(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun mentionKeys(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /** Events quoted with `q` tags (NIP-18), in tag order. */
     fun quotedEvents(): List<QEventTag> = tags.mapNotNull(QEventTag::parse)
 
+    /** The ids [quotedEvents] quotes, without building the tags. */
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
+
     /** Addressable events quoted with `q` tags (NIP-18), in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
+
+    /** The address ids [quotedAddresses] quotes, in canonical form, without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QTag::parseValidAddress)
 
     /**
      * The thread title. NIP-7D specifies a `title` tag (what we emit), but some

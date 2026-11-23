@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
@@ -65,7 +66,7 @@ class LiveActivitiesRaidEvent(
         visitor.visit(content)
     }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
 
     // The raid's two marked `a` tags: the stream it comes from and the one it goes to.
     override fun linkedAddressIds(): List<String> = listOfNotNull(fromAddress()?.toValue(), toAddress()?.toValue())

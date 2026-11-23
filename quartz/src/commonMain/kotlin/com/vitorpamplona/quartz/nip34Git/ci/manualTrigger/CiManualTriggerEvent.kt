@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -74,7 +75,7 @@ class CiManualTriggerEvent(
     /** `ROOT`: the PR (`E`); `PARENT`: the PR or PR Update that supplied the commit (`e`). */
     override fun linkedEventIds() = tags.ciRunLinkedEventIds()
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator asked to run (`p`); `ROOT_AUTHOR`: the PR's author (`P`). */
     override fun linkedPubKeys() = coordinatorKeys() + listOfNotNull(pullRequest()?.pullRequestAuthor)

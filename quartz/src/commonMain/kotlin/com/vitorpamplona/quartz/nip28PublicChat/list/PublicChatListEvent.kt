@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -60,7 +61,7 @@ class PublicChatListEvent(
         )
     }
 
-    override fun eventHints() = tags.mapNotNull(ChannelTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ChannelTag::parseAsHint)
 
     override fun linkedEventIds() = publicChannels().map { it.eventId }
 

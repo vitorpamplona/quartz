@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -57,15 +58,15 @@ class CiServiceRequestEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider,
     AddressHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator asked to serve the repository (`p`). */
     override fun linkedPubKeys() = coordinatorKeys()
 
-    override fun addressHints() = tags.mapNotNull(RepositoryTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(RepositoryTag::parseAsHint)
 
     /** `REPOSITORY`: the repository perspective the request covers (`a`). */
-    override fun linkedAddressIds() = tags.mapNotNull(RepositoryTag::parseAddressId)
+    override fun linkedAddressIds() = tags.fastMapNotNull(RepositoryTag::parseAddressId)
 
     /** The single repository perspective; null when absent or repeated (the spec requires exactly one). */
     fun repository() = tags.ciSingleOrNull(RepositoryTag::parse)

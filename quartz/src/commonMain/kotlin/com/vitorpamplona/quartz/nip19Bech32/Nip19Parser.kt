@@ -374,11 +374,12 @@ object Nip19Parser {
      * heap dump, 2,541 of 4,573 live Matchers were running this regex.
      */
     fun parseAll(content: String): List<Entity> {
-        val returningList = mutableListOf<Entity>()
+        // Created on the first entity: most content cites none, and callers cache the result.
+        var returningList: ArrayList<Entity>? = null
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+            entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
         }
-        return returningList
+        return returningList ?: emptyList()
     }
 
     /**
@@ -387,22 +388,22 @@ object Nip19Parser {
      * tagging it would `p`-tag (and notify) whoever's key happens to be in a link.
      */
     fun parseAllStandalone(content: String): List<Entity> {
-        val returningList = mutableListOf<Entity>()
+        var returningList: ArrayList<Entity>? = null
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { prefix, start, dataEnd, end ->
             if (!isDomainLabelAt(content, dataEnd, end)) {
-                entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+                entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
             }
         }
-        return returningList
+        return returningList ?: emptyList()
     }
 
     /** Same scan as [parseAll], restricted to the event-ish entities. */
     fun parseAllEvents(content: String): List<Entity> {
-        val returningList = mutableListOf<Entity>()
+        var returningList: ArrayList<Entity>? = null
         forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+            entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
         }
-        return returningList
+        return returningList ?: emptyList()
     }
 }
 

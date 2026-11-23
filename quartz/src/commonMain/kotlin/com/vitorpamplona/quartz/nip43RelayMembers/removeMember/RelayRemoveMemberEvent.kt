@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
@@ -43,11 +44,11 @@ class RelayRemoveMemberEvent(
     PubKeyHintProvider {
     // PTag only checks the key's length; a provider must hand over real keys (a hint's id
     // decodes its hex), so the hints check the digits as memberPubKeys() does.
-    override fun pubKeyHints() = tags.mapNotNull { tag -> PTag.parseAsHint(tag)?.takeIf { Hex.isHex64(it.pubkey) } }
+    override fun pubKeyHints() = tags.fastMapNotNull { tag -> PTag.parseAsHint(tag)?.takeIf { Hex.isHex64(it.pubkey) } }
 
     override fun linkedPubKeys() = memberPubKeys()
 
-    fun memberPubKeys() = tags.mapNotNull { tag -> PTag.parseKey(tag)?.takeIf(Hex::isHex64) }
+    fun memberPubKeys() = tags.fastMapNotNull { tag -> PTag.parseKey(tag)?.takeIf(Hex::isHex64) }
 
     companion object {
         const val KIND = 8001

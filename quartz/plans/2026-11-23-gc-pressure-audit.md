@@ -1,7 +1,8 @@
 # Library-wide allocation and GC-pressure audit
 
 **Date:** 2026-11-23
-**Status:** measurements and ranked backlog; item 20 (`EventInterner` leak) fixed
+**Status:** measurements and ranked backlog; fixed so far: item 1 (hint providers), item 17
+(address assembly, in part), item 20 (`EventInterner` leak)
 **Harnesses:**
 - `quartz/src/jvmTest/.../nip01Core/prodbench/IngestAllocationBenchmark.kt` (ingest stages, retained size)
   `./gradlew :quartz:jvmTest --tests "*.IngestAllocationBenchmark" -i`
@@ -55,12 +56,12 @@ nothing. The garbage comes from what runs after the parse.
 | `EventHasher.hashIdBytes` | 63 B | the 32-byte result |
 | `EventHasher.hashId` (hex) | 311 B | `Hex.encode` costs about 250 B for a 104 B result |
 | `Filter.match`, 500 authors / `#p` | 15–19 B | lean |
-| hint providers (event + pubkey + address, both forms) | **596 B / event** | runs on every relay copy |
+| hint providers (event + pubkey + address, both forms) | **596 B / event** | runs on every relay copy; ~120 B after item 1 |
 | `ContactListEvent.follows()` | **532 B / p tag** | 0.5 MB per 1,000-follow list |
 | `ContactListEvent.linkedPubKeys()` | 12 B / tag | lean |
 | `MetadataEvent.contactMetaData()` | **2,290 B / kind 0** | uncached; search calls it per event per term per keystroke |
 | `SearchableEvent.indexableContent()` | 684 B | on every store insert of a searchable kind |
-| `AddressSerializer.assemble(30023, pk, d)` | 455 B | for a ~110 B result |
+| `AddressSerializer.assemble(30023, pk, d)` | 455 B | for a ~110 B result; 150–200 B after item 17 |
 | `ReqCmd` (2 filters, 500 authors) `.toJson()` | **164,173 B** | for a ~34 KB frame |
 | `SeenIds()` default constructor | **16 MB** | eager `LongArray(2^21)` |
 | SQLite `batchInsert` (500 per batch) | 1,644 B / event | |
@@ -93,19 +94,37 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
 
 ### Tier 1: per frame or per event, cheap to fix
 
-1. **The hint providers allocate about 600 B per event per call.** *Measured.* The cause is
-   the NIP-19 list helpers in `nip19Bech32/ListEntityExt.kt:42-100`:
-   - `eventHints`, `addressHints` and `pubKeyHints` call `mapNotNull{…}.flatten()`, and the
-     `*Ids` variants call `mapNotNull`.
-   - Each call builds an `ArrayList` and an iterator even for the ~94% of notes that cite
-     nothing, and `flatten` builds a second list. There are 144 call sites; kind 1 calls six of
-     them per pass.
-   - `Nip19Parser.parseAll*` (`:377/390/401`) always returns a new `ArrayList`, which
-     `BaseNoteEvent.citedNIP19Cache` then keeps for the life of the note.
-   - Fix: `if (isEmpty()) return emptyList()`, indexed loops, `…To(dest)` variants (as
-     `zapSplitHintsTo` does), and `parseAll*` returning `emptyList()` when nothing is found.
-   - Also finish the plan's `a + b + c` item, in `TextNoteEvent.kt:85/101` and
-     `CommentEvent.kt:116/133`.
+1. **Fixed: the hint providers allocated about 600 B per event per call; now about 120 B.**
+   *Measured* over the whole corpus: kind 1 went from 1,490 to ~370 B, kind 42 from 1,424 to
+   ~260 B, kind 1311 from 2,075 to ~180 B. The remainder is the result lists themselves, the
+   semantic accessors' own lists, and about 12 B per call of harness overhead.
+   - The cause was lists built and thrown away:
+     - `tags.mapNotNull(...)` per tag type, joined with `+`;
+     - the NIP-19 helpers in `ListEntityExt.kt` (`mapNotNull{}.flatten()`) building lists even
+       for the ~94% of notes that cite nothing;
+     - `Nip19Parser.parseAll*` returning a new, cached `ArrayList` when empty.
+   - Fix:
+     - `TagArray.fastMapNotNull` (returns the shared `emptyList()` and allocates its list on
+       the first match) and `fastMapNotNullTo(destination?)`, which chains scans into one list;
+     - `eventHintsTo`, `eventIdsTo`, `addressHintsTo`, `addressIdsTo`, `pubKeyHintsTo` and
+       `pubKeysTo` for the NIP-19 lists;
+     - `List.appendTo(destination?)`, which adds a semantic accessor's list to the chain and
+       costs nothing when that list is empty;
+     - ~220 event classes rewritten onto them. The list kinds (nip02, nip51) keep the stdlib's
+       `mapNotNull`, because those scans are dense.
+   - `linkedXxx()` still reads through the semantic accessors, per the event-class anatomy.
+     Those accessors now use `fastMapNotNull`, and `quotedEventIds()`/`quotedAddressIds()` were
+     added beside `quotedEvents()`/`quotedAddresses()`. Calling the parsers directly measured
+     96 B; the rule costs ~25 B.
+   - `event-pattern-audit.py` now recognises the `fast*` helpers, so they can't hide a raw read
+     from its check.
+   - Accessors that parsed an object only to read one field now use the field's own parser:
+     `ATag`/`QTag`/`ReportedAddressTag`/`CommunityTag`/`AddressBookmark.parseValidAddress` go
+     through the new `AddressSerializer.canonicalAddressIdOrNull`, `ReportEvent` reads ids
+     directly, and `LiveActivitiesChatMessageEvent` no longer parses an `Address`.
+   - Verified: the six hint lists of all 31,161 unique corpus events (43 kinds, 153,832 lines)
+     are byte-identical before and after. Pinned by `FastMapNotNullTest` and
+     `AddressShapeTest.canonicalAddressIdMatchesTheParseRoundTrip`.
 2. **A continuation object on every frame once any message listener is registered.** *Est.*
    ~72 B per frame, plus ~48 B per listener whose override calls `super`.
    - Where: `NostrClient.onIncomingMessageInFull` (`NostrClient.kt:557-594`). The EVENT fast
@@ -257,13 +276,11 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
       - every number bound as a String.
     - Fix: one `StringBuilder`, bind numbers with `bindLong`, and cache SQL text by shape. That
       also fixes backlog Store-6's statement-cache misses.
-17. **`AddressSerializer.assemble`.** *Measured*: 455 B for a ~110 B result.
-    - Where: `AddressSerializer.kt:30-40`. `buildString` starts at 16 chars and doubles twice.
-    - Related: `parse` calls `split(":")`, and `parseValidAddress` does `parse(x)?.toValue()`.
-      That pattern appears at 42 sites (38 of them as `::parseValidAddress`) and rebuilds a
-      String equal to its input.
-    - Fix: presize the builder to `7 + pubKey.length + dTag.length`. Parse with `indexOf`, and
-      return the input when it is already canonical.
+17. **Partly fixed: `AddressSerializer.assemble` allocated 455 B for a ~110 B result.** It is
+    now presized, measured at 150–200 B across runs (about the result String). `parseValidAddress`
+    returns its input when it is already canonical (see item 1). Still open:
+    `AddressSerializer.parse` calls `split(":")`, which matters for `Address.parse` callers that
+    need the object.
 18. **Live fan-out on the relay server.**
     - `FilterIndex.plusBucket` (`FilterIndex.kt:181-186`) copies the candidate sets into a
       `LinkedHashSet` whenever two buckets match.

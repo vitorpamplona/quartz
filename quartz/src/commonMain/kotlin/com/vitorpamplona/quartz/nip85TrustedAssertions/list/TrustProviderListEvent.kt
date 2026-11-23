@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.diff.DiffableEvent
 import com.vitorpamplona.quartz.nip01Core.diff.ListDiff
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -53,9 +54,9 @@ class TrustProviderListEvent(
     PubKeyHintProvider {
     // Every public delegation names a provider AND the relay its 30382/3/4/5 cards live on,
     // which is exactly a pubkey hint. Private (NIP-44) entries stay out: hints are public data.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(ServiceProviderTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(ServiceProviderTag::parseAsHint)
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(ServiceProviderTag::parseKey)
+    override fun linkedPubKeys(): List<HexKey> = tags.fastMapNotNull(ServiceProviderTag::parseKey)
 
     override fun diffFrom(older: Event): TrustProviderListDiff? {
         if (older !is TrustProviderListEvent || older.pubKey != pubKey || older.dTag() != dTag()) return null

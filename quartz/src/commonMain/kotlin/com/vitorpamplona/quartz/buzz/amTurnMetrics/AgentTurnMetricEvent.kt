@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
@@ -52,7 +53,7 @@ class AgentTurnMetricEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     PubKeyHintProvider {
     // The `agent` tag has no relay slot, so it only joins the linked side.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     // One pass in tag order (the builder writes `p` before `agent`).
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(ownerPubKey(), agentPubKey())

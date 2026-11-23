@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.buzz.threading.buzzThreadRoot
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -62,11 +63,11 @@ class StreamMessageV2Event(
     SearchableEvent,
     PubKeyHintProvider,
     EventHintProvider {
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = mentions()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(MarkedETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(MarkedETag::parseAsHint)
 
     // threadRoot() + replyTo(), read in one pass over the tags: both come from the same markers.
     override fun linkedEventIds(): List<HexKey> = tags.buzzThreadMarkers().let { listOfNotNull(it.root, it.reply) }

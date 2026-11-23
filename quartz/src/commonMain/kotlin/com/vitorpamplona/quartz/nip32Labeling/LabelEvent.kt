@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip32Labeling
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -75,15 +76,15 @@ class LabelEvent(
         labels().forEach { if (it.label.isNotEmpty() && !visitor.visit(it.label)) return }
     }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = labeledPubKeys()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds(): List<HexKey> = labeledEvents()
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = labeledAddresses()
 
@@ -113,13 +114,13 @@ class LabelEvent(
     fun subjectEdit(): String? = labelsByNamespace(SUBJECT_NAMESPACE).firstOrNull()?.label?.takeIf { it.isNotBlank() }
 
     /** Referenced event IDs (label targets). */
-    fun labeledEvents() = tags.mapNotNull(ETag::parseId)
+    fun labeledEvents() = tags.fastMapNotNull(ETag::parseId)
 
     /** Referenced pubkeys (label targets). */
-    fun labeledPubKeys() = tags.mapNotNull(PTag::parseKey)
+    fun labeledPubKeys() = tags.fastMapNotNull(PTag::parseKey)
 
     /** Referenced addresses (label targets). */
-    fun labeledAddresses() = tags.mapNotNull(ATag::parseAddressId)
+    fun labeledAddresses() = tags.fastMapNotNull(ATag::parseAddressId)
 
     /** Referenced hashtags/topics (label targets via `t` tag). */
     fun labeledHashtags() = tags.mapNotNull(HashtagTag::parse)

@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -37,12 +38,12 @@ import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.dTag.dTag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip10Notes.content.findNostrUris
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.addressIds
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
 import com.vitorpamplona.quartz.nip19Bech32.eventHints
 import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip32Labeling.tags.LabelNamespaceTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -112,7 +113,12 @@ class DrssProvenanceEvent(
         visitor.visit(source())
     }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
+    }
 
     /** `LABELED`: the feed bot (`p`); `MENTION`: people cited in the note. */
     override fun linkedPubKeys(): List<HexKey> = listOfNotNull(feedKey()) + citedNIP19().pubKeys()
@@ -122,7 +128,12 @@ class DrssProvenanceEvent(
     /** `MENTION`: events cited in the note. */
     override fun linkedEventIds(): List<HexKey> = citedNIP19().eventIds()
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(ATag::parseAsHint) + citedNIP19().addressHints()
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
+    }
 
     /** `LABELED`: the article the feed was found through (`a`); `MENTION`: addresses cited in the note. */
     override fun linkedAddressIds(): List<String> = listOfNotNull(foundThroughAddressId()) + citedNIP19().addressIds()

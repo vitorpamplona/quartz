@@ -102,7 +102,7 @@ interface QTag {
          */
         fun parseValidAddress(tag: Array<String>): String? {
             val id = parseAddressId(tag) ?: return null
-            return Address.parse(id)?.toValue()
+            return AddressSerializer.canonicalAddressIdOrNull(id)
         }
 
         fun parseAddressAsHint(tag: Array<String>): AddressHint? {

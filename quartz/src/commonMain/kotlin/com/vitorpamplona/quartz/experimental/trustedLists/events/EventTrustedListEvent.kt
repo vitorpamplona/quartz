@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.experimental.trustedLists.events.tags.EventMembe
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.Tag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -61,7 +62,7 @@ class EventTrustedListEvent(
 
     override fun memberValueOf(tag: Tag) = EventMemberTag.parseId(tag)
 
-    override fun eventHints() = tags.mapNotNull(EventMemberTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(EventMemberTag::parseAsHint)
 
     // [memberValues] plus the provenance id. Dense: nearly every tag is a member, so presize, with
     // room for the provenance id, and read each tag through [memberValueOf] instead of copying.
@@ -72,11 +73,11 @@ class EventTrustedListEvent(
         return ids
     }
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = aboutAddressIds()
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // [aboutKeys] plus the provenance keys, appended into the same list.
     override fun linkedPubKeys(): List<HexKey> = tags.aboutKeys().also(::addProvenancePubKeys)

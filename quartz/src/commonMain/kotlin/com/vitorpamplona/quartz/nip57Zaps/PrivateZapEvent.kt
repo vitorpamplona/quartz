@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.tagArray
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -49,15 +50,15 @@ class PrivateZapEvent(
     EventHintProvider,
     AddressHintProvider,
     PubKeyHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = zappedAuthor()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = zappedPost()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = zappedAddresses()
 
@@ -65,13 +66,13 @@ class PrivateZapEvent(
     // mirror [ZapRequestEvent]'s accessors (and their list-returning shape).
 
     /** The zapped users (`p`). */
-    fun zappedAuthor(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun zappedAuthor(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /** The zapped events (`e`). */
-    fun zappedPost(): List<HexKey> = tags.mapNotNull(ETag::parseId)
+    fun zappedPost(): List<HexKey> = tags.fastMapNotNull(ETag::parseId)
 
     /** The zapped addressables (`a`), as validated address ids. */
-    fun zappedAddresses(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    fun zappedAddresses(): List<String> = tags.fastMapNotNull(ATag::parseValidAddress)
 
     companion object {
         const val KIND = 9733

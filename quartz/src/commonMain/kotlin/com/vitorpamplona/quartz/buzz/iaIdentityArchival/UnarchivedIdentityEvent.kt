@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.buzz.iaIdentityArchival.tags.ReasonTag
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -62,11 +63,11 @@ class UnarchivedIdentityEvent(
 
     // Only the `p` target has a relay slot; `replaced-by`, `consent` and NIP-OA `auth` name
     // pubkeys too, so they join the linked side.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = tags.archivalLinkedPubKeys()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(requestId())
 

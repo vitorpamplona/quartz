@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -79,7 +80,7 @@ class DrssFeedListEvent(
         }
     }
 
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(FeedTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(FeedTag::parseAsHint)
 
     /** `MEMBER`: the feed bots (`p`). */
     override fun linkedPubKeys(): List<HexKey> = feedKeys()

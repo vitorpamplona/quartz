@@ -26,6 +26,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -49,17 +50,17 @@ class ReportEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(ReportedAuthorTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(ReportedAuthorTag::parseAsHint)
 
-    override fun linkedPubKeys() = reportedAuthor().map { it.pubKey }
+    override fun linkedPubKeys() = tags.fastMapNotNull(ReportedAuthorTag::parseKey)
 
-    override fun eventHints() = tags.mapNotNull(ReportedEventTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ReportedEventTag::parseAsHint)
 
-    override fun linkedEventIds() = reportedPost().map { it.eventId }
+    override fun linkedEventIds() = tags.fastMapNotNull(ReportedEventTag::parseId)
 
-    override fun addressHints() = tags.mapNotNull(ReportedAddressTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ReportedAddressTag::parseAsHint)
 
-    override fun linkedAddressIds() = reportedAddresses().map { it.address.toValue() }
+    override fun linkedAddressIds() = tags.fastMapNotNull(ReportedAddressTag::parseAddressId)
 
     @kotlinx.serialization.Transient
     @kotlin.jvm.Transient
