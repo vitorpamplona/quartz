@@ -23,6 +23,8 @@ package com.vitorpamplona.quartz.nipA0VoiceMessages
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -55,15 +57,35 @@ class VoiceReplyEvent(
     AddressHintProvider {
     // NIP-22 scope: the root (`E`/`P`, or `A` when the thread hangs off an address)
     // and the direct parent (`e`/`p`), each with its own relay-hint slot.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(RootAuthorTag::parseAsHint) + tags.mapNotNull(ReplyAuthorTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, RootAuthorTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ReplyAuthorTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
-    override fun linkedPubKeys(): List<HexKey> = tags.mapNotNull(RootAuthorTag::parseKey) + tags.mapNotNull(ReplyAuthorTag::parseKey)
+    override fun linkedPubKeys(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = tags.fastMapNotNullTo(out, RootAuthorTag::parseKey)
+        out = tags.fastMapNotNullTo(out, ReplyAuthorTag::parseKey)
+        return out ?: emptyList()
+    }
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(RootEventTag::parseAsHint) + tags.mapNotNull(ReplyEventTag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, RootEventTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ReplyEventTag::parseAsHint)
+        return out ?: emptyList()
+    }
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(RootEventTag::parseKey) + tags.mapNotNull(ReplyEventTag::parseKey)
+    override fun linkedEventIds(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = tags.fastMapNotNullTo(out, RootEventTag::parseKey)
+        out = tags.fastMapNotNullTo(out, ReplyEventTag::parseKey)
+        return out ?: emptyList()
+    }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(RootAddressTag::parseAsHint)
+    override fun addressHints(): List<AddressHint> = tags.fastMapNotNull(RootAddressTag::parseAsHint)
 
     override fun linkedAddressIds(): List<String> = listOfNotNull(rootAddressId())
 
@@ -71,7 +93,7 @@ class VoiceReplyEvent(
 
     fun replyAuthors() = tags.filter(ReplyAuthorTag::match)
 
-    fun replyAuthorKeys() = tags.mapNotNull(ReplyAuthorTag::parseKey)
+    fun replyAuthorKeys() = tags.fastMapNotNull(ReplyAuthorTag::parseKey)
 
     fun replyAuthorHints() = tags.mapNotNull(ReplyAuthorTag::parseAsHint)
 

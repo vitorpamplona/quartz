@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.buzz.ParseFailed
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.isValid
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -62,7 +63,7 @@ class ThreadSummaryEvent(
     /** `PARTICIPANT`: the users that posted in the thread (from the JSON body). */
     override fun linkedPubKeys(): List<HexKey> = participantKeys()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `ROOT`: the thread root this summarizes (`e`). */
     override fun linkedEventIds(): List<HexKey> = rootEventIds()

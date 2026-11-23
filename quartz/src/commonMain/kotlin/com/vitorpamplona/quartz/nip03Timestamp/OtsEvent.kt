@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -43,7 +44,7 @@ class OtsEvent(
     sig: HexKey,
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider {
-    override fun eventHints() = tags.mapNotNull(TargetEventTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(TargetEventTag::parseAsHint)
 
     // NIP-03 carries a single `e`: the event being timestamped.
     override fun linkedEventIds() = listOfNotNull(digestEventId())

@@ -22,9 +22,12 @@ package com.vitorpamplona.quartz.nip34Git.status
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
@@ -60,18 +63,23 @@ abstract class GitStatusEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = notifiedUsers()
 
     // `e` targets plus the `q` applied-patch references kind 1631 carries.
-    override fun eventHints() = tags.mapNotNull(MarkedETag::parseAsHint) + tags.mapNotNull(QTag::parseEventAsHint)
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, MarkedETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        return out ?: emptyList()
+    }
 
     // NIP-34: the `root` target and the optional `reply` revision root; kind 1631 adds its
     // applied patches (GitStatusAppliedEvent.appliedPatchIds()).
     override fun linkedEventIds(): List<HexKey> = listOfNotNull(rootEventId(), replyEventId())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     // NIP-34: the repository coordinates the status is filed under (`a`), one per maintainer.
     override fun linkedAddressIds() = repositoryAddresses().map { it.toValue() }
@@ -80,7 +88,7 @@ abstract class GitStatusEvent(
      * The users this status notifies (`p`): the repository owner, the target's author and any
      * revision author, in tag order.
      */
-    fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun notifiedUsers(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     /**
      * The target event ID (patch / PR / issue) this status refers to: the `e` marked `root`, else,

@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -55,24 +56,24 @@ class ReactionEvent(
     EventHintProvider,
     PubKeyHintProvider,
     AddressHintProvider {
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys() = originalAuthor()
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = originalPost()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = originalAddresses()
 
-    fun originalPost() = tags.mapNotNull(ETag::parseId)
+    fun originalPost() = tags.fastMapNotNull(ETag::parseId)
 
-    fun originalAuthor() = tags.mapNotNull(PTag::parseKey)
+    fun originalAuthor() = tags.fastMapNotNull(PTag::parseKey)
 
     /** The reacted-to addressables (`a`), as address ids in tag order. */
-    fun originalAddresses(): List<String> = tags.mapNotNull { ATag.parseAddressId(it)?.takeIf(AddressSerializer::isAddressShape) }
+    fun originalAddresses(): List<String> = tags.fastMapNotNull { ATag.parseAddressId(it)?.takeIf(AddressSerializer::isAddressShape) }
 
     companion object {
         const val KIND = 7

@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -70,7 +71,7 @@ class ZapReceiptEvent(
         visitor.visit(zapRequest?.content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     // The zapped `p` recipients, plus the sender of a public zap. The sender of an anonymous
     // or private zap (an `anon` tag in the embedded request) is a throwaway or derived key:
@@ -87,11 +88,11 @@ class ZapReceiptEvent(
         return recipients + sender
     }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = zappedPost()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     override fun linkedAddressIds() = zappedAddresses()
 
@@ -127,11 +128,11 @@ class ZapReceiptEvent(
             null
         }
 
-    override fun zappedPost() = tags.mapNotNull(ETag::parseId)
+    override fun zappedPost() = tags.fastMapNotNull(ETag::parseId)
 
-    override fun zappedAuthor() = tags.mapNotNull(PTag::parseKey)
+    override fun zappedAuthor() = tags.fastMapNotNull(PTag::parseKey)
 
-    override fun zappedAddresses(): List<String> = tags.mapNotNull(ATag::parseValidAddress)
+    override fun zappedAddresses(): List<String> = tags.fastMapNotNull(ATag::parseValidAddress)
 
     /** NIP-57's uppercase `P`: the zap sender, as the zap service copied it from the request. */
     fun zapSender(): HexKey? = tags.firstNotNullOfOrNull(ZapSenderTag::parseKey)

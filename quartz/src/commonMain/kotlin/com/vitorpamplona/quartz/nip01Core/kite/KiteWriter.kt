@@ -96,6 +96,18 @@ class KiteWriter internal constructor() {
     // Text mode
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Makes room for about [chars] more before a write that may be large, so the builder grows
+     * once, to its size, instead of doubling from [INITIAL_CHARS]. After a write past
+     * [MAX_KEPT_CHARS] the thread's builder is dropped, so each large write (a REQ with hundreds
+     * of authors, a contact list, an article) used to regrow it, discarding about as many chars
+     * as it wrote: a 34 KB REQ allocated 164 KB. A write that fits the reused builder skips this.
+     */
+    internal fun reserve(chars: Int) {
+        val needed = sb.length + chars
+        if (needed > INITIAL_CHARS) sb.ensureCapacity(needed)
+    }
+
     internal fun raw(c: Char) {
         sb.append(c)
     }
@@ -261,6 +273,7 @@ class KiteWriter internal constructor() {
         content: String,
         sig: String,
     ) {
+        reserve(eventLength(id, pubKey, tags, content, sig))
         val sb = sb
         sb.append("{\"id\":")
         string(id)
@@ -450,6 +463,13 @@ class KiteWriter internal constructor() {
         tags: TagArray,
         content: String,
     ) {
+        // Where the digest cannot be fed in chunks (native), the whole preimage lands in [buf]:
+        // size it once rather than doubling from [INITIAL_BYTES] (a 72 KB contact list discarded
+        // ~250 KB of arrays per hash). Where it streams, [grow] hands the bytes to the digest.
+        if (!SHA256_STREAMS) {
+            val needed = pos + eventLength("", pubKey, tags, content, "")
+            if (needed > buf.size) buf = buf.copyOf(needed)
+        }
         byte('[')
         byte('0')
         byte(',')
@@ -502,6 +522,41 @@ class KiteWriter internal constructor() {
         /** In 0x20..0x7F (DEL included, as Jackson writes it) and not `"` or `\`: its own single UTF-8 byte. */
         private fun isPlainAscii(c: Char): Boolean = (c.code - 0x20) in 0 until 0x60 && c != '"' && c != '\\'
 
+        /**
+         * About how many chars [tags] takes as JSON: each value plus its quotes and comma, each tag
+         * plus its brackets. Escapes can make it longer; the builder grows for those.
+         */
+        internal fun tagsLength(tags: TagArray): Int {
+            var n = 2
+            for (i in tags.indices) {
+                val tag = tags[i]
+                n += 3
+                for (j in tag.indices) n += tag[j].length + 4
+            }
+            return n
+        }
+
+        /**
+         * At least how many chars a JSON array of [values] takes (each value, its quotes and a
+         * comma, plus one spare); 0 when null. An over-estimate, so a later [reserve] that adds
+         * to it stays within the room already made.
+         */
+        internal fun stringsLength(values: List<String>?): Int {
+            if (values == null) return 0
+            var n = 16
+            for (i in values.indices) n += values[i].length + 4
+            return n
+        }
+
+        /** About how many chars an event object takes, with a 1/16 allowance for escapes in [content]. */
+        internal fun eventLength(
+            id: String,
+            pubKey: String,
+            tags: TagArray,
+            content: String,
+            sig: String,
+        ): Int = 100 + id.length + pubKey.length + sig.length + content.length + (content.length shr 4) + tagsLength(tags)
+
         private fun acquire(): KiteWriter {
             val local = threadKiteWriter()
             return if (local == null || local.inUse) KiteWriter() else local
@@ -521,13 +576,18 @@ class KiteWriter internal constructor() {
         ): String = acquire().text { eventObject(id, pubKey, createdAt, kind, tags, content, sig) }
 
         /** A tag array as `TagArraySerializer` writes it. */
-        fun toJson(tags: TagArray): String = acquire().text { tagArray(tags) }
+        fun toJson(tags: TagArray): String =
+            acquire().text {
+                reserve(tagsLength(tags))
+                tagArray(tags)
+            }
 
         fun toJson(rumor: Rumor): String = acquire().text { rumor(rumor) }
 
         /** `{"created_at":…,"kind":…,"tags":…,"content":…}`, as `EventTemplateSerializer` writes it. */
         fun toJson(template: EventTemplate<*>): String =
             acquire().text {
+                reserve(eventLength("", "", template.tags, template.content, ""))
                 sb.append("{\"created_at\":")
                 sb.append(template.createdAt)
                 sb.append(",\"kind\":")
@@ -686,6 +746,9 @@ internal expect fun sha256Feed(
     data: ByteArray,
     length: Int,
 ): Boolean
+
+/** Whether [sha256Feed] can hash in pieces here, so a large preimage never needs the whole buffer. */
+internal expect val SHA256_STREAMS: Boolean
 
 /** Drops whatever [sha256Feed] gave this thread's SHA-256. */
 internal expect fun sha256Abort()

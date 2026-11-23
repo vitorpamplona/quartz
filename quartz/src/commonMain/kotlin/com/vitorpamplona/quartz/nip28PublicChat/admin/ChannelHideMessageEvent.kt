@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip28PublicChat.admin
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -51,7 +52,7 @@ class ChannelHideMessageEvent(
     /** The reason for hiding: the `reason` of NIP-28's JSON content, or the plain-text content. */
     fun reason(): String? = moderationReason(content)
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     override fun linkedEventIds() = listOfNotNull(channelId()) + eventsToHide()
 

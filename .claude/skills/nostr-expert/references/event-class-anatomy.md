@@ -78,6 +78,19 @@ Implement `PubKeyHintProvider`, `EventHintProvider` and `AddressHintProvider`
   `.addressHints()` / `.addressIds()`.
 - A value that only looks like a reference (a hash in an `e`, a `k` that is not a kind) is not
   linked; say so in the KDoc.
+- Providers run on every relay copy of every event and mostly find nothing, so they must not
+  allocate an empty list:
+  - one source: `tags.fastMapNotNull(PTag::parseAsHint)`, which returns the shared `emptyList()`.
+    Semantic accessors on sparse tags use it too (`mentionKeys()`, `quotedEventIds()`).
+  - several sources: one list through a chain, never `a + b`:
+    `var out: ArrayList<HexKey>? = null`, then
+    `out = tags.fastMapNotNullTo(out, X::parseAsHint)` for a hint codec,
+    `out = mentionKeys().appendTo(out)` for a semantic accessor, and
+    `out = citedNIP19().pubKeysTo(out)` for cited entities, ending with
+    `return out ?: emptyList()` (`TextNoteEvent`).
+  - list kinds whose tags mostly match (follows, mutes, bookmarks) keep the stdlib `mapNotNull`,
+    or `fastMapNotNullDense`.
+  - `GcPressureBenchmark.hintProvidersByKindAndMethod` measures the bytes per kind.
 
 Record what each reference means in `quartz/plans/2026-09-29-graph-link-vocabulary-appendix.md`, one
 row per class.

@@ -24,6 +24,9 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -41,12 +44,12 @@ import com.vitorpamplona.quartz.nip18Reposts.quotes.QAddressableTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QEventTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
 import com.vitorpamplona.quartz.nip18Reposts.quotes.quotes
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
 import com.vitorpamplona.quartz.nip19Bech32.entities.Entity
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
 import com.vitorpamplona.quartz.nip19Bech32.pubKeys
 import com.vitorpamplona.quartz.nip23LongContent.tags.TitleTag
 import com.vitorpamplona.quartz.nip35Torrents.tags.BtihTag
@@ -93,17 +96,42 @@ class TorrentEvent(
 
     // build() turns the description's NIP-19 citations into `p` (npub/nprofile)
     // and `q` (note/nevent/naddr) tags; the content citations cover other clients.
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint) + citedNIP19().pubKeyHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
+    }
 
     override fun linkedPubKeys(): List<HexKey> = mentions().map { it.pubKey } + citedNIP19().pubKeys()
 
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(QTag::parseEventAsHint) + citedNIP19().eventHints()
+    override fun eventHints(): List<EventIdHint> {
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun linkedEventIds(): List<HexKey> = quotedEvents().map { it.eventId } + citedNIP19().eventIds()
+    override fun linkedEventIds(): List<HexKey> {
+        var out: ArrayList<HexKey>? = null
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun addressHints(): List<AddressHint> = tags.mapNotNull(QTag::parseAddressAsHint) + citedNIP19().addressHints()
+    override fun addressHints(): List<AddressHint> {
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
+    }
 
-    override fun linkedAddressIds(): List<String> = quotedAddresses().map { it.address.toValue() } + citedNIP19().addressIds()
+    override fun linkedAddressIds(): List<String> {
+        var out: ArrayList<String>? = null
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
+    }
 
     /** The users the description mentions (`p`), in tag order. */
     fun mentions(): List<PTag> = tags.mapNotNull(PTag::parse)
@@ -111,8 +139,14 @@ class TorrentEvent(
     /** NIP-18 quotes (`q`) of regular events the description cites, in tag order. */
     fun quotedEvents(): List<QEventTag> = tags.mapNotNull(QEventTag::parse)
 
+    /** The ids [quotedEvents] quotes, without building the tags. */
+    fun quotedEventIds(): List<HexKey> = tags.fastMapNotNull(QTag::parseEventId)
+
     /** NIP-18 quotes (`q`) of addressable events the description cites, in tag order. */
     fun quotedAddresses(): List<QAddressableTag> = tags.mapNotNull(QAddressableTag::parse)
+
+    /** The address ids [quotedAddresses] quotes, in canonical form (an `naddr1` decoded), without building the tags. */
+    fun quotedAddressIds(): List<String> = tags.fastMapNotNull(QAddressableTag::parseAddressId)
 
     fun title() = tags.firstNotNullOfOrNull(TitleTag::parse)
 

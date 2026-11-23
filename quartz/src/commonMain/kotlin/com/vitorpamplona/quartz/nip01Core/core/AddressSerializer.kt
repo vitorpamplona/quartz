@@ -31,13 +31,16 @@ class AddressSerializer {
             kind: Int,
             pubKeyHex: HexKey,
             dTag: String = "",
-        ) = buildString {
-            append(kind)
-            append(":")
-            append(pubKeyHex)
-            append(":")
-            append(dTag)
-        }
+        ): String =
+            // Sized up front: buildString starts at 16 chars and an address is at least 67, so it
+            // grew two or three times per call.
+            StringBuilder(7 + pubKeyHex.length + dTag.length)
+                .append(kind)
+                .append(':')
+                .append(pubKeyHex)
+                .append(':')
+                .append(dTag)
+                .toString()
 
         fun parse(addressId: String): Address? {
             if (addressId.length < 66) return null
@@ -71,6 +74,19 @@ class AddressSerializer {
                 null
             }
         }
+
+        /**
+         * `parse(value)?.toValue()` without the round trip when [value] is already canonical: an
+         * address-shaped value ([isAddressShape]) whose kind has no leading zero parses and
+         * re-assembles to an equal string, so it is returned as is. Anything else (a padded kind,
+         * an `naddr1`, garbage) takes the full [parse].
+         */
+        fun canonicalAddressIdOrNull(value: String): String? =
+            if (isAddressShape(value) && (value[0] != '0' || value[1] == ':')) {
+                value
+            } else {
+                parse(value)?.toValue()
+            }
 
         fun isOfKind(
             addressId: String,

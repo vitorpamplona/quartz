@@ -27,6 +27,9 @@ import com.vitorpamplona.quartz.experimental.forks.parseForkedEventId
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -42,16 +45,16 @@ import com.vitorpamplona.quartz.nip10Notes.tags.markedETags
 import com.vitorpamplona.quartz.nip10Notes.tags.prepareETagsAsReplyTo
 import com.vitorpamplona.quartz.nip14Subject.subject
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeysTo
+import com.vitorpamplona.quartz.nip57Zaps.splits.ZapSplitSetupParser
+import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeys
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -78,59 +81,60 @@ class TextNoteEvent(
     }
 
     override fun eventHints(): List<EventIdHint> {
-        val eHints = tags.mapNotNull(MarkedETag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseEventAsHint)
-        val nip19Hints = citedNIP19().eventHints()
-
-        return eHints + qHints + nip19Hints
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, MarkedETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedEventIds(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(threadEventIds())
-        quotedEvents().mapTo(result) { it.eventId }
-        result.addAll(citedNIP19().eventIds())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = threadEventIds().appendTo(out)
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
     }
 
     override fun addressHints(): List<AddressHint> {
-        val aHints = tags.mapNotNull(ATag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseAddressAsHint)
-        val nip19Hints = citedNIP19().addressHints()
-
-        return aHints + qHints + nip19Hints
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedAddressIds(): List<String> {
-        val result = ArrayList<String>()
-        result.addAll(referencedAddresses())
-        quotedAddresses().mapTo(result) { it.address.toValue() }
-        result.addAll(citedNIP19().addressIds())
-        return result
+        var out: ArrayList<String>? = null
+        out = referencedAddresses().appendTo(out)
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
     }
 
     // Runs on every relay copy of every note: one list, filled in the order the old
     // `p + zap + nip19` concatenation produced, instead of three lists and two copies.
     override fun pubKeyHints(): List<PubKeyHint> {
-        val result = tags.mapNotNullTo(ArrayList(), PTag::parseAsHint)
-        tags.zapSplitHintsTo(result)
-        result.addAll(citedNIP19().pubKeyHints())
-        return result
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ZapSplitSetupParser::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedPubKeys(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(mentionKeys())
-        tags.zapSplitPubKeysTo(result)
-        result.addAll(citedNIP19().pubKeys())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = mentionKeys().appendTo(out)
+        out = tags.zapSplitPubKeys().appendTo(out)
+        out = citedNIP19().pubKeysTo(out)
+        return out ?: emptyList()
     }
 
     /**
      * Every `a` this note carries, as address ids in tag order: an addressable it replies to or
      * cites, the community it is posted to, the version it forks ([forkFromAddress]).
      */
-    fun referencedAddresses(): List<String> = tags.mapNotNull { ATag.parseAddressId(it)?.takeIf(AddressSerializer::isAddressShape) }
+    fun referencedAddresses(): List<String> = tags.fastMapNotNull { ATag.parseAddressId(it)?.takeIf(AddressSerializer::isAddressShape) }
 
     fun isNewThread() = threadEventIds().isEmpty()
 

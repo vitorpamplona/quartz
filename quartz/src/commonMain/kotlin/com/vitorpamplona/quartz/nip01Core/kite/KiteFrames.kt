@@ -297,6 +297,11 @@ internal fun KiteWriter.command(cmd: Command): Boolean {
 }
 
 private fun KiteWriter.filters(filters: List<Filter>) {
+    // One reservation for every filter: growing per filter doubles the builder whenever an
+    // estimate falls a few chars short, which cost a 500-author REQ an extra ~70 KB.
+    var total = 0
+    for (k in filters.indices) total += filterLength(filters[k]) + 1
+    reserve(total)
     for (k in filters.indices) {
         raw(',')
         filter(filters[k])
@@ -305,6 +310,7 @@ private fun KiteWriter.filters(filters: List<Filter>) {
 
 /** kinds, ids, authors, each `#x` then each `&x`, since, until, limit, search; set fields only. */
 internal fun KiteWriter.filter(filter: Filter) {
+    reserve(filterLength(filter))
     objectStart()
     filter.kinds?.let {
         field("kinds")
@@ -328,6 +334,15 @@ internal fun KiteWriter.filter(filter: Filter) {
         string(it)
     }
     objectEnd()
+}
+
+/** About how many chars [filter] takes as JSON, so a filter with hundreds of authors is sized once. */
+private fun filterLength(filter: Filter): Int {
+    var n = 96 + (filter.kinds?.size ?: 0) * 7 + KiteWriter.stringsLength(filter.ids) + KiteWriter.stringsLength(filter.authors)
+    filter.tags?.forEach { (name, values) -> n += name.length + 6 + KiteWriter.stringsLength(values) }
+    filter.tagsAll?.forEach { (name, values) -> n += name.length + 6 + KiteWriter.stringsLength(values) }
+    filter.search?.let { n += it.length + 12 }
+    return n
 }
 
 /** `"#e":[…]` per entry; the tag name comes from the caller, so it is escaped like a value. */

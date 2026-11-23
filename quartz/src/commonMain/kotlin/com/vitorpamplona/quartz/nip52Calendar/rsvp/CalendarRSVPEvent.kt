@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
@@ -65,19 +66,19 @@ class CalendarRSVPEvent(
         visitor.visit(content)
     }
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `CALENDAR_EVENT_AUTHOR`: the author of the appointment this RSVP answers (`p`). */
     override fun linkedPubKeys() = calendarEventAuthorKeys()
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `CALENDAR_EVENT`: the appointment this RSVP answers; NIP-52 gives an RSVP exactly one `a`. */
     override fun linkedAddressIds() = listOfNotNull(calendarEventAddress()?.toValue())
 
     // NIP-52's optional `e` tag pins the exact appointment revision this RSVP answered, next to
     // the `a` tag's coordinate. Routing on it as well reaches whoever served that revision.
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `CALENDAR_EVENT`: the appointment revision this RSVP answered (`e`). */
     override fun linkedEventIds() = listOfNotNull(calendarEventId()?.eventId)

@@ -25,3 +25,5 @@ actual fun currentTimeSeconds() = System.currentTimeMillis() / 1000
 actual fun currentTimeMillis() = System.currentTimeMillis()
 
 internal actual fun availableProcessors(): Int = Runtime.getRuntime().availableProcessors()
+
+internal actual fun isFatal(e: Throwable): Boolean = e is VirtualMachineError

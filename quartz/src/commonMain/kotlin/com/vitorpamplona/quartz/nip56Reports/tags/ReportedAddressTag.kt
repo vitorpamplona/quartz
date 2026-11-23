@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip56Reports.tags
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.nip01Core.hints.types.AddressHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
@@ -63,7 +64,7 @@ class ReportedAddressTag(
             ensure(tag.has(1)) { return null }
             ensure(tag[0] == TAG_NAME) { return null }
             ensure(tag[1].isNotEmpty()) { return null }
-            return Address.parse(tag[1])?.toValue()
+            return AddressSerializer.canonicalAddressIdOrNull(tag[1])
         }
 
         fun parseAsHint(tag: Array<String>): AddressHint? {

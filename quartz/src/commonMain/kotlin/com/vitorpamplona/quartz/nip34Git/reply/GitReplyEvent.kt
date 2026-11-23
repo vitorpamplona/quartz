@@ -23,6 +23,9 @@ package com.vitorpamplona.quartz.nip34Git.reply
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -39,12 +42,12 @@ import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 import com.vitorpamplona.quartz.nip10Notes.tags.markedETags
 import com.vitorpamplona.quartz.nip10Notes.tags.prepareMarkedETagsAsReplyTo
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip34Git.issue.GitIssueEvent
 import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
@@ -75,52 +78,53 @@ class GitReplyEvent(
     }
 
     override fun eventHints(): List<EventIdHint> {
-        val eHints = tags.mapNotNull(ETag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseEventAsHint)
-        val nip19Hints = citedNIP19().eventHints()
-
-        return eHints + qHints + nip19Hints
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, ETag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedEventIds(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(threadEventIds())
-        quotedEvents().mapTo(result) { it.eventId }
-        result.addAll(citedNIP19().eventIds())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = threadEventIds().appendTo(out)
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
     }
 
     override fun addressHints(): List<AddressHint> {
-        val aHints = tags.mapNotNull(ATag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseAddressAsHint)
-        val nip19Hints = citedNIP19().addressHints()
-
-        return aHints + qHints + nip19Hints
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedAddressIds(): List<String> {
-        val result = tags.mapNotNullTo(ArrayList(), ATag::parseAddressId)
-        quotedAddresses().mapTo(result) { it.address.toValue() }
-        result.addAll(citedNIP19().addressIds())
-        return result
+        var out: ArrayList<String>? = null
+        out = tags.fastMapNotNullTo(out, ATag::parseAddressId)
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
     }
 
     override fun pubKeyHints(): List<PubKeyHint> {
-        val pHints = tags.mapNotNull(PTag::parseAsHint)
-        val nip19Hints = citedNIP19().pubKeyHints()
-
-        return pHints + nip19Hints
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedPubKeys(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(notifiedUsers())
-        result.addAll(citedNIP19().pubKeys())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = notifiedUsers().appendTo(out)
+        out = citedNIP19().pubKeysTo(out)
+        return out ?: emptyList()
     }
 
     /** The users this reply notifies (`p`), in tag order. */
-    fun notifiedUsers(): List<HexKey> = tags.mapNotNull(PTag::parseKey)
+    fun notifiedUsers(): List<HexKey> = tags.fastMapNotNull(PTag::parseKey)
 
     fun repositoryHex() = tags.firstNotNullOfOrNull(ATag::parseAddressId)
 

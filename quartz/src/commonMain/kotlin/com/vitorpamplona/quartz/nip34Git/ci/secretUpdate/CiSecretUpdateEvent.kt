@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -68,20 +69,20 @@ class CiSecretUpdateEvent(
     EventHintProvider,
     PubKeyHintProvider,
     AddressHintProvider {
-    override fun eventHints() = tags.mapNotNull(SecretsKeyAdvertisementTag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(SecretsKeyAdvertisementTag::parseAsHint)
 
     /** `SECRETS_KEY`: the Coordinator Advertisement whose `secrets-key` the update is encrypted to (`e`). */
-    override fun linkedEventIds() = tags.mapNotNull(SecretsKeyAdvertisementTag::parseId)
+    override fun linkedEventIds() = tags.fastMapNotNull(SecretsKeyAdvertisementTag::parseId)
 
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints() = tags.fastMapNotNull(PTag::parseAsHint)
 
     /** `COORDINATOR`: the coordinator that receives the secrets (`p`). */
     override fun linkedPubKeys() = coordinatorKeys()
 
-    override fun addressHints() = tags.mapNotNull(RepositoryTag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(RepositoryTag::parseAsHint)
 
     /** `REPOSITORY`: the signer's repository the secrets belong to (`a`). */
-    override fun linkedAddressIds() = tags.mapNotNull(RepositoryTag::parseAddressId)
+    override fun linkedAddressIds() = tags.fastMapNotNull(RepositoryTag::parseAddressId)
 
     /** The repository; null when absent, repeated, or not rooted at the signer (the spec requires its pubkey to equal the signer's). */
     fun repository() = tags.ciSingleOrNull(RepositoryTag::parse)?.takeIf { it.pubKeyHex == pubKey }

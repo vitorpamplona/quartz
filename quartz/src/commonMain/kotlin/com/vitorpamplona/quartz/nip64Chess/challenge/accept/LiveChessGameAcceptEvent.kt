@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip64Chess.challenge.accept
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.EventIdHint
@@ -54,9 +55,9 @@ class LiveChessGameAcceptEvent(
 ) : BaseChessEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider {
     // The accepted challenge (kind 30064) is pointed at by id, with the relay it was seen on.
-    override fun eventHints(): List<EventIdHint> = tags.mapNotNull(ChallengeEventTag::parseAsHint)
+    override fun eventHints(): List<EventIdHint> = tags.fastMapNotNull(ChallengeEventTag::parseAsHint)
 
-    override fun linkedEventIds(): List<HexKey> = tags.mapNotNull(ChallengeEventTag::parseId)
+    override fun linkedEventIds(): List<HexKey> = tags.fastMapNotNull(ChallengeEventTag::parseId)
 
     fun challengeEventId() = tags.challengeEventId()
 

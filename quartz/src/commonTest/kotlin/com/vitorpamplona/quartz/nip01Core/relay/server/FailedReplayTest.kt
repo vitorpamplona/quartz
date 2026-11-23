@@ -76,6 +76,9 @@ class FailedReplayTest {
         val inner: IEventStore,
     ) : IEventStore by inner {
         var down = false
+
+        /** What a down store throws. */
+        var failure: () -> Throwable = { IllegalStateException("store down") }
         var hold = false
         var timesOut = false
 
@@ -88,7 +91,7 @@ class FailedReplayTest {
                     throw IllegalStateException("store down")
                 }
             }
-            if (down) throw IllegalStateException("store down")
+            if (down) throw failure()
             // A backend deadline that lets its TimeoutCancellationException out.
             if (timesOut) withTimeout(1) { awaitCancellation() }
         }
@@ -265,5 +268,22 @@ class FailedReplayTest {
         runTest {
             val store = FlakyStore(EventStore(null))
             lateFailureAfterReuse(store, ParkedBackend(store))
+        }
+
+    @Test
+    fun replaysWhoseStoreThrowsAnErrorCloseAndReleaseTheirSlotsOnALiveBackend() =
+        runTest {
+            // TODO() in a store: an Error, not an Exception. It must not take the session down.
+            val store = FlakyStore(EventStore(null))
+            store.failure = { NotImplementedError("store down") }
+            outageThenRecovery(store, LiveEventStore(store, AcceptingIngest))
+        }
+
+    @Test
+    fun replaysWhoseStoreThrowsAnErrorCloseAndReleaseTheirSlotsOnAParkedBackend() =
+        runTest {
+            val store = FlakyStore(EventStore(null))
+            store.failure = { NotImplementedError("store down") }
+            outageThenRecovery(store, ParkedBackend(store))
         }
 }

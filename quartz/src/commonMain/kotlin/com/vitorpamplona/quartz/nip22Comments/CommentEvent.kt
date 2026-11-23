@@ -27,7 +27,10 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.any
+import com.vitorpamplona.quartz.nip01Core.core.appendTo
 import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
@@ -41,12 +44,12 @@ import com.vitorpamplona.quartz.nip01Core.tags.hashtags.HashtagTag
 import com.vitorpamplona.quartz.nip01Core.tags.hashtags.hashtags
 import com.vitorpamplona.quartz.nip10Notes.BaseThreadedEvent
 import com.vitorpamplona.quartz.nip18Reposts.quotes.QTag
-import com.vitorpamplona.quartz.nip19Bech32.addressHints
-import com.vitorpamplona.quartz.nip19Bech32.addressIds
-import com.vitorpamplona.quartz.nip19Bech32.eventHints
-import com.vitorpamplona.quartz.nip19Bech32.eventIds
-import com.vitorpamplona.quartz.nip19Bech32.pubKeyHints
-import com.vitorpamplona.quartz.nip19Bech32.pubKeys
+import com.vitorpamplona.quartz.nip19Bech32.addressHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.addressIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.eventIdsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeyHintsTo
+import com.vitorpamplona.quartz.nip19Bech32.pubKeysTo
 import com.vitorpamplona.quartz.nip22Comments.tags.ReplyAddressTag
 import com.vitorpamplona.quartz.nip22Comments.tags.ReplyAuthorTag
 import com.vitorpamplona.quartz.nip22Comments.tags.ReplyEventTag
@@ -59,8 +62,8 @@ import com.vitorpamplona.quartz.nip22Comments.tags.RootIdentifierTag
 import com.vitorpamplona.quartz.nip22Comments.tags.RootKindTag
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHintsTo
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeysTo
+import com.vitorpamplona.quartz.nip57Zaps.splits.ZapSplitSetupParser
+import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitPubKeys
 import com.vitorpamplona.quartz.nip72ModCommunities.definition.CommunityDefinitionEvent
 import com.vitorpamplona.quartz.nip73ExternalIds.ExternalId
 import com.vitorpamplona.quartz.nip73ExternalIds.location.GeohashId
@@ -95,68 +98,70 @@ class CommentEvent(
     // Runs on every relay copy of every comment: one list, filled in the order the old
     // `P + p + zap + nip19` concatenation produced, instead of five lists and three copies.
     override fun pubKeyHints(): List<PubKeyHint> {
-        val result = ArrayList<PubKeyHint>()
-        result.addAll(rootAuthorHints())
-        result.addAll(replyAuthorHints())
-        tags.zapSplitHintsTo(result)
-        result.addAll(citedNIP19().pubKeyHints())
-        return result
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, RootAuthorTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ReplyAuthorTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ZapSplitSetupParser::parseAsHint)
+        out = citedNIP19().pubKeyHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedPubKeys(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(rootAuthorKeys())
-        result.addAll(replyAuthorKeys())
-        tags.zapSplitPubKeysTo(result)
-        result.addAll(citedNIP19().pubKeys())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = rootAuthorKeys().appendTo(out)
+        out = replyAuthorKeys().appendTo(out)
+        out = tags.zapSplitPubKeys().appendTo(out)
+        out = citedNIP19().pubKeysTo(out)
+        return out ?: emptyList()
     }
 
     override fun eventHints(): List<EventIdHint> {
-        val eHints = tags.mapNotNull(RootEventTag::parseAsHint) + tags.mapNotNull(ReplyEventTag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseEventAsHint)
-        val nip19Hints = citedNIP19().eventHints()
-
-        return eHints + qHints + nip19Hints
+        var out: ArrayList<EventIdHint>? = null
+        out = tags.fastMapNotNullTo(out, RootEventTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ReplyEventTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseEventAsHint)
+        out = citedNIP19().eventHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedEventIds(): List<HexKey> {
-        val result = ArrayList<HexKey>()
-        result.addAll(rootEventIds())
-        result.addAll(replyEventIds())
-        quotedEvents().mapTo(result) { it.eventId }
-        result.addAll(citedNIP19().eventIds())
-        return result
+        var out: ArrayList<HexKey>? = null
+        out = rootEventIds().appendTo(out)
+        out = replyEventIds().appendTo(out)
+        out = quotedEventIds().appendTo(out)
+        out = citedNIP19().eventIdsTo(out)
+        return out ?: emptyList()
     }
 
     override fun addressHints(): List<AddressHint> {
-        val aHints = tags.mapNotNull(RootAddressTag::parseAsHint) + tags.mapNotNull(ReplyAddressTag::parseAsHint)
-        val qHints = tags.mapNotNull(QTag::parseAddressAsHint)
-        val nip19Hints = citedNIP19().addressHints()
-
-        return aHints + qHints + nip19Hints
+        var out: ArrayList<AddressHint>? = null
+        out = tags.fastMapNotNullTo(out, RootAddressTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ReplyAddressTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, QTag::parseAddressAsHint)
+        out = citedNIP19().addressHintsTo(out)
+        return out ?: emptyList()
     }
 
     override fun linkedAddressIds(): List<String> {
-        val result = ArrayList<String>()
-        result.addAll(rootAddressIds())
-        result.addAll(replyAddressIds())
-        quotedAddresses().mapTo(result) { it.address.toValue() }
-        result.addAll(citedNIP19().addressIds())
-        return result
+        var out: ArrayList<String>? = null
+        out = rootAddressIds().appendTo(out)
+        out = replyAddressIds().appendTo(out)
+        out = quotedAddressIds().appendTo(out)
+        out = citedNIP19().addressIdsTo(out)
+        return out ?: emptyList()
     }
 
-    fun rootEventIds() = tags.mapNotNull(RootEventTag::parseKey)
+    fun rootEventIds() = tags.fastMapNotNull(RootEventTag::parseKey)
 
-    fun replyEventIds() = tags.mapNotNull(ReplyEventTag::parseKey)
+    fun replyEventIds() = tags.fastMapNotNull(ReplyEventTag::parseKey)
 
-    fun rootAddressIds() = tags.mapNotNull(RootAddressTag::parseAddressId)
+    fun rootAddressIds() = tags.fastMapNotNull(RootAddressTag::parseAddressId)
 
     fun hasRootAddress(addressId: String) = tags.any(RootAddressTag::isTagged, addressId)
 
     fun hasReplyAddress(addressId: String) = tags.any(ReplyAddressTag::isTagged, addressId)
 
-    fun replyAddressIds() = tags.mapNotNull(ReplyAddressTag::parseAddressId)
+    fun replyAddressIds() = tags.fastMapNotNull(ReplyAddressTag::parseAddressId)
 
     fun replyAddress() = tags.mapNotNull(ReplyAddressTag::parseAddress)
 
@@ -182,9 +187,9 @@ class CommentEvent(
 
     fun replyAuthors() = tags.filter(ReplyAuthorTag::match)
 
-    fun rootAuthorKeys() = tags.mapNotNull(RootAuthorTag::parseKey)
+    fun rootAuthorKeys() = tags.fastMapNotNull(RootAuthorTag::parseKey)
 
-    fun replyAuthorKeys() = tags.mapNotNull(ReplyAuthorTag::parseKey)
+    fun replyAuthorKeys() = tags.fastMapNotNull(ReplyAuthorTag::parseKey)
 
     fun rootAuthorHints() = tags.mapNotNull(RootAuthorTag::parseAsHint)
 

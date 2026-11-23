@@ -32,6 +32,7 @@ import com.vitorpamplona.quartz.experimental.music.track.tags.UrlTag
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
@@ -72,7 +73,7 @@ class AudioTrackEvent(
     fun participantKeys(): List<HexKey> = tags.mapNotNull(ParticipantTag::parseKey)
 
     // Participants are plain `p` tags, so the NIP-01 parsers read them (and validate the relay).
-    override fun pubKeyHints(): List<PubKeyHint> = tags.mapNotNull(PTag::parseAsHint)
+    override fun pubKeyHints(): List<PubKeyHint> = tags.fastMapNotNull(PTag::parseAsHint)
 
     override fun linkedPubKeys(): List<HexKey> = participantKeys()
 

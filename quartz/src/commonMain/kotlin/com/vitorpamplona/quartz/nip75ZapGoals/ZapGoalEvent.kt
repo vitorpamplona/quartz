@@ -25,10 +25,13 @@ import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
+import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintBundle
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
+import com.vitorpamplona.quartz.nip01Core.hints.types.PubKeyHint
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
@@ -46,7 +49,7 @@ import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.nip57Zaps.splits.BaseZapSplitSetup
 import com.vitorpamplona.quartz.nip57Zaps.splits.ZapSplitSetup
-import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitHints
+import com.vitorpamplona.quartz.nip57Zaps.splits.ZapSplitSetupParser
 import com.vitorpamplona.quartz.nip57Zaps.splits.zapSplitSetup
 import com.vitorpamplona.quartz.nip75ZapGoals.tags.AmountTag
 import com.vitorpamplona.quartz.nip75ZapGoals.tags.ClosedAtTag
@@ -77,17 +80,22 @@ class ZapGoalEvent(
     }
 
     // NIP-75 lets a goal carry NIP-57 `zap` splits: their beneficiaries are linked people too.
-    override fun pubKeyHints() = tags.mapNotNull(PTag::parseAsHint) + tags.zapSplitHints()
+    override fun pubKeyHints(): List<PubKeyHint> {
+        var out: ArrayList<PubKeyHint>? = null
+        out = tags.fastMapNotNullTo(out, PTag::parseAsHint)
+        out = tags.fastMapNotNullTo(out, ZapSplitSetupParser::parseAsHint)
+        return out ?: emptyList()
+    }
 
     /** `MENTION`: users tagged with `p`; `ZAP_SPLIT`: the [beneficiaries] that are pubkeys (`zap`). */
     override fun linkedPubKeys() = mentionKeys() + beneficiaries().mapNotNull { (it as? ZapSplitSetup)?.pubKeyHex }
 
-    override fun eventHints() = tags.mapNotNull(ETag::parseAsHint)
+    override fun eventHints() = tags.fastMapNotNull(ETag::parseAsHint)
 
     /** `FUNDED`: the event this goal raises funds for (`e`); NIP-75 links at most one. */
     override fun linkedEventIds() = listOfNotNull(goalEventId())
 
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.fastMapNotNull(ATag::parseAsHint)
 
     /** `FUNDED`: the addressable event this goal raises funds for (`a`); NIP-75 links at most one. */
     override fun linkedAddressIds() = listOfNotNull(goalAddressId())
