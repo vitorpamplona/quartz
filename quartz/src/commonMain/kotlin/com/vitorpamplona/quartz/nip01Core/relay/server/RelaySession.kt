@@ -59,8 +59,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
@@ -133,9 +133,6 @@ class RelaySession(
     /** COUNTs whose backend call is still running, by a per-connection sequence; see [handleCount]. */
     private val counts = LargeCache<Long, Job>()
     private val countSeq = AtomicLong(0L)
-
-    /** Caps the COUNTs one connection runs at once; past it the command loop waits for one to end. */
-    private val countSlots = Semaphore(MAX_COUNTS_IN_FLIGHT)
 
     /** [sink] when it takes live frames in parts, decided once per connection. */
     private val liveFrameSink = sink as? LiveFrameSink
@@ -316,21 +313,20 @@ class RelaySession(
             send(NoticeMessage(notice))
             return
         }
-        closeRefused(frame.label, frame.subId, reason)
+        closeRefused(frame.subId, reason)
     }
 
     /**
-     * Answers a REQ, COUNT or CLOSE (by its [label]) that cannot run with `CLOSED` [reason] on
-     * [subId]. The client takes that CLOSED as the end of [subId], so a REQ that would have
-     * replaced an open subscription, or a CLOSE, ends it here too. A COUNT's id names no
-     * subscription and ends none.
+     * Answers a REQ, COUNT or CLOSE that cannot run with `CLOSED` [reason] on [subId]. A client
+     * takes that CLOSED as the end of whatever it holds under [subId], so an open subscription
+     * there ends here too: the one a REQ would have replaced, the one a CLOSE named, and the
+     * one a COUNT reusing a REQ's id would otherwise leave streaming to a client that dropped it.
      */
     private fun closeRefused(
-        label: String,
         subId: String,
         reason: String,
     ) {
-        if (label != CountCmd.LABEL) cancelSubscription(subId)
+        cancelSubscription(subId)
         send(ClosedMessage(subId, reason))
     }
 
@@ -343,8 +339,8 @@ class RelaySession(
         if (!cmd.isValid()) {
             // A REQ or COUNT with a sub id but no filter is still answered on that id.
             when {
-                cmd is ReqCmd && cmd.subId.isNotEmpty() -> closeRefused(ReqCmd.LABEL, cmd.subId, "invalid: a REQ needs at least one filter")
-                cmd is CountCmd && cmd.queryId.isNotEmpty() -> closeRefused(CountCmd.LABEL, cmd.queryId, "invalid: a COUNT needs at least one filter")
+                cmd is ReqCmd && cmd.subId.isNotEmpty() -> closeRefused(cmd.subId, "invalid: a REQ needs at least one filter")
+                cmd is CountCmd && cmd.queryId.isNotEmpty() -> closeRefused(cmd.queryId, "invalid: a COUNT needs at least one filter")
                 else -> send(NoticeMessage("error: invalid command"))
             }
             return
@@ -438,9 +434,9 @@ class RelaySession(
         // concurrent queries (one search permit per connection) would otherwise hold the loop
         // here, waiting for a running REQ's permit, with the CLOSE that frees it unread behind
         // this COUNT. Its one answer, COUNT or CLOSED, goes out when the backend returns; only
-        // a disconnect cancels it. The slots keep the loop's backpressure on a client that
-        // pipelines COUNTs: past MAX_COUNTS_IN_FLIGHT it waits for one to end.
-        countSlots.acquire()
+        // a disconnect cancels it. How many COUNTs a connection may run or queue at once is the
+        // backend's to bound, as it bounds a connection's REQ replays: the session only tracks
+        // them so a disconnect can cancel them.
         val key = countSeq.fetchAndAdd(1L)
         // UNDISPATCHED: a count that does not suspend answers inline, as it did on the loop.
         val job =
@@ -449,7 +445,12 @@ class RelaySession(
                     try {
                         store.countResult(requestContext, filters)
                     } catch (e: CancellationException) {
-                        throw e
+                        // A disconnect cancels this COUNT, and it then owes nothing. A backend's
+                        // own CancellationException (a withTimeout inside it) is a failed count,
+                        // which is still owed its one answer.
+                        if (!isActive) throw e
+                        send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
+                        return@launch
                     } catch (e: Exception) {
                         send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
                         return@launch
@@ -457,10 +458,7 @@ class RelaySession(
                 send(CountMessage(cmd.queryId, countResult))
             }
         // Runs once however the job ends, even if it never started (a cancelled scope).
-        job.invokeOnCompletion {
-            counts.remove(key)
-            countSlots.release()
-        }
+        job.invokeOnCompletion { counts.remove(key) }
         // Held only while it runs, so a disconnect can cancel it; the handler above drops it.
         if (!job.isCompleted) {
             counts.put(key, job)
@@ -624,10 +622,13 @@ class RelaySession(
                         )
                     }
                 } catch (e: CancellationException) {
-                    // Subscription was closed – this is expected. Unregistering is
-                    // idempotent, and covers a wrapper that never reached the store.
+                    // Unregistering is idempotent, and covers a wrapper that never reached the store.
                     subscription.cancel()
-                    throw e
+                    // Closed (a CLOSE, a replaced sub id, a disconnect): expected. A backend's own
+                    // CancellationException (a withTimeout inside it) is a failed replay, which
+                    // ends with a CLOSED and gives its slot back like any other.
+                    if (!isActive) throw e
+                    req.fail(e)
                 } catch (e: Exception) {
                     // A backend failure (e.g. an event source's network I/O)
                     // ends the subscription with a machine-readable CLOSED
@@ -759,7 +760,9 @@ class RelaySession(
                     )
                 }
             } catch (e: CancellationException) {
-                throw e
+                // As on the live path: only this REQ's own cancellation is a close.
+                if (!isActive) throw e
+                req.fail(e)
             } catch (e: Exception) {
                 req.fail(e)
             }
@@ -779,9 +782,6 @@ class RelaySession(
 
     companion object {
         private val connectionIdSeq = AtomicLong(0L)
-
-        /** How many COUNTs one connection runs at once before its command loop waits. */
-        private const val MAX_COUNTS_IN_FLIGHT = 16
 
         /** Allocates the next process-unique connection id. */
         fun nextConnectionId(): Long = connectionIdSeq.fetchAndAdd(1L)

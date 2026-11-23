@@ -41,6 +41,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,6 +77,7 @@ class FailedReplayTest {
     ) : IEventStore by inner {
         var down = false
         var hold = false
+        var timesOut = false
 
         private suspend fun gate() {
             if (hold) {
@@ -87,6 +89,8 @@ class FailedReplayTest {
                 }
             }
             if (down) throw IllegalStateException("store down")
+            // A backend deadline that lets its TimeoutCancellationException out.
+            if (timesOut) withTimeout(1) { awaitCancellation() }
         }
 
         override suspend fun <T : Event> query(
@@ -185,6 +189,45 @@ class FailedReplayTest {
         runTest {
             val store = FlakyStore(EventStore(null))
             outageThenRecovery(store, ParkedBackend(store))
+        }
+
+    /** As [outageThenRecovery], with the backend failing on its own deadline instead of an I/O error. */
+    private suspend fun TestScope.timeoutsThenRecovery(
+        store: FlakyStore,
+        backend: SessionBackend,
+    ) {
+        val sink = Frames()
+        val session = session(backend, sink)
+
+        store.timesOut = true
+        repeat(3) { n ->
+            session.receive("""["REQ","slow$n",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+        }
+        val failures = sink.closed()
+        assertEquals(3, failures.size, "each timed-out REQ gets one CLOSED: ${sink.closedReasons()}")
+        assertTrue(failures.all { it.message.startsWith("error:") }, "${sink.closedReasons()}")
+
+        store.timesOut = false
+        sink.messages.clear()
+        session.receive("""["REQ","after",{"kinds":[1]}]""")
+        testScheduler.advanceUntilIdle()
+        assertEquals(emptyList(), sink.closedReasons(), "the timed-out REQs still held their slots")
+        assertEquals(listOf("after"), sink.messages.filterIsInstance<EoseMessage>().map { it.subId })
+    }
+
+    @Test
+    fun timedOutReplaysCloseAndReleaseTheirSlotsOnALiveBackend() =
+        runTest {
+            val store = FlakyStore(EventStore(null))
+            timeoutsThenRecovery(store, LiveEventStore(store, AcceptingIngest))
+        }
+
+    @Test
+    fun timedOutReplaysCloseAndReleaseTheirSlotsOnAParkedBackend() =
+        runTest {
+            val store = FlakyStore(EventStore(null))
+            timeoutsThenRecovery(store, ParkedBackend(store))
         }
 
     private suspend fun TestScope.lateFailureAfterReuse(

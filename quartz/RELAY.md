@@ -498,6 +498,12 @@ like any other policy — you can also split them across several policies:
   with a `NOTICE`; a new subscription past `maxSubscriptions` is `CLOSED` with
   `rate-limited:`. These hooks exist because a policy otherwise can't see the
   raw frame or the live subscription count.
+- **COUNT runs off the command loop**, like a REQ's replay: a COUNT waiting on
+  the backend never holds up the frames behind it (a CLOSE that would free the
+  backend's permit included), and its one answer, `COUNT` or `CLOSED`, can
+  arrive after frames from later commands (NIP-45 pairs them by id). The session
+  does not cap how many run at once: that is the backend's to bound, as it bounds
+  a connection's REQ replays. A disconnect cancels every COUNT still running.
 - **Advertised only**: `minPowDifficulty` (enforce with a PoW policy),
   `authRequired` (use `FullAuthPolicy`), `paymentRequired`, `restrictedWrites`.
 

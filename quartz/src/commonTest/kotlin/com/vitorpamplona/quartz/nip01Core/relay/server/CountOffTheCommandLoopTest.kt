@@ -40,6 +40,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -69,6 +70,7 @@ class CountOffTheCommandLoopTest {
         val permit = Semaphore(1)
         var countGate: CompletableDeferred<Unit>? = null
         var countFailure: String? = null
+        var countTimesOut = false
 
         override suspend fun query(
             ctx: RequestContext,
@@ -89,6 +91,8 @@ class CountOffTheCommandLoopTest {
             permit.withPermit {
                 countGate?.await()
                 countFailure?.let { throw IllegalStateException(it) }
+                // A backend deadline that lets its TimeoutCancellationException out.
+                if (countTimesOut) withTimeout(1) { awaitCancellation() }
                 7
             }
     }
@@ -170,6 +174,22 @@ class CountOffTheCommandLoopTest {
             val closed = connection.frames.messages.single() as ClosedMessage
             assertEquals("c", closed.subId)
             assertTrue(closed.message.startsWith("error:") && closed.message.contains("index down"), closed.message)
+            connection.end()
+        }
+
+    @Test
+    fun aCountWhoseBackendTimesOutGetsOneClosed() =
+        runTest {
+            val backend = OnePermitBackend()
+            backend.countTimesOut = true
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+
+            val closed = connection.frames.messages.single() as ClosedMessage
+            assertEquals("c", closed.subId)
+            assertTrue(closed.message.startsWith("error:"), closed.message)
             connection.end()
         }
 

@@ -211,6 +211,9 @@ class UnreadableFrameAnswerTest {
         )
 
     @Test
+    fun aMalformedCountOnAnOpenReqsIdEndsThatReq() = aReplacementThatCannotRunEndsTheOldSubscription("""["COUNT","live",{"limit":"x"}]""")
+
+    @Test
     fun anUnparsableCloseStillClosesItsSubscription() = aReplacementThatCannotRunEndsTheOldSubscription("""["CLOSE","live",""")
 
     @Test
