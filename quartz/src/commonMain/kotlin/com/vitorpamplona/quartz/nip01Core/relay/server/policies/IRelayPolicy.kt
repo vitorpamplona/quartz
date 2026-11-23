@@ -163,6 +163,12 @@ interface IRelayPolicy {
      * or null to allow it. This is where a `max_subscriptions` cap lives, since
      * a policy otherwise can't see the per-connection subscription count.
      *
+     * Also called for a new NIP-45 COUNT, with [subId] its query id and
+     * [openSubscriptions] the counts on this connection still waiting for an
+     * answer: a COUNT runs beside the connection's reader, so without a cap a
+     * client could queue them without bound. Counts and REQs are counted apart,
+     * so a connection holding its REQs at the cap can still COUNT.
+     *
      * Default: accept.
      */
     fun acceptSubscription(

@@ -542,10 +542,22 @@ deduplicated cross-relay estimate.
 
 A COUNT runs beside the connection's reader, as a REQ's replay does: a
 `countResult` that suspends holds up no EVENT, REQ or CLOSE sent after it, and
-its answer may arrive after theirs (NIP-45 pairs it by id). One connection's
-counts still run one at a time, in arrival order. A COUNT on an id still being
-counted replaces the earlier one, and a CLOSE on that id or a disconnect
-cancels it; a cancelled count is never answered.
+its answer may arrive after theirs (NIP-45 pairs it by id).
+
+- The engine does not pace a connection's counts: they run at once, and how
+  many reach the store together, or in what order, is the backend's call (a
+  read gate in the app). The policy's `acceptSubscription` caps how many may be
+  pending (`RelayLimits.maxSubscriptions`), counted apart from REQs; the excess
+  gets `CLOSED rate-limited:`.
+- A COUNT on an id still pending replaces the earlier one, and a CLOSE on that
+  id (which also ends a REQ of the same id) or a disconnect cancels it. A
+  cancelled count's answer never follows the frame that cancelled it, even
+  from a store that ignores cancellation.
+- The store is asked with the identities authenticated when the COUNT arrived,
+  however long it waits.
+- A store that throws its own `CancellationException` (a timeout on its read)
+  fails the COUNT, or a REQ, with `CLOSED error:`; only the request's own
+  cancellation ends it without an answer.
 
 ## NIP-86 admin over HTTP
 
