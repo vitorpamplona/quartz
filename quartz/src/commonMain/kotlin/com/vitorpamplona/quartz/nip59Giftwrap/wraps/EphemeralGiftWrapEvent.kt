@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
+import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent.Companion.encryptWithThrowawayKey
 import com.vitorpamplona.quartz.utils.TimeUtils
 
 @Immutable
@@ -69,7 +70,7 @@ class EphemeralGiftWrapEvent(
             wrapSigner: NostrSignerSync,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<EphemeralGiftWrapEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, wrapSigner.nip44Encrypt(event.toJson(), recipient.pubKey), createdAt) {
+        ) = eventTemplate(KIND, encryptWithThrowawayKey(event.toJson(), recipient.pubKey, wrapSigner), createdAt) {
             recipient(recipient)
             initializer()
         }

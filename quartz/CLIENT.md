@@ -354,7 +354,10 @@ user's own key:
 - **Anonymous zap requests** (NIP-57): sign with `ZapRequestEvent.sign(template, signer)`, which
   picks a throwaway key for an anonymous request, or call `ZapRequestEvent.create(...)`.
 - **Gift wraps** (NIP-59): use `GiftWrapEvent.create(...)`, which signs each wrap with a fresh
-  key, or `NIP17Factory` to build whole NIP-17 messages.
+  key, or `NIP17Factory` to build whole NIP-17 messages. To open one, `unwrapAndUnsealOrNull`
+  returns the rumor only when the wrap carries a seal (its author is the seal's signer), and
+  `unwrapOrNull` returns the wrapped event only when its own signature verifies (NIP-AC and
+  ContextVM wrap signed events directly).
 
 When you re-publish a replaceable or addressable event (kind 0, 3, 10002, a 30000-range
 record), stamp the new version `TimeUtils.nextCreatedAt(previous?.createdAt)`: now, or one

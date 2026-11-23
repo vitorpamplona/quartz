@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
@@ -40,6 +41,7 @@ import com.vitorpamplona.quartz.nip01Core.tags.people.taggedUserIds
 import com.vitorpamplona.quartz.nip21UriScheme.toNostrUri
 import com.vitorpamplona.quartz.nip40Expiration.expiration
 import com.vitorpamplona.quartz.nip44Encryption.Nip44
+import com.vitorpamplona.quartz.nip44Encryption.Nip44v1
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.seals.SealEvent
 import com.vitorpamplona.quartz.utils.Log
@@ -101,9 +103,20 @@ open class GiftWrapEvent(
 
     override fun isContentEncoded() = true
 
+    /**
+     * The event this wrap carries, its signature verified. NIP-59 wraps a [SealEvent]; other
+     * protocols (NIP-AC calls, ContextVM) wrap a signed event of their own. Either way the wrap's
+     * signature only proves its throwaway key signed it, so an inner event whose own signature
+     * fails is refused: unchecked, anyone able to encrypt to us could hand us an event "from" any
+     * pubkey.
+     *
+     * @throws IllegalStateException when the content is not NIP-44, or the inner signature fails.
+     */
     suspend fun unwrapThrowing(signer: NostrSigner): Event {
         val giftStr = plainContent(signer)
         val gift = fromJson(giftStr)
+
+        check(gift.verify()) { "Gift wrap ${id.take(8)} carries an event whose signature does not verify" }
 
         innerEventId = gift.id
 
@@ -121,21 +134,27 @@ open class GiftWrapEvent(
 
     /**
      * Peels both NIP-59 layers, kind:1059 wrap → kind:13 [SealEvent] → the rumor, where
-     * [unwrapOrNull] peels only the wrap.
+     * [unwrapOrNull] peels only the wrap. The rumor's author is the seal's signer, which the
+     * seal's encryption proves (only that key and ours derive its conversation key).
      *
-     * If the inner content isn't a [SealEvent] (malformed, or a future variant that wraps a
-     * rumor directly), the unwrapped event is returned as-is so callers can still route on
-     * kind. Either step failing returns null.
+     * Null when the wrap does not carry a seal: NIP-59 wraps nothing else, and an event that
+     * skipped the seal names whatever author it likes. Use [unwrapOrNull] for a protocol that
+     * wraps a signed event directly. Either step failing returns null.
      */
     suspend fun unwrapAndUnsealOrNull(signer: NostrSigner): Event? {
         val inner = unwrapOrNull(signer) ?: return null
-        return if (inner is SealEvent) inner.unsealOrNull(signer) else inner
+        return (inner as? SealEvent)?.unsealOrNull(signer)
     }
 
     private suspend fun plainContent(signer: NostrSigner): String {
         if (content.isEmpty()) return ""
 
-        return signer.nip44Decrypt(content, pubKey)
+        // NIP-44 only (v2, or v1 for wraps from before v2): never the NIP-04 forms the lenient
+        // decrypt still opens for old direct messages.
+        check(Nip44.payloadVersion(content) >= Nip44v1.EncryptedInfo.V) { "Gift wrap ${id.take(8)} is not NIP-44 encrypted" }
+
+        // The wrap's key is a throwaway, used once: its conversation key stays out of the cache.
+        return signer.nip44DecryptOnce(content, pubKey)
     }
 
     fun recipientPubKey() = tags.firstTagValue("p")
@@ -172,7 +191,7 @@ open class GiftWrapEvent(
          * is used once, so caching its key would only evict a real peer's (and keep a throwaway
          * private key in a process-wide cache).
          */
-        private fun encryptWithThrowawayKey(
+        internal fun encryptWithThrowawayKey(
             plaintext: String,
             toPublicKey: HexKey,
             wrapSigner: NostrSignerSync,

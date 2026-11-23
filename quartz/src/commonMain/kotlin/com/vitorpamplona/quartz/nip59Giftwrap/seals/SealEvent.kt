@@ -27,6 +27,8 @@ import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip40Expiration.expiration
+import com.vitorpamplona.quartz.nip44Encryption.Nip44
+import com.vitorpamplona.quartz.nip44Encryption.Nip44v1
 import com.vitorpamplona.quartz.nip59Giftwrap.HasInnerEvent
 import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
 import com.vitorpamplona.quartz.utils.Log
@@ -99,6 +101,11 @@ class SealEvent(
 
     private suspend fun plainContent(signer: NostrSigner): String {
         if (content.isEmpty()) return ""
+
+        // A seal's author is proven by its encryption alone, so only NIP-44 qualifies (v2, or v1
+        // for seals from before v2). The NIP-04 forms the lenient decrypt opens carry no MAC: from
+        // any old kind-4 ciphertext between two users, anyone could shape a "seal" from one of them.
+        check(Nip44.payloadVersion(content) >= Nip44v1.EncryptedInfo.V) { "Seal ${id.take(8)} is not NIP-44 encrypted" }
 
         return signer.nip44Decrypt(content, pubKey)
     }
