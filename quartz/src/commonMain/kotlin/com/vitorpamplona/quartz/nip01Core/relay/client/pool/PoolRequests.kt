@@ -419,7 +419,11 @@ class PoolRequests(
                 // Relay-wide capability tracking is independent of any single sub's lock. Run
                 // it first so decideCommandLocked below already sees the block; if it newly
                 // blocked the relay, drop it from the desired set so the pool disconnects.
+                val kindsRefusedBefore = relayRefusals.disallowedKinds(relay.url).size
                 val newlyBlocked = relayRefusals.onRefused(relay.url, msg.message)
+                // A kind the relay named as refused can leave a sub with nothing to send there:
+                // the per-sub relay counts are rebuilt, as for a block.
+                val learnedKinds = relayRefusals.disallowedKinds(relay.url).size != kindsRefusedBefore
 
                 // A `rate-limited:` CLOSED that states a back-off is not re-decided here: the
                 // client hands the current filters to [retryRateLimited], and the relay's
@@ -436,7 +440,7 @@ class PoolRequests(
                         }
                     }
 
-                if (newlyBlocked) updateRelays()
+                if (newlyBlocked || learnedKinds) updateRelays()
 
                 desiredSubListeners.get(msg.subId)?.onClosed(
                     message = msg.message,
