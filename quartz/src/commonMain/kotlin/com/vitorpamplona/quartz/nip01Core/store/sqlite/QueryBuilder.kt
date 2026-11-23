@@ -283,6 +283,35 @@ class QueryBuilder(
         return db.runIdAndTimeQuery(query, onProgress)
     }
 
+    /**
+     * [snapshotIdsForNegentropy] handing each `(created_at, id)` to [onEach] instead of collecting
+     * them, for a caller that builds its storage straight from the rows. Returns how many there
+     * were: up to `maxEntries + 1`, the overflow sentinel.
+     */
+    fun snapshotIdsForNegentropy(
+        filters: List<Filter>,
+        db: SQLiteConnection,
+        maxEntries: Int,
+        onEach: (createdAt: Long, id: String) -> Unit,
+    ): Int {
+        val inner =
+            if (filters.size == 1) {
+                toSnapshotIdsSql(filters.first(), hasher(db))
+            } else {
+                toSnapshotIdsSql(filters, hasher(db))
+            }
+        val sql = if (maxEntries < Int.MAX_VALUE) "SELECT id, created_at FROM (${inner.sql}) LIMIT ${maxEntries + 1}" else inner.sql
+        return db.prepare(sql).use { stmt ->
+            inner.args.forEachIndexed { index, arg -> stmt.bindText(index + 1, arg) }
+            var count = 0
+            while (stmt.step()) {
+                onEach(stmt.getLong(1), stmt.getText(0))
+                count++
+            }
+            count
+        }
+    }
+
     private fun toSnapshotIdsSql(
         filter: Filter,
         hasher: TagNameValueHasher,

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.store.sqlite
 import androidx.sqlite.SQLiteConnection
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
+import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 
 class RightToVanishModule(
@@ -41,6 +42,8 @@ class RightToVanishModule(
         )
 
         db.execSQL("CREATE UNIQUE INDEX event_vanish_key ON event_vanish (pubkey_hash)")
+
+        createOwnerIndex(db)
 
         db.execSQL(
             """
@@ -89,6 +92,38 @@ class RightToVanishModule(
         )
     }
 
+    /**
+     * The index the vanish trigger's delete (`pubkey_owner_hash = ? AND created_at < ?`) walks.
+     * Without it the delete scanned every stored event, under the writer, for each vanish.
+     */
+    fun createOwnerIndex(db: SQLiteConnection) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS $OWNER_INDEX ON event_headers (pubkey_owner_hash, created_at)")
+    }
+
+    /** Upgrade from version 6 to 7: the index behind the vanish delete ([createOwnerIndex]). */
+    fun migrateV6AddOwnerIndex(db: SQLiteConnection) = createOwnerIndex(db)
+
+    /**
+     * The rows [event] will delete once inserted, `(created_at, id)`, at most [limit] of them:
+     * the trigger's own predicate. Empty when [event] is not a vanish request for [relay].
+     */
+    fun rowsVanishedBy(
+        event: Event,
+        relay: NormalizedRelayUrl?,
+        db: SQLiteConnection,
+        limit: Int,
+    ): List<IdAndTime> {
+        if (event !is RequestToVanishEvent || !event.shouldVanishFrom(relay)) return emptyList()
+        return db.prepare("SELECT created_at, id FROM event_headers WHERE pubkey_owner_hash = ? AND created_at < ? LIMIT ?").use { stmt ->
+            stmt.bindLong(1, hasher(db).hash(event.pubKey))
+            stmt.bindLong(2, event.createdAt)
+            stmt.bindLong(3, limit.toLong())
+            val rows = ArrayList<IdAndTime>()
+            while (stmt.step()) rows.add(IdAndTime(stmt.getLong(0), stmt.getText(1)))
+            rows
+        }
+    }
+
     override fun drop(db: SQLiteConnection) {
         db.execSQL("DROP TABLE IF EXISTS event_vanish")
     }
@@ -117,5 +152,9 @@ class RightToVanishModule(
 
     override fun deleteAll(db: SQLiteConnection) {
         db.execSQL("DELETE FROM event_vanish")
+    }
+
+    companion object {
+        const val OWNER_INDEX = "query_by_owner_created"
     }
 }

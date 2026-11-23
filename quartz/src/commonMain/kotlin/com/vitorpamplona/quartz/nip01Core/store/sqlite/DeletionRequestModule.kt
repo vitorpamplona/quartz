@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
+import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 
@@ -111,6 +112,30 @@ class DeletionRequestModule(
             deletedRows += db.changes()
         }
         return deletedRows
+    }
+
+    /**
+     * The rows [event], a kind 5, will delete once inserted, `(created_at, id)`: the delete
+     * statements of [deleteSQL] run as selects, before them. Empty when [event] is no kind 5;
+     * null when it names more than [limit] rows (the caller rebuilds what it tracks instead of
+     * itemizing).
+     */
+    fun rowsDeletedBy(
+        event: Event,
+        db: SQLiteConnection,
+        limit: Int,
+    ): Set<IdAndTime>? {
+        if (event !is DeletionRequestEvent) return emptySet()
+        val rows = LinkedHashSet<IdAndTime>()
+        deleteSQL(event.pubKey, event.createdAt, event.deleteEventIds(), event.deleteAddresses(), hasher(db)).forEach { delete ->
+            val select = "SELECT created_at, id FROM event_headers" + delete.sql.substringAfter("DELETE FROM event_headers") + " LIMIT ${limit + 1}"
+            db.prepare(select).use { stmt ->
+                delete.args.forEachIndexed { i, arg -> stmt.bindAny(i + 1, arg) }
+                while (stmt.step()) rows.add(IdAndTime(stmt.getLong(0), stmt.getText(1)))
+            }
+            if (rows.size > limit) return null
+        }
+        return rows
     }
 
     /**
