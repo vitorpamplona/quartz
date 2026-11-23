@@ -355,18 +355,22 @@ class RelaySession(
             if (draining.fetchAndAdd(1) != 0) return
             var missed = 1
             while (true) {
-                while (true) {
-                    val turn =
-                        lock.withLock {
-                            val head = queue.firstOrNull()
-                            if (head != null && head.ready) queue.removeFirst() else null
-                        } ?: break
+                var turn = takeReady()
+                while (turn != null) {
                     turn.run()
+                    turn = takeReady()
                 }
                 missed = draining.addAndFetch(-missed)
                 if (missed == 0) return
             }
         }
+
+        /** The head turn, taken off the queue, when it is ready. */
+        private fun takeReady(): Turn? =
+            lock.withLock {
+                val head = queue.firstOrNull()
+                if (head != null && head.ready) queue.removeFirst() else null
+            }
     }
 
     /** One place in a [Lane]: a barrier ([message] and [gate] null), a reply, or a request's turn. */
@@ -923,30 +927,32 @@ class RelaySession(
         val replay =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
+                    // Behind what is still going out on its id. Registered only then, so the
+                    // backend holds none of its live events while it waits: a backend caps how
+                    // many it holds before EOSE and forwards the rest early, which would send
+                    // them ahead of the frame this REQ waits for. Events stored meanwhile come
+                    // with the replay.
                     if (turn != null) {
-                        // Behind what is still going out on its id. Registered only now, so the
-                        // backend holds none of its live events while it waits: a backend caps
-                        // how many it holds before EOSE and forwards the rest early, which would
-                        // send them ahead of the frame this REQ waits for. Events stored meanwhile
-                        // come with the replay.
                         turn.await()
-                        if (!req.attachSubscription(live.openSubscription(requestContext, filters, req))) return@launch
+                        req.attachSubscription(live.openSubscription(requestContext, filters, req))
                     }
-                    val subscription = req.subscription ?: return@launch
+                    val subscription = req.subscription
                     // A replay that ignores cancellation keeps producing rows after a
                     // CLOSE: none of them, nor its EOSE, may reach the client.
-                    if (framePrefix == null) {
-                        // Screened path: every event is materialized so the
-                        // policy can veto it per session.
-                        subscription.replay(
-                            onEach = { event -> req.emit { sendScreened(cmd.subId, event) } },
-                            onEose = { req.emit { eose() } },
-                        )
-                    } else {
-                        subscription.replayRaw(
-                            onEachStored = { raw -> req.emit { sendStored(framePrefix, raw, probe) } },
-                            onEose = { req.emit { eose() } },
-                        )
+                    if (subscription != null && !req.closed) {
+                        if (framePrefix == null) {
+                            // Screened path: every event is materialized so the
+                            // policy can veto it per session.
+                            subscription.replay(
+                                onEach = { event -> req.emit { sendScreened(cmd.subId, event) } },
+                                onEose = { req.emit { eose() } },
+                            )
+                        } else {
+                            subscription.replayRaw(
+                                onEachStored = { raw -> req.emit { sendStored(framePrefix, raw, probe) } },
+                                onEose = { req.emit { eose() } },
+                            )
+                        }
                     }
                 } catch (e: CancellationException) {
                     // Unregistering is idempotent, and covers a wrapper that never reached the store.
@@ -1039,11 +1045,18 @@ class RelaySession(
         inline fun emit(send: () -> Unit) {
             sending.addAndFetch(1)
             try {
-                if (!closed && !sessionEnded) send()
+                if (mayEmit()) send()
             } finally {
                 leave()
             }
         }
+
+        /**
+         * Neither this REQ nor the session has ended. A plain function, not read inline in
+         * [emit]: Kotlin/Native 2.4.21 fails to link (an NPE in its dataflow builder) when the
+         * inlined body reads the session's private flag through a synthetic accessor.
+         */
+        fun mayEmit(): Boolean = !closed && !sessionEnded
 
         /**
          * A frame of this REQ is done. The last one out of a closed REQ sends the CLOSED [fail]
