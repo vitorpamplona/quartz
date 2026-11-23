@@ -280,34 +280,69 @@ suspend fun INostrClient.downloadTrustNetwork(
 }
 
 /**
- * Applies what [header]'s provider changed since the last sync, without re-downloading what
- * the index already holds. Providers publish in batches that share a `created_at` (one
- * Brainstorm run signed 155k cards within a few seconds), so re-asking a time window would
- * re-download the whole batch every time.
+ * The hourly catch-up: one paged REQ for every card and kind 5 [header]'s provider published
+ * after the cursor, merged into [index]. Every card held is at or before the cursor (the sync's
+ * EOSE, kept in the index's header), so the REQ brings only what the index lacks: a recompute's
+ * new cards (a replacement is always newer than the card it replaces) and the deletions after
+ * them. Returns null when nothing was published since, the common case.
  *
- *  1. **Is there anything new?** NIP-45 COUNTs ([trustNetworkNews]): the relay's cards in the
- *     update window, newer than the cursor, and in all, each against the cards (entries and
- *     tombstones) held for the same range. A few bytes each. All equal means nothing changed,
- *     and the update ends there, so it is cheap enough to run on every app open.
- *  2. **What changed, the plain way:** a REQ for the cards and kind 5s strictly newer than the
- *     cursor. Every card held is at or before the cursor, so this asks only for what the index
- *     lacks: a recompute's new cards (a replacement is always newer than the card it replaces)
- *     and the deletions after them. The cursor is this sync's EOSE, kept in the index's header.
- *  3. **Still apart?** The same COUNTs, against what is held now. Equal means the REQ caught up,
- *     and the update ends there, as does a relay that cannot count (the weekly
- *     [reconcileTrustNetwork] covers it). Only when they still differ (a card that reached the
- *     relay late, at or before the cursor's second; a card it stopped serving; a REQ cut short)
- *     does a NIP-77 reconcile of every card against every id held fetch what is missing and
- *     drop what the relay no longer serves.
+ * [ids] is read only when the REQ brought something: it is the index's id column (12 MB at 300k
+ * cards), which the merge rewrites.
  *
- * So negentropy runs only when a plain REQ could not bring the index level, not on every change
- * a provider publishes: each reconcile costs the relay a negentropy state over the whole set.
- * Relays without NIP-77 keep what the REQ got.
- *
- * Needs the current [ids] column (not only the index) because the merged index rewrites it.
- * Pass [knownNews] when the caller already asked [trustNetworkNews], so the counts are not repeated.
+ * No COUNT and no negentropy, however often the provider signs: an on-demand provider signs a
+ * card every few minutes, and a reconcile per change put a negentropy state on the relay per
+ * client per hour. What a REQ past the cursor cannot see is the weekly [reconcileTrustNetwork]'s
+ * to find: the rest of a run still reaching the relay at the cursor's own second, a card the relay
+ * stopped serving, or the tail of a second holding more cards than the relay's page (paging moves
+ * by whole seconds, so [fetchAllPages] steps past such a second).
  */
 @OptIn(ExperimentalAtomicApi::class)
+suspend fun INostrClient.catchUpTrustNetwork(
+    header: TrustNetworkHeader,
+    index: TrustNetworkIndex,
+    relay: NormalizedRelayUrl,
+    progress: TrustNetworkProgress? = null,
+    ids: suspend () -> TrustNetworkIds,
+): TrustNetworkSyncResult? {
+    val startedAt = TimeUtils.now()
+    val provider = header.provider
+    val newer = header.syncCursor + 1
+    val invalid = AtomicInt(0)
+
+    // What arrives first, on its own: the index is merged in only if anything did.
+    val builder = TrustNetworkBuilder(provider)
+    val filters = listOf(trustNetworkFilter(provider, newer), trustNetworkDeletionFilter(provider, newer))
+    val paged = verifying(builder, invalid, null, progress, seeded = 0) { submit -> fetchAllPages(relay, filters, IDLE_MS) { submit(it) } }
+    val fetched = builder.cardCount
+    val detail = "req $fetched (${paged.end}${paged.message?.let { ": $it" } ?: ""})"
+    if (paged.drained && fetched == 0 && !builder.hasRemovals && builder.newestCreatedAt == 0L) return null
+
+    val held = ids()
+    // A walk cut short (the relay dropped, went silent, refused) moves nothing: the next one asks again.
+    if (!paged.drained) return TrustNetworkSyncResult(header, index, held, complete = false, invalid = invalid.load(), received = fetched, detail = detail)
+
+    builder.addAll(index, held)
+    val cursor = cursorAfter(header.syncCursor, builder.newestCreatedAt, startedAt)
+    // A kind 5 that named nothing here still moves the cursor past it, or the next update finds it again.
+    if (fetched == 0 && !builder.hasRemovals) {
+        return TrustNetworkSyncResult(header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(held), index, held, complete = true, invalid = invalid.load(), received = 0, detail = detail, unchanged = true)
+    }
+    val (newIndex, newIds) = builder.build()
+    return TrustNetworkSyncResult(
+        header = header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(newIds),
+        index = newIndex,
+        ids = newIds,
+        complete = true,
+        invalid = invalid.load(),
+        received = fetched,
+        detail = detail,
+    )
+}
+
+/**
+ * [catchUpTrustNetwork] with the id column already read. [knownNews] that says nothing changed
+ * ends it before the REQ, as before.
+ */
 suspend fun INostrClient.updateTrustNetwork(
     header: TrustNetworkHeader,
     index: TrustNetworkIndex,
@@ -316,73 +351,9 @@ suspend fun INostrClient.updateTrustNetwork(
     progress: TrustNetworkProgress? = null,
     knownNews: TrustNetworkNews? = null,
 ): TrustNetworkSyncResult {
-    val startedAt = TimeUtils.now()
-    val provider = header.provider
-    val newer = header.syncCursor + 1
-    val news =
-        knownNews ?: trustNetworkNews(
-            header,
-            relay,
-            held = header.heldAtCursor ?: ids.countSince(header.windowStart()),
-            heldAfter = header.heldAfterCursor ?: ids.countSince(header.syncCursor + 1),
-            heldTotal = header.heldTotal ?: ids.total,
-        )
-    if (!news.any) {
-        return TrustNetworkSyncResult(header.copy(lastUpdate = startedAt), index, ids, complete = true, invalid = 0, received = 0, detail = "nothing new", unchanged = true)
-    }
-
-    val invalid = AtomicInt(0)
-
-    // What [index] became after [builder]: the same instances when nothing arrived or went, so
-    // nothing is rewritten and no feed rebuilds.
-    fun built(builder: TrustNetworkBuilder): Pair<TrustNetworkIndex, TrustNetworkIds> = if (builder.cardCount == index.size + ids.tombstones && !builder.hasRemovals) index to ids else builder.build()
-
-    fun result(
-        caughtUp: Pair<TrustNetworkIndex, TrustNetworkIds>,
-        cursor: Long,
-        complete: Boolean,
-        received: Int,
-        detail: String,
-    ): TrustNetworkSyncResult {
-        val (newIndex, newIds) = caughtUp
-        // A kind 5 that named nothing here still moves the cursor past it, or the next update finds it again.
-        val newHeader = header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(newIds)
-        val unchanged = complete && newIndex === index
-        return TrustNetworkSyncResult(newHeader, newIndex, newIds, complete = complete, invalid = invalid.load(), received = if (unchanged) 0 else received, detail = detail, unchanged = unchanged)
-    }
-
-    // 2. The plain REQ.
-    val builder = TrustNetworkBuilder(provider, initialCapacity = index.size + ids.tombstones + 1024)
-    builder.addAll(index, ids)
-    val before = builder.cardCount
-    val filters = listOf(trustNetworkFilter(provider, newer), trustNetworkDeletionFilter(provider, newer))
-    val paged = verifying(builder, invalid, null, progress, seeded = before) { submit -> fetchAllPages(relay, filters, IDLE_MS) { submit(it) } }
-    val fetched = builder.cardCount - before
-    val caughtUp = built(builder)
-    val cursor = cursorAfter(header.syncCursor, builder.newestCreatedAt, startedAt)
-    val reqDetail = "req $fetched (${paged.end}${paged.message?.let { ": $it" } ?: ""})"
-
-    // 3. Level now? A relay that cannot count leaves it to the REQ.
-    if (paged.drained && countsAgree(header.copy(syncCursor = cursor).withHeldCounts(caughtUp.second), relay) != false) {
-        return result(caughtUp, cursor, complete = true, received = fetched, detail = reqDetail)
-    }
-
-    val diff = reconcileIds(relay, trustNetworkFilter(provider), caughtUp.second.negentropyIndex())
-    // No NIP-77: what the REQ got is all there is.
-    if (diff == null) return result(caughtUp, cursor, complete = paged.drained, received = fetched, detail = "$reqDetail; no reconcile")
-    if (diff.isEmpty) return result(caughtUp, cursor, complete = true, received = fetched, detail = "$reqDetail; need 0, gone 0")
-
-    val merged = TrustNetworkBuilder(provider, initialCapacity = caughtUp.first.size + caughtUp.second.tombstones + diff.need.size)
-    merged.addAll(caughtUp.first, caughtUp.second)
-    val seeded = merged.cardCount
-    val reconciled = applyDiff(merged, relay, diff, invalid, progress, seeded = seeded, seededIds = caughtUp.second)
-    return result(
-        caughtUp = merged.build(),
-        cursor = cursorAfter(cursor, merged.newestCreatedAt, startedAt),
-        complete = reconciled.complete,
-        received = fetched + merged.cardCount - seeded + reconciled.gone,
-        detail = "$reqDetail; need ${reconciled.need}, gone ${reconciled.gone}",
-    )
+    val unchanged = { TrustNetworkSyncResult(header.copy(lastUpdate = TimeUtils.now()), index, ids, complete = true, invalid = 0, received = 0, detail = "nothing new", unchanged = true) }
+    if (knownNews != null && !knownNews.any) return unchanged()
+    return catchUpTrustNetwork(header, index, relay, progress) { ids } ?: unchanged()
 }
 
 /**

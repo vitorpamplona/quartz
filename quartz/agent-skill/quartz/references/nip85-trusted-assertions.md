@@ -109,10 +109,12 @@ NIP-09 kind 5 `a`-tagging `30382:<provider>:<subject>` (`GrapeRankPublisher` in
 `reconcileTrustNetwork` (`TrustNetworkSync.kt`) fetch it; `TrustNetworkBuilder` applies
 supersession, rank-0/kind-5 removal and tombstones; `TrustNetworkCodec` persists it.
 
-An update asks the relay three NIP-45 `COUNT`s first and ends there when they match. When they
-do not, it REQs the cards and kind 5s newer than the header's `syncCursor` (every card held is at
-or before it), counts again, and only reconciles over NIP-77 when the counts still disagree, so
-a provider's routine recompute costs a `REQ`, not a negentropy session over the whole set.
+The hourly catch-up, `catchUpTrustNetwork`, is one paged REQ for the cards and kind 5s newer than
+the header's `syncCursor` (every card held is at or before it): no COUNT, no negentropy, however
+often the provider signs. It reads the id column only when the REQ brought something, and returns
+null when nothing was published. The weekly `reconcileTrustNetwork` catches what a REQ past the
+cursor cannot see: the rest of a run still reaching the relay at the cursor's own second, a card
+the relay dropped, the tail of a second denser than the relay's page.
 
 ## Stability (2026-10)
 
