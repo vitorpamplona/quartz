@@ -540,6 +540,13 @@ The engine frames `count`/`approximate`/`hll` onto the wire
 relays over the same corpus merge with `HyperLogLog.merge(...)` into a
 deduplicated cross-relay estimate.
 
+A COUNT runs beside the connection's reader, as a REQ's replay does: a
+`countResult` that suspends holds up no EVENT, REQ or CLOSE sent after it, and
+its answer may arrive after theirs (NIP-45 pairs it by id). One connection's
+counts still run one at a time, in arrival order. A COUNT on an id still being
+counted replaces the earlier one, and a CLOSE on that id or a disconnect
+cancels it; a cancelled count is never answered.
+
 ## NIP-86 admin over HTTP
 
 `Nip86HttpHandler` (`nip86RelayManagement/server/`) runs the whole NIP-86 request: size cap,

@@ -54,12 +54,16 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegOpenCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegentropySettings
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -118,6 +122,20 @@ class RelaySession(
     /** Open REQs by sub id. */
     private val subscriptions = LargeCache<String, OpenReq>()
 
+    /**
+     * COUNTs not yet answered, by query id, so a re-COUNT on the id, a CLOSE on it or a
+     * disconnect can stop one. Its own namespace: a REQ never replaces a COUNT, nor the reverse.
+     * Written by the reader and by each count's completion, hence concurrent.
+     */
+    private val counts = ConcurrentMap<String, Job>()
+
+    /**
+     * Runs this connection's COUNTs one at a time, in arrival order (the lock is fair). A COUNT
+     * no longer holds up the frames behind it, but a client still cannot put more than one
+     * count on the engine per connection, as it could not when COUNT ran on the reader.
+     */
+    private val countLane = Mutex()
+
     /** [sink] when it takes live frames in parts, decided once per connection. */
     private val liveFrameSink = sink as? LiveFrameSink
 
@@ -167,9 +185,16 @@ class RelaySession(
             true
         } ?: false
 
+    private fun cancelCount(queryId: String): Boolean =
+        counts.remove(queryId)?.let {
+            it.cancel()
+            true
+        } ?: false
+
     fun cancelAllSubscriptions() {
         subscriptions.forEach { _, req -> req.cancel() }
         subscriptions.clear()
+        counts.snapshot().forEach { (queryId, job) -> if (counts.remove(queryId, job)) job.cancel() }
         negentropy.clear()
     }
 
@@ -372,7 +397,21 @@ class RelaySession(
         }
     }
 
-    private suspend fun handleCount(cmd: CountCmd) {
+    // -- NIP-45: COUNT --------------------------------------------------------
+
+    /**
+     * Answers a COUNT off the reader, as a REQ's replay is: a count that suspends (a ranked
+     * recall can take seconds) holds up no EVENT, REQ or CLOSE behind it. NIP-45 pairs the answer
+     * with its query by id, so it may now arrive after the answers to later frames. A count that
+     * does not suspend still answers before this returns (UNDISPATCHED), as it did.
+     *
+     * A COUNT on an id whose count is still running replaces it, as a REQ replaces a REQ: the
+     * older one is cancelled and never answered. The policy runs here, on the reader, so it sees
+     * the connection exactly as the frames before this one left it (an AUTH just committed).
+     */
+    private fun handleCount(cmd: CountCmd) {
+        cancelCount(cmd.queryId)
+
         val result = policy.accept(cmd)
         if (result is PolicyResult.Rejected) {
             send(ClosedMessage(cmd.queryId, result.reason, result.params))
@@ -382,17 +421,31 @@ class RelaySession(
         // Policy may rewrite filters to match the user's access level.
         val filters = (result as PolicyResult.Accepted).cmd.filters
 
-        val countResult =
-            try {
-                store.countResult(requestContext, filters)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
-                return
+        val count =
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                countLane.withLock {
+                    // A count that ignores cancellation may still return after a CLOSE, a
+                    // replacing COUNT or a disconnect: its answer is not sent.
+                    val countResult =
+                        try {
+                            store.countResult(requestContext, filters)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            if (isActive) send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
+                            return@launch
+                        }
+                    if (isActive) send(CountMessage(cmd.queryId, countResult))
+                }
             }
 
-        send(CountMessage(cmd.queryId, countResult))
+        // Held only while the count runs. A count that already finished registers nothing; one
+        // that finishes right after this put removes itself (the handler runs at once on a
+        // completed job), and only while the id still maps to it, not to a replacement.
+        if (!count.isCompleted) {
+            counts[cmd.queryId] = count
+            count.invokeOnCompletion { counts.remove(cmd.queryId, count) }
+        }
     }
 
     /**
@@ -652,9 +705,17 @@ class RelaySession(
         }
 
     // -- NIP-01: CLOSE --------------------------------------------------------
+
+    /**
+     * Ends the REQ with this id, and stops a COUNT with this id that has not answered yet:
+     * Quartz's own client sends CLOSE on a query id to drop a count it no longer needs. Neither
+     * is answered, as NIP-01 sends CLOSED only for an end the relay chose. An id that is neither
+     * open nor counting is unknown, a COUNT already answered included.
+     */
     private fun handleClose(cmd: CloseCmd) {
-        val cancelled = cancelSubscription(cmd.subId)
-        if (!cancelled) {
+        val cancelledReq = cancelSubscription(cmd.subId)
+        val cancelledCount = cancelCount(cmd.subId)
+        if (!cancelledReq && !cancelledCount) {
             send(ClosedMessage(cmd.subId, "error: no such subscription"))
         }
     }
