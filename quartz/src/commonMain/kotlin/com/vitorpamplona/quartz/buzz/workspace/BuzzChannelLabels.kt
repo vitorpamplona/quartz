@@ -21,7 +21,10 @@
 package com.vitorpamplona.quartz.buzz.workspace
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.core.fastAny
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstOrNull
 import com.vitorpamplona.quartz.nip01Core.core.fastForEach
+import com.vitorpamplona.quartz.nip29RelayGroups.metadata.GroupMetadataEvent
 
 /**
  * Buzz channel labels (NIP-CL, buzz `2f79374f4`).
@@ -91,6 +94,39 @@ object BuzzChannelLabels {
             }
         }
         return hasType && hasCreator
+    }
+
+    /**
+     * [looksLikeBuzzGroupState], or the shape a Buzz relay wrote before buzz `8bb49a1b6`: the
+     * channel-type `t` alone (no creator `P`), so it also counts when it is the first `t` and the
+     * group's `d` is a UUID, which every Buzz channel id is ([newBuzzChannelId]). A NIP-29 group
+     * whose first topic happens to be `stream` has a short, human id and doesn't match.
+     */
+    fun looksLikeBuzzGroupStateOfAnyVersion(event: Event?): Boolean {
+        if (event == null) return false
+        if (looksLikeBuzzGroupState(event)) return true
+        val firstTopic = event.tags.fastFirstOrNull { it.size > 1 && it[0] == TAG_NAME }?.get(1) ?: return false
+        if (firstTopic !in RESERVED) return false
+        val groupId = event.tags.fastFirstOrNull { it.size > 1 && it[0] == "d" }?.get(1) ?: return false
+        return UUID.matches(groupId)
+    }
+
+    private val UUID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+    /** The tag a Buzz relay puts on the group state of a channel left out of the channel directory. */
+    const val UNLISTED_TAG = "unlisted"
+
+    /**
+     * Whether a Buzz channel is **listed**: open (not `private`), a stream or a forum (or of no
+     * type, as an older relay wrote it), and not `unlisted`. Buzz keeps the names of listed channels
+     * unique, so a client can tell a create or rename it would refuse before sending. [metadata] is
+     * the channel's relay-signed 39000.
+     */
+    fun isListed(metadata: GroupMetadataEvent): Boolean {
+        if (metadata.isPrivate()) return false
+        val type = metadata.buzzChannelType()
+        if (type != null && type != BUZZ_CHANNEL_TYPE_STREAM && type != BUZZ_CHANNEL_TYPE_FORUM) return false
+        return !metadata.tags.fastAny { it.isNotEmpty() && it[0] == UNLISTED_TAG }
     }
 
     /**
