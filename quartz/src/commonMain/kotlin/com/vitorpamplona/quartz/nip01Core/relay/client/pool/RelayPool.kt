@@ -140,10 +140,23 @@ class RelayPool(
         }
     }
 
+    /**
+     * Dials every relay that is not connected and whose reconnect backoff has run out. It used to
+     * dial every relay at once, ignoring the backoff: each time the app came back to the
+     * foreground, every dead relay in the pool was dialed again. A change that makes the backoff
+     * moot (a new network, Tor coming up) clears it first with [resetBackoff].
+     */
     fun connect() {
         relays.forEach { url, relay ->
-            relay.connect()
+            relay.connectAndSyncFiltersIfDisconnected()
         }
+    }
+
+    /** The relays in the pool with no open connection. */
+    fun disconnectedRelays(): List<IRelayClient> {
+        val down = ArrayList<IRelayClient>()
+        relays.forEach { _, relay -> if (!relay.isConnected()) down.add(relay) }
+        return down
     }
 
     fun connectIfDisconnected() {

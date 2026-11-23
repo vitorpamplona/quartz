@@ -328,6 +328,9 @@ class NostrClientSubscriptionLifecycleTest {
                 builder.listeners.getValue(url).onClosed(1000, "server closed")
                 advanceTimeBy(500)
                 runCurrent()
+                // The relay dropped a session it had just opened: it is redialed once its backoff
+                // (wall-clock seconds) has passed, not at once.
+                Thread.sleep(3_100)
                 client.connect()
                 advanceTimeBy(1_000)
                 runCurrent()
