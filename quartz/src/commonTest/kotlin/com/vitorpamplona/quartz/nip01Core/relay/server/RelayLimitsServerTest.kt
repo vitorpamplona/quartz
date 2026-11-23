@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.EventSource
 import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.EmptyPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.RateLimitPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.RateLimiter
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.RelayLimits
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -154,6 +156,43 @@ class RelayLimitsServerTest {
             assertEquals(1, closed.size)
             assertTrue(closed[0].contains("\"too-long\""))
             assertTrue(closed[0].contains("invalid:"), closed[0])
+
+            server.close()
+        }
+
+    @Test
+    fun aReqTheCapRefusesSpendsNoRateLimitToken() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val source =
+                object : EventSource {
+                    override fun events(
+                        ctx: RequestContext,
+                        filters: List<Filter>,
+                    ): Flow<Event> = emptyFlow()
+                }
+            // Two REQs a minute per client, one open at a time.
+            val limiter = RateLimiter(perMinute = 1, burst = 2)
+            val server =
+                EventSourceServer(
+                    source,
+                    policyBuilder = { RateLimitPolicy(null, limiter) },
+                    parentContext = dispatcher,
+                    limits = RelayLimits(maxSubscriptions = 1),
+                )
+            val collector = Collector()
+            val session = server.connect(collector.send)
+
+            session.receive("""["REQ","a",{"kinds":[1]}]""")
+            // Over the cap: refused, and it must not cost the client one of its two REQs.
+            session.receive("""["REQ","b",{"kinds":[1]}]""")
+            session.receive("""["CLOSE","a"]""")
+            session.receive("""["REQ","c",{"kinds":[1]}]""")
+
+            val closed = collector.containing("CLOSED")
+            assertEquals(1, closed.size, "$closed")
+            assertTrue(closed[0].contains("\"b\"") && closed[0].contains("too many concurrent subscriptions"), closed[0])
+            assertTrue(collector.containing("EOSE").any { it.contains("\"c\"") }, "c never opened: ${collector.messages}")
 
             server.close()
         }

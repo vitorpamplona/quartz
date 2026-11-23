@@ -69,7 +69,7 @@ class ConnectionRegistry(
      */
     fun closeAll() {
         connections.forEach { _, session ->
-            session.cancelAllSubscriptions()
+            session.end()
             listener.onDisconnect(session.id)
         }
         connections.clear()

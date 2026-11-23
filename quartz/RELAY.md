@@ -496,19 +496,38 @@ like any other policy — you can also split them across several policies:
   or CLOSE with `CLOSED` on its sub id (a REQ so refused also ends the open
   subscription it would have replaced), and only a frame with no readable id
   with a `NOTICE`; a new subscription past `maxSubscriptions` is `CLOSED` with
-  `rate-limited:`, once the per-command checks passed, so an over-long sub id is
-  `invalid:` even at the cap. These hooks exist because a policy otherwise can't
-  see the raw frame or the live subscription count.
+  `rate-limited:`, but an over-long sub id is `invalid:` even at the cap
+  (`acceptSubscription` checks `maxSubidLength` first). The cap runs before the
+  per-command `accept`, so a REQ it refuses spends none of a `RateLimitPolicy`
+  budget. These hooks exist because a policy otherwise can't see the raw frame
+  or the live subscription count.
 - **COUNT runs off the command loop**, like a REQ's replay: a COUNT waiting on
   the backend never holds up the frames behind it (a CLOSE that would free the
   backend's permit included), and its one answer, `COUNT` or `CLOSED`, can
   arrive after frames from later commands (NIP-45 pairs them by id). The session
   does not cap how many run at once: that is the backend's to bound, as it bounds
-  a connection's REQ replays. A disconnect cancels every COUNT still running.
-  A COUNT repeated on one query id answers after the earlier one, so the last
-  answer a client gets is for the filters it sent last. A backend failure,
-  an `Error` such as `TODO()`'s included, answers `CLOSED error:` (a REQ's too);
-  only a fatal VM error is rethrown.
+  a connection's REQ replays. A backend failure, an `Error` such as `TODO()`'s
+  included, answers `CLOSED error:` (a REQ's too); only a fatal VM error is
+  rethrown.
+- **CLOSE, a replacement and a refusal cancel at once.** A COUNT is cancelled by
+  a COUNT on its id (it replaces the running one, as a REQ replaces a REQ), by a
+  CLOSE on its id, by a refusal on its id (a policy's, an invalid or unparsable
+  frame, `acceptMessage`), and by a disconnect. A cancelled COUNT never answers,
+  even when its backend ignores the cancellation and returns anyway, and a CLOSE
+  that cancels one sends nothing, as on a REQ. Only a COUNT whose answer was
+  already going out is not stopped: that answer is sent, and whatever follows on
+  the id (the replacement's answer, the refusal's `CLOSED`, a late CLOSE's
+  `no such subscription`) goes out after it, without the command loop waiting.
+  A REQ is the same: once a CLOSE, a replacing REQ or a refusal on its id has
+  been handled, no new frame of it (stored or live `EVENT`, `EOSE`, its
+  `CLOSED error:`) starts, and one already going out is sent before anything
+  that follows on the id; a replacing REQ's replay waits for it. A backend that
+  keeps working after its cancellation keeps its resources until it stops:
+  bounding that is the backend's job, not the session's.
+- **Ending a session** (`close`, the server's shutdown) also stops a REQ or COUNT
+  the command loop was registering at that moment on another thread, and the
+  session reads no frame after it. `cancelAllSubscriptions` alone drops what the
+  session holds and leaves it serving.
 - **Advertised only**: `minPowDifficulty` (enforce with a PoW policy),
   `authRequired` (use `FullAuthPolicy`), `paymentRequired`, `restrictedWrites`.
 

@@ -53,10 +53,14 @@ import kotlin.test.assertTrue
  * answering a connection that is gone.
  */
 class CloseWhileRegisteringTest {
-    /** Counts wait for the test; a REQ's query parks at its live tail until cancelled. */
-    private class Backend : SessionBackend {
+    /**
+     * A REQ's query sends its EOSE inline, then parks at its live tail until cancelled. Counts
+     * wait for the test, or with [inline] answer 5 without suspending.
+     */
+    private class Backend(
+        val inline: Boolean = false,
+    ) : SessionBackend {
         val counts = mutableListOf<CompletableDeferred<Int>>()
-        var queries = 0
 
         override suspend fun query(
             ctx: RequestContext,
@@ -64,7 +68,6 @@ class CloseWhileRegisteringTest {
             onEach: (Event) -> Unit,
             onEose: () -> Unit,
         ) {
-            queries++
             onEose()
             awaitCancellation()
         }
@@ -73,6 +76,7 @@ class CloseWhileRegisteringTest {
             ctx: RequestContext,
             filters: List<Filter>,
         ): Int {
+            if (inline) return 5
             val answer = CompletableDeferred<Int>()
             counts.add(answer)
             return answer.await()
@@ -122,6 +126,7 @@ class CloseWhileRegisteringTest {
     private class Fixture(
         test: TestScope,
         backend: SessionBackend,
+        closesWhileAccepting: Boolean = true,
     ) {
         val scope = CoroutineScope(StandardTestDispatcher(test.testScheduler) + Job())
         val frames = Frames()
@@ -129,7 +134,7 @@ class CloseWhileRegisteringTest {
         val session = RelaySession(backend, policy, scope, frames, onClose = {})
 
         init {
-            policy.session = session
+            if (closesWhileAccepting) policy.session = session
         }
 
         fun running() = scope.coroutineContext[Job]!!.children.count()
@@ -162,6 +167,7 @@ class CloseWhileRegisteringTest {
                 testScheduler.advanceUntilIdle()
 
                 assertEquals(0, f.running(), "the REQ's coroutine still parks at its live tail")
+                assertTrue(f.frames.messages.none { it is EoseMessage }, "got ${f.frames.messages.map { it.toJson() }}")
             } finally {
                 f.scope.cancel()
             }
@@ -178,6 +184,85 @@ class CloseWhileRegisteringTest {
 
                 assertEquals(0, live.liveSubscriptionCount, "the REQ is still registered for live events")
                 assertTrue(f.frames.messages.none { it is EoseMessage }, "got ${f.frames.messages.map { it.toJson() }}")
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aCountThatAnswersInlineAsTheSessionClosesNeverAnswers() =
+        runTest {
+            val f = Fixture(this, Backend(inline = true))
+            try {
+                f.session.receive("""["COUNT","c",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertTrue(f.frames.messages.isEmpty(), "got ${f.frames.messages.map { it.toJson() }}")
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aClosedSessionRunsNoCountEvenOneThatAnswersInline() =
+        runTest {
+            val f = Fixture(this, Backend(inline = true), closesWhileAccepting = false)
+            try {
+                f.session.close()
+                f.session.receive("""["COUNT","c",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertTrue(f.frames.messages.isEmpty(), "got ${f.frames.messages.map { it.toJson() }}")
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aClosedSessionOpensNoReqEvenOneThatEosesInline() =
+        runTest {
+            val f = Fixture(this, Backend(), closesWhileAccepting = false)
+            try {
+                f.session.close()
+                f.session.receive("""["REQ","s",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertTrue(f.frames.messages.isEmpty(), "got ${f.frames.messages.map { it.toJson() }}")
+                assertEquals(0, f.running())
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aSessionKeepsServingAfterItsSubscriptionsAreCancelled() =
+        runTest {
+            val backend = Backend()
+            val f = Fixture(this, backend, closesWhileAccepting = false)
+            try {
+                f.session.receive("""["REQ","a",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+                // Not a disconnect: the session drops what it holds and carries on.
+                f.session.cancelAllSubscriptions()
+                f.session.receive("""["REQ","b",{"kinds":[1]}]""")
+                f.session.receive("""["COUNT","c",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+                backend.counts.single().complete(3)
+                testScheduler.advanceUntilIdle()
+
+                assertEquals(
+                    listOf("a", "b"),
+                    f.frames.messages
+                        .filterIsInstance<EoseMessage>()
+                        .map { it.subId },
+                )
+                assertEquals(
+                    listOf("c" to 3),
+                    f.frames.messages
+                        .filterIsInstance<CountMessage>()
+                        .map { it.queryId to it.result.count },
+                )
+                assertEquals(1, f.running(), "REQ b is still open at its live tail")
             } finally {
                 f.scope.cancel()
             }
