@@ -141,7 +141,9 @@ class GroupEditMetadataEvent(
          * the relay would refuse; and the 39000's tags this edit doesn't manage are not echoed, since
          * Buzz stamps relay-internal ones (`join_role`, `auto_join`, `P`, ...) a channel admin may not
          * set. A NIP-29 relay gets [currentMetadata]'s unmanaged tags verbatim
-         * ([GroupMetadataEvent.unmanagedTags]), so an edit doesn't erase them.
+         * ([GroupMetadataEvent.unmanagedTags]), so an edit doesn't erase them, and an edit that lifts
+         * `private` or `closed` from [currentMetadata] also carries the legacy `public` / `open` tag
+         * ([liftedFlags]).
          */
         fun buildEdit(
             groupId: String,
@@ -166,7 +168,7 @@ class GroupEditMetadataEvent(
                 about = about,
                 picture = picture,
                 banner = banner,
-                status = status,
+                status = if (isBuzz) status else status + liftedFlags(currentMetadata, status),
                 hashtags = if (isBuzz) emptyList() else hashtags,
                 geohashes = geohashes,
                 parent = parent,
@@ -178,6 +180,22 @@ class GroupEditMetadataEvent(
                 labelTags.forEach { add(it) }
             }
         }
+
+        /**
+         * The legacy `public` / `open` flags for the restrictions [status] lifts from [current].
+         * NIP-29's kind 9002 carries "all the fields of group-metadata", so leaving `private` out
+         * makes the group public; but fiatjaf/relay29 (khatru29 and the relays built on it) keeps a
+         * flag it is not told to drop, and only clears `private` on a `public` tag and `closed` on an
+         * `open` one, the tags it writes in its own 39000. Relays that follow the spec ignore them.
+         */
+        private fun liftedFlags(
+            current: GroupMetadataEvent?,
+            status: Set<GroupMetadataEvent.GroupStatus>,
+        ): Set<GroupMetadataEvent.GroupStatus> =
+            buildSet {
+                if (current?.isPrivate() == true && GroupMetadataEvent.GroupStatus.PRIVATE !in status) add(GroupMetadataEvent.GroupStatus.PUBLIC)
+                if (current?.isClosed() == true && GroupMetadataEvent.GroupStatus.CLOSED !in status) add(GroupMetadataEvent.GroupStatus.OPEN)
+            }
     }
 }
 
