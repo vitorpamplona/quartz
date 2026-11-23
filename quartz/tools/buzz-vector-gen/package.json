@@ -1,0 +1,10 @@
+{
+  "name": "quartz-buzz-vector-gen",
+  "private": true,
+  "description": "Drives a running buzz-relay to regenerate quartz's Buzz interop vectors (see README.md).",
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "2.26.1",
+    "ws": "8.18.3"
+  }
+}
