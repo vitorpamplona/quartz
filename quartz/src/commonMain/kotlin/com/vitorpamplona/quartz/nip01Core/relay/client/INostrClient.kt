@@ -106,6 +106,13 @@ interface INostrClient : AutoCloseable {
      */
     fun syncFilters(relay: IRelayClient)
 
+    /**
+     * Re-sends what [relay] refused, or held back, for want of authentication: called once an
+     * AUTH there was accepted. Unlike [syncFilters] (a fresh connection's full replay), what the
+     * relay is already serving is left alone. The default is [syncFilters].
+     */
+    fun syncAfterAuth(relay: IRelayClient) = syncFilters(relay)
+
     fun subscribe(
         subId: String = newSubId(),
         filters: Map<NormalizedRelayUrl, List<Filter>>,

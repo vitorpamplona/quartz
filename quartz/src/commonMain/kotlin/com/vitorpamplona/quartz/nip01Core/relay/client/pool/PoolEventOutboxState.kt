@@ -73,6 +73,22 @@ class PoolEventOutboxState(
         }
     }
 
+    /** Adds [more] to the relays still owed this event, keeping those already owed. */
+    fun addRelays(more: Set<NormalizedRelayUrl>) {
+        lock.withLock {
+            remaining.addAll(more)
+            remainingCount = remaining.size
+        }
+    }
+
+    /** Adds every relay still owed this event to [into]. */
+    fun addRemainingTo(into: MutableSet<NormalizedRelayUrl>) {
+        lock.withLock { into.addAll(remaining) }
+    }
+
+    /** Whether [url] answered this event `auth-required:` and still owes it: an accepted AUTH re-sends it. */
+    fun isWaitingForAuth(url: NormalizedRelayUrl): Boolean = lock.withLock { url in remaining && authWaits?.containsKey(url) == true }
+
     fun isDone() = remainingCount == 0
 
     /** A copy of the relays still owed this event. */

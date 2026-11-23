@@ -509,6 +509,14 @@ class NostrClient(
         }
     }
 
+    override fun syncAfterAuth(relay: IRelayClient) {
+        if (isActive()) {
+            activeRequests.syncAfterAuth(relay.url, relay::sendFromSync)
+            activeCounts.syncAfterAuth(relay.url, relay::sendFromSync)
+            eventOutbox.syncAfterAuth(relay.url, relay::sendFromSync)
+        }
+    }
+
     /**
      * when a new connection starts, resets the state
      */

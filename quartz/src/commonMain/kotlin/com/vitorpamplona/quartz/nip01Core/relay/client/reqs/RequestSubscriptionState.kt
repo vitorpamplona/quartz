@@ -114,6 +114,13 @@ class RequestSubscriptionState<T : Any> {
          * events are live and match [lastKnownFilters], the old filters, until the REQ goes.
          */
         var streamingOld = false
+
+        /**
+         * The relay's EOSE for the REQ on this connection carried the NIP-42 `"auth"` hint: it
+         * may hold back matches until we authenticate, so an accepted AUTH re-sends the REQ even
+         * though it is LIVE ([PoolRequests.syncAfterAuth]).
+         */
+        var authHinted = false
     }
 
     private val states = ConcurrentMap<T, RelayState>()
@@ -221,6 +228,13 @@ class RequestSubscriptionState<T : Any> {
         }
     }
 
+    /** The EOSE that made [reference] LIVE said more may come after an AUTH; see [RelayState.authHinted]. */
+    fun onAuthHint(reference: T) {
+        mutable(reference).authHinted = true
+    }
+
+    fun isAuthHinted(reference: T): Boolean = peek(reference)?.authHinted ?: false
+
     fun onEose(reference: T) {
         val state = mutable(reference)
         // Reaching EOSE means the relay accepted and finished the REQ; clear any refusal.
@@ -253,6 +267,7 @@ class RequestSubscriptionState<T : Any> {
         state.filters = filters
         state.lastKnownFilters = filters
         state.streamingOld = false
+        state.authHinted = false
     }
 
     /**
@@ -285,6 +300,7 @@ class RequestSubscriptionState<T : Any> {
         state.lastKnownFilters = filters
         state.unwritten = false
         state.streamingOld = false
+        state.authHinted = false
     }
 
     /**
@@ -315,6 +331,7 @@ class RequestSubscriptionState<T : Any> {
         state.standsFor = null
         state.unwritten = false
         state.streamingOld = false
+        state.authHinted = false
     }
 
     fun connecting(reference: T) {
@@ -326,6 +343,7 @@ class RequestSubscriptionState<T : Any> {
             it.standsFor = null
             it.unwritten = false
             it.streamingOld = false
+            it.authHinted = false
         }
     }
 
@@ -336,6 +354,7 @@ class RequestSubscriptionState<T : Any> {
             it.standsFor = null
             it.unwritten = false
             it.streamingOld = false
+            it.authHinted = false
         }
     }
 
