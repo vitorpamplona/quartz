@@ -145,4 +145,15 @@ interface SessionBackend {
         if (entries.size > maxEntries) return null
         return NegentropyServerSession.sealVector(entries)
     }
+
+    /**
+     * [sealedNegentropyStorage] for the caller described by [ctx], as [query] and [count] are:
+     * a backend whose answers depend on who asks (an observer-relative store, STORE-O01) answers a
+     * NEG-OPEN the same set it answers that caller's REQ. The default ignores [ctx].
+     */
+    suspend fun sealedNegentropyStorage(
+        ctx: RequestContext,
+        filters: List<Filter>,
+        maxEntries: Int,
+    ): IStorage? = sealedNegentropyStorage(filters, maxEntries)
 }
