@@ -61,3 +61,5 @@ internal actual fun sha256Into(
 ) {
     cryptoSha256Into(out, data, length)
 }
+
+internal actual val SHA256_STREAMS: Boolean = false
