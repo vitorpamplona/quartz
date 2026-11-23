@@ -1,7 +1,7 @@
 # Library-wide allocation and GC-pressure audit
 
 **Date:** 2026-11-23
-**Status:** measurements and ranked backlog; no production code changed yet
+**Status:** measurements and ranked backlog; item 20 (`EventInterner` leak) fixed
 **Harnesses:**
 - `quartz/src/jvmTest/.../nip01Core/prodbench/IngestAllocationBenchmark.kt` (ingest stages, retained size)
   `./gradlew :quartz:jvmTest --tests "*.IngestAllocationBenchmark" -i`
@@ -278,14 +278,14 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
 
 ### Tier 3: retained memory and leaks
 
-20. **`EventInterner` (JVM/Android) never removes the entry of an event that was collected,
-    unless that id is looked up again.**
-    - Where: `EventInterner.jvmAndroid.kt:36-62`, a `ConcurrentHashMap<HexKey,
-      WeakReference<Event>>` with no `ReferenceQueue`.
-    - Cost: each dead entry keeps its map node, its `WeakReference` and the 104 B id String,
-      about 170 B per event ever interned.
-    - Fix: subclass `WeakReference` to carry the id and drain a `ReferenceQueue` on each
-      `intern`, as `RelayUrlInterner.jvmAndroid.kt` already does.
+20. **Fixed: `EventInterner` (JVM/Android) kept the entry of every collected event.** It removed
+    an entry only when that id was looked up again. Each dead entry kept its map node, its
+    `WeakReference` and the 104 B id String, about 170 B per event ever interned.
+    - Repro: intern 100,000 events and drop them. After GC, 99,000 entries remained.
+    - Fix: entries now go through a `ReferenceQueue`, swept on `intern` and `get`, the same way
+      `RelayUrlInterner.jvmAndroid.kt` does it.
+    - Pinned by `EventInternerTest.collectedEventsLeaveTheMapWithoutTheirIdsBeingLookedUpAgain`,
+      which fails on the old code with 1,001 entries.
 21. **`BaseNoteEvent` keeps empty collections in its caches.** About 170 B retained per cached
     note.
     - Where:

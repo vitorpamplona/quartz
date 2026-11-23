@@ -22,20 +22,33 @@ package com.vitorpamplona.quartz.nip01Core.cache.interning
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * JVM/Android actual: ConcurrentHashMap of WeakReference, pre-sized
- * for the expected hot working set. Dead entries are reclaimed
- * lazily on access (see [intern] and [get]) — when a weak ref's
- * referent has been GC'd, the map slot is removed atomically and
- * replaced if a fresh event takes its place.
+ * JVM/Android actual: a [ConcurrentHashMap] of weak references, pre-sized for the expected hot
+ * working set and swept through a [ReferenceQueue].
+ *
+ * The queue is what keeps the map bounded by the live events. Most ids are seen once (a note
+ * scrolls past and is never asked for again), so sweeping a dead entry only when its own id is
+ * looked up again would leave every one-off event's key, reference and map node in the map for
+ * the life of the process (~170 B each).
  */
 actual class EventInterner {
-    private val cache = ConcurrentHashMap<HexKey, WeakReference<Event>>(INITIAL_CAPACITY, LOAD_FACTOR)
+    private val cache = ConcurrentHashMap<HexKey, Ref>(INITIAL_CAPACITY, LOAD_FACTOR)
+    private val collected = ReferenceQueue<Event>()
+
+    /** Remembers its key, so the sweep can remove exactly this entry and not a newer one. */
+    private class Ref(
+        val id: HexKey,
+        event: Event,
+        queue: ReferenceQueue<Event>,
+    ) : WeakReference<Event>(event, queue)
 
     actual fun intern(event: Event): Event {
+        sweep()
+
         // Fast path: existing canonical is still alive.
         cache[event.id]?.get()?.let { return it }
 
@@ -44,21 +57,19 @@ actual class EventInterner {
         // (resolving the rare case where their ref was already GC'd
         // by retrying through the slow path).
         while (true) {
-            val ref = WeakReference(event)
-            val existing = cache.putIfAbsent(event.id, ref)
-            if (existing == null) return event
-            val canonical = existing.get()
-            if (canonical != null) return canonical
+            val existing = cache.putIfAbsent(event.id, Ref(event.id, event, collected)) ?: return event
+            existing.get()?.let { return it }
             // Existing entry's referent was GC'd; drop it and retry.
             cache.remove(event.id, existing)
         }
     }
 
     actual fun get(id: HexKey): Event? {
+        sweep()
         val ref = cache[id] ?: return null
         val event = ref.get()
         if (event != null) return event
-        // Self-cleaning: drop the dead entry so the map doesn't bloat.
+        // Collected but not queued yet: drop the dead entry now.
         cache.remove(id, ref)
         return null
     }
@@ -67,6 +78,17 @@ actual class EventInterner {
 
     actual fun clear() {
         cache.clear()
+        while (collected.poll() != null) {
+            // drains the references the GC queued
+        }
+    }
+
+    /** Removes the entries whose event was collected. Two-argument remove spares a slot re-filled since. */
+    private fun sweep() {
+        while (true) {
+            val ref = collected.poll() as? Ref ?: return
+            cache.remove(ref.id, ref)
+        }
     }
 
     actual companion object {

@@ -125,6 +125,34 @@ class EventInternerTest {
     }
 
     @Test
+    fun collectedEventsLeaveTheMapWithoutTheirIdsBeingLookedUpAgain() {
+        // Ids seen once, as most are: nothing ever calls get() or intern() with them again, so
+        // only the reference-queue sweep can remove their entries.
+        internAndDiscardMany(interner, 1_000)
+        assertEquals(1_000, interner.size())
+
+        val keeper = signer.sign(TextNoteEvent.build("keeper", createdAt = 5_000))
+        for (i in 0..40) {
+            System.gc()
+            Thread.sleep(20)
+            // Any intern sweeps whatever the GC has queued so far.
+            interner.intern(keeper)
+            if (interner.size() == 1) break
+        }
+        assertEquals(1, interner.size(), "entries of collected events should be swept")
+        assertSame(keeper, interner.get(keeper.id))
+    }
+
+    private fun internAndDiscardMany(
+        interner: EventInterner,
+        count: Int,
+    ) {
+        for (i in 0 until count) {
+            interner.intern(signer.sign(TextNoteEvent.build("once-$i", createdAt = 2_000L + i)))
+        }
+    }
+
+    @Test
     fun defaultInstanceIsShared() {
         val a = signer.sign(TextNoteEvent.build("hello", createdAt = 100))
         val canonical = EventInterner.Default.intern(a)
