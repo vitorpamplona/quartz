@@ -71,7 +71,7 @@ fun List<Entity>.eventIdsTo(destination: ArrayList<HexKey>?): ArrayList<HexKey>?
             when (val entity = this[i]) {
                 is NEvent -> entity.hex
                 is NNote -> entity.hex
-                is NEmbed -> entity.event.id
+                is NEmbed -> if (entity.isVerified) entity.event.id else null
                 else -> null
             } ?: continue
         if (out == null) out = ArrayList(4)
@@ -107,7 +107,7 @@ fun List<Entity>.addressIdsTo(destination: ArrayList<String>?): ArrayList<String
         val address =
             when (val entity = this[i]) {
                 is NAddress -> entity.aTag()
-                is NEmbed -> if (entity.event is AddressableEvent) entity.event.addressTag() else null
+                is NEmbed -> if (entity.event is AddressableEvent && entity.isVerified) entity.event.addressTag() else null
                 else -> null
             } ?: continue
         if (out == null) out = ArrayList(4)

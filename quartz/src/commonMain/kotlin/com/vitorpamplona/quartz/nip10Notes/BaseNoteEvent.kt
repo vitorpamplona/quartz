@@ -79,8 +79,9 @@ open class BaseNoteEvent(
             }
         }
 
-        citedUsersCache = citedUsers
-        return citedUsers
+        val result = citedUsers.ifEmpty { emptySet() }
+        citedUsersCache = result
+        return result
     }
 
     fun findCitations(): Set<HexKey> {
@@ -90,17 +91,20 @@ open class BaseNoteEvent(
 
         val citations = mutableSetOf<String>()
 
-        findIndexTagsWithEventsOrAddresses(content, tags, citations).toMutableSet()
+        findIndexTagsWithEventsOrAddresses(content, tags, citations)
         citedNIP19().forEach { entity ->
             when (entity) {
                 is NEvent -> citations.add(entity.hex)
                 is NAddress -> citations.add(entity.aTag())
                 is NNote -> citations.add(entity.hex)
-                is NEmbed -> citations.add(entity.event.id)
+                // Only an embed whose signature checks out cites its id (see NEmbed.isVerified).
+                is NEmbed -> if (entity.isVerified) citations.add(entity.event.id)
             }
         }
 
-        citedNotesCache = citations
-        return citations
+        // Most notes cite nothing: share the empty set instead of keeping an empty HashSet each.
+        val result = citations.ifEmpty { emptySet() }
+        citedNotesCache = result
+        return result
     }
 }

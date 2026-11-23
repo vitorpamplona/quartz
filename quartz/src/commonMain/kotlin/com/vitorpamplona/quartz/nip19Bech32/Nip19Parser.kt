@@ -120,6 +120,33 @@ object Nip19Parser {
         }
 
     /**
+     * How many `nembed1…` a single content decodes. Each is a gunzip of up to
+     * [NEmbed.MAX_INFLATED_BYTES] and a JSON parse, run on ingest for every note that cites one,
+     * per relay copy: unbounded, one note of a few hundred embeds cost a few hundred of those.
+     */
+    const val MAX_NEMBEDS_PER_CONTENT = 8
+
+    /** The longest `nembed1…` (in chars) worth decoding: past this its gzip alone exceeds what we inflate. */
+    const val MAX_NEMBED_CHARS = 256 * 1024
+
+    /** [entityAt] into [out], skipping an nembed past [MAX_NEMBEDS_PER_CONTENT] or [MAX_NEMBED_CHARS]. */
+    private fun addEntityAt(
+        out: ArrayList<Entity>,
+        lowerType: String,
+        s: String,
+        start: Int,
+        end: Int,
+    ) {
+        if (lowerType == "nembed1") {
+            if (end - start > MAX_NEMBED_CHARS) return
+            var embeds = 0
+            for (i in out.indices) if (out[i] is NEmbed) embeds++
+            if (embeds >= MAX_NEMBEDS_PER_CONTENT) return
+        }
+        entityAt(lowerType, s, start, end)?.let { out.add(it) }
+    }
+
+    /**
      * The entity spelled by `s[start, end)`, whose prefix is [lowerType] (lowercase, with its `1`),
      * or null. Decodes in place, so the content scan allocates nothing for a candidate that turns out
      * not to be an entity.
@@ -380,7 +407,7 @@ object Nip19Parser {
         // while working on the JVM.
         val returningList = ArrayList<Entity>()
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+            addEntityAt(returningList, prefix, content, start, dataEnd)
         }
         return returningList.ifEmpty { emptyList() }
     }
@@ -394,7 +421,7 @@ object Nip19Parser {
         val returningList = ArrayList<Entity>()
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { prefix, start, dataEnd, end ->
             if (!isDomainLabelAt(content, dataEnd, end)) {
-                entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+                addEntityAt(returningList, prefix, content, start, dataEnd)
             }
         }
         return returningList.ifEmpty { emptyList() }
@@ -404,7 +431,7 @@ object Nip19Parser {
     fun parseAllEvents(content: String): List<Entity> {
         val returningList = ArrayList<Entity>()
         forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
+            addEntityAt(returningList, prefix, content, start, dataEnd)
         }
         return returningList.ifEmpty { emptyList() }
     }
@@ -415,7 +442,8 @@ fun decodePublicKey(key: String): ByteArray =
         is NSec -> parsed.toPubKey()
         is NPub -> parsed.hex.hexToByteArray()
         is NProfile -> parsed.hex.hexToByteArray()
-        else -> Hex.decode(key) // crashes on purpose
+        // Hex must be hex: Hex.decode reads a non-hex char as -1, so a typo was a different key.
+        else -> if (Hex.isHex(key)) Hex.decode(key) else throw IllegalArgumentException("Not a public key: $key")
     }
 
 fun decodePrivateKeyAsHexOrNull(key: String): HexKey? =
@@ -429,7 +457,8 @@ fun decodePrivateKeyAsHexOrNull(key: String): HexKey? =
             is NEmbed -> null
             is NRelay -> null
             is NAddress -> null
-            else -> Hex.decode(key).toHexKey()
+            // 32 bytes of hex or nothing: a non-hex char (O for 0) used to decode as 0xF.
+            else -> Hex.decode64OrNull(key)?.toHexKey()
         }
     } catch (e: Exception) {
         if (e is CancellationException) throw e
@@ -457,7 +486,7 @@ fun decodePublicKeyAsHexOrNull(key: String): HexKey? =
             is NEmbed -> null
             is NRelay -> null
             is NAddress -> null
-            else -> Hex.decode(key).toHexKey()
+            else -> if (Hex.isHex(key)) Hex.decode(key).toHexKey() else null
         }
     } catch (e: Exception) {
         if (e is CancellationException) throw e
@@ -495,7 +524,7 @@ fun decodeEventIdAsHexOrNull(key: String): HexKey? =
             is NAddress -> parsed.aTag()
             is NEmbed -> null
             is NRelay -> null
-            else -> Hex.decode(key).toHexKey()
+            else -> Hex.decode64OrNull(key)?.toHexKey()
         }
     } catch (e: Exception) {
         if (e is CancellationException) throw e
