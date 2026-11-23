@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.hexToByteArrayOrNull
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.ConcurrentLruCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 
 /**
  * Resolves the owner-rooted authority state of a Concord community from its
@@ -71,6 +72,20 @@ data class AuthorityResolver private constructor(
     // Derived from the constructor values, so deliberately outside the data class's equality.
     private val communityId: ByteArray by lazy { communityIdHex.hexToByteArray() }
     private val banlistEidHex: String by lazy { banlistCoordinateHex(communityId) }
+
+    /**
+     * `grant_locator(community_id, member)` per member asked about, memoized: it is an HKDF, and the
+     * gates ask [citationSatisfied] for every edition of every fold. Only members holding a Grant
+     * head are ever derived (anyone else's citation fails before the coordinate matters).
+     */
+    private val grantCoordinates = ConcurrentMap<String, String>()
+
+    private fun grantCoordinateOf(member: String): String? {
+        grantCoordinates[member]?.let { return it }
+        val coordinate = grantCoordinateOrNull(communityId, member) ?: return null
+        grantCoordinates[member] = coordinate
+        return coordinate
+    }
 
     /**
      * A member's honored Grant head: the edition every reader folded their roles from, and so
@@ -269,7 +284,7 @@ data class AuthorityResolver private constructor(
         val m = actor.lowercase()
         if (m == ownerLower) return null
         val head = grantHeads[m] ?: return null
-        val coordinate = grantCoordinateOrNull(communityId, m) ?: return null
+        val coordinate = grantCoordinateOf(m) ?: return null
         return AuthorityCitation(coordinate.hexToByteArray(), head.version, head.hashHex.hexToByteArray())
     }
 
@@ -287,8 +302,9 @@ data class AuthorityResolver private constructor(
     ): Boolean {
         val m = actor.lowercase()
         if (m == ownerLower) return true
-        val coordinate = grantCoordinateOrNull(communityId, m) ?: return false
-        return citationMatches(citation, coordinate, grantHeads[m])
+        val head = grantHeads[m] ?: return false
+        val coordinate = grantCoordinateOf(m) ?: return false
+        return citationMatches(citation, coordinate, head)
     }
 
     /** [citationSatisfied] for [edition]'s author and `vac`. */
@@ -858,21 +874,31 @@ data class AuthorityResolver private constructor(
                 return authorRank < targetRank
             }
 
-            val byHash = allBanlist.associateBy { it.hashHex }
+            // The head readers honour among the editions below version `v` (gated, authority first),
+            // memoized per version: what an edition at `v` acts on (CORD-04 §3: "each version acts
+            // on what the newest version the Roster admits below it left ... It is never judged on
+            // what its own `prev` names alone: its author picks that, and could name a branch where
+            // nothing stood"). Judging the delta against the author's own `prev` let a junior BAN
+            // holder fork from before a senior's ban, add nothing, and lift it by omission.
+            val headsBelow = HashMap<Long, ControlEdition?>()
+
+            fun headBelow(version: Long): ControlEdition? {
+                if (headsBelow.containsKey(version)) return headsBelow[version]
+                val below = allBanlist.filter { it.version < version }
+                val head = if (below.isEmpty()) null else EditionFold.foldEntityGated(below, rank = ::tieRank, gate = ::banGate)
+                headsBelow[version] = head
+                return head
+            }
+
             val effective = HashMap<String, Set<String>>()
 
-            // The list an edition actually establishes: its parent's effective list, plus only the
-            // additions its signer may make and minus only the removals its signer may make. Walks
-            // the parent chain, so it is memoized; `visiting` also terminates a prevHash cycle.
-            fun effectiveList(
-                edition: ControlEdition,
-                visiting: MutableSet<String>,
-            ): Set<String> {
-                effective[edition.hashHex]?.let { return it }
-                if (!visiting.add(edition.hashHex)) return emptySet()
+            // The list an edition actually establishes: the list the head below its version left,
+            // plus only the additions its signer may make and minus only the removals its signer may
+            // make. Each step goes strictly down in version, so it terminates; memoized per edition.
+            fun effectiveList(edition: ControlEdition): Set<String> {
+                effective[edition.rumorId]?.let { return it }
 
-                val parent = edition.prevHash?.toHexKey()?.let { byHash[it] }
-                val base = parent?.let { effectiveList(it, visiting) } ?: emptySet()
+                val base = headBelow(edition.version)?.let { effectiveList(it) } ?: emptySet()
                 val author = edition.author.lowercase()
                 val claimed = ConcordJson.decodeBanlist(edition.content)?.mapTo(HashSet()) { it.lowercase() }
 
@@ -887,8 +913,7 @@ data class AuthorityResolver private constructor(
                         out
                     }
 
-                visiting.remove(edition.hashHex)
-                effective[edition.hashHex] = result
+                effective[edition.rumorId] = result
                 return result
             }
 
@@ -896,7 +921,7 @@ data class AuthorityResolver private constructor(
             // middle of the chain must not orphan the authorized ones chained above it (which, on
             // a banlist, would silently resurrect every ban a later unban had cleared).
             val banHead = EditionFold.foldEntityGated(allBanlist, rank = ::tieRank, gate = ::banGate)
-            val banned = banHead?.let { effectiveList(it, HashSet()) } ?: emptySet()
+            val banned = banHead?.let { effectiveList(it) } ?: emptySet()
 
             return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles.toMap(), banned, grantHeads, null, AuthorityHeads(headEditions))
         }

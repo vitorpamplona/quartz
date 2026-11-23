@@ -71,8 +71,8 @@ typealias AuthorRank = (author: String) -> Long
  * §Edition Hashing & Chain Integrity).
  *
  * Rules enforced here:
- *  - **Genesis anchoring** — a chain starts at the lowest-version edition with no
- *    `ep` (prev hash).
+ *  - **Genesis anchoring** — a chain starts at an edition with no `ep` (prev hash),
+ *    the highest-authority one first (by the walk's tie-break), then the lowest version.
  *  - **Anti-rollback floor** — when the caller supplies an [EntityFloor] (an
  *    entity head it already folded), the walk is *anchored at that floor*: it must
  *    find the exact edition (version + hash) it already knew. If it cannot, the
@@ -91,8 +91,9 @@ typealias AuthorRank = (author: String) -> Long
  *    structural fold) is the whole test, so an unrooted forgery is still dropped
  *    there. Amethyst always re-folds the whole buffer from scratch, so it is
  *    structurally always a fresh joiner; it holds no prior chain to fail closed on.
- *  - **Intact chain / no downgrades** — the head advances to `version + 1` only
- *    when that edition's `ep` cites the current head's [ControlEdition.hash].
+ *  - **Intact chain / no downgrades** — the walk advances to `version + 1` only
+ *    through editions whose `ep` cites an edition already reached, following every
+ *    sibling, and the head is the tie-break winner at the highest version reached.
  *    Lower or non-chaining versions are ignored.
  *  - **Deterministic convergence** — at equal version the spec's tie-break is
  *    "authority first, then the lower rumor id, never the author-settable
@@ -204,9 +205,8 @@ object EditionFold {
         for (e in editions) byVersion.getOrPut(e.version) { ArrayList() }.add(e)
 
         val lowest = byVersion.keys.filter { it >= floor.version }.minOrNull() ?: return null
-        var head = floorAnchor(byVersion[lowest] ?: return null, lowest, floor, tie) ?: return null
-        while (true) head = nextLink(byVersion, head, tie) ?: break
-        return head
+        val anchor = floorAnchor(byVersion[lowest] ?: return null, lowest, floor, tie) ?: return null
+        return walkUp(byVersion, anchor, tie)
     }
 
     /**
@@ -228,15 +228,30 @@ object EditionFold {
             else -> null
         }
 
-    /** The [tie] winner among the `version + 1` editions citing [head], or null when the chain ends there. */
-    private fun nextLink(
+    /**
+     * The head the walk from [anchor] reaches: every `version + 1` edition citing **any** edition
+     * already reached is reached too, through every sibling, and the head is the [tie] winner at
+     * the highest version reached (CORD-04 §1: "a fork's branch that the chain went on to extend is
+     * followed, never stranded behind a sibling that won a tiebreak and went nowhere"). Picking one
+     * sibling per version instead let a higher-ranked member's dead-end fork at an old version
+     * strand every later edition built on the sibling it beat, the owner's included.
+     */
+    private fun walkUp(
         byVersion: Map<Long, List<ControlEdition>>,
-        head: ControlEdition,
+        anchor: ControlEdition,
         tie: Comparator<ControlEdition>,
-    ): ControlEdition? =
-        byVersion[head.version + 1]
-            ?.filter { it.prevHash != null && it.prevHash.toHexKey() == head.hashHex }
-            ?.minWithOrNull(tie)
+    ): ControlEdition {
+        var level: List<ControlEdition> = listOf(anchor)
+        var version = anchor.version
+        while (true) {
+            val reached = level.mapTo(HashSet(level.size)) { it.hashHex }
+            val next = byVersion[version + 1]?.filter { it.prevHash != null && it.prevHash.toHexKey() in reached }
+            if (next.isNullOrEmpty()) break
+            level = next
+            version++
+        }
+        return if (level.size == 1) level[0] else level.minWith(tie)
+    }
 
     /**
      * Groups mixed [editions] by entity id and folds each to its head, honoring the
@@ -321,7 +336,7 @@ object EditionFold {
         val byVersion = HashMap<Long, MutableList<ControlEdition>>()
         for (e in editions) byVersion.getOrPut(e.version) { ArrayList() }.add(e)
 
-        var head =
+        val head =
             if (floor != null) {
                 // Anchored at what we already folded. Below the floor is history we absorbed, so
                 // the anchor is the lowest offered version at or above it, and only two shapes
@@ -339,22 +354,29 @@ object EditionFold {
                         return floor.known
                     }
             } else {
-                // Anchor at the genesis (lowest version with no prev hash), preferring the
-                // tie-break winner. When no genesis is present — the compacted head of a
-                // Refounded community carries a prev citing the prior epoch — a fresh joiner
-                // anchors at the lowest-version edition it does hold and accepts it as the
-                // baseline (CORD-04 §1 / CORD-06 §3). `editions` is non-empty here.
+                // Anchor at the genesis (an edition with no prev hash), chosen AUTHORITY first by
+                // [tie], then the lower version. Version first let anyone holding the bit mint a
+                // genesis below the real one (a `"0"` version parses, CORD-04 §1) and anchor the
+                // whole entity on their own chain, stranding the owner's. Among equal authority a
+                // version-0 genesis loses to one at 1 or above: "0" never anchors a chain over one.
+                // When no genesis is present — the compacted head of a Refounded community carries
+                // a prev citing the prior epoch — a fresh joiner anchors at the lowest-version
+                // edition it does hold and accepts it as the baseline (CORD-04 §1 / CORD-06 §3).
+                // `editions` is non-empty here.
+                val genesisOrder =
+                    tie
+                        .then(compareBy<ControlEdition> { it.version < 1 })
+                        .then(compareBy { it.version })
                 val byVersionThenTie = compareBy<ControlEdition> { it.version }.then(tie)
                 editions
                     .filter { it.prevHash == null }
-                    .minWithOrNull(byVersionThenTie)
+                    .minWithOrNull(genesisOrder)
                     ?: editions.minWithOrNull(byVersionThenTie)
                     ?: return null
             }
 
-        // Walk the chain upward while the next version chains from the current head.
-        while (true) head = nextLink(byVersion, head, tie) ?: break
-        return head
+        // Walk the chain upward through every branch that keeps chaining.
+        return walkUp(byVersion, head, tie)
     }
 
     /**

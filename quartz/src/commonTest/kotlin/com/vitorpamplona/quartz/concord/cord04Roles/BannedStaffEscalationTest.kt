@@ -89,7 +89,7 @@ class BannedStaffEscalationTest {
         id: String,
         json: String,
         author: String = owner,
-        version: Long = 0,
+        version: Long = 1,
         prev: ByteArray? = null,
     ) = edition(ControlEntityKind.ROLE, id, version, prev, json, author, "role-$id-$version-$author")
 
@@ -98,7 +98,7 @@ class BannedStaffEscalationTest {
         member: String,
         roleIds: List<String>,
         author: String,
-        version: Long = 0,
+        version: Long = 1,
         prev: ByteArray? = null,
     ) = edition(
         ControlEntityKind.GRANT,
@@ -245,7 +245,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun aBannedAdminRevokesTheSurvivingModerators() {
-        val editions = community() + ownerBansAlice + grant(bobGrantEntity, bob, emptyList(), author = alice, version = 1, prev = bobGrantV0.hash)
+        val editions = community() + ownerBansAlice + grant(bobGrantEntity, bob, emptyList(), author = alice, version = 2, prev = bobGrantV0.hash)
 
         val r = ControlFixtures.resolve(editions, owner)
 
@@ -255,7 +255,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun aBannedAdminDeletesEveryRoleBeneathThem() {
-        val tombstone = role(modRole, """{"name":"Mod","position":5,"permissions":"24","deleted":true}""", author = alice, version = 1, prev = modRoleV0.hash)
+        val tombstone = role(modRole, """{"name":"Mod","position":5,"permissions":"24","deleted":true}""", author = alice, version = 2, prev = modRoleV0.hash)
 
         val r = ControlFixtures.resolve(community() + ownerBansAlice + tombstone, owner)
 
@@ -378,7 +378,7 @@ class BannedStaffEscalationTest {
             community() +
                 // the baseline Mod role carries no MANAGE_ROLES, so give bob one that can grant
                 role(seniorRole, """{"name":"Senior","position":5,"permissions":"95"}""") +
-                grant(bobGrantEntity, bob, listOf(seniorRole), author = owner, version = 1, prev = bobGrantV0.hash) +
+                grant(bobGrantEntity, bob, listOf(seniorRole), author = owner, version = 2, prev = bobGrantV0.hash) +
                 role(juniorRole, """{"name":"Junior","position":9,"permissions":"8"}""") +
                 // bob promotes carol himself, while in good standing
                 grant("39".repeat(32), carol, listOf(juniorRole), author = bob) +
