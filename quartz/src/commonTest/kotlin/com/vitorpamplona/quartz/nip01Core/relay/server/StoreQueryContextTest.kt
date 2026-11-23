@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.server.policies.EmptyPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.FullAuthPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.IRelayPolicy
 import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
@@ -54,11 +55,7 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class StoreQueryContextTest {
-    private val pubkey = "46fcbe3065eaf1ae7811465924e48923363ff3f526bd6f73d7c184b16bd8ce4d"
-    private val sig = "4aa5264965018fa12a326686ad3d3bd8beae3218dcc83689b19ca1e6baeb791531943c15363aa6707c7c0c8b2d601deca1f20c32078b2872d356cdca03b04cce"
     private val relayUrl = NormalizedRelayUrl("wss://relay.example.com/")
-
-    private fun hexId(n: Int): String = n.toString().padStart(64, '0')
 
     /**
      * Delegates everything to a real SQLite store but records the
@@ -125,18 +122,17 @@ class StoreQueryContextTest {
 
             // NIP-42 handshake, mirroring NostrServerAuthTest.
             val challenge = (OptimizedJsonMapper.fromJsonToMessage(messages[0]) as AuthMessage).challenge
-            val auth =
-                RelayAuthEvent(
-                    id = hexId(99),
-                    pubKey = pubkey,
-                    createdAt = TimeUtils.now(),
-                    tags =
-                        arrayOf(
-                            arrayOf("relay", relayUrl.url),
-                            arrayOf("challenge", challenge),
-                        ),
-                    content = "",
-                    sig = sig,
+            val signer = NostrSignerSync()
+            val pubkey = signer.pubKey
+            val auth: RelayAuthEvent =
+                signer.sign(
+                    TimeUtils.now(),
+                    RelayAuthEvent.KIND,
+                    arrayOf(
+                        arrayOf("relay", relayUrl.url),
+                        arrayOf("challenge", challenge),
+                    ),
+                    "",
                 )
             session.receive("""["AUTH",${auth.toJson()}]""")
             assertTrue(session.requestContext.authenticatedUsers.contains(pubkey))

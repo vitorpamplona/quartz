@@ -270,9 +270,9 @@ val server = NostrServer(
 )
 ```
 
-Always stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's challenge, relay
-and timestamp but not its signature, and a `policyBuilder` replaces the default `VerifyPolicy`.
-On its own, anyone can AUTH as any pubkey, and EVENTs with bad signatures are stored.
+Stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's challenge, relay,
+timestamp and signature, but a `policyBuilder` replaces the default `VerifyPolicy`: on its own,
+EVENTs with bad signatures are stored.
 
 A relay that answers at more than one address (clearnet and a `.onion`) passes them all:
 `FullAuthPolicy(relays = setOf(clearnet, onion))` (or `OptionalAuthPolicy(setOf(…))`) accepts an
