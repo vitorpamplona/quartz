@@ -53,7 +53,8 @@ package com.vitorpamplona.quartz.utils.concurrent
  * (`commons` has an equivalent `KmpLock`, but `commons` depends on `quartz` and not
  * the reverse, so quartz cannot use it — keep the two in sync by hand.)
  *
- * Unlike the primitive it replaces, the JVM/Android actual is **reentrant**, so an
+ * Unlike the primitive it replaces, every actual is **reentrant** (JVM/Android, Apple, and the
+ * Linux spin, which tracks its owning thread), so an
  * accidental re-entry degrades into a no-op rather than a self-deadlock. Callers
  * should still keep I/O and listener callbacks outside the critical section — that
  * discipline is about holding the lock briefly, not about avoiding a hang.
