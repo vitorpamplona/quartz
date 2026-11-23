@@ -374,12 +374,15 @@ object Nip19Parser {
      * heap dump, 2,541 of 4,573 live Matchers were running this regex.
      */
     fun parseAll(content: String): List<Entity> {
-        // Created on the first entity: most content cites none, and callers cache the result.
-        var returningList: ArrayList<Entity>? = null
+        // Callers cache the result and most content cites nothing, so an empty result is the
+        // shared emptyList(). The list is a val on purpose: creating it lazily, from a `var`
+        // assigned inside the inlined scan lambda, came back empty on Kotlin/Native (linuxX64)
+        // while working on the JVM.
+        val returningList = ArrayList<Entity>()
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
+            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
         }
-        return returningList ?: emptyList()
+        return returningList.ifEmpty { emptyList() }
     }
 
     /**
@@ -388,22 +391,22 @@ object Nip19Parser {
      * tagging it would `p`-tag (and notify) whoever's key happens to be in a link.
      */
     fun parseAllStandalone(content: String): List<Entity> {
-        var returningList: ArrayList<Entity>? = null
+        val returningList = ArrayList<Entity>()
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { prefix, start, dataEnd, end ->
             if (!isDomainLabelAt(content, dataEnd, end)) {
-                entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
+                entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
             }
         }
-        return returningList ?: emptyList()
+        return returningList.ifEmpty { emptyList() }
     }
 
     /** Same scan as [parseAll], restricted to the event-ish entities. */
     fun parseAllEvents(content: String): List<Entity> {
-        var returningList: ArrayList<Entity>? = null
+        val returningList = ArrayList<Entity>()
         forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            entityAt(prefix, content, start, dataEnd)?.let { (returningList ?: ArrayList<Entity>(2).also { l -> returningList = l }).add(it) }
+            entityAt(prefix, content, start, dataEnd)?.let { returningList.add(it) }
         }
-        return returningList ?: emptyList()
+        return returningList.ifEmpty { emptyList() }
     }
 }
 

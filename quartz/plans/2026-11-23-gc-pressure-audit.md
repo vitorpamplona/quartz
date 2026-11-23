@@ -102,7 +102,10 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
      - `tags.mapNotNull(...)` per tag type, joined with `+`;
      - the NIP-19 helpers in `ListEntityExt.kt` (`mapNotNull{}.flatten()`) building lists even
        for the ~94% of notes that cite nothing;
-     - `Nip19Parser.parseAll*` returning a new, cached `ArrayList` when empty.
+     - `Nip19Parser.parseAll*` returning a new, cached `ArrayList` when empty. They now return
+       the shared `emptyList()`; the list itself stays a `val`, because creating it lazily
+       from a `var` assigned inside the inlined scan lambda came back empty on Kotlin/Native
+       (`linuxX64`) while passing on the JVM.
    - Fix:
      - `TagArray.fastMapNotNull` (returns the shared `emptyList()` and allocates its list on
        the first match) and `fastMapNotNullTo(destination?)`, which chains scans into one list;

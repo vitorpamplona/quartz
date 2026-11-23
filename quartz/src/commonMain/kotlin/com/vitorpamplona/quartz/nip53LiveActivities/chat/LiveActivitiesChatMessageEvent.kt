@@ -105,7 +105,11 @@ class LiveActivitiesChatMessageEvent(
     // NIP-53 gives a chat message one `a`: the activity (or meeting space) it is posted to.
     override fun linkedAddressIds(): List<String> {
         var out: ArrayList<String>? = null
-        activityAddressId()?.let { out = ArrayList<String>(4).apply { add(it) } }
+        val activity = activityAddressId()
+        if (activity != null) {
+            out = ArrayList(4)
+            out.add(activity)
+        }
         out = quotedAddressIds().appendTo(out)
         out = citedNIP19().addressIdsTo(out)
         return out ?: emptyList()
