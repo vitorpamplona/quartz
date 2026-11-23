@@ -86,11 +86,18 @@ actual object Deflate {
             output.copyOf(written)
         }
 
-    actual fun decompress(input: ByteArray): ByteArray {
+    actual fun decompress(input: ByteArray): ByteArray = decompress(input, Int.MAX_VALUE)!!
+
+    actual fun decompress(
+        input: ByteArray,
+        maxBytes: Int,
+    ): ByteArray? {
         if (input.isEmpty()) return ByteArray(0)
 
         val chunks = ArrayList<ByteArray>()
         val chunkSize = maxOf(input.size * 4, 4096)
+        var total = 0L
+        var overLimit = false
 
         memScoped {
             val stream = alloc<z_stream>()
@@ -113,15 +120,21 @@ actual object Deflate {
                         stream.avail_out = chunkSize.toUInt()
                         status = inflate(stream.ptr, Z_NO_FLUSH)
                         val produced = chunkSize - stream.avail_out.toInt()
-                        if (produced > 0) chunks.add(chunk.copyOf(produced))
+                        total += produced
+                        if (total > maxBytes) {
+                            overLimit = true
+                        } else if (produced > 0) {
+                            chunks.add(chunk.copyOf(produced))
+                        }
                     }
-                } while (status == Z_OK)
+                } while (status == Z_OK && !overLimit)
 
-                check(status == Z_STREAM_END) { "inflate failed: $status" }
+                if (!overLimit) check(status == Z_STREAM_END) { "inflate failed: $status" }
             }
 
             inflateEnd(stream.ptr)
         }
+        if (overLimit) return null
 
         val totalSize = chunks.sumOf { it.size }
         val result = ByteArray(totalSize)
