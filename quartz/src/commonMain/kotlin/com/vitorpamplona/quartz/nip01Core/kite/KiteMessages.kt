@@ -47,7 +47,7 @@ internal fun KiteReader.readMessageFrame(): Message {
     val message =
         when (label) {
             EventMessage.LABEL -> {
-                val subId = requiredString()
+                val subId = requiredString(subIdHint)
                 requiredObjectStart()
                 EventMessage(subId, readEventObject(2))
             }

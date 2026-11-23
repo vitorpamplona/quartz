@@ -49,6 +49,30 @@ class CachingEventDecoderTest {
     ) = """["EVENT","$subId",${event.toJson()}]"""
 
     @Test
+    fun framesOfOneSubscriptionShareItsIdString() {
+        val decoder = CachingEventDecoder()
+        val a = decoder.decode(frame("feed", event(1))) as EventMessage // parsed
+        val b = decoder.decode(frame("feed", event(2))) as EventMessage // parsed
+        val c = decoder.decode(frame("feed", event(1))) as EventMessage // reused
+        val other = decoder.decode(frame("deef", event(1))) as EventMessage // same length, same last char slot rules
+
+        assertSame(a.subId, b.subId)
+        assertSame(a.subId, c.subId)
+        assertEquals("deef", other.subId)
+        assertEquals("feed", decoder.let { (it.decode(frame("feed", event(3))) as EventMessage).subId })
+        assertEquals("", (decoder.decode(frame("", event(4))) as EventMessage).subId)
+    }
+
+    @Test
+    fun aParsedEventKeepsTheIdTheScanFound() {
+        val decoder = CachingEventDecoder()
+        val e = event(7)
+        val msg = decoder.decode(frame("s", e)) as EventMessage
+        assertEquals(e.id, msg.event.id)
+        assertEquals(e.toJson(), msg.event.toJson())
+    }
+
+    @Test
     fun firstSightParsesThenDuplicateReusesTheSameEventInstance() {
         val decoder = CachingEventDecoder()
         val e = event(1)

@@ -1,8 +1,9 @@
 # Library-wide allocation and GC-pressure audit
 
 **Date:** 2026-11-23
-**Status:** measurements and ranked backlog; fixed so far: items 1 (hint providers), 10 (write
-buffers), 11 (`ContactTag`), 12 (kind-0 search), 17 (address assembly, in part), 20 (`EventInterner`)
+**Status:** measurements and ranked backlog; fixed so far: items 1 (hint providers), 3 and 4
+(client listeners), 5 (caching decoder, in part), 10 (write buffers), 11 (`ContactTag`), 12 (kind-0
+search), 17 (address assembly, in part), 20 (`EventInterner`)
 **Harnesses:**
 - `quartz/src/jvmTest/.../nip01Core/prodbench/IngestAllocationBenchmark.kt` (ingest stages, retained size)
   `./gradlew :quartz:jvmTest --tests "*.IngestAllocationBenchmark" -i`
@@ -145,27 +146,26 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
      - add an internal "ignores EVENT" marker for listeners that never read EVENTs, and widen
        the fast-path test;
      - count bytes for `RelayStats` once in `BasicRelayClient` instead of through a listener.
-3. **`RelayLogger` builds its tag on every frame with logging off.** *Est.* ~200 B per frame.
-   - Where: `RelayLogger.kt:58`. `"Relay ${url.displayUrl()}"` (two substrings and a
-     concatenation) runs before the `debugReceiving` check.
-   - Fix: build the tag inside the branches, or cache it per relay. This overlaps backlog
-     Relay #2.
-4. **`RelayReqStats` boxes, allocates a lambda and leaks per EVENT.** *Est.* ~90 B per event.
-   - Where: `ReqStatsRepository.kt:33-47`.
-     - `LargeCache<Int, Counter>` boxes its key.
-     - `getOrCreate` isn't inline, so its capturing lambda is allocated on every call.
-     - Entries are never evicted, so a random subId per fetch page grows the map for the life
-       of the process.
-     - The `Int` key is a hash, so two subscriptions can merge counters.
-   - Fix: key by subId and kind, drop entries on unsubscribe, and use a non-capturing builder.
-5. **`CachingEventDecoder` materializes the subId and id twice for new events.** *Est.* ~190 B
-   per frame.
-   - Where: `CachingEventDecoder.kt:538,549`. `scanEventFrame` allocates two substrings and a
-     `ScannedEvent`. On a miss (43–86% of frames by the July duplicate rates), Kite allocates
-     both strings again.
-   - Fix: return the scan's indices as a packed `Long`, take the subId substring only on a
-     hit, and key the cache on the id's first 128 bits via `Hex.readLong`, as `SeenIds` does.
-     All private.
+3. **Fixed: `RelayLogger` built its tag on every frame with logging off.** *Measured* through the
+   listener: 176 → 0 B per EVENT frame. The tag is built only where a line is written.
+4. **Fixed: `RelayReqStats` boxed, allocated a lambda and leaked per EVENT.** *Measured*: 40 → 0 B
+   per frame on HotSpot, which had already scalarized part of it.
+   - The empty `super.onIncomingMessage` call, which made the override a state machine, is gone.
+   - `ReqStatsRepository` keys by the frame's subscription id with a per-kind atomic count, so
+     two subscriptions no longer share a hashed counter. A REQ shares one id across every relay,
+     so the hot path takes no lock; only a new subscription or kind does.
+   - It keeps at most 1,000 subscriptions; past that, the one with the fewest events goes, so
+     long-lived feeds outlast one-off fetches.
+5. **Fixed in part: `CachingEventDecoder` materialized the subId and id twice for new events.**
+   *Measured* over 50,000 capture frames (27% new, 73% duplicates) under 40 random 10-char
+   subscription ids: 614 → 505 B per frame.
+   - The scan returns its positions packed in a `Long`, not a holder.
+   - A new event's parse reuses the id string the scan cut for the lookup, through an internal
+     Kite hint that applies only where the frame holds exactly those characters.
+   - Subscription ids come from a 64-slot table of recent ones (ids up to 64 chars, cleared
+     with the cache), so a subscription's frames share one instance.
+   - Still open: a duplicate still cuts a 104 B id string to look it up. Avoiding it means
+     keying the cache by the id's bits rather than by String.
 6. **The `by lazy` delegates in `ZapReceiptEvent` cost 80 B per receipt at construction.**
    - Where: `ZapReceiptEvent.kt:110,113`. Each delegate is a `SynchronizedLazyImpl` plus a
      lambda capturing `this`, and receipts are built for every relay copy before dedup.

@@ -55,18 +55,18 @@ class RelayLogger(
                 msgStr: String,
                 msg: Message,
             ) {
-                val logTag = logTag(relay.url)
-
+                // The tag is built only where a line is logged: most frames are EVENTs with
+                // debugReceiving off, and building it first cost ~200 B per frame.
                 when (msg) {
-                    is EventMessage -> if (debugReceiving) Log.d(logTag) { "Received: $msgStr" }
-                    is EoseMessage -> if (debugReceiving) Log.d(logTag) { "EOSE: ${msg.subId}" }
-                    is NoticeMessage -> Log.w(logTag) { "Notice: ${msg.message}" }
-                    is OkMessage -> if (debugReceiving) Log.d(logTag) { "OK: ${msg.eventId} ${msg.success} ${msg.message}${msg.params?.let { " [$it]" } ?: ""}" }
-                    is AuthMessage -> if (debugReceiving) Log.d(logTag) { "Auth: ${msg.challenge}" }
-                    is NotifyMessage -> if (debugReceiving) Log.d(logTag) { "Notify: ${msg.message}" }
-                    is CountMessage -> if (debugReceiving) Log.d(logTag) { "Count: ${msg.result.count} approx: ${msg.result.approximate} hll: ${msg.result.hll != null}" }
-                    is LimitsMessage -> if (debugReceiving) Log.d(logTag) { "Limits: canRead=${msg.canRead} canWrite=${msg.canWrite} maxLimit=${msg.maxLimit} maxSubscriptions=${msg.maxSubscriptions}" }
-                    is ClosedMessage -> Log.w(logTag) { "Closed: ${msg.subId} ${msg.message}${msg.params?.let { " [$it]" } ?: ""}" }
+                    is EventMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "Received: $msgStr" }
+                    is EoseMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "EOSE: ${msg.subId}" }
+                    is NoticeMessage -> Log.w(logTag(relay.url)) { "Notice: ${msg.message}" }
+                    is OkMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "OK: ${msg.eventId} ${msg.success} ${msg.message}${msg.params?.let { " [$it]" } ?: ""}" }
+                    is AuthMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "Auth: ${msg.challenge}" }
+                    is NotifyMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "Notify: ${msg.message}" }
+                    is CountMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "Count: ${msg.result.count} approx: ${msg.result.approximate} hll: ${msg.result.hll != null}" }
+                    is LimitsMessage -> if (debugReceiving) Log.d(logTag(relay.url)) { "Limits: canRead=${msg.canRead} canWrite=${msg.canWrite} maxLimit=${msg.maxLimit} maxSubscriptions=${msg.maxSubscriptions}" }
+                    is ClosedMessage -> Log.w(logTag(relay.url)) { "Closed: ${msg.subId} ${msg.message}${msg.params?.let { " [$it]" } ?: ""}" }
                 }
             }
 

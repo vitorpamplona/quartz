@@ -29,8 +29,18 @@ import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.EventHintProvider
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.metadata.MetadataEvent
+import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.RelayLogger
+import com.vitorpamplona.quartz.nip01Core.relay.client.listeners.RelayConnectionListener
+import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats.RelayReqStats
+import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CachingEventDecoder
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EventMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.MessageDecoder
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip50Search.EventSearchMatcher
@@ -38,7 +48,12 @@ import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.SeenIds
 import kotlinx.coroutines.runBlocking
 import java.lang.management.ManagementFactory
+import java.lang.reflect.Proxy
+import java.util.Random
 import java.util.zip.GZIPInputStream
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 
 /**
@@ -295,5 +310,92 @@ class GcPressureBenchmark {
             println("  %-7d %6d %s".format(kind, list.size, cells.joinToString(" ") { "%16d".format(it / list.size) }) + "   %5d".format(cells.sum() / list.size))
         }
         println("  all listed kinds, B/event over the whole corpus: ${grand / events.size}")
+    }
+
+    /**
+     * Bytes per EVENT frame that a client listener adds, driven straight through its
+     * `onIncomingMessage` with real frames and a reused continuation (the harness's own cost is
+     * the same for every row, so compare rows rather than read them as absolutes).
+     */
+    @Test
+    fun relayListenersPerFrame() {
+        if (!enabled) return
+        val events = corpus()
+        val relayUrl = RelayUrlNormalizer.normalizeOrNull("wss://relay.damus.io")!!
+        val relay =
+            Proxy.newProxyInstance(javaClass.classLoader, arrayOf(IRelayClient::class.java)) { _, m, _ ->
+                if (m.name == "getUrl") relayUrl else null
+            } as IRelayClient
+        var captured: RelayConnectionListener? = null
+        val client =
+            Proxy.newProxyInstance(javaClass.classLoader, arrayOf(INostrClient::class.java)) { _, m, args ->
+                if (m.name == "addConnectionListener") captured = args[0] as RelayConnectionListener
+                null
+            } as INostrClient
+        val frames = events.mapIndexed { i, e -> EventMessage("sub-${i % 8}", e) }
+        val texts = frames.map { it.event.toJson() }
+        val cont =
+            object : Continuation<Unit> {
+                override val context: CoroutineContext = EmptyCoroutineContext
+
+                override fun resumeWith(result: Result<Unit>) {}
+            }
+
+        fun measure(
+            label: String,
+            listener: RelayConnectionListener,
+        ) {
+            val call = RelayConnectionListener::class.java.getMethod("onIncomingMessage", IRelayClient::class.java, String::class.java, Message::class.java, Continuation::class.java)
+            val baseline =
+                threadAlloc(frames.size) { i -> call.invoke(NoOpListener, relay, texts[i], frames[i], cont) }
+            val bytes = threadAlloc(frames.size) { i -> call.invoke(listener, relay, texts[i], frames[i], cont) }
+            println("  %-40s %9d B/frame (harness %d B/frame subtracted)".format(label, (bytes - baseline) / frames.size, baseline / frames.size))
+        }
+
+        println("\n=== client listeners, per EVENT frame ===")
+        RelayLogger(client)
+        measure("RelayLogger (logging off)", captured!!)
+        RelayReqStats(client)
+        measure("RelayReqStats", captured!!)
+    }
+
+    private object NoOpListener : RelayConnectionListener
+
+    /**
+     * Bytes per frame through [CachingEventDecoder] over the raw capture, duplicates and all (it
+     * spans many relays), with a fresh decoder so new events and duplicates mix as on a cold start.
+     */
+    @Test
+    fun cachingDecoderPerFrame() {
+        if (!enabled) return
+        val stream =
+            javaClass.classLoader?.getResourceAsStream(CORPUS)
+                ?: throw IllegalStateException("corpus $CORPUS missing from the test classpath")
+        val all = GZIPInputStream(stream).use { OptimizedJsonMapper.fromJsonToEventList(it.readBytes().toString(Charsets.UTF_8)) }
+        // Subscription ids as clients name them: random, one length (Amethyst's newSubId() is 10
+        // chars), and more of them open than a small table could hold.
+        val rnd = Random(42)
+        val alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val subIds = List(40) { String(CharArray(10) { alphabet[rnd.nextInt(alphabet.length)] }) }
+        val frames = all.take(50_000).mapIndexed { i, e -> "[\"EVENT\",\"${subIds[(i * 7 + i / 3) % subIds.size]}\",${e.toJson()}]" }
+
+        // warm the JIT on throwaway decoders
+        repeat(3) {
+            val warm = CachingEventDecoder()
+            for (f in frames) keep = warm.decode(f)
+        }
+        val decoder = CachingEventDecoder()
+        val id = Thread.currentThread().threadId()
+        val before = threads.getThreadAllocatedBytes(id)
+        for (f in frames) keep = decoder.decode(f)
+        val after = threads.getThreadAllocatedBytes(id)
+
+        val plainBefore = threads.getThreadAllocatedBytes(id)
+        for (f in frames) keep = MessageDecoder.Default.decode(f)
+        val plainAfter = threads.getThreadAllocatedBytes(id)
+
+        println("\n=== CachingEventDecoder over ${frames.size} raw frames: ${decoder.parsedCount} parsed, ${decoder.reusedCount} reused ===")
+        println("  %-40s %9d B/frame".format("CachingEventDecoder.decode", (after - before) / frames.size))
+        println("  %-40s %9d B/frame".format("full parse of every frame (reference)", (plainAfter - plainBefore) / frames.size))
     }
 }

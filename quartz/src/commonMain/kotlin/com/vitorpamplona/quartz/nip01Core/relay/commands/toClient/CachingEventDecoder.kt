@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.crypto.verifyId
 import com.vitorpamplona.quartz.nip01Core.crypto.verifySignature
+import com.vitorpamplona.quartz.nip01Core.kite.KiteReader
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.cache.ConcurrentHashCache
@@ -250,20 +251,32 @@ class CachingEventDecoder(
         text: String,
         relay: NormalizedRelayUrl?,
     ): Message? {
-        val scanned = scanEventFrame(text)
-        if (scanned != null) {
+        // The scan's positions, packed; no holder, and the subscription id is cut only for a hit.
+        val scan = scanEventFrame(text)
+        var scannedId: HexKey? = null
+        if (scan >= 0) {
+            val idStart = (scan and 0xFFFFFFFFL).toInt()
+            val eventId = text.substring(idStart, idStart + 64)
+            scannedId = eventId
             if (anyScrutinizedId) {
-                val scrutiny = activeScrutiny(scanned.eventId)
-                if (scrutiny != null) return decodeScrutinized(text, relay, scanned.eventId, scrutiny)
+                val scrutiny = activeScrutiny(eventId)
+                if (scrutiny != null) return decodeScrutinized(text, relay, eventId, scrutiny)
             }
-            val cached = lookupOrKnown(scanned.eventId)
+            val cached = lookupOrKnown(eventId)
             if (cached != null) {
                 reused.incrementAndFetch()
-                return EventMessage(scanned.subId, cached)
+                return EventMessage(subIdOf(text, scan), cached)
             }
         }
 
-        val msg = fullParser.decode(text)
+        // A new event: the id the scan cut for the lookup becomes the parsed event's own, and the
+        // subscription id the shared one, rather than garbage beside second copies.
+        val msg =
+            if (scannedId != null && fullParser === MessageDecoder.Default) {
+                KiteReader.readMessage(text, subIdOf(text, scan), scannedId)
+            } else {
+                fullParser.decode(text)
+            }
         if (msg is EventMessage) {
             val event = msg.event
             if (anyScrutinizedId) {
@@ -498,55 +511,81 @@ class CachingEventDecoder(
         live = ConcurrentHashCache()
         scrutinizedIds.clear()
         anyScrutinizedId = false
+        recentSubIds.fill(null)
     }
 
     /** Ids currently addressable across both generations. Observability + tests. */
     val cachedCount: Int get() = live.size() + previous.size()
 
-    private class ScannedEvent(
-        val subId: String,
-        val eventId: HexKey,
-    )
+    /**
+     * Subscription ids seen recently, so the frames of one subscription share one instance
+     * instead of a copy per frame. Only ids up to [MAX_SHARED_SUB_ID] chars, so a relay cannot
+     * pin long strings here; cleared with the cache.
+     *
+     * Racy on purpose: every relay's thread reads and writes the slots unlocked. That is safe
+     * because a slot is only ever reused after its length and every char were compared with the
+     * frame: a stale or torn read can only fail that check and cost a copy.
+     */
+    private val recentSubIds = arrayOfNulls<String>(RECENT_SUB_IDS)
+
+    /** The subscription id [scan] located in [text], shared with earlier frames when it is the same. */
+    private fun subIdOf(
+        text: String,
+        scan: Long,
+    ): String {
+        val start = (scan ushr 48).toInt()
+        val end = ((scan ushr 32) and 0xFFFFL).toInt()
+        val len = end - start
+        if (len == 0) return ""
+        if (len > MAX_SHARED_SUB_ID) return text.substring(start, end)
+        // Clients use random ids of one length, so the slot mixes the first, middle and last chars.
+        val slot = (len + text[start].code * 31 + text[start + len / 2].code * 961 + text[end - 1].code * 29791) and (RECENT_SUB_IDS - 1)
+        val recent = recentSubIds[slot]
+        if (recent != null && recent.length == len && text.regionMatches(start, recent, 0, len)) return recent
+        return text.substring(start, end).also { recentSubIds[slot] = it }
+    }
 
     /**
-     * Extracts (subId, eventId) from a `["EVENT","<subId>",{...}]` frame, compact or with JSON
-     * whitespace between its tokens (some relays write `"id": "…"`), or null when the frame isn't
-     * an EVENT or anything about it is unusual (an escaped subId, a missing or malformed id):
-     * null means "do the full parse".
+     * Finds the subscription id and the event id of a `["EVENT","<subId>",{...}]` frame, compact
+     * or with JSON whitespace between its tokens (some relays write `"id": "…"`), and returns
+     * where they are, packed into a Long: the subscription id's start and end (16 bits each, from
+     * the top) and the 64-char id's start (the low 32 bits). -1 when the frame isn't an EVENT or
+     * anything about it is unusual (an escaped subId, a missing or malformed id, a subId past
+     * 32K chars): -1 means "do the full parse".
      */
-    private fun scanEventFrame(text: String): ScannedEvent? {
+    private fun scanEventFrame(text: String): Long {
         val n = text.length
         var i = skipWs(text, 0)
-        if (i >= n || text[i] != '[') return null
+        if (i >= n || text[i] != '[') return -1
         i = skipWs(text, i + 1)
-        if (!text.startsWith(EVENT_LABEL, i)) return null
+        if (!text.startsWith(EVENT_LABEL, i)) return -1
         i = skipWs(text, i + EVENT_LABEL.length)
-        if (i >= n || text[i] != ',') return null
+        if (i >= n || text[i] != ',') return -1
         i = skipWs(text, i + 1)
-        if (i >= n || text[i] != '"') return null
+        if (i >= n || text[i] != '"') return -1
         i++
 
         // subId: read up to the closing quote; any escape → bail.
         val subStart = i
         while (i < text.length) {
             val c = text[i]
-            if (c == '\\') return null
+            if (c == '\\') return -1
             if (c == '"') break
             i++
         }
-        if (i >= text.length) return null
-        val subId = text.substring(subStart, i)
+        if (i >= text.length || i > MAX_PACKED_SUB_END) return -1
+        val subEnd = i
 
         // id: the first `"id"` key with a 64-char lowercase-hex value.
         val idStart = stringValueOf(text, ID_KEY, i + 1)
-        if (idStart < 0) return null
+        if (idStart < 0) return -1
         val idEnd = idStart + 64
-        if (idEnd >= text.length || text[idEnd] != '"') return null
+        if (idEnd >= text.length || text[idEnd] != '"') return -1
         for (j in idStart until idEnd) {
             val c = text[j]
-            if (c !in '0'..'9' && c !in 'a'..'f') return null
+            if (c !in '0'..'9' && c !in 'a'..'f') return -1
         }
-        return ScannedEvent(subId, text.substring(idStart, idEnd))
+        return (subStart.toLong() shl 48) or (subEnd.toLong() shl 32) or idStart.toLong()
     }
 
     /**
@@ -636,6 +675,15 @@ class CachingEventDecoder(
     }
 
     companion object {
+        /** Past this the subscription id's end no longer packs into [scanEventFrame]'s 16 bits (kept positive). */
+        private const val MAX_PACKED_SUB_END = 0x7FFF
+
+        /** Slots in [recentSubIds]; a power of two, above the subscriptions a client keeps open. */
+        private const val RECENT_SUB_IDS = 64
+
+        /** Longest subscription id [recentSubIds] keeps. */
+        private const val MAX_SHARED_SUB_ID = 64
+
         private const val EVENT_LABEL = "\"EVENT\""
         private const val ID_KEY = "\"id\""
         private const val SIG_KEY = "\"sig\""
