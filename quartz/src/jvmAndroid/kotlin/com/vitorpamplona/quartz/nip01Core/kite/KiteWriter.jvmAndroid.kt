@@ -71,3 +71,5 @@ internal actual fun sha256Into(
     digest.update(data, 0, length)
     digest.digest(out, 0, 32)
 }
+
+internal actual val SHA256_STREAMS: Boolean = true
