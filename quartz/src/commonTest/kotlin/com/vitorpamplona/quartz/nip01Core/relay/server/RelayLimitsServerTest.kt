@@ -131,6 +131,34 @@ class RelayLimitsServerTest {
         }
 
     @Test
+    fun anInvalidSubIdAtTheCapIsRefusedAsInvalid() =
+        runTest {
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            val source =
+                object : EventSource {
+                    override fun events(
+                        ctx: RequestContext,
+                        filters: List<Filter>,
+                    ): Flow<Event> = emptyFlow()
+                }
+            val server = EventSourceServer(source, parentContext = dispatcher, limits = RelayLimits(maxSubscriptions = 1, maxSubidLength = 4))
+            val collector = Collector()
+            val session = server.connect(collector.send)
+
+            session.receive("""["REQ","a",{"kinds":[1]}]""")
+            session.receive("""["REQ","too-long",{"kinds":[1]}]""")
+
+            // Over the cap and invalid: the client must learn the id is invalid, since a
+            // rate-limited REQ is one it would retry, unchanged, forever.
+            val closed = collector.containing("CLOSED")
+            assertEquals(1, closed.size)
+            assertTrue(closed[0].contains("\"too-long\""))
+            assertTrue(closed[0].contains("invalid:"), closed[0])
+
+            server.close()
+        }
+
+    @Test
     fun clampsFilterLimitEndToEnd() =
         runTest {
             val dispatcher = UnconfinedTestDispatcher(testScheduler)

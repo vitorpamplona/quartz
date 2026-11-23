@@ -50,3 +50,6 @@ actual fun currentTimeMillis(): Long {
 
 @OptIn(ExperimentalNativeApi::class)
 internal actual fun availableProcessors(): Int = Platform.getAvailableProcessors()
+
+// Kotlin/Native ends the process on out-of-memory rather than throwing.
+internal actual fun isFatal(e: Throwable): Boolean = false

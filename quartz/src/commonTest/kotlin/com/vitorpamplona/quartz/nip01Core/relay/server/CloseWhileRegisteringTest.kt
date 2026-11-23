@@ -1,0 +1,185 @@
+/*
+ * Copyright (c) 2025 Vitor Pamplona
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+ * Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+ * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+package com.vitorpamplona.quartz.nip01Core.relay.server
+
+import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.EoseMessage
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.Message
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.CountCmd
+import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.ReqCmd
+import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.EventIngest
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.LiveEventStore
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.RequestContext
+import com.vitorpamplona.quartz.nip01Core.relay.server.backend.SessionBackend
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PassThroughPolicy
+import com.vitorpamplona.quartz.nip01Core.relay.server.policies.PolicyResult
+import com.vitorpamplona.quartz.nip01Core.store.IEventStore
+import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * A disconnect handled on another thread while the command loop is registering a REQ or COUNT:
+ * what registers after the session's subscriptions were swept is stopped, not left running and
+ * answering a connection that is gone.
+ */
+class CloseWhileRegisteringTest {
+    /** Counts wait for the test; a REQ's query parks at its live tail until cancelled. */
+    private class Backend : SessionBackend {
+        val counts = mutableListOf<CompletableDeferred<Int>>()
+        var queries = 0
+
+        override suspend fun query(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) {
+            queries++
+            onEose()
+            awaitCancellation()
+        }
+
+        override suspend fun count(
+            ctx: RequestContext,
+            filters: List<Filter>,
+        ): Int {
+            val answer = CompletableDeferred<Int>()
+            counts.add(answer)
+            return answer.await()
+        }
+    }
+
+    private object AcceptingIngest : EventIngest {
+        override suspend fun submit(
+            event: Event,
+            skipVerify: Boolean,
+            onComplete: (IEventStore.InsertOutcome) -> Unit,
+        ) = onComplete(IEventStore.InsertOutcome.Accepted)
+
+        override fun hasBacklog() = false
+
+        override fun close() {}
+    }
+
+    private class Frames : SessionSink {
+        val messages = mutableListOf<Message>()
+
+        override fun message(message: Message) {
+            messages.add(message)
+        }
+
+        override fun raw(json: String) {}
+    }
+
+    /**
+     * Closes the session from inside [accept]: the command loop has read the frame and is about
+     * to register its work, as when a disconnect lands on another thread at that moment.
+     */
+    private class ClosesWhileAccepting : PassThroughPolicy() {
+        var session: RelaySession? = null
+
+        override fun accept(cmd: CountCmd): PolicyResult<CountCmd> {
+            session?.close()
+            return PolicyResult.Accepted(cmd)
+        }
+
+        override fun accept(cmd: ReqCmd): PolicyResult<ReqCmd> {
+            session?.close()
+            return PolicyResult.Accepted(cmd)
+        }
+    }
+
+    private class Fixture(
+        test: TestScope,
+        backend: SessionBackend,
+    ) {
+        val scope = CoroutineScope(StandardTestDispatcher(test.testScheduler) + Job())
+        val frames = Frames()
+        private val policy = ClosesWhileAccepting()
+        val session = RelaySession(backend, policy, scope, frames, onClose = {})
+
+        init {
+            policy.session = session
+        }
+
+        fun running() = scope.coroutineContext[Job]!!.children.count()
+    }
+
+    @Test
+    fun aCountRegisteringAsTheSessionClosesNeverAnswers() =
+        runTest {
+            val backend = Backend()
+            val f = Fixture(this, backend)
+            try {
+                f.session.receive("""["COUNT","c",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+                backend.counts.forEach { it.complete(1) }
+                testScheduler.advanceUntilIdle()
+
+                assertTrue(f.frames.messages.none { it is CountMessage }, "got ${f.frames.messages.map { it.toJson() }}")
+                assertEquals(0, f.running())
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aParkedReqRegisteringAsTheSessionClosesLeavesNothingRunning() =
+        runTest {
+            val f = Fixture(this, Backend())
+            try {
+                f.session.receive("""["REQ","s",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertEquals(0, f.running(), "the REQ's coroutine still parks at its live tail")
+            } finally {
+                f.scope.cancel()
+            }
+        }
+
+    @Test
+    fun aLiveReqRegisteringAsTheSessionClosesLeavesNothingRegistered() =
+        runTest {
+            val live = LiveEventStore(EventStore(null), AcceptingIngest)
+            val f = Fixture(this, live)
+            try {
+                f.session.receive("""["REQ","s",{"kinds":[1]}]""")
+                testScheduler.advanceUntilIdle()
+
+                assertEquals(0, live.liveSubscriptionCount, "the REQ is still registered for live events")
+                assertTrue(f.frames.messages.none { it is EoseMessage }, "got ${f.frames.messages.map { it.toJson() }}")
+            } finally {
+                f.scope.cancel()
+            }
+        }
+}

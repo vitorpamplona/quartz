@@ -70,6 +70,7 @@ class CountOffTheCommandLoopTest {
         val permit = Semaphore(1)
         var countGate: CompletableDeferred<Unit>? = null
         var countFailure: String? = null
+        var countError: Throwable? = null
         var countTimesOut = false
 
         override suspend fun query(
@@ -91,6 +92,7 @@ class CountOffTheCommandLoopTest {
             permit.withPermit {
                 countGate?.await()
                 countFailure?.let { throw IllegalStateException(it) }
+                countError?.let { throw it }
                 // A backend deadline that lets its TimeoutCancellationException out.
                 if (countTimesOut) withTimeout(1) { awaitCancellation() }
                 7
@@ -208,6 +210,71 @@ class CountOffTheCommandLoopTest {
             // The COUNT gave its permit back: it is no longer waiting on the backend.
             assertEquals(1, backend.permit.availablePermits)
             assertEquals(emptyList(), connection.frames.messages)
+            connection.end()
+        }
+
+    @Test
+    fun aCountWhoseBackendThrowsAnErrorGetsOneClosedAndTheConnectionLives() =
+        runTest {
+            val backend = OnePermitBackend()
+            // TODO() in a backend: an Error, not an Exception.
+            backend.countError = NotImplementedError("not yet")
+            val connection = Connection(this, backend)
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+
+            val closed = connection.frames.messages.single() as ClosedMessage
+            assertEquals("c", closed.subId)
+            assertTrue(closed.message.startsWith("error:") && closed.message.contains("not yet"), closed.message)
+
+            // The Error did not take the session's scope down with it.
+            backend.countError = null
+            connection.incoming.send("""["COUNT","d",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+            assertEquals(listOf("d" to 7), connection.frames.counts().map { it.queryId to it.result.count })
+            connection.end()
+        }
+
+    /** Each count waits for the test to answer it. */
+    private class AnsweredByTheTest : SessionBackend {
+        val answers = mutableListOf<CompletableDeferred<Int>>()
+
+        override suspend fun query(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) = onEose()
+
+        override suspend fun count(
+            ctx: RequestContext,
+            filters: List<Filter>,
+        ): Int {
+            val answer = CompletableDeferred<Int>()
+            answers.add(answer)
+            return answer.await()
+        }
+    }
+
+    @Test
+    fun aRepeatedCountOnOneIdIsAnsweredInTheOrderItWasSent() =
+        runTest {
+            val backend = AnsweredByTheTest()
+            val connection = Connection(this, backend)
+
+            // A client that re-sends a COUNT on the same id (new filters) keeps the last answer.
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            connection.incoming.send("""["COUNT","c",{"kinds":[7]}]""")
+            testScheduler.advanceUntilIdle()
+            backend.answers[1].complete(2)
+            testScheduler.advanceUntilIdle()
+            backend.answers[0].complete(1)
+            testScheduler.advanceUntilIdle()
+
+            // The older count's answer must not land after the newer one's, where it would read
+            // as the answer to the filters the client sent last.
+            assertEquals(listOf("c" to 1, "c" to 2), connection.frames.counts().map { it.queryId to it.result.count })
             connection.end()
         }
 }

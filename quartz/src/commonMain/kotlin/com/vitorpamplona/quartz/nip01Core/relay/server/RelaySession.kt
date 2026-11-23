@@ -54,6 +54,8 @@ import com.vitorpamplona.quartz.nip77Negentropy.NegOpenCmd
 import com.vitorpamplona.quartz.nip77Negentropy.NegentropySettings
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
+import com.vitorpamplona.quartz.utils.isFatal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -134,6 +136,22 @@ class RelaySession(
     private val counts = LargeCache<Long, Job>()
     private val countSeq = AtomicLong(0L)
 
+    /**
+     * The last COUNT started on each query id while it runs, so a COUNT repeated on that id
+     * answers after it. Written by the command loop and by each COUNT's completion, which removes
+     * only its own entry.
+     */
+    private val lastCountById = ConcurrentMap<String, Job>()
+
+    /**
+     * Set by [cancelAllSubscriptions]. A disconnect handled on another thread can sweep the
+     * session while the command loop is registering a REQ or COUNT; what registers after the
+     * sweep checks this and stops itself, so nothing keeps running or answering for a session
+     * that has ended.
+     */
+    @Volatile
+    private var ended = false
+
     /** [sink] when it takes live frames in parts, decided once per connection. */
     private val liveFrameSink = sink as? LiveFrameSink
 
@@ -184,6 +202,8 @@ class RelaySession(
         } ?: false
 
     fun cancelAllSubscriptions() {
+        // First, so a REQ or COUNT registering meanwhile either is swept below or sees it.
+        ended = true
         subscriptions.forEach { _, req -> req.cancel() }
         subscriptions.clear()
         counts.forEach { _, job -> job.cancel() }
@@ -438,24 +458,31 @@ class RelaySession(
         // backend's to bound, as it bounds a connection's REQ replays: the session only tracks
         // them so a disconnect can cancel them.
         val key = countSeq.fetchAndAdd(1L)
+        // NIP-45 pairs an answer with its COUNT by query id only, so a client that repeats a
+        // COUNT on one id (with new filters) keeps the last answer it gets: an earlier COUNT on
+        // the id still running answers first, so its answer never reads as the newer one's.
+        val earlier = lastCountById[cmd.queryId]
         // UNDISPATCHED: a count that does not suspend answers inline, as it did on the loop.
         val job =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                val countResult =
+                val answer =
                     try {
-                        store.countResult(requestContext, filters)
+                        CountMessage(cmd.queryId, store.countResult(requestContext, filters))
                     } catch (e: CancellationException) {
                         // A disconnect cancels this COUNT, and it then owes nothing. A backend's
                         // own CancellationException (a withTimeout inside it) is a failed count,
                         // which is still owed its one answer.
                         if (!isActive) throw e
-                        send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
-                        return@launch
-                    } catch (e: Exception) {
-                        send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
-                        return@launch
+                        ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed")
+                    } catch (e: Throwable) {
+                        // An Error from the backend (TODO()'s NotImplementedError) is a failed
+                        // count too, rather than an escape into the server's scope; only a fatal
+                        // VM error is rethrown.
+                        if (isFatal(e)) throw e
+                        ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed")
                     }
-                send(CountMessage(cmd.queryId, countResult))
+                earlier?.join()
+                send(answer)
             }
         // Runs once however the job ends, even if it never started (a cancelled scope).
         job.invokeOnCompletion { counts.remove(key) }
@@ -464,7 +491,12 @@ class RelaySession(
             counts.put(key, job)
             // It may have ended between the check and the put, after its handler ran.
             if (job.isCompleted) counts.remove(key)
+            // A disconnect may have swept [counts] before this landed in it.
+            if (ended) job.cancel()
         }
+        // Put first: the handler runs at once on a job that already ended, and removes it.
+        lastCountById[cmd.queryId] = job
+        job.invokeOnCompletion { lastCountById.remove(cmd.queryId, job) }
     }
 
     /**
@@ -531,6 +563,16 @@ class RelaySession(
     private fun handleReq(cmd: ReqCmd) {
         dropFailedReqs()
 
+        // The policy first, so a REQ it refuses (an over-long sub id) is refused for that, and
+        // not as over the cap: a client retries a rate-limited REQ, unchanged, forever. A refused
+        // re-REQ still ends the subscription it would have replaced (NIP-01).
+        val result = policy.accept(cmd)
+        if (result is PolicyResult.Rejected) {
+            cancelSubscription(cmd.subId)
+            send(ClosedMessage(cmd.subId, result.reason, result.params))
+            return
+        }
+
         // Ask the policy whether a *new* subscription may open (e.g. a
         // max_subscriptions cap). A re-REQ on an existing id replaces it
         // 1-for-1 and doesn't grow the count, so it's exempt. Checked before
@@ -545,12 +587,6 @@ class RelaySession(
 
         // Cancel any existing subscription with the same id (NIP-01 spec).
         cancelSubscription(cmd.subId)
-
-        val result = policy.accept(cmd)
-        if (result is PolicyResult.Rejected) {
-            send(ClosedMessage(cmd.subId, result.reason, result.params))
-            return
-        }
 
         // Policy may rewrite filters to match the user's access level.
         val acceptedFilters = (result as PolicyResult.Accepted).cmd.filters
@@ -581,6 +617,7 @@ class RelaySession(
         if (live == null) {
             req.replay = launchParkedReq(req, filters, probe, eose)
             subscriptions.put(cmd.subId, req)
+            stopIfEnded(req)
             return
         }
 
@@ -596,6 +633,7 @@ class RelaySession(
             }
         req.subscription = subscription
         subscriptions.put(cmd.subId, req)
+        if (stopIfEnded(req)) return
 
         // UNDISPATCHED: the stored replay runs inline on this coroutine —
         // the reader-pool acquire doesn't suspend when a connection is
@@ -629,11 +667,12 @@ class RelaySession(
                     // ends with a CLOSED and gives its slot back like any other.
                     if (!isActive) throw e
                     req.fail(e)
-                } catch (e: Exception) {
-                    // A backend failure (e.g. an event source's network I/O)
-                    // ends the subscription with a machine-readable CLOSED
-                    // rather than silently dropping the coroutine.
+                } catch (e: Throwable) {
+                    // A backend failure (e.g. an event source's network I/O, or an Error such
+                    // as TODO()'s) ends the subscription with a machine-readable CLOSED rather
+                    // than silently dropping the coroutine; only a fatal VM error is rethrown.
                     subscription.cancel()
+                    if (isFatal(e)) throw e
                     req.fail(e)
                 }
             }
@@ -642,6 +681,18 @@ class RelaySession(
             req.replay = replay
             replay.invokeOnCompletion { req.replay = null }
         }
+    }
+
+    /**
+     * Stops [req] if a disconnect swept the session while the command loop was registering it.
+     * The command loop is the only place [subscriptions] gains entries, so the one under its sub
+     * id is still [req].
+     */
+    private fun stopIfEnded(req: OpenReq): Boolean {
+        if (!ended) return false
+        subscriptions.remove(req.subId)
+        req.cancel()
+        return true
     }
 
     /**
@@ -697,7 +748,7 @@ class RelaySession(
          * ended it first: the client already let go of it, and a reused sub id's CLOSED would
          * read as the new subscription's.
          */
-        fun fail(e: Exception) {
+        fun fail(e: Throwable) {
             if (!ended.compareAndSet(expectedValue = false, newValue = true)) return
             closed = true
             failed = true
@@ -763,7 +814,8 @@ class RelaySession(
                 // As on the live path: only this REQ's own cancellation is a close.
                 if (!isActive) throw e
                 req.fail(e)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (isFatal(e)) throw e
                 req.fail(e)
             }
         }

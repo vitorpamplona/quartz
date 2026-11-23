@@ -496,14 +496,19 @@ like any other policy — you can also split them across several policies:
   or CLOSE with `CLOSED` on its sub id (a REQ so refused also ends the open
   subscription it would have replaced), and only a frame with no readable id
   with a `NOTICE`; a new subscription past `maxSubscriptions` is `CLOSED` with
-  `rate-limited:`. These hooks exist because a policy otherwise can't see the
-  raw frame or the live subscription count.
+  `rate-limited:`, once the per-command checks passed, so an over-long sub id is
+  `invalid:` even at the cap. These hooks exist because a policy otherwise can't
+  see the raw frame or the live subscription count.
 - **COUNT runs off the command loop**, like a REQ's replay: a COUNT waiting on
   the backend never holds up the frames behind it (a CLOSE that would free the
   backend's permit included), and its one answer, `COUNT` or `CLOSED`, can
   arrive after frames from later commands (NIP-45 pairs them by id). The session
   does not cap how many run at once: that is the backend's to bound, as it bounds
   a connection's REQ replays. A disconnect cancels every COUNT still running.
+  A COUNT repeated on one query id answers after the earlier one, so the last
+  answer a client gets is for the filters it sent last. A backend failure,
+  an `Error` such as `TODO()`'s included, answers `CLOSED error:` (a REQ's too);
+  only a fatal VM error is rethrown.
 - **Advertised only**: `minPowDifficulty` (enforce with a PoW policy),
   `authRequired` (use `FullAuthPolicy`), `paymentRequired`, `restrictedWrites`.
 
