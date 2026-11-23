@@ -60,6 +60,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
@@ -129,6 +130,13 @@ class RelaySession(
      */
     private val failedReqs = AtomicInt(0)
 
+    /** COUNTs whose backend call is still running, by a per-connection sequence; see [handleCount]. */
+    private val counts = LargeCache<Long, Job>()
+    private val countSeq = AtomicLong(0L)
+
+    /** Caps the COUNTs one connection runs at once; past it the command loop waits for one to end. */
+    private val countSlots = Semaphore(MAX_COUNTS_IN_FLIGHT)
+
     /** [sink] when it takes live frames in parts, decided once per connection. */
     private val liveFrameSink = sink as? LiveFrameSink
 
@@ -181,6 +189,8 @@ class RelaySession(
     fun cancelAllSubscriptions() {
         subscriptions.forEach { _, req -> req.cancel() }
         subscriptions.clear()
+        counts.forEach { _, job -> job.cancel() }
+        counts.clear()
         negentropy.clear()
     }
 
@@ -424,17 +434,39 @@ class RelaySession(
         // Policy may rewrite filters to match the user's access level.
         val filters = (result as PolicyResult.Accepted).cmd.filters
 
-        val countResult =
-            try {
-                store.countResult(requestContext, filters)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
-                return
+        // Off the command loop, like a REQ's replay: a backend that limits a connection's
+        // concurrent queries (one search permit per connection) would otherwise hold the loop
+        // here, waiting for a running REQ's permit, with the CLOSE that frees it unread behind
+        // this COUNT. Its one answer, COUNT or CLOSED, goes out when the backend returns; only
+        // a disconnect cancels it. The slots keep the loop's backpressure on a client that
+        // pipelines COUNTs: past MAX_COUNTS_IN_FLIGHT it waits for one to end.
+        countSlots.acquire()
+        val key = countSeq.fetchAndAdd(1L)
+        // UNDISPATCHED: a count that does not suspend answers inline, as it did on the loop.
+        val job =
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                val countResult =
+                    try {
+                        store.countResult(requestContext, filters)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        send(ClosedMessage.of(cmd.queryId, MachineReadablePrefix.ERROR, e.message ?: "count failed"))
+                        return@launch
+                    }
+                send(CountMessage(cmd.queryId, countResult))
             }
-
-        send(CountMessage(cmd.queryId, countResult))
+        // Runs once however the job ends, even if it never started (a cancelled scope).
+        job.invokeOnCompletion {
+            counts.remove(key)
+            countSlots.release()
+        }
+        // Held only while it runs, so a disconnect can cancel it; the handler above drops it.
+        if (!job.isCompleted) {
+            counts.put(key, job)
+            // It may have ended between the check and the put, after its handler ran.
+            if (job.isCompleted) counts.remove(key)
+        }
     }
 
     /**
@@ -744,6 +776,9 @@ class RelaySession(
 
     companion object {
         private val connectionIdSeq = AtomicLong(0L)
+
+        /** How many COUNTs one connection runs at once before its command loop waits. */
+        private const val MAX_COUNTS_IN_FLIGHT = 16
 
         /** Allocates the next process-unique connection id. */
         fun nextConnectionId(): Long = connectionIdSeq.fetchAndAdd(1L)
