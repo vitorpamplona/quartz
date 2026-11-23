@@ -214,12 +214,26 @@ class ControlPlaneConformanceTest {
     }
 
     @Test
-    fun delegatedGrantsNeedTheGranterToCiteTheirOwnGrant() {
-        // Alice (Admin) makes bob a Mod. Without her citation the grant does not stand.
+    fun delegatedGrantsMayOmitTheCitationButOneThatIsPresentBinds() {
+        // CORD-04 §5: a Grant naming a Role MAY omit `vac` and is judged on rank alone (Armada and
+        // Vector honor it; see the app-event vectors' control_grant_by_admin_uncited).
         val bobByAlice = ed(ControlEntityKind.GRANT, ControlFixtures.grantEid(bob), 1, null, grantJson(bob, listOf(modRole)), alice, "grant-bob")
-        assertNull(AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, bobByAlice), cid, owner).rank(bob))
+        assertEquals(5L, AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, bobByAlice), cid, owner).rank(bob))
         val cited = bobByAlice.withCitation(citation(aliceIsAdmin))
         assertEquals(5L, AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, cited), cid, owner).rank(bob))
+        // A citation that is present binds: one ahead of the Grant we hold parks the edition.
+        val ahead = bobByAlice.withCitation(citation(aliceIsAdmin, version = aliceIsAdmin.version + 1))
+        assertNull(AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, ahead), cid, owner).rank(bob))
+    }
+
+    @Test
+    fun anUncitedStripIsRefused() {
+        // CORD-04 §5: a Grant whose role ids name no Role is a strip, and a strip MUST cite.
+        val bobIsMod = ed(ControlEntityKind.GRANT, ControlFixtures.grantEid(bob), 1, null, grantJson(bob, listOf(modRole)), owner, "grant-bob")
+        val strip = ed(ControlEntityKind.GRANT, ControlFixtures.grantEid(bob), 2, bobIsMod, grantJson(bob, emptyList()), alice, "strip-bob")
+        assertEquals(5L, AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, bobIsMod, strip), cid, owner).rank(bob))
+        val cited = strip.withCitation(citation(aliceIsAdmin))
+        assertNull(AuthorityResolver.resolve(listOf(adminDef, modDef, aliceIsAdmin, bobIsMod, cited), cid, owner).rank(bob))
     }
 
     @Test

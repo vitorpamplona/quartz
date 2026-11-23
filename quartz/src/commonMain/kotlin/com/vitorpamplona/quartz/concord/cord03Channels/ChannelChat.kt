@@ -24,6 +24,8 @@ import com.vitorpamplona.crypto.aes.AESGCM
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.ChannelTag
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.EpochTag
 import com.vitorpamplona.quartz.concord.cord03Channels.tags.MsTag
+import com.vitorpamplona.quartz.concord.cord04Roles.AuthorityCitation
+import com.vitorpamplona.quartz.concord.cord04Roles.control.tags.VacTag
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
 import com.vitorpamplona.quartz.concord.envelope.OpenedStreamEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
@@ -173,6 +175,35 @@ object ChannelChat {
             createdAt = createdAt,
             kind = DeletionRequestEvent.KIND,
             tags = bindingTags(channelId, epoch, ms) + eTags.toTypedArray() + kTags.toTypedArray(),
+            content = reason,
+        )
+    }
+
+    /**
+     * Builds an unsigned **moderation hide** (CORD-03 §3): the kind-5 [delete] of other members'
+     * [targets], plus the `vac` [citation] of the Grant the hider holds MANAGE_MESSAGES under
+     * (null only for the owner, who cites nothing; CORD-04 §5). Readers honor it as they would the
+     * author's own delete while the hider holds the bit and strictly outranks the author
+     * ([com.vitorpamplona.quartz.concord.cord02Community.ConcordCommunityState.honorsModerationHide]).
+     * Tags in the reference client's order: the binding, `e`/`k` as any delete, then `vac`.
+     */
+    fun moderationHide(
+        authorPubKey: HexKey,
+        channelId: HexKey,
+        epoch: Long,
+        targets: List<Event>,
+        citation: AuthorityCitation?,
+        createdAt: Long,
+        reason: String = "",
+        ms: Int = MsTag.remainderFor(createdAt),
+    ): Event {
+        val delete = delete(authorPubKey, channelId, epoch, targets, createdAt, reason, ms)
+        if (citation == null) return delete
+        return RumorAssembler.assembleRumor<DeletionRequestEvent>(
+            pubKey = authorPubKey,
+            createdAt = createdAt,
+            kind = DeletionRequestEvent.KIND,
+            tags = delete.tags + arrayOf(VacTag.assemble(citation)),
             content = reason,
         )
     }

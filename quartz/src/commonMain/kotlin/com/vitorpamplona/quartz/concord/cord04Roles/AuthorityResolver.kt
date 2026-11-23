@@ -689,6 +689,14 @@ data class AuthorityResolver private constructor(
                 return citationMatches(e.authorityCitation, coordinate, grantHeads[author])
             }
 
+            // CORD-04 §5: a Role or Grant edition MAY omit `vac` and is then judged on rank alone, with
+            // no floor to wait for; a citation that is present binds (Armada `citedOk`: "an uncited
+            // edition declared no floor to wait for").
+            fun citedIfCiting(e: ControlEdition): Boolean = e.authorityCitation == null || cited(e)
+
+            // ...except a strip: a Grant whose role ids name no Role any edition is served for MUST cite.
+            val servedRoles = roleChains.keys.mapTo(HashSet()) { it.lowercase() }
+
             // Owner-rooted fixpoint: each pass only ever empowers members reachable from the owner, so
             // the roster grows monotonically and settles. Bounded by the edition count as a backstop.
             val maxPasses = editions.size + 1
@@ -709,7 +717,7 @@ data class AuthorityResolver private constructor(
                     if (author == ownerLower) return true
                     if (author in bannedAuthors) return false
                     if (!holdsManageRoles(author)) return false
-                    if (!cited(e)) return false
+                    if (!citedIfCiting(e)) return false
                     val authorRank = rankOf(author) ?: return false
                     // MANAGE_ROLES alone was the whole test, which let any holder rewrite the
                     // role they hold — position 1 with every bit — and then demote the real
@@ -747,7 +755,8 @@ data class AuthorityResolver private constructor(
                     if (granter == ownerLower) return true
                     if (granter in bannedAuthors) return false
                     if (!holdsManageRoles(granter)) return false
-                    if (!cited(e)) return false
+                    val strip = g.roleIds.none { it.lowercase() in servedRoles }
+                    if (if (strip) !cited(e) else !citedIfCiting(e)) return false
                     val granterRank = rankOf(granter) ?: return false
                     // Must strictly outrank each assigned role that actually exists...
                     val assigned = g.roleIds.take(ConcordLimits.MAX_ROLES_PER_MEMBER)

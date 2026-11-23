@@ -123,7 +123,8 @@ object Guestbook {
         val tags = ArrayList<Array<String>>(2)
         if (subMs != null) tags.add(arrayOf(TAG_MS, subMs.toString()))
         if (inviteCreator != null) {
-            tags.add(if (inviteLabel != null) arrayOf(TAG_INVITE, inviteCreator, inviteLabel) else arrayOf(TAG_INVITE, inviteCreator))
+            // CORD-02 §5: always three elements, "" when unlabelled (Armada reads no shorter tag).
+            tags.add(arrayOf(TAG_INVITE, inviteCreator, inviteLabel ?: ""))
         }
         return RumorAssembler.assembleRumor(memberPubKey, createdAt, KIND_JOIN_LEAVE, tags.toTypedArray(), action.wire)
     }
@@ -132,8 +133,8 @@ object Guestbook {
      * An authorized Kick (kind 3309) directing [target] to leave, citing the Grant the actor acts
      * under ([citation], the `vac` — null only for the owner, who cites nothing). Tags in the
      * examples' order: `ms`, `p`, `vac`. A Kick is only honored by clients when its signer holds
-     * [ConcordPermissions.KICK] and strictly outranks the target ([canKick]) — a Kick from a
-     * non-KICK holder is dropped (CORD-04 §6).
+     * [ConcordPermissions.KICK] (or BAN) and strictly outranks the target ([canKick]) — a Kick
+     * from a holder of neither is dropped (CORD-04 §6).
      */
     fun kick(
         actorPubKey: HexKey,
@@ -166,7 +167,7 @@ object Guestbook {
                     action = action,
                     createdAt = rumor.createdAt,
                     inviteCreator = invite?.getOrNull(1),
-                    inviteLabel = invite?.getOrNull(2),
+                    inviteLabel = invite?.getOrNull(2)?.takeIf { it.isNotEmpty() },
                     author = rumor.pubKey,
                     ms = ms,
                     rumorId = rumor.id,
@@ -196,17 +197,22 @@ object Guestbook {
 
     /**
      * Whether the Kick [entry] is honored against the folded [authority] (CORD-04 §5/§6): its
-     * author holds [ConcordPermissions.KICK], is not banned, and strictly outranks the target (the
-     * owner is never a valid target), judged against the **current** roster — and its `vac` is
-     * synced (block-until-synced: a citation we cannot yet match parks the Kick, here drops it
-     * until a later fold).
+     * author holds [ConcordPermissions.KICK] or [ConcordPermissions.BAN], is not banned, and
+     * strictly outranks the target (the owner is never a valid target), judged against the
+     * **current** roster — and its `vac` is synced (block-until-synced: a citation we cannot yet
+     * match parks the Kick, here drops it until a later fold).
      */
     fun canKick(
         authority: AuthorityResolver,
         entry: GuestbookEntry,
     ): Boolean =
         entry.action == GuestbookAction.KICK &&
-            authority.canActOn(entry.author, entry.member, ConcordPermissions.KICK) &&
+            // A Kick from a BAN holder is honored as one from a KICK holder: lifting a Ban writes the
+            // departure as a Kick (CORD-04 §6).
+            (
+                authority.canActOn(entry.author, entry.member, ConcordPermissions.KICK) ||
+                    authority.canActOn(entry.author, entry.member, ConcordPermissions.BAN)
+            ) &&
             authority.citationSatisfied(entry.author, entry.citation)
 
     /** True when [next] supersedes [prev]: later on the ms basis, or the lower rumor id on a tie. */
@@ -220,7 +226,7 @@ object Guestbook {
      * latest Join, Leave or honored Kick wins — later ms, ties to the lower rumor id.
      *  - an entry more than [MAX_FUTURE_MS] ahead of [nowMs] is dropped;
      *  - a [banned] author's entries, Kicks included, are dropped (CORD-04 §4);
-     *  - a Kick counts only when [canKick] honors it (a Kick from a non-KICK holder is dropped).
+     *  - a Kick counts only when [canKick] honors it (a Kick from a holder of neither KICK nor BAN is dropped).
      */
     fun coalesce(
         entries: Collection<GuestbookEntry>,

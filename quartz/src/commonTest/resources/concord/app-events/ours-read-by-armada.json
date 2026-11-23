@@ -1,0 +1,1417 @@
+{
+  "source": "Armada 848e12f0 (soapbox.pub) via quartz/tools/concord-vector-gen",
+  "community": {
+    "id": "7bb105a78a9c7a0230523ddfa3d10952593a00af80f4873cee2059078df6e2a4",
+    "owner": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    "owner_salt": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "root": "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6",
+    "channel": "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+    "epoch": 0,
+    "now_ms": 1767226200000
+  },
+  "actors": {
+    "owner": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    "admin": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+    "mod": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+    "alice": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+    "bob": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+  },
+  "control": [
+    {
+      "id": "7fc859c5bd44fea7c0f527c5255adfd3da0e99602c47fccdf5d727e6919951d9",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225600,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "0"
+        ],
+        [
+          "eid",
+          "7bb105a78a9c7a0230523ddfa3d10952593a00af80f4873cee2059078df6e2a4"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"name\":\"Vectors\"}"
+    },
+    {
+      "id": "efe8c75918f8135c239196f04570c5f19411615e691d60598a04a9484a0773f9",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225600,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "2"
+        ],
+        [
+          "eid",
+          "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"name\":\"general\",\"private\":false}"
+    },
+    {
+      "id": "50f93a867636977c4f7b6284f7942412c41865ab6f88f5f8dd65c7adbd1a11e2",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225601,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "1"
+        ],
+        [
+          "eid",
+          "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"role_id\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"name\":\"Admin\",\"position\":1,\"permissions\":\"2943\",\"scope\":{\"kind\":\"server\"}}"
+    },
+    {
+      "id": "d4a529cb2dc09bc0428011c4745e7e3e93f69e463c010b57f371540133dc1340",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225601,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "1"
+        ],
+        [
+          "eid",
+          "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"role_id\":\"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2\",\"name\":\"Moderator\",\"position\":2,\"permissions\":\"568\",\"scope\":{\"kind\":\"server\"}}"
+    },
+    {
+      "id": "07db2a58b3f41ce37ce887aaf747a70cb54b1bda5bd41bbb419b54b606aa1b1f",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225602,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "3"
+        ],
+        [
+          "eid",
+          "9fd252c6451da443b4926c7f2a77bbca722f87a0f8160f9c785db6ac79606172"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"member\":\"466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27\",\"role_ids\":[\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"]}"
+    },
+    {
+      "id": "54b6efe3801670e4182128aafac9fed4e20f698e069562beaa9caaab03729b92",
+      "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+      "created_at": 1767225602,
+      "kind": 3308,
+      "tags": [
+        [
+          "vsk",
+          "3"
+        ],
+        [
+          "eid",
+          "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665"
+        ],
+        [
+          "ev",
+          "1"
+        ]
+      ],
+      "content": "{\"member\":\"3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1\",\"role_ids\":[\"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2\"]}"
+    }
+  ],
+  "cases": [
+    {
+      "name": "message",
+      "plane": "chat",
+      "rumor": {
+        "id": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225610,
+        "kind": 9,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "101"
+          ]
+        ],
+        "content": "hello from quartz"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225610101,
+        "inline_reply_to": null,
+        "thread_root": null,
+        "thread_parent": null,
+        "mentions": [],
+        "visible": true
+      }
+    },
+    {
+      "name": "mention",
+      "plane": "chat",
+      "rumor": {
+        "id": "4ad90710abb813874167011daa9103493f5699fb666ca3a5d70ccd66dee3102c",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225611,
+        "kind": 9,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "202"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ]
+        ],
+        "content": "hey nostr:npub1ntpqxd0t8pmg6gzjhcwmhs7g7ctcgp693eg7dd9dytcaj96c39dswlwwu5"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225611202,
+        "inline_reply_to": null,
+        "thread_root": null,
+        "thread_parent": null,
+        "mentions": [
+          "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+        ],
+        "visible": true
+      }
+    },
+    {
+      "name": "inline_reply",
+      "plane": "chat",
+      "rumor": {
+        "id": "781dcfa0895e0430965a7b1d54f7107d8dd7040cb92a41ce95d99d2505e22832",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225612,
+        "kind": 9,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "303"
+          ],
+          [
+            "q",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+            "",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ]
+        ],
+        "content": "replying inline"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225612303,
+        "inline_reply_to": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "thread_root": null,
+        "thread_parent": null,
+        "mentions": [
+          "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+        ],
+        "visible": true
+      }
+    },
+    {
+      "name": "thread_reply",
+      "plane": "chat",
+      "rumor": {
+        "id": "56dc50522322a8011d1fd3b26813292c208112432cb9d05d2aa8bae23f8f2394",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225613,
+        "kind": 1111,
+        "tags": [
+          [
+            "E",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+            "",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "K",
+            "9"
+          ],
+          [
+            "P",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+            "",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "k",
+            "9"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "404"
+          ]
+        ],
+        "content": "in the thread"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225613404,
+        "inline_reply_to": null,
+        "thread_root": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "thread_parent": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "mentions": [
+          "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+        ],
+        "visible": true
+      }
+    },
+    {
+      "name": "thread_reply_nested",
+      "plane": "chat",
+      "rumor": {
+        "id": "a4ed2ed18af84d20e84b225f2ac10d15309d6563cb99140973d7be797ca5aaa8",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225614,
+        "kind": 1111,
+        "tags": [
+          [
+            "E",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+            "",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "K",
+            "9"
+          ],
+          [
+            "P",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "e",
+            "56dc50522322a8011d1fd3b26813292c208112432cb9d05d2aa8bae23f8f2394",
+            "",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ],
+          [
+            "k",
+            "1111"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ],
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "505"
+          ]
+        ],
+        "content": "deeper"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225614505,
+        "inline_reply_to": null,
+        "thread_root": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "thread_parent": "56dc50522322a8011d1fd3b26813292c208112432cb9d05d2aa8bae23f8f2394",
+        "mentions": [
+          "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+        ],
+        "visible": true
+      }
+    },
+    {
+      "name": "edit",
+      "plane": "chat",
+      "rumor": {
+        "id": "4537b14c252e3fb07e2eb8408214d1b671f434a251fd763b8818c0ffaaca0136",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225615,
+        "kind": 3302,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "606"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867"
+          ]
+        ],
+        "content": "hello from quartz, edited"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225615606,
+        "target": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "after": {
+          "target_content": "hello from quartz, edited",
+          "target_edited": true
+        }
+      }
+    },
+    {
+      "name": "edit_by_other",
+      "plane": "chat",
+      "rumor": {
+        "id": "0bfc3944ef2d1921db479db8cd9423617c2edad9630c05271a2c6100cf7d5f89",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225616,
+        "kind": 3302,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "707"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867"
+          ]
+        ],
+        "content": "not your message"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225616707,
+        "target": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "after": {
+          "target_content": "hello from quartz, edited",
+          "target_edited": true
+        }
+      }
+    },
+    {
+      "name": "reaction_plus",
+      "plane": "chat",
+      "rumor": {
+        "id": "88b7fd63fc53d0dbeafd150df14e4eaa7ae40833d8ea7530113288c3d86b2f42",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225617,
+        "kind": 7,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "808"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "k",
+            "9"
+          ]
+        ],
+        "content": "+"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225617808,
+        "target": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "reaction": {
+          "content": "+",
+          "key": "👍",
+          "custom_emoji_url": null,
+          "renderable": true
+        },
+        "after": {
+          "tallied": true,
+          "url": null
+        }
+      }
+    },
+    {
+      "name": "reaction_emoji",
+      "plane": "chat",
+      "rumor": {
+        "id": "3c970a0d637f913a0173c7acc006ae22ca4e72d05cc1eedfebfcdd5cbd453c36",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225618,
+        "kind": 7,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "909"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "k",
+            "9"
+          ]
+        ],
+        "content": "🤙"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225618909,
+        "target": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "reaction": {
+          "content": "🤙",
+          "key": "🤙",
+          "custom_emoji_url": null,
+          "renderable": true
+        },
+        "after": {
+          "tallied": true,
+          "url": null
+        }
+      }
+    },
+    {
+      "name": "reaction_custom",
+      "plane": "chat",
+      "rumor": {
+        "id": "984a437ea394b792092175c6aa725f07d098420dbf1ae0dc30d8906b9ad1b752",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225619,
+        "kind": 7,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "11"
+          ],
+          [
+            "e",
+            "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "k",
+            "9"
+          ],
+          [
+            "emoji",
+            "soapbox",
+            "https://example.invalid/soapbox.png"
+          ]
+        ],
+        "content": ":soapbox:"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225619011,
+        "target": "4b9431d4c72754580bb9bca4912424b2e90d43904cf892fd29c7f474c228d867",
+        "reaction": {
+          "content": ":soapbox:",
+          "key": ":soapbox:",
+          "custom_emoji_url": "https://example.invalid/soapbox.png",
+          "renderable": true
+        },
+        "after": {
+          "tallied": true,
+          "url": "https://example.invalid/soapbox.png"
+        }
+      }
+    },
+    {
+      "name": "unreact",
+      "plane": "chat",
+      "rumor": {
+        "id": "86dac63d5f89a53e3793543961820e1c9dbef217e2787e322ec0d98e4b19ee1a",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225620,
+        "kind": 5,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "22"
+          ],
+          [
+            "e",
+            "88b7fd63fc53d0dbeafd150df14e4eaa7ae40833d8ea7530113288c3d86b2f42"
+          ],
+          [
+            "k",
+            "7"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225620022,
+        "deletes": [
+          "88b7fd63fc53d0dbeafd150df14e4eaa7ae40833d8ea7530113288c3d86b2f42"
+        ],
+        "citation": false,
+        "after": {
+          "88b7fd63fc53d0dbeafd150df14e4eaa7ae40833d8ea7530113288c3d86b2f42": "removed"
+        }
+      }
+    },
+    {
+      "name": "delete_own",
+      "plane": "chat",
+      "rumor": {
+        "id": "d525ba16b98b4be593af96c09b7c73bdc21dcfd6d0c682d30ac950c953a4215e",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225621,
+        "kind": 5,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "33"
+          ],
+          [
+            "e",
+            "4ad90710abb813874167011daa9103493f5699fb666ca3a5d70ccd66dee3102c"
+          ],
+          [
+            "k",
+            "9"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225621033,
+        "deletes": [
+          "4ad90710abb813874167011daa9103493f5699fb666ca3a5d70ccd66dee3102c"
+        ],
+        "citation": false,
+        "after": {
+          "4ad90710abb813874167011daa9103493f5699fb666ca3a5d70ccd66dee3102c": "removed"
+        }
+      }
+    },
+    {
+      "name": "moderator_hide",
+      "plane": "chat",
+      "rumor": {
+        "id": "b4fd437dacd741c7a5df23a6a4bead51cd5cc89e34308957e9d29057d577eb47",
+        "pubkey": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "created_at": 1767225622,
+        "kind": 5,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "44"
+          ],
+          [
+            "e",
+            "781dcfa0895e0430965a7b1d54f7107d8dd7040cb92a41ce95d99d2505e22832"
+          ],
+          [
+            "k",
+            "9"
+          ],
+          [
+            "vac",
+            "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665",
+            "1",
+            "f33b56eebc4544b48d619731497247ca8923e43c1acad07d5fda6277590e8692"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225622044,
+        "deletes": [
+          "781dcfa0895e0430965a7b1d54f7107d8dd7040cb92a41ce95d99d2505e22832"
+        ],
+        "citation": true,
+        "after": {
+          "781dcfa0895e0430965a7b1d54f7107d8dd7040cb92a41ce95d99d2505e22832": "removed"
+        }
+      }
+    },
+    {
+      "name": "delete_by_non_moderator",
+      "plane": "chat",
+      "rumor": {
+        "id": "20277debafd5381e01e98be418ef3570d922269ad7064c3c7201fcd0f12e88df",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225623,
+        "kind": 5,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "55"
+          ],
+          [
+            "e",
+            "a4ed2ed18af84d20e84b225f2ac10d15309d6563cb99140973d7be797ca5aaa8"
+          ],
+          [
+            "k",
+            "1111"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225623055,
+        "deletes": [
+          "a4ed2ed18af84d20e84b225f2ac10d15309d6563cb99140973d7be797ca5aaa8"
+        ],
+        "citation": false,
+        "after": {
+          "a4ed2ed18af84d20e84b225f2ac10d15309d6563cb99140973d7be797ca5aaa8": "kept"
+        }
+      }
+    },
+    {
+      "name": "typing",
+      "plane": "chat",
+      "rumor": {
+        "id": "aad1bd180aeccaf75190ddbd4df75cb71c61a3c53fb4a6670c9f0f1ae1d0d794",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767226200,
+        "kind": 23311,
+        "tags": [
+          [
+            "channel",
+            "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+          ],
+          [
+            "epoch",
+            "0"
+          ],
+          [
+            "ms",
+            "0"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767226200000,
+        "typing": true
+      }
+    },
+    {
+      "name": "guestbook_join",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "510afcdae06f2f337b6cd3975e46a419ad8bcb9c362a09dcc0c80a3ceab770e9",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225630,
+        "kind": 3306,
+        "tags": [
+          [
+            "ms",
+            "1"
+          ]
+        ],
+        "content": "join"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225630001,
+        "member": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "state": "join",
+        "invite_creator": null,
+        "invite_label": null
+      }
+    },
+    {
+      "name": "guestbook_join_with_invite",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "a079a6c02dee3c7dd7e48ba8204f700dcf7dcce773cd118742d65b8fb45a10e3",
+        "pubkey": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "created_at": 1767225631,
+        "kind": 3306,
+        "tags": [
+          [
+            "ms",
+            "2"
+          ],
+          [
+            "invite",
+            "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+            ""
+          ]
+        ],
+        "content": "join"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225631002,
+        "member": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "state": "join",
+        "invite_creator": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "invite_label": null
+      }
+    },
+    {
+      "name": "guestbook_join_with_labelled_invite",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "8c984ce4dc15757924f7778391529cd5cbc26c9fce195bb0248537200addcc00",
+        "pubkey": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "created_at": 1767225631,
+        "kind": 3306,
+        "tags": [
+          [
+            "ms",
+            "3"
+          ],
+          [
+            "invite",
+            "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+            "Reddit"
+          ]
+        ],
+        "content": "join"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225631003,
+        "member": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "state": "join",
+        "invite_creator": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "invite_label": "Reddit"
+      }
+    },
+    {
+      "name": "guestbook_leave",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "7288fe26a58de215514b2c2583a81691e2068f091abf4e52f7bde2baa7c669b7",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225632,
+        "kind": 3306,
+        "tags": [
+          [
+            "ms",
+            "4"
+          ]
+        ],
+        "content": "leave"
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225632004,
+        "member": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "state": "leave",
+        "invite_creator": null,
+        "invite_label": null
+      }
+    },
+    {
+      "name": "guestbook_kick_by_moderator",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "a2c5b82cf0619e81f8dbb1fff13df6e1cc7b969601de35b756004cd0724c46a9",
+        "pubkey": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "created_at": 1767225633,
+        "kind": 3309,
+        "tags": [
+          [
+            "ms",
+            "5"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ],
+          [
+            "vac",
+            "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665",
+            "1",
+            "f33b56eebc4544b48d619731497247ca8923e43c1acad07d5fda6277590e8692"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225633005,
+        "member": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+        "state": "kick",
+        "invite_creator": null,
+        "invite_label": null
+      }
+    },
+    {
+      "name": "guestbook_kick_by_member",
+      "plane": "guestbook",
+      "rumor": {
+        "id": "4e0d2099676c1d2ff51318fd4217fefabc9e479bb3cbb7093356a8a410d1e351",
+        "pubkey": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+        "created_at": 1767225634,
+        "kind": 3309,
+        "tags": [
+          [
+            "ms",
+            "6"
+          ],
+          [
+            "p",
+            "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1"
+          ]
+        ],
+        "content": ""
+      },
+      "armada": {
+        "accepted": true,
+        "ms": 1767225634006,
+        "member": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "state": null,
+        "invite_creator": null,
+        "invite_label": null
+      }
+    },
+    {
+      "name": "control_role_subset_of_authors_bits",
+      "plane": "control",
+      "rumor": {
+        "id": "ebba596d8b8b3f480c35f6f9ade289bd4d49ac9a3f15388a397bc8c4fcdf1a55",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225640,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "1"
+          ],
+          [
+            "eid",
+            "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "9fd252c6451da443b4926c7f2a77bbca722f87a0f8160f9c785db6ac79606172",
+            "1",
+            "2d3988ab38f37b9537f8e2bff18bcf301aa14e03b9bae7f814c12b2821c46325"
+          ]
+        ],
+        "content": "{\"role_id\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\",\"name\":\"Helper\",\"position\":3,\"permissions\":\"8\",\"scope\":{\"kind\":\"server\"}}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": true,
+        "role": {
+          "role_id": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "position": 3,
+          "permissions": "8"
+        }
+      }
+    },
+    {
+      "name": "control_role_with_a_bit_the_author_lacks",
+      "plane": "control",
+      "rumor": {
+        "id": "c6208ccfd46bbb53cacc3dc6e55fba5ddbcf9c5427b2f121f8b78657970798b3",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225641,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "1"
+          ],
+          [
+            "eid",
+            "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "9fd252c6451da443b4926c7f2a77bbca722f87a0f8160f9c785db6ac79606172",
+            "1",
+            "2d3988ab38f37b9537f8e2bff18bcf301aa14e03b9bae7f814c12b2821c46325"
+          ]
+        ],
+        "content": "{\"role_id\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\",\"name\":\"Helper\",\"position\":3,\"permissions\":\"67108864\",\"scope\":{\"kind\":\"server\"}}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": false,
+        "role": null
+      }
+    },
+    {
+      "name": "control_role_at_the_authors_own_rank",
+      "plane": "control",
+      "rumor": {
+        "id": "3b3d1007441e3bac26a8b351a1e22a61f84c0db76c4cc655254ed38337947153",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225642,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "1"
+          ],
+          [
+            "eid",
+            "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "9fd252c6451da443b4926c7f2a77bbca722f87a0f8160f9c785db6ac79606172",
+            "1",
+            "2d3988ab38f37b9537f8e2bff18bcf301aa14e03b9bae7f814c12b2821c46325"
+          ]
+        ],
+        "content": "{\"role_id\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\",\"name\":\"Helper\",\"position\":1,\"permissions\":\"8\",\"scope\":{\"kind\":\"server\"}}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": false,
+        "role": null
+      }
+    },
+    {
+      "name": "control_role_by_member_without_manage_roles",
+      "plane": "control",
+      "rumor": {
+        "id": "7cfaeaf514a6cc4532f81952ef5f1be00c34478637c92bb3039c6e50654c95f6",
+        "pubkey": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "created_at": 1767225643,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "1"
+          ],
+          [
+            "eid",
+            "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665",
+            "1",
+            "f33b56eebc4544b48d619731497247ca8923e43c1acad07d5fda6277590e8692"
+          ]
+        ],
+        "content": "{\"role_id\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\",\"name\":\"Helper\",\"position\":3,\"permissions\":\"8\",\"scope\":{\"kind\":\"server\"}}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": false,
+        "role": null
+      }
+    },
+    {
+      "name": "control_role_uncited",
+      "plane": "control",
+      "rumor": {
+        "id": "e6a37ce8bac55e9c8fd10304de0d96d4ecabe38cb79db021e9362a1840af24b1",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225647,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "1"
+          ],
+          [
+            "eid",
+            "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+          ],
+          [
+            "ev",
+            "1"
+          ]
+        ],
+        "content": "{\"role_id\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\",\"name\":\"Helper\",\"position\":3,\"permissions\":\"8\",\"scope\":{\"kind\":\"server\"}}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": true,
+        "role": {
+          "role_id": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "position": 3,
+          "permissions": "8"
+        }
+      }
+    },
+    {
+      "name": "control_grant_by_admin",
+      "plane": "control",
+      "rumor": {
+        "id": "b1ff7422a705f92c49612247ce7a4b480905ba8b03020fe2bcd4ddc6f6377bd9",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225644,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "3"
+          ],
+          [
+            "eid",
+            "e87807c425fd58dc00e38776dafb87960120b4f981b955c086c9886aa547f825"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "9fd252c6451da443b4926c7f2a77bbca722f87a0f8160f9c785db6ac79606172",
+            "1",
+            "2d3988ab38f37b9537f8e2bff18bcf301aa14e03b9bae7f814c12b2821c46325"
+          ]
+        ],
+        "content": "{\"member\":\"9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b\",\"role_ids\":[\"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2\"]}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": true,
+        "member_roles": [
+          "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+        ]
+      }
+    },
+    {
+      "name": "control_grant_by_admin_uncited",
+      "plane": "control",
+      "rumor": {
+        "id": "6bca40f7f851f21730ab0cfc1f8f4bc522bca5b4091c5640f045bcf24e4bee11",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225645,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "3"
+          ],
+          [
+            "eid",
+            "e87807c425fd58dc00e38776dafb87960120b4f981b955c086c9886aa547f825"
+          ],
+          [
+            "ev",
+            "1"
+          ]
+        ],
+        "content": "{\"member\":\"9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b\",\"role_ids\":[\"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2\"]}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": true,
+        "member_roles": [
+          "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+        ]
+      }
+    },
+    {
+      "name": "control_grant_by_moderator",
+      "plane": "control",
+      "rumor": {
+        "id": "04442f6d0d726fec6b60ceea50ad187165ac19d81599a2f30fcb7b8f755eecbd",
+        "pubkey": "3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1",
+        "created_at": 1767225646,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "3"
+          ],
+          [
+            "eid",
+            "e87807c425fd58dc00e38776dafb87960120b4f981b955c086c9886aa547f825"
+          ],
+          [
+            "ev",
+            "1"
+          ],
+          [
+            "vac",
+            "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665",
+            "1",
+            "f33b56eebc4544b48d619731497247ca8923e43c1acad07d5fda6277590e8692"
+          ]
+        ],
+        "content": "{\"member\":\"9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b\",\"role_ids\":[\"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2\"]}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": false,
+        "member_roles": []
+      }
+    },
+    {
+      "name": "control_grant_strip_uncited",
+      "plane": "control",
+      "rumor": {
+        "id": "68b1385a12d48e8132487452965387072b9ef16a5d93f515773c59d7bd8d395d",
+        "pubkey": "466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+        "created_at": 1767225648,
+        "kind": 3308,
+        "tags": [
+          [
+            "vsk",
+            "3"
+          ],
+          [
+            "eid",
+            "322e1de8bb334112a09bac8ca04fdc4439ea3a19178a7a6f3beede83cdb3c665"
+          ],
+          [
+            "ev",
+            "1"
+          ]
+        ],
+        "content": "{\"member\":\"3c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1\"}"
+      },
+      "armada": {
+        "accepted": true,
+        "honored": false,
+        "member_roles": [
+          "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+        ]
+      }
+    },
+    {
+      "name": "channel_order",
+      "plane": "control",
+      "rumors": [
+        {
+          "id": "0de3d13eda7f8b7bcd998571866470e9f0c6f9b5336683e2b97c28b33d7a26e0",
+          "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "created_at": 1767225650,
+          "kind": 3308,
+          "tags": [
+            [
+              "vsk",
+              "2"
+            ],
+            [
+              "eid",
+              "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+            ],
+            [
+              "ev",
+              "1"
+            ]
+          ],
+          "content": "{\"name\":\"zeta\",\"private\":false}"
+        },
+        {
+          "id": "a51dc9dd9689993115dc41a3a4b7be40aefc6d326640625c522b10d7f0f0ea68",
+          "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "created_at": 1767225650,
+          "kind": 3308,
+          "tags": [
+            [
+              "vsk",
+              "2"
+            ],
+            [
+              "eid",
+              "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
+            ],
+            [
+              "ev",
+              "1"
+            ]
+          ],
+          "content": "{\"name\":\"alpha\",\"private\":false}"
+        },
+        {
+          "id": "fc8cbe1493e6009ec21db5afccb827e7cda22624f1f036ceae4d9d63d5b554f9",
+          "pubkey": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "created_at": 1767225650,
+          "kind": 3308,
+          "tags": [
+            [
+              "vsk",
+              "2"
+            ],
+            [
+              "eid",
+              "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+            ],
+            [
+              "ev",
+              "1"
+            ]
+          ],
+          "content": "{\"name\":\"beta\",\"private\":false}"
+        }
+      ],
+      "armada": {
+        "order": [
+          "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+          "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+          "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+        ]
+      }
+    }
+  ]
+}
