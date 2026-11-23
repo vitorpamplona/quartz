@@ -96,4 +96,30 @@ class BuzzChannelLabelsTest {
         assertEquals(BUZZ_ROLE_GUEST, buzzRoleFor(listOf("guest")))
         assertEquals(BUZZ_ROLE_BOT, buzzRoleFor(listOf("bot", "guest")))
     }
+
+    private val uuid = "11111111-1111-4111-8111-111111111111"
+
+    private fun state(vararg tags: Array<String>): GroupMetadataEvent = EventFactory.create("00".repeat(32), "aa".repeat(32), 100, GroupMetadataEvent.KIND, arrayOf(*tags), "", "22".repeat(64)) as GroupMetadataEvent
+
+    @Test
+    fun recognisesBuzzGroupStateOfEitherVersion() {
+        // NIP-CL relay: channel type first, then the creator.
+        assertTrue(BuzzChannelLabels.looksLikeBuzzGroupStateOfAnyVersion(state(arrayOf("d", uuid), arrayOf("t", "stream"), arrayOf("P", creator))))
+        // Before buzz `8bb49a1b6`: the channel type alone, on a UUID-named channel.
+        assertTrue(BuzzChannelLabels.looksLikeBuzzGroupStateOfAnyVersion(state(arrayOf("d", uuid), arrayOf("name", "general"), arrayOf("t", "forum"))))
+        // NIP-29: topics, or a `#stream` topic on a group with a short id.
+        assertFalse(BuzzChannelLabels.looksLikeBuzzGroupStateOfAnyVersion(state(arrayOf("d", "pizza"), arrayOf("t", "stream"))))
+        assertFalse(BuzzChannelLabels.looksLikeBuzzGroupStateOfAnyVersion(state(arrayOf("d", uuid), arrayOf("t", "bitcoin"), arrayOf("t", "stream"))))
+        assertFalse(BuzzChannelLabels.looksLikeBuzzGroupStateOfAnyVersion(null))
+    }
+
+    @Test
+    fun aListedChannelIsAnOpenStreamOrForumNotUnlisted() {
+        assertTrue(BuzzChannelLabels.isListed(state(arrayOf("d", uuid), arrayOf("t", "stream"))))
+        assertTrue(BuzzChannelLabels.isListed(state(arrayOf("d", uuid), arrayOf("t", "forum"))))
+        assertTrue(BuzzChannelLabels.isListed(state(arrayOf("d", uuid))), "an older relay wrote no type")
+        assertFalse(BuzzChannelLabels.isListed(state(arrayOf("d", uuid), arrayOf("t", "dm"))))
+        assertFalse(BuzzChannelLabels.isListed(state(arrayOf("d", uuid), arrayOf("t", "stream"), arrayOf("private"))))
+        assertFalse(BuzzChannelLabels.isListed(state(arrayOf("d", uuid), arrayOf("t", "stream"), arrayOf("unlisted"))))
+    }
 }

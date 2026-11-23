@@ -227,6 +227,49 @@ class AuthorityResolverTest {
     }
 
     @Test
+    fun canWriteRoleAgreesWithTheFoldsRoleGate() {
+        // carol leads at position 2 with MANAGE_ROLES|KICK, but not BAN.
+        val leadRole = "33".repeat(32)
+        val leadJson = """{"name":"Lead","position":2,"permissions":"9"}"""
+        val modV0 = role(modRole, modJson)
+
+        fun editionOfMod(
+            json: String,
+            rumorId: String,
+        ) = ControlEdition(ControlEntityKind.ROLE, modRole.hexToByteArray(), 1, modV0.hash, null, json, carol, rumorId, 1)
+
+        val base =
+            listOf(
+                role(adminRole, adminJson),
+                role(leadRole, leadJson),
+                modV0,
+                grant("31".repeat(32), alice, listOf(adminRole), granter = owner),
+                grant("33".repeat(32), carol, listOf(leadRole), granter = owner),
+            )
+        val r = ControlFixtures.resolve(base, owner)
+
+        // Handing out BAN, which carol lacks: every reader drops it, so canWriteRole refuses it.
+        val withBan = """{"name":"Mod","position":5,"permissions":"24"}"""
+        assertEquals(8L.toString(), ControlFixtures.resolve(base + editionOfMod(withBan, "mod-ban"), owner).roles()[modRole]?.permissions)
+        assertFalse(r.canWriteRole(carol, modRole, RoleEntity(name = "Mod", position = 5, permissions = ConcordPermissions.of(KICK, BAN).toWire())))
+
+        // A rename that keeps the bits she holds: honored, and allowed.
+        val renamed = """{"name":"Moderator","position":5,"permissions":"8"}"""
+        assertEquals("Moderator", ControlFixtures.resolve(base + editionOfMod(renamed, "mod-rename"), owner).roles()[modRole]?.name)
+        assertTrue(r.canWriteRole(carol, modRole, RoleEntity(name = "Moderator", position = 5, permissions = ConcordPermissions.of(KICK).toWire())))
+
+        // Not a role at or above her own rank, nor a move up to it.
+        assertFalse(r.canWriteRole(carol, adminRole, RoleEntity(name = "Admin", position = 3, permissions = ConcordPermissions.of(KICK).toWire())))
+        assertFalse(r.canWriteRole(carol, modRole, RoleEntity(name = "Mod", position = 2, permissions = ConcordPermissions.of(KICK).toWire())))
+        // A delete is judged on rank alone.
+        assertTrue(r.canWriteRole(carol, modRole, RoleEntity(name = "Mod", position = 5, permissions = ConcordPermissions.of(KICK, BAN).toWire(), deleted = true)))
+        // The owner writes anything but position 0; a member without MANAGE_ROLES writes nothing.
+        assertTrue(r.canWriteRole(owner, modRole, RoleEntity(name = "Mod", position = 5, permissions = ConcordPermissions.ALL.toWire())))
+        assertFalse(r.canWriteRole(owner, modRole, RoleEntity(name = "Mod", position = 0, permissions = ConcordPermissions.NONE.toWire())))
+        assertFalse(r.canWriteRole(dave, modRole, RoleEntity(name = "Mod", position = 9, permissions = ConcordPermissions.NONE.toWire())))
+    }
+
+    @Test
     fun ranksPermissionsAndActionAuthorityAreOwnerRooted() {
         val heads =
             listOf(

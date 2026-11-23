@@ -227,6 +227,35 @@ data class AuthorityResolver private constructor(
         return actorRank < targetRank
     }
 
+    /**
+     * Whether a role edition by [author] that makes the role [roleId] read [edited] passes every
+     * reader's role gate (CORD-04 §2), the Grant citation aside (the edition carries it; see
+     * [citationFor]): no role may take the owner's position 0; the owner may write any other; anyone
+     * else must be unbanned, hold MANAGE_ROLES through a role, strictly outrank the role where it
+     * stands and (unless [edited] deletes it) where it moves to, and hold every permission [edited]
+     * carries. A client asks this before publishing an edition every reader would drop.
+     */
+    fun canWriteRole(
+        author: String,
+        roleId: String,
+        edited: RoleEntity,
+    ): Boolean {
+        if (!edited.deleted && edited.position < 1) return false
+        val a = author.lowercase()
+        if (a == ownerLower) return true
+        if (a in banned) return false
+        val held = rolesFor(a)
+        if (held.none { it.permissionBits().has(ConcordPermissions.MANAGE_ROLES) }) return false
+        val authorRank = rank(a) ?: return false
+        val current = roles[roleId]?.position
+        if (current != null && current <= authorRank) return false
+        if (edited.deleted) return true
+        if (edited.position <= authorRank) return false
+        var bits = ConcordPermissions.NONE
+        for (role in held) bits = bits union role.permissionBits()
+        return bits.hasAll(edited.permissionBits())
+    }
+
     /** [member]'s honored Grant head, or null when they hold none (the owner never does). */
     fun grantHead(member: String): GrantHead? = grantHeads[member.lowercase()]
 
