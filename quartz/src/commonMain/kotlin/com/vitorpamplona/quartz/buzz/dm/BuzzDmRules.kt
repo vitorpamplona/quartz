@@ -84,6 +84,19 @@ object BuzzDmRules {
             if (includeHistory) dmHistory(DmHistoryTag.INCLUDE)
         }
 
+    /**
+     * Whether a DM command's OK says it made a new DM (`response:{…,"created":true}`), or null when
+     * the OK does not say.
+     */
+    fun createdFromOk(message: String?): Boolean? =
+        message
+            ?.let { CREATED_FIELD.find(it) }
+            ?.groupValues
+            ?.get(1)
+            ?.toBooleanStrict()
+
+    private val CREATED_FIELD = Regex("\"created\"\\s*:\\s*(true|false)")
+
     /** The relay-assigned DM channel id in an OK message (`response:{"channel_id":"…"}`), if any. */
     fun channelIdFromOk(message: String?): String? =
         message

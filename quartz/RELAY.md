@@ -491,9 +491,19 @@ like any other policy — you can also split them across several policies:
   `maxLimit` (substituting `defaultLimit` when none is given). Rejections use
   the `invalid:` machine-readable prefix.
 - **Per-connection** (the `acceptMessage` / `acceptSubscription` policy hooks):
-  oversized frames get a `NOTICE` (`maxMessageLength`); a new subscription past
-  `maxSubscriptions` is `CLOSED` with `rate-limited:`. These hooks exist because
-  a policy otherwise can't see the raw frame or the live subscription count.
+  oversized frames (`maxMessageLength`) are answered by the id they carry, as a
+  frame that does not parse is: an EVENT or AUTH with `OK false`, a REQ, COUNT
+  or CLOSE with `CLOSED` on its sub id (a REQ so refused also ends the open
+  subscription it would have replaced), and only a frame with no readable id
+  with a `NOTICE`; a new subscription past `maxSubscriptions` is `CLOSED` with
+  `rate-limited:`. These hooks exist because a policy otherwise can't see the
+  raw frame or the live subscription count.
+- **COUNT runs off the command loop**, like a REQ's replay: a COUNT waiting on
+  the backend never holds up the frames behind it (a CLOSE that would free the
+  backend's permit included), and its one answer, `COUNT` or `CLOSED`, can
+  arrive after frames from later commands (NIP-45 pairs them by id). The session
+  does not cap how many run at once: that is the backend's to bound, as it bounds
+  a connection's REQ replays. A disconnect cancels every COUNT still running.
 - **Advertised only**: `minPowDifficulty` (enforce with a PoW policy),
   `authRequired` (use `FullAuthPolicy`), `paymentRequired`, `restrictedWrites`.
 
@@ -539,43 +549,6 @@ The engine frames `count`/`approximate`/`hll` onto the wire
 (`["COUNT", id, {"count":N,"hll":"<512-hex>"}]`). Register arrays built by two
 relays over the same corpus merge with `HyperLogLog.merge(...)` into a
 deduplicated cross-relay estimate.
-
-A COUNT runs beside the connection's reader, as a REQ's replay does: a
-`countResult` that suspends holds up no EVENT, REQ or CLOSE sent after it, and
-its answer may arrive after theirs (NIP-45 pairs it by id).
-
-- The engine does not pace a connection's counts: they run at once, and how
-  many reach the store together, or in what order, is the backend's call (a
-  read gate in the app). The policy's `acceptSubscription` caps how many a
-  connection holds (`RelayLimits.maxSubscriptions`), counted apart from REQs;
-  the excess gets `CLOSED rate-limited:`.
-- A count or REQ replay the client cancelled keeps its slot until the store
-  lets go of it, so a store that ignores cancellation (a blocking read) cannot
-  be piled onto by closing and reopening. A replacement (re-COUNT, re-REQ) may
-  run beside the read it replaces while that one stops: at most one over the cap.
-- A COUNT on an id still pending replaces the earlier one, and a CLOSE on that
-  id (which also ends a REQ of the same id) or a disconnect cancels it. A
-  cancelled count is never answered. One whose answer was already going out is
-  not cancelled: it is answered once, before its replacement's answer, and a
-  CLOSE that came too late is told `no such subscription` after it.
-- The store is asked with the identities authenticated when the COUNT arrived,
-  however long it waits. It runs in the session's scope, as a REQ's replay
-  does, so `CoroutineContext` elements a host sets around `receive` (an MDC or
-  other `ThreadContextElement`) do not reach `countResult`.
-- A store that throws its own `CancellationException` (a timeout on its read),
-  or an `Error` such as `TODO()`'s, fails the COUNT or REQ with
-  `CLOSED error:`; only the request's own cancellation, or a fatal VM error,
-  ends it without an answer. A REQ the relay ends this way gives up its slot.
-- Answers are sent outside any lock, so a sink may end its session from inside
-  `SessionSink.message` (a transport hanging up once it has its answer).
-- A REQ or COUNT that registers while the session is closing (a disconnect on
-  another thread) is stopped as it registers.
-
-Behaviour changes for policies (after 2.22.1): `acceptSubscription` now also sees COUNT
-query ids, so a `maxSubscriptions` cap (vespa-relay's default 50 included) also
-caps a connection's unanswered counts. It runs after `accept`, so an id that is
-both invalid and over the cap is refused `invalid:`, not `rate-limited:`, and a
-`RateLimitPolicy` token is spent on a REQ the cap then refuses.
 
 ## NIP-86 admin over HTTP
 

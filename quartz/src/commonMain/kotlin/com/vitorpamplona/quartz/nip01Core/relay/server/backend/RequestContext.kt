@@ -68,9 +68,7 @@ interface RequestContext {
      * freshly recorded pubkey(s). Each read returns an **immutable snapshot**
      * (the engine swaps the set copy-on-write on AUTH), so holding one across
      * a long replay is safe — it just won't grow if another AUTH lands
-     * mid-query. A COUNT's context is frozen when the COUNT arrives: a count
-     * that waits (behind the backend's own read gate, say) is still asked as
-     * the identities stood then, never with one that authenticated after it.
+     * mid-query.
      */
     val authenticatedUsers: Set<HexKey>
 

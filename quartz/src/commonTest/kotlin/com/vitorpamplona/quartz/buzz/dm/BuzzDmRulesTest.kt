@@ -82,4 +82,14 @@ class BuzzDmRulesTest {
         assertNull(BuzzDmRules.channelIdFromOk("duplicate: already processed"))
         assertNull(BuzzDmRules.channelIdFromOk(null))
     }
+
+    @Test
+    fun readsWhetherTheCommandMadeANewDm() {
+        val channel = "11111111-1111-4111-8111-111111111111"
+        assertEquals(true, BuzzDmRules.createdFromOk("response:{\"channel_id\":\"$channel\",\"created\":true}"))
+        assertEquals(true, BuzzDmRules.createdFromOk("response:{\"channel_id\":\"$channel\", \"created\": true}"))
+        assertEquals(false, BuzzDmRules.createdFromOk("response:{\"channel_id\":\"$channel\",\"created\":false}"))
+        assertNull(BuzzDmRules.createdFromOk("response:{\"channel_id\":\"$channel\"}"))
+        assertNull(BuzzDmRules.createdFromOk(null))
+    }
 }

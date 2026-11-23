@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.concord.cord04Roles.ConcordPermissions
 import com.vitorpamplona.quartz.concord.cord04Roles.RankedRosterContent
 import com.vitorpamplona.quartz.concord.cord06Rekey.ConcordRekey
 import com.vitorpamplona.quartz.concord.cord06Rekey.RekeyBlob
+import com.vitorpamplona.quartz.concord.cord06Rekey.RekeyPayload
 import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.GroupKey
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
@@ -216,6 +217,115 @@ object ConcordChannelAccess {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** What a reader does with one `access` delivery it holds (CORD-03 §5), decided before any signer call. */
+    enum class AccessVerdict {
+        /** Not an `access` delivery of this Channel, or it holds no blob for the reader: settle it. */
+        NOT_FOR_ME,
+
+        /** It hands an epoch the reader already holds or has passed: settle it. */
+        STALE,
+
+        /**
+         * The fold does not trust it yet (the deliverer's or the reader's own Grant may still fold),
+         * or it jumps more than [MAX_EPOCH_JUMP] past the held epoch: keep it for a later fold.
+         */
+        WAIT,
+
+        /** Open the reader's blob ([openAccessFor]). */
+        OPEN,
+    }
+
+    /**
+     * [AccessVerdict] for [delivery] of Channel [channelIdHex] held by [recipient], who holds the
+     * Channel at [heldEpoch] (null: no key yet). [trusted] is [deliveryTrusted] against the
+     * reader's fold, asked last since it is the costliest check.
+     */
+    fun accessVerdict(
+        delivery: ChannelDelivery,
+        channelIdHex: HexKey,
+        recipient: HexKey,
+        heldEpoch: Long?,
+        trusted: () -> Boolean,
+    ): AccessVerdict {
+        if (delivery.form != FORM_ACCESS || !delivery.scopeIdHex.equals(channelIdHex, ignoreCase = true)) return AccessVerdict.NOT_FOR_ME
+        if (!holdsAccessBlobFor(delivery, recipient, channelIdHex)) return AccessVerdict.NOT_FOR_ME
+        if (heldEpoch != null && delivery.newEpoch <= heldEpoch) return AccessVerdict.STALE
+        if (heldEpoch != null && delivery.newEpoch > heldEpoch + MAX_EPOCH_JUMP) return AccessVerdict.WAIT
+        return if (trusted()) AccessVerdict.OPEN else AccessVerdict.WAIT
+    }
+
+    /** Whether [delivery] carries a blob at [recipient]'s locator (CORD-06 §1): no signer call, no decryption. */
+    fun holdsAccessBlobFor(
+        delivery: ChannelDelivery,
+        recipient: HexKey,
+        scopeIdHex: HexKey,
+    ): Boolean {
+        val locator = recipientLocatorOrNull(delivery, recipient, scopeIdHex) ?: return false
+        return delivery.blobs.any { it.locator == locator }
+    }
+
+    private fun recipientLocatorOrNull(
+        delivery: ChannelDelivery,
+        recipient: HexKey,
+        scopeIdHex: HexKey,
+    ): HexKey? =
+        try {
+            ConcordKeyDerivation.recipientLocator(delivery.deliverer.hexToByteArray(), recipient.hexToByteArray(), scopeIdHex.hexToByteArray(), delivery.newEpoch).toHexKey()
+        } catch (_: Exception) {
+            null
+        }
+
+    /** What opening the reader's blob of an `access` delivery came to ([openAccessFor]). */
+    sealed interface AccessOpening {
+        /** The Channel key it hands the reader. */
+        class Key(
+            val key: ByteArray,
+        ) : AccessOpening
+
+        /** No blob for the reader, or it decrypts to something that is not this Channel's key at this epoch: settled. */
+        data object Refused : AccessOpening
+
+        /**
+         * The signer did not answer (a NIP-46 timeout, a NIP-55 rejection, a signer not reachable):
+         * nothing is known about the blob, so the delivery stays for a later try.
+         */
+        data object SignerUnavailable : AccessOpening
+    }
+
+    /**
+     * [openAccess] telling a signer that could not answer ([AccessOpening.SignerUnavailable]) apart
+     * from a blob that is not the reader's to use ([AccessOpening.Refused]), which [openAccess] folds
+     * into one null. Settling a delivery on a signer error leaves the member keyless: every holder
+     * reads them as served and none delivers again.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    suspend fun openAccessFor(
+        delivery: ChannelDelivery,
+        signer: NostrSigner,
+        channelIdHex: HexKey,
+    ): AccessOpening {
+        if (delivery.form != FORM_ACCESS || !delivery.scopeIdHex.equals(channelIdHex, ignoreCase = true)) return AccessOpening.Refused
+        val scope = channelIdHex.hexToByteArray()
+        val locator = recipientLocatorOrNull(delivery, signer.pubKey, channelIdHex) ?: return AccessOpening.Refused
+        val blob = delivery.blobs.firstOrNull { it.locator == locator } ?: return AccessOpening.Refused
+        val plaintext =
+            try {
+                signer.nip44Decrypt(blob.wrapped, delivery.deliverer.lowercase())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return AccessOpening.SignerUnavailable
+            }
+        val payload =
+            try {
+                RekeyPayload.decode(Base64.Default.decode(plaintext))
+            } catch (_: Exception) {
+                null
+            } ?: return AccessOpening.Refused
+        if (!payload.scopeId.contentEquals(scope) || payload.epoch != delivery.newEpoch) return AccessOpening.Refused
+        return AccessOpening.Key(payload.newKey)
     }
 
     /** The tags of an `access` delivery of [scopeId] at [newEpoch] (CORD-06 §1): no `prevepoch`, `prevcommit` or `chunk`. */
