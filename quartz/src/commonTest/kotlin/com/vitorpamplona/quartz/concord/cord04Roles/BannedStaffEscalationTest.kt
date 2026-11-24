@@ -140,24 +140,24 @@ class BannedStaffEscalationTest {
         prev: ByteArray?,
     ) = edition(ControlEntityKind.METADATA, metadataEntity, version, prev, json, author, "meta-$version-$author")
 
-    private val channelV0 = channel("""{"name":"general"}""", owner, 0, null)
-    private val metadataV0 = metadata("""{"name":"My Community"}""", owner, 0, null)
-    private val bobGrantV0 = grant(bobGrantEntity, bob, listOf(modRole), owner)
-    private val modRoleV0 = role(modRole, modJson)
+    private val channelV1 = channel("""{"name":"general"}""", owner, 1, null)
+    private val metadataV1 = metadata("""{"name":"My Community"}""", owner, 1, null)
+    private val bobGrantV1 = grant(bobGrantEntity, bob, listOf(modRole), owner)
+    private val modRoleV1 = role(modRole, modJson)
 
     /** The owner-authored community every test starts from: two roles, two grants, a channel, metadata. */
     private fun community() =
         mutableListOf(
             role(adminRole, adminJson),
-            modRoleV0,
+            modRoleV1,
             grant("31".repeat(32), alice, listOf(adminRole), owner),
-            bobGrantV0,
-            channelV0,
-            metadataV0,
+            bobGrantV1,
+            channelV1,
+            metadataV1,
         )
 
     /** The owner bans alice. Genesis of the banlist, so every test can fork or chain off it. */
-    private val ownerBansAlice = banlist(owner, 0, null, alice)
+    private val ownerBansAlice = banlist(owner, 1, null, alice)
 
     /** Alice, already banned, mints a role just below herself and hands it to a fresh npub. */
     private fun aliceMintsAPuppet() =
@@ -198,8 +198,8 @@ class BannedStaffEscalationTest {
         val editions =
             community() + ownerBansAlice + aliceMintsAPuppet() +
                 // A channel tombstone is terminal — CORD-03: the id is never reused.
-                channel("""{"name":"general","deleted":true}""", puppet, 1, channelV0.hash) +
-                metadata("""{"name":"Owned by the guy you banned"}""", puppet, 1, metadataV0.hash)
+                channel("""{"name":"general","deleted":true}""", puppet, 2, channelV1.hash) +
+                metadata("""{"name":"Owned by the guy you banned"}""", puppet, 2, metadataV1.hash)
 
         val state = ControlFixtures.fold(editions, owner)
 
@@ -209,7 +209,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun theSockpuppetBansEveryMemberBeneathIt() {
-        val editions = community() + ownerBansAlice + aliceMintsAPuppet() + banlist(puppet, 1, ownerBansAlice.hash, alice, bob, carol)
+        val editions = community() + ownerBansAlice + aliceMintsAPuppet() + banlist(puppet, 2, ownerBansAlice.hash, alice, bob, carol)
 
         val r = ControlFixtures.resolve(editions, owner)
 
@@ -219,7 +219,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun aBannedAdminBansEveryoneBeneathThemWithoutNeedingAPuppetAtAll() {
-        val editions = community() + ownerBansAlice + banlist(alice, 1, ownerBansAlice.hash, alice, bob, carol)
+        val editions = community() + ownerBansAlice + banlist(alice, 2, ownerBansAlice.hash, alice, bob, carol)
 
         val r = ControlFixtures.resolve(editions, owner)
 
@@ -234,7 +234,7 @@ class BannedStaffEscalationTest {
         // her — it forks at genesis. So a rule that only asks "was the author banned by this
         // edition's parent?" never sees her ban. The equal-version fork now resolves authority
         // first (CORD-04 §1): the owner's edition takes it whatever the rumor ids say.
-        val editions = community() + ownerBansAlice + banlist(alice, 0, null, bob, carol)
+        val editions = community() + ownerBansAlice + banlist(alice, 1, null, bob, carol)
 
         val r = ControlFixtures.resolve(editions, owner)
 
@@ -245,7 +245,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun aBannedAdminRevokesTheSurvivingModerators() {
-        val editions = community() + ownerBansAlice + grant(bobGrantEntity, bob, emptyList(), author = alice, version = 2, prev = bobGrantV0.hash)
+        val editions = community() + ownerBansAlice + grant(bobGrantEntity, bob, emptyList(), author = alice, version = 2, prev = bobGrantV1.hash)
 
         val r = ControlFixtures.resolve(editions, owner)
 
@@ -255,7 +255,7 @@ class BannedStaffEscalationTest {
 
     @Test
     fun aBannedAdminDeletesEveryRoleBeneathThem() {
-        val tombstone = role(modRole, """{"name":"Mod","position":5,"permissions":"24","deleted":true}""", author = alice, version = 2, prev = modRoleV0.hash)
+        val tombstone = role(modRole, """{"name":"Mod","position":5,"permissions":"24","deleted":true}""", author = alice, version = 2, prev = modRoleV1.hash)
 
         val r = ControlFixtures.resolve(community() + ownerBansAlice + tombstone, owner)
 
@@ -267,7 +267,7 @@ class BannedStaffEscalationTest {
     fun selfUnbanIsStillRefused() {
         // docs/concord-banlist-rank-conformance.md §4 row 3, the half that IS closed: the delta rule
         // gates removals too, and strict outranking means nobody outranks themselves.
-        val editions = community() + ownerBansAlice + banlist(alice, 1, ownerBansAlice.hash)
+        val editions = community() + ownerBansAlice + banlist(alice, 2, ownerBansAlice.hash)
 
         assertTrue(ControlFixtures.resolve(editions, owner).isBanned(alice), "a banned member may not lift their own ban")
     }
@@ -277,7 +277,7 @@ class BannedStaffEscalationTest {
         // The puppet sits at position 2 and alice at 1, and no edition may claim a position at or
         // above its own signer — so her delegation chain can only ever descend. Nothing she mints
         // can outrank her, and so nothing she mints can unban her.
-        val editions = community() + ownerBansAlice + aliceMintsAPuppet() + banlist(puppet, 1, ownerBansAlice.hash)
+        val editions = community() + ownerBansAlice + aliceMintsAPuppet() + banlist(puppet, 2, ownerBansAlice.hash)
 
         assertTrue(ControlFixtures.resolve(editions, owner).isBanned(alice), "the puppet does not outrank its creator")
     }
@@ -290,8 +290,8 @@ class BannedStaffEscalationTest {
         // to win the head fold. The head's own effective list then never carried his ban, so there is
         // nothing to remove and the rank rule never fires.
         //
-        // A dangling high version never wins the fold: the chain anchors at the genesis (the lowest
-        // version without a `prev`), and the chain-verified head outranks every edition off it.
+        // A dangling high version never wins the fold: the chain anchors at the genesis (the version-1
+        // edition without a `prev`), and the chain-verified head outranks every edition off it.
         val editions = community() + ownerBansAlice + banlist(alice, 99, null, carol)
 
         assertTrue(ControlFixtures.resolve(editions, owner).isBanned(alice), "the owner's chain keeps the head")
@@ -378,12 +378,12 @@ class BannedStaffEscalationTest {
             community() +
                 // the baseline Mod role carries no MANAGE_ROLES, so give bob one that can grant
                 role(seniorRole, """{"name":"Senior","position":5,"permissions":"95"}""") +
-                grant(bobGrantEntity, bob, listOf(seniorRole), author = owner, version = 2, prev = bobGrantV0.hash) +
+                grant(bobGrantEntity, bob, listOf(seniorRole), author = owner, version = 2, prev = bobGrantV1.hash) +
                 role(juniorRole, """{"name":"Junior","position":9,"permissions":"8"}""") +
                 // bob promotes carol himself, while in good standing
                 grant("39".repeat(32), carol, listOf(juniorRole), author = bob) +
                 // the rogue admin bans bob...
-                banlist(alice, 0, null, bob) +
+                banlist(alice, 1, null, bob) +
                 // ...while the owner concurrently bans the rogue, never naming bob
                 ownerBansAlice
 

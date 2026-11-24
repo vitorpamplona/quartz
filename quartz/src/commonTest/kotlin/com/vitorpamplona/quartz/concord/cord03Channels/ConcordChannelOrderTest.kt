@@ -40,7 +40,7 @@ class ConcordChannelOrderTest {
     private fun channel(
         id: String,
         content: String,
-    ) = ControlEdition(ControlEntityKind.CHANNEL, id.hexToByteArray(), 0, null, null, content, owner, "r-$id", 0)
+    ) = ControlEdition(ControlEntityKind.CHANNEL, id.hexToByteArray(), 1, null, null, content, owner, "r-$id", 0)
 
     private fun order(vararg channels: Pair<String, String>): List<String> =
         ControlFixtures

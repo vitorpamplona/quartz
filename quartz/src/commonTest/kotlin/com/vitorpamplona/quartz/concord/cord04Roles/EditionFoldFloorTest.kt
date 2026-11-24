@@ -30,9 +30,9 @@ import kotlin.test.assertTrue
 
 /**
  * Anti-rollback: a CORD-06 Refounding re-wraps ONE edition per entity at the new epoch and the
- * *rotator* chooses which one, so it can serve v1 of a chain that had reached v2 — restoring a
+ * *rotator* chooses which one, so it can serve v2 of a chain that had reached v3 — restoring a
  * revoked role, clearing a banlist, reverting metadata — with every signature genuine. Rollback
- * by omission, not forgery. A client that already folded to v2 must refuse to come back down.
+ * by omission, not forgery. A client that already folded to v3 must refuse to come back down.
  */
 class EditionFoldFloorTest {
     private val author = KeyPair().pubKey.toHexKey()
@@ -57,64 +57,64 @@ class EditionFoldFloorTest {
         createdAt = 1_700_000_000L + version,
     )
 
-    // A grant chain: v0 grants the role, v1 edits it, v2 revokes it. Rolling back to v1 restores
+    // A grant chain: v1 grants the role, v2 edits it, v3 revokes it. Rolling back to v2 restores
     // a role the community already revoked.
-    private val v0 = edition(0, null, """{"member":"a","role_ids":["mod"]}""")
-    private val v1 = edition(1, v0.hash, """{"member":"a","role_ids":["admin"]}""")
-    private val v2 = edition(2, v1.hash, """{"member":"a","role_ids":[]}""")
-    private val v3 = edition(3, v2.hash, """{"member":"a","role_ids":["mod"]}""")
+    private val v1 = edition(1, null, """{"member":"a","role_ids":["mod"]}""")
+    private val v2 = edition(2, v1.hash, """{"member":"a","role_ids":["admin"]}""")
+    private val v3 = edition(3, v2.hash, """{"member":"a","role_ids":[]}""")
+    private val v4 = edition(4, v3.hash, """{"member":"a","role_ids":["mod"]}""")
 
-    private val floorAtV2 = v2.asFloor()
+    private val floorAtV3 = v3.asFloor()
 
     // ---- foldEntity ----------------------------------------------------------
 
-    /** The attack: the rotator serves only v1, whose prev dangles (v0 was not re-wrapped). */
+    /** The attack: the rotator serves only v2, whose prev dangles (v1 was not re-wrapped). */
     @Test
     fun refusesRollbackToAnOmittedLowerVersion() {
         val gaps = mutableListOf<Triple<String, Long, Long>>()
-        val head = EditionFold.foldEntity(listOf(v1), floorAtV2) { e, f, o -> gaps += Triple(e, f, o) }
+        val head = EditionFold.foldEntity(listOf(v2), floorAtV3) { e, f, o -> gaps += Triple(e, f, o) }
 
-        assertEquals(v2.rumorId, head?.rumorId, "the revoked-at-v2 head must survive the rollback")
-        assertEquals(listOf(Triple(v2.entityIdHex, 2L, 1L)), gaps, "the refusal must be reported")
+        assertEquals(v3.rumorId, head?.rumorId, "the revoked-at-v3 head must survive the rollback")
+        assertEquals(listOf(Triple(v3.entityIdHex, 3L, 2L)), gaps, "the refusal must be reported")
     }
 
-    /** Even an intact prefix (v0→v1) is a downgrade when we already folded v2. */
+    /** Even an intact prefix (v1→v2) is a downgrade when we already folded v3. */
     @Test
     fun refusesRollbackEvenWhenTheOfferedPrefixIsIntact() {
-        val head = EditionFold.foldEntity(listOf(v0, v1), floorAtV2) { _, _, _ -> }
-        assertEquals(v2.rumorId, head?.rumorId)
+        val head = EditionFold.foldEntity(listOf(v1, v2), floorAtV3) { _, _, _ -> }
+        assertEquals(v3.rumorId, head?.rumorId)
     }
 
     /** A same-version forgery is a fork, not our chain: the floor matches on hash, not version. */
     @Test
     fun refusesSiblingAtTheFloorVersion() {
-        val forgedV2 = edition(2, v1.hash, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forged")
-        val head = EditionFold.foldEntity(listOf(v1, forgedV2), floorAtV2) { _, _, _ -> }
-        assertEquals(v2.rumorId, head?.rumorId)
-        assertEquals(v2.content, head?.content)
+        val forgedV3 = edition(3, v2.hash, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forged")
+        val head = EditionFold.foldEntity(listOf(v2, forgedV3), floorAtV3) { _, _, _ -> }
+        assertEquals(v3.rumorId, head?.rumorId)
+        assertEquals(v3.content, head?.content)
     }
 
     /** An honest compaction re-wraps the very head we hold: the walk connects, so it is adopted. */
     @Test
     fun acceptsHonestCompactionAtTheFloor() {
         val gaps = mutableListOf<String>()
-        val head = EditionFold.foldEntity(listOf(v2), floorAtV2) { e, _, _ -> gaps += e }
-        assertEquals(v2.rumorId, head?.rumorId)
+        val head = EditionFold.foldEntity(listOf(v3), floorAtV3) { e, _, _ -> gaps += e }
+        assertEquals(v3.rumorId, head?.rumorId)
         assertTrue(gaps.isEmpty(), "an honest compaction must not report a gap")
     }
 
     /** And it advances past the floor when the new epoch chains forward from it. */
     @Test
     fun advancesAboveTheFloorWhenTheChainConnects() {
-        val head = EditionFold.foldEntity(listOf(v3, v2), floorAtV2) { _, _, _ -> }
-        assertEquals(v3.rumorId, head?.rumorId)
+        val head = EditionFold.foldEntity(listOf(v4, v3), floorAtV3) { _, _, _ -> }
+        assertEquals(v4.rumorId, head?.rumorId)
     }
 
     /**
      * The cross-epoch case, observed on device: a CORD-06 Refounding re-wraps ONE edition per
      * entity, so an entity edited *after* the refounding has its successor alone on the new epoch
      * while the floor edition stays behind on the old one. The offered set therefore never contains
-     * the floor edition — but v3 cites its hash, which is a *stronger* proof the chain connects than
+     * the floor edition — but v4 cites its hash, which is a *stronger* proof the chain connects than
      * mere presence. Refusing here pins the entity at the floor forever and silently discards the
      * newer state (a role edit, a channel rename, a banlist entry) on every refold.
      *
@@ -125,21 +125,21 @@ class EditionFoldFloorTest {
     @Test
     fun advancesWhenOnlyTheConnectingSuccessorIsOffered() {
         val gaps = mutableListOf<Triple<String, Long, Long>>()
-        val head = EditionFold.foldEntity(listOf(v3), floorAtV2) { e, f, o -> gaps += Triple(e, f, o) }
+        val head = EditionFold.foldEntity(listOf(v4), floorAtV3) { e, f, o -> gaps += Triple(e, f, o) }
 
-        assertEquals(v3.rumorId, head?.rumorId, "v3.prev == floor.hash, so the chain connects")
+        assertEquals(v4.rumorId, head?.rumorId, "v4.prev == floor.hash, so the chain connects")
         assertTrue(gaps.isEmpty(), "a successor citing the floor is not a rollback")
     }
 
     /** But a successor that cites something else is still a fork, and still refused. */
     @Test
     fun stillRefusesASuccessorThatDoesNotCiteTheFloor() {
-        val forked = edition(3, ByteArray(32) { 0x11 }, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forked")
+        val forked = edition(4, ByteArray(32) { 0x11 }, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forked")
         val gaps = mutableListOf<Triple<String, Long, Long>>()
-        val head = EditionFold.foldEntity(listOf(forked), floorAtV2) { e, f, o -> gaps += Triple(e, f, o) }
+        val head = EditionFold.foldEntity(listOf(forked), floorAtV3) { e, f, o -> gaps += Triple(e, f, o) }
 
-        assertEquals(v2.rumorId, head?.rumorId, "an unconnected successor must not be adopted")
-        assertEquals(listOf(Triple(v2.entityIdHex, 2L, 3L)), gaps, "and the refusal must still be reported")
+        assertEquals(v3.rumorId, head?.rumorId, "an unconnected successor must not be adopted")
+        assertEquals(listOf(Triple(v3.entityIdHex, 3L, 4L)), gaps, "and the refusal must still be reported")
     }
 
     // ---- the compaction arm (CORD-06 §3) --------------------------------------
@@ -147,7 +147,7 @@ class EditionFoldFloorTest {
     /**
      * Behind a Refounding the predecessor is trimmed, so a `prev` that reaches back to the floor
      * is NOT guaranteed — the compacted head can sit any distance above it. Once the entity is in
-     * the epoch's snapshot the anchor is the version alone, so v3 is adopted over a floor of v1
+     * the epoch's snapshot the anchor is the version alone, so v4 is adopted over a floor of v2
      * even though nothing links them. This is the case part 1 alone cannot handle.
      */
     @Test
@@ -155,12 +155,12 @@ class EditionFoldFloorTest {
         val gaps = mutableListOf<Triple<String, Long, Long>>()
         val head =
             EditionFold.foldEntity(
-                listOf(v3),
-                v1.asFloor(),
-                snapshot = setOf(v3.rumorId),
+                listOf(v4),
+                v2.asFloor(),
+                snapshot = setOf(v4.rumorId),
             ) { e, f, o -> gaps += Triple(e, f, o) }
 
-        assertEquals(v3.rumorId, head?.rumorId, "version anchors the compaction arm; prev is ignored")
+        assertEquals(v4.rumorId, head?.rumorId, "version anchors the compaction arm; prev is ignored")
         assertTrue(gaps.isEmpty(), "a compacted head above the floor is not a gap")
     }
 
@@ -170,29 +170,29 @@ class EditionFoldFloorTest {
         val gaps = mutableListOf<Triple<String, Long, Long>>()
         val head =
             EditionFold.foldEntity(
-                listOf(v0, v1),
-                floorAtV2,
-                snapshot = setOf(v0.rumorId, v1.rumorId),
+                listOf(v1, v2),
+                floorAtV3,
+                snapshot = setOf(v1.rumorId, v2.rumorId),
             ) { e, f, o -> gaps += Triple(e, f, o) }
 
-        assertEquals(v2.rumorId, head?.rumorId, "nothing at or above the floor: keep what we knew")
-        assertEquals(listOf(Triple(v2.entityIdHex, 2L, 1L)), gaps, "and report the refusal")
+        assertEquals(v3.rumorId, head?.rumorId, "nothing at or above the floor: keep what we knew")
+        assertEquals(listOf(Triple(v3.entityIdHex, 3L, 2L)), gaps, "and report the refusal")
     }
 
     /** An entity this epoch never re-wrapped is not in the snapshot, so it keeps chain-walk semantics. */
     @Test
     fun entityAbsentFromTheSnapshotStillChainWalks() {
-        val forked = edition(3, ByteArray(32) { 0x11 }, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forked")
-        val head = EditionFold.foldEntity(listOf(forked), floorAtV2, snapshot = setOf("some-other-rumor")) { _, _, _ -> }
+        val forked = edition(4, ByteArray(32) { 0x11 }, """{"member":"a","role_ids":["owner-ish"]}""", rumorId = "id-forked")
+        val head = EditionFold.foldEntity(listOf(forked), floorAtV3, snapshot = setOf("some-other-rumor")) { _, _, _ -> }
 
-        assertEquals(v2.rumorId, head?.rumorId, "no snapshot membership -> the chain walk still refuses the fork")
+        assertEquals(v3.rumorId, head?.rumorId, "no snapshot membership -> the chain walk still refuses the fork")
     }
 
     /** A floor whose known edition we no longer hold still refuses to move down — it adopts nothing. */
     @Test
     fun refusesRollbackWithNoKnownEditionToFallBackOn() {
-        val hashOnlyFloor = EntityFloor(v2.version, v2.hashHex, known = null)
-        assertNull(EditionFold.foldEntity(listOf(v1), hashOnlyFloor) { _, _, _ -> })
+        val hashOnlyFloor = EntityFloor(v3.version, v3.hashHex, known = null)
+        assertNull(EditionFold.foldEntity(listOf(v2), hashOnlyFloor) { _, _, _ -> })
     }
 
     /**
@@ -202,18 +202,18 @@ class EditionFoldFloorTest {
      */
     @Test
     fun freshJoinerWithoutAFloorStillAcceptsADanglingCompactedHead() {
-        assertEquals(v1.rumorId, EditionFold.foldEntity(listOf(v1), floor = null)?.rumorId)
+        assertEquals(v2.rumorId, EditionFold.foldEntity(listOf(v2), floor = null)?.rumorId)
     }
 
     // ---- fold (per-entity map) -----------------------------------------------
 
     @Test
     fun foldAppliesTheFloorPerEntity() {
-        val otherV0 = edition(0, null, """{"member":"b","role_ids":["mod"]}""", entityId = otherEid, rumorId = "other-v0")
-        val heads = EditionFold.fold(listOf(v1, otherV0), mapOf(v2.entityIdHex to floorAtV2)) { _, _, _ -> }
+        val otherV1 = edition(1, null, """{"member":"b","role_ids":["mod"]}""", entityId = otherEid, rumorId = "other-v1")
+        val heads = EditionFold.fold(listOf(v2, otherV1), mapOf(v3.entityIdHex to floorAtV3)) { _, _, _ -> }
 
-        assertEquals(v2.rumorId, heads[v2.entityIdHex]?.rumorId, "floored entity refuses the rollback")
-        assertEquals(otherV0.rumorId, heads[otherV0.entityIdHex]?.rumorId, "un-floored entity folds normally")
+        assertEquals(v3.rumorId, heads[v3.entityIdHex]?.rumorId, "floored entity refuses the rollback")
+        assertEquals(otherV1.rumorId, heads[otherV1.entityIdHex]?.rumorId, "un-floored entity folds normally")
     }
 
     // ---- admissible (the pre-filter the derived folds share) ------------------
@@ -221,32 +221,32 @@ class EditionFoldFloorTest {
     /** A gapped entity loses every edition at or above the floor, and keeps the head we knew. */
     @Test
     fun admissibleDropsTheRolledBackChainAndReSeatsTheKnownHead() {
-        val forgedV2 = edition(2, v1.hash, """{"member":"a","role_ids":["admin"]}""", rumorId = "id-forged")
-        val admissible = EditionFold.admissible(listOf(v0, v1, forgedV2), mapOf(v2.entityIdHex to floorAtV2)) { _, _, _ -> }
+        val forgedV3 = edition(3, v2.hash, """{"member":"a","role_ids":["admin"]}""", rumorId = "id-forged")
+        val admissible = EditionFold.admissible(listOf(v1, v2, forgedV3), mapOf(v3.entityIdHex to floorAtV3)) { _, _, _ -> }
 
-        assertContentEquals(listOf(v0.rumorId, v1.rumorId, v2.rumorId), admissible.map { it.rumorId })
+        assertContentEquals(listOf(v1.rumorId, v2.rumorId, v3.rumorId), admissible.map { it.rumorId })
     }
 
     /** When the chain connects, nothing is filtered — the new epoch may legitimately advance. */
     @Test
     fun admissiblePassesEverythingThroughWhenTheChainConnects() {
-        val admissible = EditionFold.admissible(listOf(v2, v3), mapOf(v2.entityIdHex to floorAtV2)) { _, _, _ -> }
-        assertContentEquals(listOf(v2.rumorId, v3.rumorId), admissible.map { it.rumorId })
+        val admissible = EditionFold.admissible(listOf(v3, v4), mapOf(v3.entityIdHex to floorAtV3)) { _, _, _ -> }
+        assertContentEquals(listOf(v3.rumorId, v4.rumorId), admissible.map { it.rumorId })
     }
 
     /** Omitting an entity outright is the cheapest rollback of all (a dropped banlist is an unban). */
     @Test
     fun admissibleKeepsAnEntityThatWasOmittedEntirely() {
-        val otherV0 = edition(0, null, """{"member":"b","role_ids":["mod"]}""", entityId = otherEid, rumorId = "other-v0")
-        val admissible = EditionFold.admissible(listOf(otherV0), mapOf(v2.entityIdHex to floorAtV2)) { _, _, _ -> }
+        val otherV1 = edition(1, null, """{"member":"b","role_ids":["mod"]}""", entityId = otherEid, rumorId = "other-v1")
+        val admissible = EditionFold.admissible(listOf(otherV1), mapOf(v3.entityIdHex to floorAtV3)) { _, _, _ -> }
 
-        assertContentEquals(listOf(otherV0.rumorId, v2.rumorId), admissible.map { it.rumorId })
+        assertContentEquals(listOf(otherV1.rumorId, v3.rumorId), admissible.map { it.rumorId })
     }
 
     /** No floors at all → the fresh-joiner path, untouched. */
     @Test
     fun admissibleIsAPassThroughWithoutFloors() {
-        val admissible = EditionFold.admissible(listOf(v1), emptyMap())
-        assertContentEquals(listOf(v1.rumorId), admissible.map { it.rumorId })
+        val admissible = EditionFold.admissible(listOf(v2), emptyMap())
+        assertContentEquals(listOf(v2.rumorId), admissible.map { it.rumorId })
     }
 }

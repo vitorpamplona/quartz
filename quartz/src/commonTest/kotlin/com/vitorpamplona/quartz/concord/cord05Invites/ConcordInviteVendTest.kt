@@ -132,7 +132,7 @@ class ConcordInviteVendTest {
     private fun role(
         roleId: String,
         json: String,
-    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 0, null, null, json, owner, "role-$roleId", 0)
+    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 1, null, null, json, owner, "role-$roleId", 0)
 
     private fun grant(
         member: String,

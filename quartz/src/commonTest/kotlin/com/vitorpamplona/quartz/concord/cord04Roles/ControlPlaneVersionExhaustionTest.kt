@@ -88,25 +88,25 @@ class ControlPlaneVersionExhaustionTest {
         permissions: String,
         vararg rest: ControlEdition,
     ) = listOf(
-        edition(ControlEntityKind.ROLE, modRole, 0, null, """{"name":"Mod","position":5,"permissions":"$permissions"}""", owner, "role-mod"),
-        edition(ControlEntityKind.GRANT, ControlFixtures.grantEid(bob), 0, null, """{"member":"$bob","role_ids":["$modRole"]}""", owner, "grant-bob"),
+        edition(ControlEntityKind.ROLE, modRole, 1, null, """{"name":"Mod","position":5,"permissions":"$permissions"}""", owner, "role-mod"),
+        edition(ControlEntityKind.GRANT, ControlFixtures.grantEid(bob), 1, null, """{"member":"$bob","role_ids":["$modRole"]}""", owner, "grant-bob"),
     ) + rest
 
     @Test
     fun oneEditionAtMaxVersionNoLongerPinsTheMetadata() {
-        val metadataV0 = edition(ControlEntityKind.METADATA, metadataEntity, 0, null, """{"name":"My Community"}""", owner, "meta-0")
-        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV0)
+        val metadataV1 = edition(ControlEntityKind.METADATA, metadataEntity, 1, null, """{"name":"My Community"}""", owner, "meta-1")
+        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV1)
 
         // A client that has folded this community once holds a floor for the metadata entity.
         val floorsBefore = ControlFixtures.authorizedHeads(community, owner)
-        assertEquals(0, floorsBefore[metadataEntity]?.version, "an ordinary floor at the genesis edition")
+        assertEquals(1, floorsBefore[metadataEntity]?.version, "an ordinary floor at the genesis edition")
 
-        val poison = edition(ControlEntityKind.METADATA, metadataEntity, Long.MAX_VALUE, metadataV0.hash, """{"name":"PWNED"}""", bob, "meta-poison")
+        val poison = edition(ControlEntityKind.METADATA, metadataEntity, Long.MAX_VALUE, metadataV1.hash, """{"name":"PWNED"}""", bob, "meta-poison")
         val floorsAfter = ControlFixtures.authorizedHeads(community + poison, owner, floorsBefore)
-        assertEquals(0, floorsAfter[metadataEntity]?.version, "the floor must not follow a stray to the top of the version space")
+        assertEquals(1, floorsAfter[metadataEntity]?.version, "the floor must not follow a stray to the top of the version space")
 
         // The owner tries to repair it, chaining honestly onto their own genesis.
-        val repair = edition(ControlEntityKind.METADATA, metadataEntity, 1, metadataV0.hash, """{"name":"My Community"}""", owner, "meta-1")
+        val repair = edition(ControlEntityKind.METADATA, metadataEntity, 2, metadataV1.hash, """{"name":"My Community"}""", owner, "meta-2")
         val pool = community + poison + repair
 
         assertEquals(
@@ -135,14 +135,14 @@ class ControlPlaneVersionExhaustionTest {
      */
     @Test
     fun oneEditionAtMaxVersionNoLongerPinsAChannel() {
-        val channelV0 = edition(ControlEntityKind.CHANNEL, channelEntity, 0, null, """{"name":"general"}""", owner, "chan-0")
-        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_CHANNELS).toWire(), channelV0)
+        val channelV1 = edition(ControlEntityKind.CHANNEL, channelEntity, 1, null, """{"name":"general"}""", owner, "chan-1")
+        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_CHANNELS).toWire(), channelV1)
 
         val floorsBefore = ControlFixtures.authorizedHeads(community, owner)
-        val poison = edition(ControlEntityKind.CHANNEL, channelEntity, Long.MAX_VALUE, channelV0.hash, """{"name":"PWNED"}""", bob, "chan-poison")
+        val poison = edition(ControlEntityKind.CHANNEL, channelEntity, Long.MAX_VALUE, channelV1.hash, """{"name":"PWNED"}""", bob, "chan-poison")
         val floorsAfter = ControlFixtures.authorizedHeads(community + poison, owner, floorsBefore)
 
-        val repair = edition(ControlEntityKind.CHANNEL, channelEntity, 1, channelV0.hash, """{"name":"general"}""", owner, "chan-1")
+        val repair = edition(ControlEntityKind.CHANNEL, channelEntity, 2, channelV1.hash, """{"name":"general"}""", owner, "chan-2")
         val pool = community + poison + repair
 
         assertEquals(
@@ -178,19 +178,19 @@ class ControlPlaneVersionExhaustionTest {
     fun aPoisonedBanlistStillAcceptsTheOwnersBan() {
         // This was the saving grace before the fix — the reason the bug was "community with a broken
         // name" rather than "community nobody can moderate". AuthorityResolver folds the banlist on
-        // its own floor-less chain walk, where the chain-verified head (the owner's v1) outranks any
+        // its own floor-less chain walk, where the chain-verified head (the owner's v2) outranks any
         // dangling higher version, so the owner's ban lands even while the banlist's floor sat at
         // Long.MAX_VALUE. (It used to union every authorized fork too; CORD-04 §4 folds to one head.)
         // The floor can no longer be poisoned, but keep this.
-        val banlistV0 = edition(ControlEntityKind.BANLIST, banlistEntity, 0, null, "[]", owner, "ban-0")
-        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.BAN).toWire(), banlistV0)
+        val banlistV1 = edition(ControlEntityKind.BANLIST, banlistEntity, 1, null, "[]", owner, "ban-1")
+        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.BAN).toWire(), banlistV1)
 
         val floorsBefore = ControlFixtures.authorizedHeads(community, owner)
-        val poison = edition(ControlEntityKind.BANLIST, banlistEntity, Long.MAX_VALUE, banlistV0.hash, "[]", bob, "ban-poison")
+        val poison = edition(ControlEntityKind.BANLIST, banlistEntity, Long.MAX_VALUE, banlistV1.hash, "[]", bob, "ban-poison")
         val floorsAfter = ControlFixtures.authorizedHeads(community + poison, owner, floorsBefore)
-        assertEquals(0, floorsAfter[banlistEntity]?.version, "the banlist floor is no longer poisonable either")
+        assertEquals(1, floorsAfter[banlistEntity]?.version, "the banlist floor is no longer poisonable either")
 
-        val ownerBansBob = edition(ControlEntityKind.BANLIST, banlistEntity, 1, banlistV0.hash, """["$bob"]""", owner, "ban-1")
+        val ownerBansBob = edition(ControlEntityKind.BANLIST, banlistEntity, 2, banlistV1.hash, """["$bob"]""", owner, "ban-2")
         val pool = community + poison + ownerBansBob
 
         assertTrue(ControlFixtures.fold(pool, owner).authority.isBanned(bob), "a fresh joiner honors the ban")
@@ -206,12 +206,12 @@ class ControlPlaneVersionExhaustionTest {
         // into breaking CORD-06 §3. After a Refounding the compacted head carries the `prev` it had
         // before compaction, citing an edition in the PRIOR epoch that this client no longer holds —
         // so it connects to nothing, and its version is legitimately several ahead of our floor.
-        val metadataV0 = edition(ControlEntityKind.METADATA, metadataEntity, 0, null, """{"name":"My Community"}""", owner, "meta-0")
-        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV0)
+        val metadataV1 = edition(ControlEntityKind.METADATA, metadataEntity, 1, null, """{"name":"My Community"}""", owner, "meta-1")
+        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV1)
         val floors = ControlFixtures.authorizedHeads(community, owner)
 
         val danglingPrev = ByteArray(32) { 0x7f }
-        val compacted = edition(ControlEntityKind.METADATA, metadataEntity, 4, danglingPrev, """{"name":"Renamed While We Were Away"}""", owner, "meta-compacted")
+        val compacted = edition(ControlEntityKind.METADATA, metadataEntity, 5, danglingPrev, """{"name":"Renamed While We Were Away"}""", owner, "meta-compacted")
 
         assertEquals(
             "Renamed While We Were Away",
@@ -224,8 +224,8 @@ class ControlPlaneVersionExhaustionTest {
     fun aJumpBeyondTheCapIsRefusedAsAGap() {
         // Same shape as the genuine compaction above, one version past the bound: not a compaction we
         // missed, so the fold reports a gap and keeps what it already had rather than following it.
-        val metadataV0 = edition(ControlEntityKind.METADATA, metadataEntity, 0, null, """{"name":"My Community"}""", owner, "meta-0")
-        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV0)
+        val metadataV1 = edition(ControlEntityKind.METADATA, metadataEntity, 1, null, """{"name":"My Community"}""", owner, "meta-1")
+        val community = communityWhereBobHolds(ConcordPermissions.of(ConcordPermissions.MANAGE_METADATA).toWire(), metadataV1)
         val floors = ControlFixtures.authorizedHeads(community, owner)
 
         val danglingPrev = ByteArray(32) { 0x7f }
@@ -233,7 +233,7 @@ class ControlPlaneVersionExhaustionTest {
             edition(
                 ControlEntityKind.METADATA,
                 metadataEntity,
-                EditionFold.MAX_COMPACTION_VERSION_JUMP + 1,
+                metadataV1.version + EditionFold.MAX_COMPACTION_VERSION_JUMP + 1,
                 danglingPrev,
                 """{"name":"PWNED"}""",
                 bob,

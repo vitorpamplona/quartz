@@ -186,7 +186,7 @@ class ControlEditionTest {
 
     @Test
     fun genesisHasNullPrevWhenEpAbsent() {
-        val tags = arrayOf(arrayOf("vsk", "2"), arrayOf("eid", eid.toHexKey()), arrayOf("ev", "0"))
+        val tags = arrayOf(arrayOf("vsk", "2"), arrayOf("eid", eid.toHexKey()), arrayOf("ev", "1"))
         val ed = ControlEdition.fromRumor(RumorAssembler.assembleRumor<Event>(author, 1L, ControlEditionEvent.KIND, tags, """{"name":"general"}"""))
         assertNotNull(ed)
         assertNull(ed.prevHash)
@@ -196,30 +196,30 @@ class ControlEditionTest {
 
     @Test
     fun foldWalksIntactChainToHead() {
-        val v0 = edition(0, null, """{"name":"general"}""", "id0")
-        val v1 = edition(1, v0.hash, """{"name":"lounge"}""", "id1")
-        val v2 = edition(2, v1.hash, """{"name":"lobby"}""", "id2")
+        val v1 = edition(1, null, """{"name":"general"}""", "id1")
+        val v2 = edition(2, v1.hash, """{"name":"lounge"}""", "id2")
+        val v3 = edition(3, v2.hash, """{"name":"lobby"}""", "id3")
         // order shuffled to prove fold is order-independent
-        val head = EditionFold.foldEntity(listOf(v2, v0, v1))
-        assertEquals(v2.rumorId, head?.rumorId)
+        val head = EditionFold.foldEntity(listOf(v3, v1, v2))
+        assertEquals(v3.rumorId, head?.rumorId)
     }
 
     @Test
     fun foldStopsAtBreakAndRefusesDowngrade() {
-        val v0 = edition(0, null, """{"name":"general"}""", "id0")
-        // v2 present but v1 missing ⇒ head cannot advance past v0
-        val v2 = edition(2, ByteArray(32) { 0x09 }, """{"name":"lobby"}""", "id2")
-        assertEquals(v0.rumorId, EditionFold.foldEntity(listOf(v0, v2))?.rumorId)
+        val v1 = edition(1, null, """{"name":"general"}""", "id1")
+        // v3 present but v2 missing ⇒ head cannot advance past v1
+        val v3 = edition(3, ByteArray(32) { 0x09 }, """{"name":"lobby"}""", "id3")
+        assertEquals(v1.rumorId, EditionFold.foldEntity(listOf(v1, v3))?.rumorId)
 
-        // v1 with a prev that does not chain from v0 is ignored
-        val badV1 = edition(1, ByteArray(32) { 0x07 }, """{"name":"x"}""", "id1")
-        assertEquals(v0.rumorId, EditionFold.foldEntity(listOf(v0, badV1))?.rumorId)
+        // v2 with a prev that does not chain from v1 is ignored
+        val badV2 = edition(2, ByteArray(32) { 0x07 }, """{"name":"x"}""", "id2")
+        assertEquals(v1.rumorId, EditionFold.foldEntity(listOf(v1, badV2))?.rumorId)
     }
 
     @Test
     fun foldTieBreaksOnLowerRumorId() {
-        val a = edition(0, null, """{"name":"a"}""", "aaa")
-        val b = edition(0, null, """{"name":"b"}""", "bbb")
+        val a = edition(1, null, """{"name":"a"}""", "aaa")
+        val b = edition(1, null, """{"name":"b"}""", "bbb")
         assertEquals("aaa", EditionFold.foldEntity(listOf(b, a))?.rumorId)
     }
 
