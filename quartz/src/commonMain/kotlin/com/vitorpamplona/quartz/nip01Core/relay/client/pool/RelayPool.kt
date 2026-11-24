@@ -31,10 +31,11 @@ import com.vitorpamplona.quartz.nip01Core.relay.commands.toRelay.Command
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 
 /**
  * RelayPool manages a collection of Nostr relays, abstracting individual connections and providing
@@ -84,16 +85,39 @@ class RelayPool(
     val availableRelays = _availableRelays.asStateFlow()
 
     /**
+     * Serializes the two snapshots below. Both flows are derived from the pool's own state, the
+     * members and each member's [IRelayClient.isConnected], and every change to that state is
+     * followed by a publish. Taken one at a time, the last publish reads every change made before
+     * it, so no interleaving of reports, removals and joins can leave a stale value published.
+     *
+     * A compare-and-set loop is not enough: [MutableStateFlow] compares by equality, so a snapshot
+     * read before a change still lands once an equal value was written over the one it read.
+     */
+    private val publishLock = PlatformLock()
+
+    /**
      * Publishes a snapshot of the pool's membership. A copy, not `relays.keys()`: on JVM that is
      * the map's live key view, the same object on every call, so the flow saw an equal value and
      * never emitted again after the first, while its `value` kept changing under collectors.
-     *
-     * Lock-free: [update] is a compare-and-set loop, and the snapshot is taken inside it. Two
-     * members joining at once cannot leave the older snapshot published: if another publish lands
-     * between this one reading the flow and setting it, the set fails and the membership is read
-     * again. A change made after the snapshot publishes itself.
      */
-    private fun publishMembers() = _availableRelays.update { relays.keys().toSet() }
+    private fun publishMembers() = publishLock.withLock { _availableRelays.value = relays.keys().toSet() }
+
+    /**
+     * Publishes the urls whose current client is connected, read from the clients themselves. Each
+     * client changes its own state before it reports (BasicRelayClient marks itself ready before
+     * onConnected and closes its session before onDisconnected), so the report's publish reads it.
+     *
+     * Derived, not patched with each report's url: the pool swaps clients for one url (a sample
+     * drops an idle relay just as a publish wants it again), and a replaced client's late close
+     * took the url out while its successor was connected; a NIP-77 sync waiting for the relay to
+     * show as connected then waited out its whole connect bound on a relay that was up.
+     */
+    private fun publishConnected() =
+        publishLock.withLock {
+            val connected = HashSet<NormalizedRelayUrl>()
+            relays.forEach { url, relay -> if (relay.isConnected()) connected.add(url) }
+            _connectedRelays.value = connected
+        }
 
     fun getRelay(url: NormalizedRelayUrl): IRelayClient? = relays.get(url)
 
@@ -182,8 +206,9 @@ class RelayPool(
         }
         // We just tore every socket down; say so here rather than leaving it to each socket's
         // own report. The transports do report a disconnect synchronously (see [WebSocket]),
-        // but this flow is what the app reads as "connected", and it must not depend on that.
-        _connectedRelays.update { emptySet() }
+        // but this flow is what the app reads as "connected", and it must not depend on that:
+        // disconnect() leaves each client disconnected, and the snapshot reads the clients.
+        publishConnected()
     }
 
     fun sendOrConnectAndSync(
@@ -300,8 +325,8 @@ class RelayPool(
         if (relayInPool != null) {
             relayInPool.disconnect("removed from the pool")
             // A relay that is no longer a member cannot be connected, whatever its socket
-            // layer reports (or fails to report) later.
-            _connectedRelays.update { it - relay }
+            // layer reports (or fails to report) later: the snapshot reads only members.
+            publishConnected()
             return true
         }
         return false
@@ -319,7 +344,7 @@ class RelayPool(
             disconnect()
             relays.clear()
             publishMembers()
-            _connectedRelays.update { emptySet() }
+            publishConnected()
         }
     }
 
@@ -333,23 +358,14 @@ class RelayPool(
         pingMillis: Int,
         compressed: Boolean,
     ) {
-        if (isMember(relay)) _connectedRelays.update { it + relay.url }
+        publishConnected()
         listener.onConnected(relay, pingMillis, compressed)
     }
 
     override fun onDisconnected(relay: IRelayClient) {
-        if (isMember(relay)) _connectedRelays.update { it - relay.url }
+        publishConnected()
         listener.onDisconnected(relay)
     }
-
-    /**
-     * True when [relay] is the pool's client for its url. The set is keyed by url, and the pool
-     * can swap clients for one url (a sample drops an idle relay just as a publish wants it again):
-     * the replaced client's late close must not take the url out while its successor is connected,
-     * nor its late open put it in while the successor is still dialing. Removal already took the
-     * url out for the replaced one.
-     */
-    private fun isMember(relay: IRelayClient) = relays.get(relay.url) === relay
 
     override suspend fun onIncomingMessage(
         relay: IRelayClient,
