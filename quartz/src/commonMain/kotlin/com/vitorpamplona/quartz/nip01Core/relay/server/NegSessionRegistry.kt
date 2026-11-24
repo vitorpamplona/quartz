@@ -38,9 +38,14 @@ import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Per-connection NIP-77 negentropy state and dispatch.
@@ -50,7 +55,7 @@ import kotlin.concurrent.Volatile
  * so the connection class only routes commands while this class owns
  * the negentropy lifecycle and error mapping.
  *
- * With a [scope], a NEG-OPEN's snapshot is built off the command loop, dispatched on [scope]: a
+ * With a [scope], a NEG-OPEN's snapshot is built off the command loop, on the IO pool: a
  * scan of a large corpus held every frame behind it on the connection until it finished, and a
  * store that never suspends (SQLite) ran it on the connection's own thread even when launched
  * from it. NEG-MSGs on that subId wait for it, in order, without holding the loop either. The map
@@ -106,6 +111,19 @@ class NegSessionRegistry(
             tail?.cancel()
         }
     }
+
+    /**
+     * Where a build runs: the IO pool when the connection's scope runs on [Dispatchers.Default]
+     * (or names no dispatcher, which means it). A build is a blocking scan of up to
+     * [NegentropySettings.maxSyncEvents] rows; on the cores-sized Default pool a few concurrent
+     * NEG-OPENs would starve the CPU work (verification, JSON) of every connection. A dispatcher
+     * the app chose for the scope is kept, as is a test's.
+     */
+    private val buildContext: CoroutineContext =
+        when (scope?.coroutineContext?.get(ContinuationInterceptor)) {
+            null, Dispatchers.Default -> Dispatchers.IO
+            else -> EmptyCoroutineContext
+        }
 
     private val lock = PlatformLock()
     private val sessions = HashMap<String, Entry>()
@@ -180,7 +198,7 @@ class NegSessionRegistry(
         // Lazy, so it is the entry's before anything can cancel the entry, and dispatched once
         // started: launched UNDISPATCHED, a store that never suspends ran the whole scan inline.
         val job =
-            runScope?.launch(start = CoroutineStart.LAZY) { build(cmd, filters, entry) }?.also { job ->
+            runScope?.launch(buildContext, start = CoroutineStart.LAZY) { build(cmd, filters, entry) }?.also { job ->
                 entry.build = job
                 entry.tail = job
                 // Runs however the job ends, even cancelled before it started.

@@ -39,6 +39,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
@@ -52,6 +53,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.Volatile
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,6 +86,8 @@ class NegOpenOffTheReceiveThreadTest {
     private class BlockingNegBackend : SessionBackend {
         val release = CountDownLatch(1)
 
+        @Volatile var dispatcher: CoroutineContext.Element? = null
+
         override suspend fun query(
             ctx: RequestContext,
             filters: List<Filter>,
@@ -101,6 +107,7 @@ class NegOpenOffTheReceiveThreadTest {
             filters: List<Filter>,
             maxEntries: Int?,
         ): List<IdAndTime> {
+            dispatcher = currentCoroutineContext()[ContinuationInterceptor]
             release.await(30, TimeUnit.SECONDS)
             return emptyList()
         }
@@ -127,6 +134,8 @@ class NegOpenOffTheReceiveThreadTest {
                 assertNotNull(answered, "the REQ behind a NEG-OPEN whose store blocks is answered: $frames")
                 backend.release.countDown()
                 withTimeout(5_000) { while (frames.messages.none { it is NegMsgMessage }) delay(5) }
+                // A blocking scan holds a thread: not one of the cores-sized Default pool's.
+                assertEquals(Dispatchers.IO, backend.dispatcher, "the scan runs on the IO pool")
             } finally {
                 backend.release.countDown()
                 scope.cancel()
