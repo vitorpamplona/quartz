@@ -333,14 +333,23 @@ class RelayPool(
         pingMillis: Int,
         compressed: Boolean,
     ) {
-        _connectedRelays.update { it + relay.url }
+        if (isMember(relay)) _connectedRelays.update { it + relay.url }
         listener.onConnected(relay, pingMillis, compressed)
     }
 
     override fun onDisconnected(relay: IRelayClient) {
-        _connectedRelays.update { it - relay.url }
+        if (isMember(relay)) _connectedRelays.update { it - relay.url }
         listener.onDisconnected(relay)
     }
+
+    /**
+     * True when [relay] is the pool's client for its url. The set is keyed by url, and the pool
+     * can swap clients for one url (a sample drops an idle relay just as a publish wants it again):
+     * the replaced client's late close must not take the url out while its successor is connected,
+     * nor its late open put it in while the successor is still dialing. Removal already took the
+     * url out for the replaced one.
+     */
+    private fun isMember(relay: IRelayClient) = relays.get(relay.url) === relay
 
     override suspend fun onIncomingMessage(
         relay: IRelayClient,
