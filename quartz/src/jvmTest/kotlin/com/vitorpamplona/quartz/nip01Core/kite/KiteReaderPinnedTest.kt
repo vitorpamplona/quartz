@@ -45,6 +45,11 @@ import kotlin.test.assertTrue
  * 327 inputs now accepted, none newly rejected, of ~395,000) was an edit that misspelled an
  * event key and kept those three (`"pubk6y"`, `"createduat"`), now read as that key where
  * Jackson skipped it. The unedited sets did not move.
+ *
+ * Re-recorded (2026-11-23) when the reader began refusing anything but whitespace after the
+ * top-level value, where Jackson read the first value and ignored the rest. Only suites holding
+ * such inputs (hand-written `… trailing` frames, random edits that append past the closing
+ * bracket) moved; the captured events and the unedited sets of well-formed frames did not.
  */
 class KiteReaderPinnedTest {
     private fun reader(json: String): Event? =
@@ -228,7 +233,7 @@ class KiteReaderPinnedTest {
             mapOf(
                 "captured events" to "8d14fbe28335faba96c5be2ee89c3e54fc1fe4416521cc1c085cef5201cb26c4",
                 "truncations" to "d7c2f5c951128648f9af1c91c7d6820694cb3c9c045fbe8b08a9018fe98899eb",
-                "random edits" to "f1b276b9543f03c1f058540fcbd18ed93d5992f2d4f7ccc09387ad0f89de43af",
+                "random edits" to "fab15a1ae1db8f622bb3fa288e56f65e4662b30470539cc310bbf6743a3185c5",
             )
 
         const val CORPUS = "nostr_vitor_startup_data.json.gz"

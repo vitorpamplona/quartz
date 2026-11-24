@@ -28,4 +28,15 @@ expect object Deflate {
     fun compress(input: ByteArray): ByteArray
 
     fun decompress(input: ByteArray): ByteArray
+
+    /**
+     * [decompress] for untrusted input: gives up, returning null, as soon as the inflated output
+     * passes [maxBytes]. The check runs while inflating, so a bomb (one repeated byte deflates
+     * ~1000:1) costs at most [maxBytes] of output before it is refused. Malformed or truncated
+     * input throws, as in [decompress], on every platform.
+     */
+    fun decompress(
+        input: ByteArray,
+        maxBytes: Int,
+    ): ByteArray?
 }

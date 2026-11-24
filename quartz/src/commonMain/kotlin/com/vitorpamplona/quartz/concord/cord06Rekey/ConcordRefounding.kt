@@ -31,6 +31,7 @@ import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.ControlPlaneKeys
 import com.vitorpamplona.quartz.concord.crypto.GroupKey
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
+import com.vitorpamplona.quartz.concord.envelope.StreamWrapOpener
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
@@ -421,8 +422,21 @@ object ConcordRefounding {
         communityId: ByteArray,
         priorRoot: ByteArray,
         rootEpoch: Long,
+        open: StreamWrapOpener = StreamWrapOpener.DIRECT,
         accept: (ReceivedRefounding) -> Boolean = { true },
-    ): ReceivedRefounding? = converge(findNewRoots(wraps, baseRekeyKey, recipientSigner, communityId, priorRoot, rootEpoch).filter(accept))
+    ): ReceivedRefounding? = converge(findNewRoots(wraps, baseRekeyKey, recipientSigner, communityId, priorRoot, rootEpoch, open).filter(accept))
+
+    /** The 2.24 signature, kept so code compiled against it still links. */
+    @Deprecated("Use the overload with open.", level = DeprecationLevel.HIDDEN)
+    suspend fun findNewRoot(
+        wraps: List<Event>,
+        baseRekeyKey: GroupKey,
+        recipientSigner: NostrSigner,
+        communityId: ByteArray,
+        priorRoot: ByteArray,
+        rootEpoch: Long,
+        accept: (ReceivedRefounding) -> Boolean = { true },
+    ): ReceivedRefounding? = findNewRoot(wraps, baseRekeyKey, recipientSigner, communityId, priorRoot, rootEpoch, StreamWrapOpener.DIRECT, accept)
 
     /**
      * Every candidate rotation delivering this member a new root from [priorRoot] at
@@ -436,6 +450,17 @@ object ConcordRefounding {
         communityId: ByteArray,
         priorRoot: ByteArray,
         rootEpoch: Long,
+    ): List<ReceivedRefounding> = findNewRoots(wraps, baseRekeyKey, recipientSigner, communityId, priorRoot, rootEpoch, StreamWrapOpener.DIRECT)
+
+    /** [findNewRoots] opening each wrap through [open], which may remember what it opened before. */
+    suspend fun findNewRoots(
+        wraps: List<Event>,
+        baseRekeyKey: GroupKey,
+        recipientSigner: NostrSigner,
+        communityId: ByteArray,
+        priorRoot: ByteArray,
+        rootEpoch: Long,
+        open: StreamWrapOpener,
     ): List<ReceivedRefounding> {
         val newEpoch = rootEpoch + 1
         val expectedScope = ConcordRekey.ROOT_SCOPE.toHexKey()
@@ -444,7 +469,7 @@ object ConcordRefounding {
         // Pass 1: the well-formed chunks of this continuity point, grouped by rotator.
         val byRotator = LinkedHashMap<HexKey, MutableList<RekeyChunk>>()
         for (wrap in wraps) {
-            val opened = ConcordStreamEnvelope.openOrNull(wrap, baseRekeyKey) ?: continue
+            val opened = open.openOrNull(wrap, baseRekeyKey) ?: continue
             // Rekey seals are encrypted (CORD-02 §5): a plaintext seal would expose the rotator.
             if (opened.sealKind != ConcordStreamEnvelope.KIND_SEAL_ENCRYPTED) continue
             val rumor = opened.rumor

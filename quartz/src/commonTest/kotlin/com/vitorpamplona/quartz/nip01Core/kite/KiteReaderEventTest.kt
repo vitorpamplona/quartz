@@ -272,8 +272,10 @@ class KiteReaderEventTest {
     }
 
     @Test
-    fun ignoresTrailingData() {
-        for (t in listOf("x", "}", "]", ",{}", " garbage")) assertEquals(id, read(event() + t).id)
+    fun refusesTrailingData() {
+        // Jackson read the first value and ignored the rest; one value per input is the rule now.
+        for (t in listOf("x", "}", "]", ",{}", " garbage")) assertFailsWith<IllegalArgumentException>(t) { read(event() + t) }
+        assertEquals(id, read(event() + " \n\t").id)
     }
 
     @Test
@@ -303,7 +305,7 @@ class KiteReaderEventTest {
 
         // Extra elements are skipped, like MessageDeserializer; trailing data after the frame is ignored.
         assertEquals("s", frame("[\"EVENT\",\"s\",${event()},{\"x\":[1]},\"y\"]").subId)
-        assertEquals("s", frame("[\"EVENT\",\"s\",${event()}] trailing").subId)
+        assertFailsWith<IllegalArgumentException> { frame("[\"EVENT\",\"s\",${event()}] trailing") }
     }
 
     @Test

@@ -20,7 +20,9 @@
  */
 package com.vitorpamplona.quartz.utils.concurrent
 
-import kotlin.concurrent.atomics.AtomicBoolean
+import kotlinx.cinterop.ExperimentalForeignApi
+import platform.posix.pthread_self
+import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 // Linux/JVM-less target: Kotlin/Native's stdlib ships no parking lock and there is
@@ -28,17 +30,33 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 // scalable. Acceptable ONLY because linuxX64 is a build/CI target for quartz, not a
 // host for the many-relay client workload whose contention motivated the parking
 // actuals on jvmAndroid and Apple. If that ever changes, swap in a pthread mutex.
-@OptIn(ExperimentalAtomicApi::class)
+//
+// Reentrant like the JVM (ReentrantLock) and Apple (NSRecursiveLock) actuals: a thread
+// already holding it takes it again instead of spinning on itself forever. The owner is
+// the holding thread's pthread id; only the owner touches [depth].
+@OptIn(ExperimentalAtomicApi::class, ExperimentalForeignApi::class)
 actual class PlatformLock {
-    private val held = AtomicBoolean(false)
+    private val owner = AtomicLong(NO_OWNER)
+    private var depth = 0
 
     actual fun lock() {
-        while (held.exchange(true)) {
-            while (held.load()) { }
+        val me = pthread_self().toLong()
+        if (owner.load() == me) {
+            depth++
+            return
         }
+        while (!owner.compareAndSet(NO_OWNER, me)) {
+            while (owner.load() != NO_OWNER) { }
+        }
+        depth = 1
     }
 
     actual fun unlock() {
-        held.store(false)
+        check(owner.load() == pthread_self().toLong()) { "PlatformLock released by a thread that does not hold it" }
+        if (--depth == 0) owner.store(NO_OWNER)
+    }
+
+    private companion object {
+        const val NO_OWNER = 0L
     }
 }

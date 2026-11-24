@@ -492,15 +492,18 @@ class NegentropyStoreSync(
 
     /**
      * Paged fallback: walk [relay] past its per-REQ cap for [filter], verifying and
-     * inserting each event into [store]. [fetchAllPages]'s `onEvent` can't suspend, so
-     * events funnel through a channel to a single inserter. Returns how many were newly stored.
+     * inserting each event into [store]. Events funnel through a bounded channel to a single
+     * inserter, so verifying and inserting overlap the walk; [fetchAllPages]'s `onEvent`
+     * suspends when the inserter falls [PAGE_INSERT_BUFFER] behind, which holds the walk (its
+     * idle timer does not count that time) instead of buffering the whole corpus in memory, as
+     * the unbounded channel this replaced did. Returns how many were newly stored.
      */
     private suspend fun pageDownload(
         relay: NormalizedRelayUrl,
         filter: Filter,
     ): Int {
         val stored = AtomicInt(0)
-        val events = Channel<Event>(Channel.UNLIMITED)
+        val events = Channel<Event>(PAGE_INSERT_BUFFER)
         coroutineScope {
             val inserter =
                 launch {
@@ -513,7 +516,13 @@ class NegentropyStoreSync(
                 // whole-sync watchdog is disabled (idleTimeoutMs = 0) — a page that
                 // never EOSEs must not hang the sync forever.
                 val pageIdleMs = if (config.idleTimeoutMs > 0) config.idleTimeoutMs else DEFAULT_DOWNLOAD_IDLE_MS
-                client.fetchAllPages(relay, listOf(filter), pageIdleMs) { event -> events.trySend(event) }
+                // The trade-off: fetchAllPages calls this on the relay's shared reader, so while
+                // the inserter is PAGE_INSERT_BUFFER behind, that connection's other frames (OK,
+                // AUTH, other subscriptions) wait behind this one too. Not decoupled: a buffer that
+                // never suspends would hold a relay's whole answer in memory when it pages in one
+                // REQ, and dropping or failing events would lose them. The wait lasts only as long
+                // as the store is slower than the relay, and the walk's idle timer does not count it.
+                client.fetchAllPages(relay, listOf(filter), pageIdleMs) { event -> events.send(event) }
             } finally {
                 events.close()
             }
@@ -522,3 +531,6 @@ class NegentropyStoreSync(
         return stored.load()
     }
 }
+
+/** Events the paged fallback's walk may run ahead of the store inserter before it waits. */
+private const val PAGE_INSERT_BUFFER = 1024

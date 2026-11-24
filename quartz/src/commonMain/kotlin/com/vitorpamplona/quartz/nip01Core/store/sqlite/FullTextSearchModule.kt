@@ -383,10 +383,10 @@ class FullTextSearchModule(
         // A non-positive page would select no rows yet never report done,
         // spinning the caller's loop forever — clamp to at least one.
         val limit = batchSize.coerceAtLeast(1)
-        val kinds = searchableKindsPresent(db)
-        if (kinds.isEmpty()) return FtsReindexProgress(cursor = null, processedThisBatch = 0, done = true)
-
-        val selectSql = selectSearchablePageSql(kinds)
+        // Pages by row_id alone and skips a non-searchable kind before decoding it. A
+        // `SELECT DISTINCT kind` per batch to build a `kind IN (...)` filter walked the whole
+        // table every batch, and the page walks the same rows either way.
+        val selectSql = SELECT_PAGE_SQL
 
         var last = afterRowId
         var processed = 0
@@ -402,6 +402,10 @@ class FullTextSearchModule(
                         del.bindLong(1, rowId)
                         del.step()
                         del.reset()
+
+                        last = rowId
+                        processed++
+                        if (!isSearchableKindCached(read.getInt(4))) continue
 
                         val event =
                             EventFactory.create<Event>(
@@ -419,8 +423,6 @@ class FullTextSearchModule(
                             write.step()
                             write.reset()
                         }
-                        last = rowId
-                        processed++
                     }
                 }
             }
@@ -464,16 +466,20 @@ class FullTextSearchModule(
         // forth between deferred and synchronous strategies requires a
         // [reindexAll] in between (same rule as a searchable-kinds change).
         val limit = batchSize.coerceAtLeast(1)
-        val kinds = searchableKindsPresent(db)
         var last = watermark
         var processed = 0
-        if (kinds.isNotEmpty()) {
-            val selectSql = selectSearchablePageSql(kinds)
+        // Every row past the watermark, a non-searchable kind skipped before decoding: see
+        // [reindexBatch]. The `SELECT DISTINCT kind` this ran per batch was a full-table walk on
+        // every catch-up step, after every publish batch.
+        run {
             db.prepare(insertFTS).use { write ->
-                db.prepare(selectSql).use { read ->
+                db.prepare(SELECT_PAGE_SQL).use { read ->
                     read.bindLong(1, watermark)
                     read.bindLong(2, limit.toLong())
                     while (read.step()) {
+                        last = read.getLong(0)
+                        processed++
+                        if (!isSearchableKindCached(read.getInt(4))) continue
                         val event =
                             EventFactory.create<Event>(
                                 read.getText(1),
@@ -490,8 +496,6 @@ class FullTextSearchModule(
                             write.step()
                             write.reset()
                         }
-                        last = read.getLong(0)
-                        processed++
                     }
                 }
             }
@@ -540,12 +544,18 @@ class FullTextSearchModule(
 
     private fun isSearchableKind(kind: Int): Boolean = EventFactory.probe(kind) is SearchableEvent
 
+    // Whether each kind probes as searchable, so a page probes each kind once. Read and written
+    // only by the batch paths, which run on the writer connection.
+    private val searchableKinds = HashMap<Int, Boolean>()
+
+    private fun isSearchableKindCached(kind: Int): Boolean = searchableKinds.getOrPut(kind) { isSearchableKind(kind) }
+
     companion object {
         /** Column order matches the positional `read.getText(1)`…`getText(7)` event rebuilds. */
         private const val SELECT_EVENT_COLUMNS =
             "SELECT row_id, id, pubkey, created_at, kind, tags, content, sig FROM event_headers"
 
-        /** One `row_id`-cursored page of searchable events; binds: cursor, limit. */
-        private fun selectSearchablePageSql(kinds: List<Int>) = "$SELECT_EVENT_COLUMNS WHERE row_id > ? AND kind IN (${kinds.joinToString(",")}) ORDER BY row_id LIMIT ?"
+        /** One `row_id`-cursored page of rows, of every kind; binds: cursor, limit. */
+        private const val SELECT_PAGE_SQL = "$SELECT_EVENT_COLUMNS WHERE row_id > ? ORDER BY row_id LIMIT ?"
     }
 }

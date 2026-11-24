@@ -70,6 +70,11 @@ import kotlin.test.fail
  * Jackson serializers the writer replaced. Those that hold a control char escaped with a hex letter
  * (0x0B, 0x0E, 0x0F, 0x1A-0x1F) or a lone surrogate were re-recorded when the escapes went lowercase, after the
  * same events' ids and JSON were compared with Node's `JSON.stringify`.
+ *
+ * Re-recorded (2026-11-23) when the text form began escaping a lone surrogate as `\uxxxx`, as the
+ * UTF-8 id preimage already did: written raw it has no UTF-8 form, so the wire carried `?` and
+ * the event's id no longer matched. Only the suites with lone surrogates (the odd and random
+ * strings, and what is built from them) moved; the captured events did not.
  */
 class KiteWriterPinnedTest {
     @get:Rule val testName = TestName()
@@ -403,12 +408,12 @@ class KiteWriterPinnedTest {
         private val PINS =
             mapOf(
                 "everyCapturedEventWritesAsPinned" to "9e5eaceae7542873dc146c65e6d90a835f443a3ab89eb3490b9d3f0ddd01250e",
-                "oddStringsWriteAsPinned" to "1f50becb4028270508dd2aa70df77f75b0325ef2ed2d9e52a59baed0113e708d",
-                "randomStringsWriteAsPinned" to "4e0f86a4cc6d7985abd7e1518c0fa5ab8d8345b0a57f630c9d8ba1a2ea14e57c",
-                "bigEventsGrowAndReleaseTheBuffers" to "551830cd9d1f3bfba3000e8ca6697732d6794192acbb50d60280d5429b1ab7ca",
+                "oddStringsWriteAsPinned" to "7713835f972a15fec529a707afb90202c021a92537cb439dc6227cedc67c10e7",
+                "randomStringsWriteAsPinned" to "ba1e114baee3807a8e7ce041546b4160ae17e0b9baf4a299ff329e497f028dab",
+                "bigEventsGrowAndReleaseTheBuffers" to "7d07686214198932b8d00595a4fc83cdd651d30e3b86a1917fee987dd48bacfd",
                 "everyMessageTypeWritesAsPinned" to "d863435bb6fc547ba4142a53eea37f4341c2422b6d5773549cd69f2e2e6f9f59",
-                "everyCommandTypeWritesAsPinned" to "ed5ef44394d23eaed7d6877c8454d61bebfe7092cb2db7d11e36e72e8d943bea",
-                "filtersAndRumorsWriteAsPinned" to "ac358d4667a389f04205e5a31bd4114464faafc7869377885a70cd45ebf80ece",
+                "everyCommandTypeWritesAsPinned" to "8a9a9052ac9ba2be964226060235a764fb011f90bc51c2021edbb4de3f76979b",
+                "filtersAndRumorsWriteAsPinned" to "f80ebf3386d88fb781c54f226c92251b01b97949baf290694caad1a20f61729f",
                 "threadsWritingAtOnceDoNotShareState" to "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
                 "unknownTypesAreLeftToKotlinx" to "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             )

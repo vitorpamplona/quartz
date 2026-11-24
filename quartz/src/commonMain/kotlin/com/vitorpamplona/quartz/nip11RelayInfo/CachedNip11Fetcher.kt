@@ -23,7 +23,10 @@ package com.vitorpamplona.quartz.nip11RelayInfo
 import androidx.collection.LruCache
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.utils.TimeUtils
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * TTL cache around any [Nip11Fetcher]. NIP-11 documents change rarely, so a
@@ -31,9 +34,10 @@ import kotlinx.coroutines.CancellationException
  * also remembered — for the shorter [errorTtlSeconds] — so a mass census does
  * not hammer a host that just refused, while still retrying it soon.
  *
- * Concurrent first fetches of the same relay are not deduplicated: both hit the
- * network and the second result wins the cache slot. That is harmless (the
- * document is idempotent) and keeps this class lock-free.
+ * Concurrent fetches of a relay that is not cached share one network fetch: a
+ * census that asks for the same relay from many places at once (every feed that
+ * shows it) used to send one request per caller. A caller cancelled while it waits
+ * stops waiting; one cancelled while it leads the fetch hands it to the next caller.
  */
 class CachedNip11Fetcher(
     private val delegate: Nip11Fetcher,
@@ -58,6 +62,10 @@ class CachedNip11Fetcher(
 
     private val cache = LruCache<NormalizedRelayUrl, Cached>(maxEntries)
 
+    /** Fetches in flight, per relay; the others asking for one wait on it. Under [lock]. */
+    private val inFlight = HashMap<NormalizedRelayUrl, CompletableDeferred<Result<Nip11RelayInformation>>>()
+    private val lock = PlatformLock()
+
     /** The cached document if present and fresh; null otherwise. Never touches the network. */
     fun cachedOrNull(relay: NormalizedRelayUrl): Nip11RelayInformation? {
         val hit = cache[relay] as? Hit ?: return null
@@ -78,12 +86,42 @@ class CachedNip11Fetcher(
                 }
             null -> {}
         }
-        return try {
-            delegate.fetch(relay).also { cache.put(relay, Hit(it, now())) }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            cache.put(relay, Miss(e.message, now()))
-            throw e
+        while (true) {
+            var leads = false
+            val shared =
+                lock.withLock {
+                    inFlight[relay] ?: CompletableDeferred<Result<Nip11RelayInformation>>().also {
+                        inFlight[relay] = it
+                        leads = true
+                    }
+                }
+            if (!leads) {
+                // A leader that was cancelled completes with no result: ask again, maybe leading.
+                val result = shared.await()
+                result.getOrNull()?.let { return it }
+                val error = result.exceptionOrNull()
+                if (error == null || error is CancellationException) continue
+                throw error
+            }
+            try {
+                val info = delegate.fetch(relay)
+                cache.put(relay, Hit(info, now()))
+                shared.complete(Result.success(info))
+                return info
+            } catch (e: Exception) {
+                if (e is CancellationException) {
+                    shared.complete(Result.failure(e))
+                    throw e
+                }
+                cache.put(relay, Miss(e.message, now()))
+                shared.complete(Result.failure(e))
+                throw e
+            } finally {
+                // An Error (a stack overflow on a hostile document's nesting, out of memory) is not
+                // caught above and goes on to the leader's caller; its waiters must not wait forever.
+                if (!shared.isCompleted) shared.complete(Result.failure(Nip11FetchException("NIP-11 fetch for ${relay.url} failed")))
+                lock.withLock { if (inFlight[relay] === shared) inFlight.remove(relay) }
+            }
         }
     }
 

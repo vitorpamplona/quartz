@@ -152,7 +152,7 @@ class KiteReaderFrameTest {
             assertFailsWith<IllegalArgumentException>(bad) { message(bad) }
         }
         // Data after the frame's closing bracket is ignored, as in Jackson.
-        assertIs<NoticeMessage>(message("""["NOTICE","x"] trailing"""))
+        assertFailsWith<IllegalArgumentException> { message("""["NOTICE","x"] trailing""") }
     }
 
     @Test

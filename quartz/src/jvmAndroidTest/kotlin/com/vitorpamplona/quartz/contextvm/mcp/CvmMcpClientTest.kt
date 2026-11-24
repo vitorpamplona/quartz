@@ -24,6 +24,8 @@ import com.vitorpamplona.quartz.contextvm.cep04Encryption.CvmGiftWrap
 import com.vitorpamplona.quartz.contextvm.cep04Encryption.EncryptionMode
 import com.vitorpamplona.quartz.contextvm.cep22OversizedTransfer.OversizedTransferSender
 import com.vitorpamplona.quartz.contextvm.cep41OpenStreams.OpenStreamFrame
+import com.vitorpamplona.quartz.contextvm.core.CvmKinds
+import com.vitorpamplona.quartz.contextvm.core.CvmMessageEvent
 import com.vitorpamplona.quartz.contextvm.fixture.CvmFixtureServer
 import com.vitorpamplona.quartz.contextvm.fixture.CvmRequest
 import com.vitorpamplona.quartz.contextvm.fixture.InMemoryRelayPool
@@ -32,6 +34,7 @@ import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcError
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcFailure
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcId
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcMessage
+import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcRequest
 import com.vitorpamplona.quartz.contextvm.jsonrpc.JsonRpcSuccess
 import com.vitorpamplona.quartz.contextvm.transfer.ProgressToken
 import com.vitorpamplona.quartz.contextvm.transport.CvmTransport
@@ -78,8 +81,17 @@ class CvmMcpClientTest {
             handler = handler,
         )
 
-    /** The progressToken the client derives for the first call it makes. */
-    private val firstCallToken = ProgressToken.Text("call-0")
+    /** The first request the client published (plaintext here), as the fixture would read it. */
+    private fun firstRequest(): JsonRpcRequest = CvmMessageEvent.fromOrNull(relays.published.first { it.kind == CvmKinds.MESSAGE })!!.message() as JsonRpcRequest
+
+    /** The progressToken the client derived for the first call it made: `call-<its JSON-RPC id>`. */
+    private fun firstCallToken(): ProgressToken =
+        ProgressToken.Text(
+            firstRequest()
+                .params!![McpParams.META]!!
+                .jsonObject[McpParams.PROGRESS_TOKEN]!!
+                .jsonPrimitive.content,
+        )
 
     @Test
     fun `a second call on one client still correlates`() =
@@ -117,12 +129,17 @@ class CvmMcpClientTest {
     @Test
     fun `a stale response id is ignored rather than answering the wrong call`() =
         runTest {
-            // The guard the test above depends on. A server pinned to id 0
-            // answers the first call and nothing after it -- the request must
-            // time out rather than accept an answer to a question we already
-            // asked.
+            // The guard the test above depends on. A server pinned to the
+            // first call's id answers it and nothing after it -- the request
+            // must time out rather than accept an answer to a question we
+            // already asked.
             val client = client()
-            val fixture = fixture { JsonRpcSuccess(JsonRpcId.Num(0), buildJsonObject {}) }
+            var pinned: JsonRpcId? = null
+            val fixture =
+                fixture { request ->
+                    val id = pinned ?: request.id.also { pinned = it }
+                    JsonRpcSuccess(id, buildJsonObject {})
+                }
             fixture.start()
 
             coroutineScope {
@@ -149,8 +166,8 @@ class CvmMcpClientTest {
     fun `a tool call returns the server result`() =
         runTest {
             val fixture =
-                fixture {
-                    JsonRpcSuccess(JsonRpcId.Num(0), buildJsonObject { put("cursor", JsonPrimitive(7)) })
+                fixture { request ->
+                    JsonRpcSuccess(request.id, buildJsonObject { put("cursor", JsonPrimitive(7)) })
                 }
             fixture.start()
 
@@ -177,7 +194,7 @@ class CvmMcpClientTest {
         runTest {
             // Without one a server MUST NOT start either transfer profile, so
             // omitting it would silently cap every response at one relay event.
-            val fixture = fixture { JsonRpcSuccess(JsonRpcId.Num(0), buildJsonObject {}) }
+            val fixture = fixture { request -> JsonRpcSuccess(request.id, buildJsonObject {}) }
             fixture.start()
 
             coroutineScope {
@@ -188,16 +205,17 @@ class CvmMcpClientTest {
             }
 
             val meta = fixture.handledParams.first()!![McpParams.META]!!.jsonObject
-            assertEquals("call-0", meta[McpParams.PROGRESS_TOKEN]!!.jsonPrimitive.content)
+            val id = (firstRequest().id as JsonRpcId.Num).value
+            assertEquals("call-$id", meta[McpParams.PROGRESS_TOKEN]!!.jsonPrimitive.content)
         }
 
     @Test
     fun `an error response surfaces as an error rather than a throw`() =
         runTest {
             val fixture =
-                fixture {
+                fixture { request ->
                     JsonRpcFailure(
-                        JsonRpcId.Num(0),
+                        request.id,
                         JsonRpcError(JsonRpcError.PAYMENT_REQUIRED, "Payment Required"),
                     )
                 }
@@ -236,7 +254,7 @@ class CvmMcpClientTest {
                     val pending = async { client().callTool("big", timeoutMs = 5_000) }
                     yield()
 
-                    OversizedTransferSender(chunkChars = 64).frame(firstCallToken, serialized).forEach { frame ->
+                    OversizedTransferSender(chunkChars = 64).frame(firstCallToken(), serialized).forEach { frame ->
                         fixture.reply(frame.envelope.toNotification(), clientSigner.pubKey, "0".repeat(64))
                     }
                     pending.await()
@@ -273,9 +291,9 @@ class CvmMcpClientTest {
                     yield()
 
                     listOf(
-                        OpenStreamFrame.start(firstCallToken, 1.0),
-                        OpenStreamFrame.chunk(firstCallToken, 2.0, 0, "pushed"),
-                        OpenStreamFrame.close(firstCallToken, 3.0, lastChunkIndex = 0),
+                        OpenStreamFrame.start(firstCallToken(), 1.0),
+                        OpenStreamFrame.chunk(firstCallToken(), 2.0, 0, "pushed"),
+                        OpenStreamFrame.close(firstCallToken(), 3.0, lastChunkIndex = 0),
                     ).forEach { frame ->
                         fixture.reply(frame.envelope.toNotification(), clientSigner.pubKey, "0".repeat(64))
                     }
@@ -296,8 +314,8 @@ class CvmMcpClientTest {
             // The rule worth pinning end to end: close says no more frames, and
             // the request is still only finished by its own JSON-RPC response.
             val fixture =
-                fixture {
-                    JsonRpcSuccess(JsonRpcId.Num(0), buildJsonObject { put("done", JsonPrimitive(true)) })
+                fixture { request ->
+                    JsonRpcSuccess(request.id, buildJsonObject { put("done", JsonPrimitive(true)) })
                 }
             fixture.start()
 
@@ -312,10 +330,10 @@ class CvmMcpClientTest {
                     yield()
 
                     listOf(
-                        OpenStreamFrame.start(firstCallToken, 1.0),
-                        OpenStreamFrame.chunk(firstCallToken, 2.0, 0, "Hello"),
-                        OpenStreamFrame.chunk(firstCallToken, 3.0, 1, " world"),
-                        OpenStreamFrame.close(firstCallToken, 4.0, lastChunkIndex = 1),
+                        OpenStreamFrame.start(firstCallToken(), 1.0),
+                        OpenStreamFrame.chunk(firstCallToken(), 2.0, 0, "Hello"),
+                        OpenStreamFrame.chunk(firstCallToken(), 3.0, 1, " world"),
+                        OpenStreamFrame.close(firstCallToken(), 4.0, lastChunkIndex = 1),
                     ).forEach { frame ->
                         fixture.reply(frame.envelope.toNotification(), clientSigner.pubKey, "0".repeat(64))
                     }
@@ -338,12 +356,41 @@ class CvmMcpClientTest {
         }
 
     @Test
+    fun `call ids are neither zero-based nor shared between concurrent calls`() =
+        runTest {
+            // A sequential id from 0 told anyone who saw one how many calls the session had made
+            // and what the next would be, and `nextId++` raced between concurrent calls.
+            val client = client()
+            val fixture = fixture { request -> JsonRpcSuccess(request.id, buildJsonObject {}) }
+            fixture.start()
+
+            coroutineScope {
+                val calls = List(8) { i -> async { client.callTool("t$i", timeoutMs = 5_000) } }
+                while (calls.any { !it.isCompleted }) {
+                    yield()
+                    fixture.pump()
+                    yield()
+                }
+                calls.forEach { assertFalse(it.await().isError) }
+            }
+
+            val ids =
+                relays.published
+                    .filter { it.kind == CvmKinds.MESSAGE }
+                    .mapNotNull { (CvmMessageEvent.fromOrNull(it)?.message() as? JsonRpcRequest)?.id as? JsonRpcId.Num }
+                    .map { it.value }
+            assertEquals(8, ids.size)
+            assertEquals(8, ids.toSet().size, "every call has its own id: $ids")
+            assertTrue(ids.none { it < 8 }, "ids start at a random point, not at 0: $ids")
+        }
+
+    @Test
     fun `initialize completes the handshake and sends initialized`() =
         runTest {
             val fixture =
-                fixture {
+                fixture { request ->
                     JsonRpcSuccess(
-                        JsonRpcId.Num(0),
+                        request.id,
                         buildJsonObject { put("protocolVersion", JsonPrimitive(CvmMcpClient.PROTOCOL_VERSION)) },
                     )
                 }

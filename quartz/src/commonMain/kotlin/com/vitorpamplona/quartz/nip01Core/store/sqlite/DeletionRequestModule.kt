@@ -26,6 +26,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.isAddressable
 import com.vitorpamplona.quartz.nip01Core.core.isReplaceable
+import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 
@@ -114,6 +115,35 @@ class DeletionRequestModule(
     }
 
     /**
+     * The rows [event], a kind 5, will delete once inserted, `(created_at, id)`: the delete
+     * statements of [deleteSQL] run as selects, before them. Empty when [event] is no kind 5;
+     * null when it names more than [limit] rows (the caller rebuilds what it tracks instead of
+     * itemizing).
+     */
+    fun rowsDeletedBy(
+        event: Event,
+        db: SQLiteConnection,
+        limit: Int,
+    ): Set<IdAndTime>? {
+        if (event !is DeletionRequestEvent) return emptySet()
+        val rows = LinkedHashSet<IdAndTime>()
+        deleteSQL(event.pubKey, event.createdAt, event.deleteEventIds(), event.deleteAddresses(), hasher(db)).forEach { delete ->
+            db.prepare(selectSQL(delete, limit + 1)).use { stmt ->
+                delete.args.forEachIndexed { i, arg -> stmt.bindAny(i + 1, arg) }
+                while (stmt.step()) rows.add(IdAndTime(stmt.getLong(0), stmt.getText(1)))
+            }
+            if (rows.size > limit) return null
+        }
+        return rows
+    }
+
+    /** [delete] as the `SELECT created_at, id` [rowsDeletedBy] runs before it, same predicate. */
+    internal fun selectSQL(
+        delete: SqlArgs,
+        limit: Int,
+    ): String = "SELECT created_at, id FROM event_headers" + delete.sql.substringAfter("DELETE FROM event_headers") + " LIMIT $limit"
+
+    /**
      * Creates a Delete statement that correctly deletes by id,
      * by address and by replaceable (no d-tag) using each index
      * appropriately, including GiftWraps where the owner is the
@@ -157,6 +187,10 @@ class DeletionRequestModule(
         val replaceableKindsParam = replaceablesByKind.keys.joinToString(",") { "?" }
         val replaceableKindsValues = replaceablesByKind.keys.map { it.toLong() }
 
+        // `+pubkey_owner_hash`: without ANALYZE stats, three or more ids made SQLite pick
+        // query_by_owner_created over the unique id index, walking every event of the author,
+        // gift wraps included, under the writer. The unary + keeps the owner a filter on the
+        // rows the id index finds. [rowsDeletedBy] runs the same predicate as a select.
         val deleteById =
             if (idValues.isNotEmpty()) {
                 SqlArgs(
@@ -164,7 +198,7 @@ class DeletionRequestModule(
                     DELETE FROM event_headers
                     WHERE
                         id IN ($idParams) AND
-                        pubkey_owner_hash = ? AND
+                        +pubkey_owner_hash = ? AND
                         kind NOT IN ($IMMUNE_KINDS)
                     """.trimIndent(),
                     idValues.plus(owner).toTypedArray(),

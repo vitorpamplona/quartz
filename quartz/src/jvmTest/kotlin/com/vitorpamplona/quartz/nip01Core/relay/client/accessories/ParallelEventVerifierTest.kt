@@ -28,10 +28,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -179,4 +182,61 @@ class ParallelEventVerifierTest {
         assertTrue(returned.await(5, TimeUnit.SECONDS), "the blocked submitter was released")
         reader.join(1_000)
     }
+
+    @Test
+    fun blockedSubmittersOnTheIoPoolDoNotStarveTheDrain() {
+        // Relay delivery coroutines run on Dispatchers.IO and submit() blocks their thread on a
+        // full backlog. With more blocked submitters than IO's 64 permits, a drain on the shared IO
+        // pool could not resume from its Default fan-out: nothing was verified ever again.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val event = signed(1)
+            val delivered = AtomicLong(0)
+            val verifier =
+                ParallelEventVerifier<Unit>(
+                    scope = scope,
+                    maxBatch = 16,
+                    capacity = 16,
+                    preVerified = { true },
+                    onVerified = { _, _ -> delivered.incrementAndGet() },
+                )
+            val submitters = 100
+            val perSubmitter = 200
+            val jobs =
+                List(submitters) {
+                    scope.launch(Dispatchers.IO) {
+                        repeat(perSubmitter) { verifier.submit(event, Unit) }
+                    }
+                }
+            val deadline = System.currentTimeMillis() + 20_000
+            while (delivered.get() < submitters.toLong() * perSubmitter && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20)
+            }
+            assertEquals(submitters.toLong() * perSubmitter, delivered.get(), "every submitted event was verified")
+            runBlocking { withTimeout(5_000) { jobs.joinAll() } }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun sendSuspendsOnAFullBacklogAndDeliversEverything() =
+        withVerifierScope { scope ->
+            runBlocking {
+                val event = signed(1)
+                var delivered = 0
+                val verifier =
+                    ParallelEventVerifier<Unit>(
+                        scope = scope,
+                        maxBatch = 4,
+                        capacity = 2,
+                        preVerified = { true },
+                        onVerified = { _, _ -> delivered++ },
+                    )
+                repeat(500) { verifier.send(event, Unit) }
+                verifier.close()
+                withTimeout(30_000) { verifier.join() }
+                assertEquals(500, delivered)
+            }
+        }
 }

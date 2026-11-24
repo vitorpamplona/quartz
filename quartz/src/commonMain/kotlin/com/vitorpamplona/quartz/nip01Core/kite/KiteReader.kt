@@ -102,6 +102,7 @@ internal class KiteReader {
 
     private inline fun <T> parse(
         json: String,
+        wholeInput: Boolean = true,
         read: () -> T,
     ): T {
         s = json
@@ -113,6 +114,12 @@ internal class KiteReader {
         var done = false
         try {
             val result = read()
+            // One JSON value per input: anything after it but whitespace is malformed, not ignored
+            // (a relay frame or event with trailing garbage is not the value it starts with).
+            if (wholeInput) {
+                ws()
+                if (i < n) fail("unexpected data after the value")
+            }
             done = true
             return result
         } finally {
@@ -1001,11 +1008,14 @@ internal class KiteReader {
 
         fun readBunkerResponse(json: String): BunkerResponse = readBunkerMessage(json) as? BunkerResponse ?: throw IllegalArgumentException("not a NIP-46 response")
 
-        /** Runs [read] on [json] with this thread's reader, for formats read outside this package. */
+        /**
+         * Runs [read] on [json] with this thread's reader, for formats read outside this package.
+         * [read] may stop partway (a frame's label and sub id only): nothing after it is checked.
+         */
         internal fun <T> read(
             json: String,
             read: KiteReader.() -> T,
-        ): T = acquire().run { parse(json) { read() } }
+        ): T = acquire().run { parse(json, wholeInput = false) { read() } }
 
         /** A tag array on its own. */
         fun readTagArray(json: String): TagArray = acquire().run { parse(json) { readTagArray() } }

@@ -1,0 +1,406 @@
+{
+  "source": "block/buzz buzz-relay 52cbc6113",
+  "relay": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+  "users": {
+    "owner": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    "alice": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+    "bob": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+    "carol": "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+  },
+  "placeholders": {
+    "stream_channel": "0b0b0b0b-0000-4000-8000-000000000001",
+    "forum_channel": "0b0b0b0b-0000-4000-8000-000000000002",
+    "message_one": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "message_two": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+    "dm_channel": "0d0d0d0d-0000-4000-8000-00000000000d"
+  },
+  "cases": [
+    {
+      "name": "create_stream",
+      "who": "owner",
+      "template": {
+        "kind": 9007,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "a channel for people who love pizza"
+          ],
+          [
+            "visibility",
+            "open"
+          ],
+          [
+            "channel_type",
+            "stream"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "create_stream_edit",
+      "who": "owner",
+      "template": {
+        "kind": 9002,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "a channel for people who love pizza"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "put_user_member",
+      "who": "owner",
+      "template": {
+        "kind": 9000,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "role",
+            "member"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "put_user_admin",
+      "who": "owner",
+      "template": {
+        "kind": 9000,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ],
+          [
+            "role",
+            "admin"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "pin_first",
+      "who": "owner",
+      "template": {
+        "kind": 40010,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "e",
+            "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+          ],
+          [
+            "client-id",
+            "pin-1"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "pin_second",
+      "who": "owner",
+      "template": {
+        "kind": 40010,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "e",
+            "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+          ],
+          [
+            "client-id",
+            "pin-2"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "unpin_first",
+      "who": "owner",
+      "template": {
+        "kind": 40011,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "e",
+            "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+          ],
+          [
+            "client-id",
+            "unpin-1"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "create_duplicate_listed_name",
+      "who": "alice",
+      "template": {
+        "kind": 9007,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000003"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "again"
+          ],
+          [
+            "visibility",
+            "open"
+          ],
+          [
+            "channel_type",
+            "stream"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": false,
+        "message": "invalid: an open channel named \"pizza-lovers\" already exists"
+      }
+    },
+    {
+      "name": "create_private_forum",
+      "who": "owner",
+      "template": {
+        "kind": 9007,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000002"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "recipes"
+          ],
+          [
+            "visibility",
+            "private"
+          ],
+          [
+            "channel_type",
+            "forum"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "create_private_forum_edit",
+      "who": "owner",
+      "template": {
+        "kind": 9002,
+        "tags": [
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000002"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "recipes"
+          ],
+          [
+            "private"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": ""
+      }
+    },
+    {
+      "name": "dm_open",
+      "who": "owner",
+      "template": {
+        "kind": 41010,
+        "tags": [
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": "response:{\"channel_id\":\"68f627da-a32f-4422-a17e-2f4076b3f8f7\",\"created\":true}",
+        "response": {
+          "channel_id": "68f627da-a32f-4422-a17e-2f4076b3f8f7",
+          "created": true
+        }
+      }
+    },
+    {
+      "name": "dm_add_with_history",
+      "who": "owner",
+      "template": {
+        "kind": 41011,
+        "tags": [
+          [
+            "h",
+            "0d0d0d0d-0000-4000-8000-00000000000d"
+          ],
+          [
+            "p",
+            "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+          ],
+          [
+            "history",
+            "include"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": "response:{\"channel_id\":\"68f627da-a32f-4422-a17e-2f4076b3f8f7\",\"created\":false}",
+        "response": {
+          "channel_id": "68f627da-a32f-4422-a17e-2f4076b3f8f7",
+          "created": false
+        }
+      }
+    },
+    {
+      "name": "dm_add_without_history",
+      "who": "owner",
+      "template": {
+        "kind": 41011,
+        "tags": [
+          [
+            "h",
+            "0d0d0d0d-0000-4000-8000-00000000000d"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": "response:{\"channel_id\":\"35b5225d-62e9-4859-a7f0-b8e777cc8121\",\"created\":true}",
+        "response": {
+          "channel_id": "35b5225d-62e9-4859-a7f0-b8e777cc8121",
+          "created": true
+        }
+      }
+    },
+    {
+      "name": "dm_open_again",
+      "who": "owner",
+      "template": {
+        "kind": 41010,
+        "tags": [
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ]
+        ],
+        "content": ""
+      },
+      "buzz": {
+        "accepted": true,
+        "message": "response:{\"channel_id\":\"021c34db-b95c-4e81-a358-d9689a6805ba\",\"created\":true}",
+        "response": {
+          "channel_id": "021c34db-b95c-4e81-a358-d9689a6805ba",
+          "created": true
+        }
+      }
+    }
+  ]
+}

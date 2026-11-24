@@ -23,6 +23,8 @@ package com.vitorpamplona.quartz.nip46RemoteSigner.server
 import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.core.toHexKey
+import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.relay.client.EmptyNostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
@@ -31,6 +33,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSigner
+import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequest
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestConnect
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerRequestGetPublicKey
@@ -47,6 +50,9 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.signer.SwitchRelaysResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.signer.SwitchRelaysResult
 import com.vitorpamplona.quartz.nip57Zaps.PrivateZapEvent
 import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
+import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.LogLevel
+import com.vitorpamplona.quartz.utils.LogSink
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -70,35 +76,32 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class NostrConnectSignerServiceTest {
-    private val serverKey = "a".repeat(64)
-    private val clientKey = "b".repeat(64)
-    private val identityKey = "d".repeat(64)
+    private val serverKeys = KeyPair(ByteArray(32) { 1 })
+    private val clientKeys = KeyPair(ByteArray(32) { 2 })
+    private val identityKeys = KeyPair(ByteArray(32) { 4 })
+    private val serverKey = serverKeys.pubKey.toHexKey()
+    private val clientKey = clientKeys.pubKey.toHexKey()
+    private val identityKey = identityKeys.pubKey.toHexKey()
     private val relay: NormalizedRelayUrl = RelayUrlNormalizer.normalizeOrNull("wss://relay.example.com")!!
 
-    /** Passthrough crypto + real event construction, so NostrConnectEvent.create/decryptMessage round-trip. */
+    /**
+     * Passthrough crypto + real, signed events, so NostrConnectEvent.create/decryptMessage
+     * round-trip and the service's signature check passes. Each transport event carries a random
+     * `nonce` tag so two requests with the same body are still two events.
+     */
     private class PassthroughSigner(
-        pubKey: HexKey,
-    ) : NostrSigner(pubKey) {
+        private val keys: KeyPair,
+    ) : NostrSigner(keys.pubKey.toHexKey()) {
         override fun isWriteable() = true
 
-        @Suppress("UNCHECKED_CAST")
         override suspend fun <T : Event> sign(
             createdAt: Long,
             kind: Int,
             tags: Array<Array<String>>,
             content: String,
         ): T {
-            val id = RandomInstance.randomChars(64)
-            val sig = "0".repeat(128)
-            // Transport events must stay NostrConnectEvent (kind 24133 is baked in);
-            // any other kind is the actual event a sign_event request asked us to sign.
-            val event =
-                if (kind == NostrConnectEvent.KIND) {
-                    NostrConnectEvent(id, pubKey, createdAt, tags, content, sig)
-                } else {
-                    Event(id, pubKey, createdAt, kind, tags, content, sig)
-                }
-            return event as T
+            val unique = if (kind == NostrConnectEvent.KIND) tags + arrayOf("nonce", RandomInstance.randomChars(16)) else tags
+            return NostrSignerSync(keys).signNormal(createdAt, kind, unique, content)
         }
 
         override suspend fun nip04Encrypt(
@@ -181,15 +184,15 @@ class NostrConnectSignerServiceTest {
         }
     }
 
-    private fun serverSigner() = PassthroughSigner(serverKey)
+    private fun serverSigner() = PassthroughSigner(serverKeys)
 
-    private fun clientSigner() = PassthroughSigner(clientKey)
+    private fun clientSigner() = PassthroughSigner(clientKeys)
 
     /** Builds the encrypted kind-24133 request the client would publish to the bunker. */
     private suspend fun request(message: BunkerRequest): NostrConnectEvent = NostrConnectEvent.create(message, remoteKey = serverKey, signer = clientSigner())
 
     private suspend fun requestFrom(
-        author: HexKey,
+        author: KeyPair,
         message: BunkerRequest,
     ): NostrConnectEvent = NostrConnectEvent.create(message, remoteKey = serverKey, signer = PassthroughSigner(author))
 
@@ -220,7 +223,7 @@ class NostrConnectSignerServiceTest {
             // The client connects to the transport key (serverKey); the actual work signer is a
             // separate identity key. get_public_key must reveal the identity, not the transport key.
             val transport = serverSigner()
-            val identity = PassthroughSigner(identityKey)
+            val identity = PassthroughSigner(identityKeys)
             val processor = BunkerRequestProcessor(identity, { setOf(relay) }, AllowAuthorizer())
             val service = NostrConnectSignerService(client, transport, processor, setOf(relay))
 
@@ -399,7 +402,7 @@ class NostrConnectSignerServiceTest {
             backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { service.run() }
 
             // Twenty fresh keys, one request each: the shared budget stops them after 5.
-            repeat(20) { i -> client.deliver(requestFrom(i.toString(16).padStart(64, 'e'), ping("stranger$i"))) }
+            repeat(20) { i -> client.deliver(requestFrom(KeyPair(), ping("stranger$i"))) }
             assertEquals(5, client.published.size)
 
             // The paired client is unaffected by the exhausted unpaired budget.
@@ -537,6 +540,80 @@ class NostrConnectSignerServiceTest {
             client.deliver(request(BunkerRequestPing(id = "p")))
 
             assertEquals(listOf(clientSigner().pubKey to relay), seen)
+        }
+
+    @Test
+    fun aRequestWhoseSignatureDoesNotVerifyIsIgnored() =
+        runTest {
+            val client = LoopbackClient()
+            val signer = serverSigner()
+            val processor = BunkerRequestProcessor(signer, { setOf(relay) }, AllowAuthorizer())
+            val service = NostrConnectSignerService(client, signer, processor, setOf(relay))
+
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { service.run() }
+
+            // A relay (or anyone who saw one) re-sends a paired client's request with a new
+            // created_at, so a new id the dedup has never seen, and the old signature.
+            val genuine = request(ping("p1"))
+            val replayed = NostrConnectEvent(genuine.id.reversed(), genuine.pubKey, genuine.createdAt + 1, genuine.tags, genuine.content, genuine.sig)
+            client.deliver(replayed)
+
+            assertTrue(client.published.isEmpty(), "an unsigned copy must not be serviced")
+        }
+
+    @Test
+    fun aForgedCopyCannotShadowTheGenuineRequestInTheDedup() =
+        runTest {
+            val client = LoopbackClient()
+            val signer = serverSigner()
+            val processor = BunkerRequestProcessor(signer, { setOf(relay) }, AllowAuthorizer())
+            val service = NostrConnectSignerService(client, signer, processor, setOf(relay))
+
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { service.run() }
+
+            // A copy with the genuine id but a broken signature arrives first. Were the id
+            // remembered before the signature was checked, the genuine request would be dropped.
+            val genuine = request(ping("p2"))
+            val other = request(ping("evil"))
+            client.deliver(NostrConnectEvent(genuine.id, genuine.pubKey, genuine.createdAt, genuine.tags, other.content, "00".repeat(64)))
+            client.deliver(genuine)
+
+            assertEquals(1, client.published.size)
+            val reply = (client.published.single() as NostrConnectEvent).decryptMessage(clientSigner()) as BunkerResponse
+            assertEquals("p2", reply.id, "the genuine request is the one answered")
+        }
+
+    // Every relay sends its copy of a request: once one copy was verified and handled, the others are
+    // dropped by id before their signature is checked again. A copy carrying the handled id is
+    // either that request or a forgery of it, and neither is serviced.
+    @Test
+    fun aCopyOfAHandledRequestIsDroppedBeforeItsSignatureIsChecked() =
+        runTest {
+            val client = LoopbackClient()
+            val signer = serverSigner()
+            val processor = BunkerRequestProcessor(signer, { setOf(relay) }, AllowAuthorizer())
+            val service = NostrConnectSignerService(client, signer, processor, setOf(relay))
+
+            val originalSink = Log.sink
+            val originalLevel = Log.minLevel
+            val rejected = ArrayList<String>()
+            Log.minLevel = LogLevel.DEBUG
+            Log.sink = LogSink { _, tag, message, _ -> if (tag == "NIP46Signer" && "does not verify" in message) rejected.add(message) }
+            try {
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { service.run() }
+
+                val genuine = request(ping("p3"))
+                client.deliver(genuine)
+                client.deliver(genuine)
+                // The genuine id with a broken signature: only a verify would notice, and none runs.
+                client.deliver(NostrConnectEvent(genuine.id, genuine.pubKey, genuine.createdAt, genuine.tags, genuine.content, "00".repeat(64)))
+
+                assertEquals(1, client.published.size, "one request, one reply")
+                assertTrue(rejected.isEmpty(), "a copy of a handled request was verified again: $rejected")
+            } finally {
+                Log.sink = originalSink
+                Log.minLevel = originalLevel
+            }
         }
 
     @Test

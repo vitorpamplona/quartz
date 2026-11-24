@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.utils
 
 import java.io.ByteArrayOutputStream
+import java.util.zip.DataFormatException
 import java.util.zip.Deflater
 import java.util.zip.Inflater
 
@@ -43,18 +44,28 @@ actual object Deflate {
         }
     }
 
-    actual fun decompress(input: ByteArray): ByteArray {
+    actual fun decompress(input: ByteArray): ByteArray = decompress(input, Int.MAX_VALUE)!!
+
+    actual fun decompress(
+        input: ByteArray,
+        maxBytes: Int,
+    ): ByteArray? {
         val inflater = Inflater(true)
         try {
             inflater.setInput(input)
 
-            val bos = ByteArrayOutputStream(input.size * 2)
+            val bos = ByteArrayOutputStream(minOf(input.size * 2, maxBytes).coerceAtLeast(16))
             val buffer = ByteArray(4096)
+            var total = 0L
             while (!inflater.finished()) {
                 val count = inflater.inflate(buffer)
-                if (count == 0 && inflater.needsInput()) break
+                if (count == 0 && (inflater.needsInput() || inflater.needsDictionary())) break
+                total += count
+                if (total > maxBytes) return null
                 bos.write(buffer, 0, count)
             }
+            // Input that ends before its final block is not a stream we can return a prefix of.
+            if (!inflater.finished()) throw DataFormatException("Truncated DEFLATE stream")
             return bos.toByteArray()
         } finally {
             inflater.end()

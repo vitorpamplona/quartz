@@ -87,20 +87,33 @@ object BleMessageChunker {
      *
      * @param chunks The received chunks.
      * @return The original JSON message string.
+     * @throws IllegalArgumentException for a malformed chunk, an oversized message, or one that
+     *   inflates past [BleConfig.MAX_INFLATED_MESSAGE_SIZE].
      */
     fun joinChunks(chunks: Array<ByteArray>): String {
         val sorted = chunks.sortedBy { chunkIndex(it) }
 
-        var reassembled = ByteArray(0)
+        // One buffer of the final size, each payload copied once: growing it chunk by chunk
+        // copied everything received so far on every chunk, O(n^2) over a 255-chunk message.
+        var size = 0
         for (chunk in sorted) {
-            val payload = chunk.copyOfRange(1, chunk.size - 1)
-            val newArray = ByteArray(reassembled.size + payload.size)
-            reassembled.copyInto(newArray)
-            payload.copyInto(newArray, reassembled.size)
-            reassembled = newArray
+            require(chunk.size >= CHUNK_OVERHEAD) { "Chunk of ${chunk.size} bytes has no room for its header" }
+            size += chunk.size - CHUNK_OVERHEAD
+        }
+        require(size <= BleConfig.MAX_MESSAGE_SIZE) { "Compressed message size $size exceeds maximum ${BleConfig.MAX_MESSAGE_SIZE} bytes" }
+
+        val reassembled = ByteArray(size)
+        var pos = 0
+        for (chunk in sorted) {
+            chunk.copyInto(reassembled, pos, 1, chunk.size - 1)
+            pos += chunk.size - CHUNK_OVERHEAD
         }
 
-        return Deflate.decompress(reassembled).decodeToString()
+        // Bounded: a peer's 64 KB of DEFLATE can inflate to 64 MB of one repeated byte.
+        val inflated =
+            Deflate.decompress(reassembled, BleConfig.MAX_INFLATED_MESSAGE_SIZE)
+                ?: throw IllegalArgumentException("Message inflates past ${BleConfig.MAX_INFLATED_MESSAGE_SIZE} bytes")
+        return inflated.decodeToString()
     }
 
     /**

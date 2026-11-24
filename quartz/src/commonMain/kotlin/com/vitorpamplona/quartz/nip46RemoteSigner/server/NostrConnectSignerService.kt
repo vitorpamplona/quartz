@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip46RemoteSigner.server
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.relay.client.INostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.reqs.SubscriptionListener
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.newSubId
@@ -264,6 +265,8 @@ class NostrConnectSignerService(
         // log them as one summary per second instead of a line each on this single consumer.
         var staleSinceLog = 0
         var lastStaleLogAt = 0L
+        var invalidSinceLog = 0
+        var lastInvalidLogAt = 0L
         val unpairedLimiter = UnpairedLimiter(maxUnpairedRequestsPerAuthor, maxUnpairedRequestsTotal, unpairedWindowSeconds, maxTrackedUnpairedAuthors)
         // Authors already confirmed paired, so their traffic skips the limiter and the store lookup.
         // This only decides rate limiting: the processor still authorizes every request, so an app
@@ -280,6 +283,24 @@ class NostrConnectSignerService(
             while (true) {
                 val arrival = events.receive()
                 val event = arrival.event
+                // Every relay sends its own copy: an id already handled was verified then, so a copy
+                // (or a forgery carrying that id) is dropped before paying for a signature check.
+                if (event.id in seen) continue
+                // The signature first, before the id is remembered: a request is only the client's
+                // when its signature says so (a relay can re-send one with a fresh created_at, so a
+                // fresh id, and the old signature), and remembering an unverified copy's id would let
+                // a forgery carrying the genuine id shadow the genuine request in the dedup below.
+                if (!event.verify()) {
+                    invalidSinceLog++
+                    val now = TimeUtils.now()
+                    if (now - lastInvalidLogAt >= 1) {
+                        val count = invalidSinceLog
+                        Log.w("NIP46Signer") { "ignored $count request(s) whose signature does not verify; latest ${event.id.take(8)}…" }
+                        invalidSinceLog = 0
+                        lastInvalidLogAt = now
+                    }
+                    continue
+                }
                 if (!seen.add(event.id)) continue // same request already handled (arrived on another relay)
                 if (seen.size > seenCap) {
                     seen.iterator().let {

@@ -24,6 +24,8 @@ import androidx.collection.LruCache
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -70,6 +72,119 @@ class RelayAuthStatus {
     // AUTHs accepted on this connection — see [RelayAuthSnapshot.successCount].
     private val successCount = AtomicInt(0)
 
+    // 1 while an accepted AUTH is owed a re-sync of the connection's filters and outbox. One
+    // round can authenticate several identities, and re-syncing on each accepted one sent every
+    // refused event once per identity. See [RelayAuthenticator]'s checkAuthResults.
+    private val resyncOwed = AtomicInt(0)
+
+    // One signing round per connection at a time. A challenge that arrives while a round signs is
+    // queued (the newest wins: NIP-42 makes a challenge valid "until another challenge is sent") and
+    // signed when the round ends, instead of launching a second signer prompt beside the first.
+    private val roundLock = PlatformLock()
+    private var signingRound = false
+    private var queuedChallenge: String? = null
+    private var queuedInteractive = false
+
+    // The challenge the running round is signing, and whether it may prompt. A challenge the relay
+    // repeats while it is signed is answered by that signature: queued, it signed the same round
+    // again, a second prompt on an external signer for an AUTH the dedup then never sent.
+    private var signingChallenge: String? = null
+    private var signingInteractive = false
+
+    // Frames (REQ/COUNT ids, EVENT ids) refused `auth-required:` after an AUTH on this connection
+    // was accepted, each with the challenge it was retried on. See [firstLateRefusal].
+    private val lateRefusalsRetried: LruCache<ChallengePair, ChallengePair> = LruCache(500)
+
+    // Guards [saveAuthSubmission]'s check-then-put.
+    private val submissionLock = PlatformLock()
+
+    /**
+     * Starts a signing round on [challenge]: true when the caller should sign now, false when a
+     * round is already signing and [challenge] was queued behind it (see [endRound]).
+     */
+    fun beginRound(
+        challenge: String,
+        interactive: Boolean,
+    ): Boolean =
+        roundLock.withLock {
+            if (signingRound) {
+                queuedChallenge = challenge
+                queuedInteractive = queuedInteractive || interactive
+                false
+            } else {
+                signingRound = true
+                signingChallenge = challenge
+                signingInteractive = interactive
+                true
+            }
+        }
+
+    /**
+     * The current round ended. Returns the challenge queued meanwhile, with whether it may prompt,
+     * for the caller to sign next in the same round; null when nothing is queued (the round is over).
+     * A queued challenge equal to the one just signed is dropped, unless it may prompt and the
+     * round just signed could not: that signature already answered it.
+     */
+    fun endRound(): Pair<String, Boolean>? =
+        roundLock.withLock {
+            val next = queuedChallenge
+            val interactive = queuedInteractive
+            queuedChallenge = null
+            queuedInteractive = false
+            if (next == null || (next == signingChallenge && (signingInteractive || !interactive))) {
+                signingRound = false
+                signingChallenge = null
+                signingInteractive = false
+                null
+            } else {
+                signingChallenge = next
+                signingInteractive = interactive
+                next to interactive
+            }
+        }
+
+    /** Ends the round and drops what was queued: the signing coroutine was cancelled. */
+    fun abandonRound() {
+        roundLock.withLock {
+            signingRound = false
+            queuedChallenge = null
+            queuedInteractive = false
+            signingChallenge = null
+            signingInteractive = false
+        }
+    }
+
+    /** An AUTH was accepted: the connection is owed one re-sync, whatever else lands first. */
+    fun oweResync() {
+        resyncOwed.store(1)
+    }
+
+    /** Takes the owed re-sync, if any: true for exactly one caller per [oweResync]. */
+    fun takeResync(): Boolean = resyncOwed.compareAndSet(1, 0)
+
+    /** Whether an AUTH was accepted on this connection. */
+    internal fun hasAcceptedAuth(): Boolean = successCount.load() > 0
+
+    /** Whether [eventId] is an AUTH this connection sent, as opposed to an EVENT. */
+    internal fun isAuthEvent(eventId: HexKey): Boolean = authResponseWatcher[eventId] != null
+
+    /**
+     * True the first time [frame] (a subscription or event id, prefixed by its kind) is refused
+     * `auth-required:` on the stored challenge, false after: a frame is retried at most once per
+     * challenge, so a relay that keeps refusing it is not asked forever.
+     */
+    internal fun firstLateRefusal(frame: String): Boolean {
+        val key = ChallengePair(frame, lastChallenge ?: return false)
+        return submissionLock.withLock {
+            if (lateRefusalsRetried[key] == null) {
+                lateRefusalsRetried.put(key, key)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
     fun rememberChallenge(challenge: String) {
         lastChallenge = challenge
     }
@@ -103,13 +218,16 @@ class RelayAuthStatus {
 
         val challengePair = ChallengePair(authEvent.pubKey, challenge)
 
-        // only send replies to new challenges to avoid infinite loop:
-        return if (uniqueAuthChallengesSent[challengePair] == null) {
-            authResponseWatcher.put(authEvent.id, AuthEventReceiptStatus.AUTHENTICATING)
-            uniqueAuthChallengesSent.put(challengePair, challengePair)
-            true
-        } else {
-            false
+        // only send replies to new challenges to avoid infinite loop. Under a lock: two rounds
+        // checking at once both found the pair missing and both sent an AUTH for it.
+        return submissionLock.withLock {
+            if (uniqueAuthChallengesSent[challengePair] == null) {
+                authResponseWatcher.put(authEvent.id, AuthEventReceiptStatus.AUTHENTICATING)
+                uniqueAuthChallengesSent.put(challengePair, challengePair)
+                true
+            } else {
+                false
+            }
         }
     }
 

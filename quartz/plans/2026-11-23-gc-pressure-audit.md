@@ -3,7 +3,9 @@
 **Date:** 2026-11-23
 **Status:** measurements and ranked backlog; fixed so far: items 1 (hint providers), 3 and 4
 (client listeners), 5 (caching decoder, in part), 10 (write buffers), 11 (`ContactTag`), 12 (kind-0
-search), 17 (address assembly, in part), 20 (`EventInterner`)
+search), 17 (address assembly, in part), 20 (`EventInterner`), 21 (`BaseNoteEvent` caches), 23
+(`SeenIds`), and the `IMetaTag`, `Hex.isHex`, `EventFactory` boxing and `TagArray` helper items under
+**Smaller items**
 **Harnesses:**
 - `quartz/src/jvmTest/.../nip01Core/prodbench/IngestAllocationBenchmark.kt` (ingest stages, retained size)
   `./gradlew :quartz:jvmTest --tests "*.IngestAllocationBenchmark" -i`
@@ -310,8 +312,9 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
         it.
     - Pinned by `EventInternerTest.collectedEventsLeaveTheMapWithoutTheirIdsBeingLookedUpAgain`,
       which fails on the old code with 1,001 entries.
-21. **`BaseNoteEvent` keeps empty collections in its caches.** About 170 B retained per cached
-    note.
+21. **Fixed: `BaseNoteEvent` kept empty collections in its caches.** About 170 B retained per
+    cached note. `citedUsers()`/`findCitations()` now cache the shared `emptySet()` and the
+    thrown-away `.toMutableSet()` copy is gone; `citedNIP19()` already caches `emptyList()`.
     - Where:
       - `:72` and `:91` cache `mutableSetOf()` even when empty;
       - `:93` makes a `.toMutableSet()` copy that is thrown away;
@@ -320,8 +323,10 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
 22. **`RelayActiveRequestStates` keeps every subId a relay has seen until reconnect**
     (`RelayActiveRequestStates.kt:39,55`). On native, each new subId also copies the whole
     copy-on-write map.
-23. **`SeenIds()` allocates 16 MB eagerly, and `reset()` reallocates 16 MB regardless of the
-    constructor's size** (`SeenIds.kt:171-172,193`).
+23. **Fixed: `SeenIds()` allocated 16 MB eagerly, and `reset()` reallocated 16 MB regardless of
+    the constructor's size** (`SeenIds.kt:171-172,193`). The default is now 4,096 slots (64 KB),
+    growing as before, and `reset()` returns to the instance's own initial size, clearing in place
+    when the table never grew.
     - Quartz's only caller uses `initialSlotsPow2 = 12` and never resets. This hits apps that
       use the default constructor.
     - Fix: `reset()` keeps the instance's own initial size and `fill(0)`s a table already at
@@ -365,7 +370,8 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
   - `ChannelMessageEvent.channelId()` and 9 similar sites build a `MarkedETag` to read one id.
   - `CommentEvent.notifies` builds a list per check.
   - `CustomEmoji.assembleAnnotatedList` rebuilds its emoji map per call.
-  - `IMetaTag.parse` copies its property map once per URL.
+  - Fixed: `IMetaTag.parse` copied its property map once per URL (O(urls × properties), an OOM
+    for one tag of 8,000 + 8,000); every URL now shares one map.
   - `LnInvoiceUtil.getAmount` (a regex, two copies of the bech32 values array, and
     `BigDecimal`s, ~1–1.5 KB per receipt).
   - `RelayListRecommendationProcessor` re-transposes its map every greedy round.
@@ -374,10 +380,15 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
     (98 sites in nip02/nip51). Presize for lists that are mostly one tag type.
 - **Crypto and utilities:**
   - NIP-44 decrypt: stdlib `Base64.decode` makes a temporary copy of the whole payload first.
-  - `EventSearchMatcher`: `contains(ignoreCase = true)` allocates an `IntRange` per field
-    check.
-  - `Hex.isHex` and `isHex64` throw and catch on chars above U+00FF.
-  - `EventFactory` boxes kinds of 128 or more for unknown kinds.
+  - Fixed: `Hex.isHex` and `isHex64` threw and caught on chars above U+00FF; both are now a
+    branchless accumulator, like `decodeExactOrNull`.
+  - Fixed: `EventFactory` boxed kinds of 128 or more for unknown kinds; the registry lookup is
+    skipped while nothing is registered (the norm), and the registry is copy-on-write.
+  - Fixed: `TagArray.mapValueTagged` used the stdlib `mapNotNull` (now `fastMapNotNull`), and
+    `firstTagValueFor(vararg)` allocated its array per call (two- and three-name overloads).
+  - NIP-19 TLV: `Tlv.asHex`/`firstAsHex` interned any value; now only 32-byte keys.
+  - Not done: `Nip19Parser.parseAll*` still makes one `ArrayList` per call; see item 1 for why
+    the list stays a `val` (Kotlin/Native).
   - `MachineReadablePrefix.parse` makes a substring per call.
 
 ## Structural (for a major version)

@@ -52,8 +52,10 @@ internal class EventVerifier {
         try {
             KiteWriter.idHashInto(pubKeyHex, createdAt, kind, tags, content, hash)
             if (!Hex.isEqual(id, hash)) return false
-            Hex.decodeInto(sigHex, sig)
-            Hex.decodeInto(pubKeyHex, pubKey)
+            // Lowercase hex only (NIP-01): a sig or pubkey string that is not exactly its bytes'
+            // encoding is another string, whatever it decodes to.
+            if (!Hex.decodeLowerInto(sigHex, sig)) return false
+            if (!Hex.decodeLowerInto(pubKeyHex, pubKey)) return false
             return Nip01Crypto.verify(sig, hash, pubKey)
         } finally {
             inUse = false
@@ -68,9 +70,9 @@ internal class EventVerifier {
     ): Boolean {
         inUse = true
         try {
-            Hex.decodeInto(id, hash)
-            Hex.decodeInto(sigHex, sig)
-            Hex.decodeInto(pubKeyHex, pubKey)
+            if (!Hex.decodeLowerInto(id, hash)) return false
+            if (!Hex.decodeLowerInto(sigHex, sig)) return false
+            if (!Hex.decodeLowerInto(pubKeyHex, pubKey)) return false
             return Nip01Crypto.verify(sig, hash, pubKey)
         } finally {
             inUse = false

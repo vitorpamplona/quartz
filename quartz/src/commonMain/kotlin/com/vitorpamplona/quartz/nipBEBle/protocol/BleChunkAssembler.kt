@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.nipBEBle.protocol
 
+import com.vitorpamplona.quartz.utils.Log
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -43,7 +44,14 @@ class BleChunkAssembler {
             val updated = current + chunk
             if (BleMessageChunker.isComplete(updated)) {
                 if (receivedChunks.compareAndSet(current, emptyList())) {
-                    return BleMessageChunker.joinChunks(updated.toTypedArray())
+                    return try {
+                        BleMessageChunker.joinChunks(updated.toTypedArray())
+                    } catch (e: Exception) {
+                        // A malformed or oversized message from the peer (a bad chunk, a bomb, a
+                        // broken DEFLATE stream): drop it, not the link.
+                        Log.w("BleChunkAssembler", "Dropped a message that could not be reassembled", e)
+                        null
+                    }
                 }
             } else {
                 if (receivedChunks.compareAndSet(current, updated)) {

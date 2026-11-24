@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.isAnswerTo
 import com.vitorpamplona.quartz.utils.EventFactory
 
 class SignResponse {
@@ -48,7 +49,9 @@ class SignResponse {
                 if (eventJson.startsWith("{")) {
                     val event = Event.fromJsonOrNull(eventJson)
                     if (event != null) {
-                        if (event.verify()) {
+                        // Bound to the request: the signer must return the event we asked it to sign,
+                        // under the same key. A valid signature over anything else is not an answer.
+                        if (event.verify() && isAnswerTo(event, unsignedEvent)) {
                             SignerResult.RequestAddressed.Successful(SignResult(event))
                         } else {
                             SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent(event)

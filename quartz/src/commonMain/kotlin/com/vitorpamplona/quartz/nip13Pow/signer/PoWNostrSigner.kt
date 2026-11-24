@@ -98,6 +98,11 @@ class PoWNostrSigner(
         fromPublicKey: HexKey,
     ): String = signer.nip44Decrypt(ciphertext, fromPublicKey)
 
+    override suspend fun nip44DecryptOnce(
+        ciphertext: String,
+        fromPublicKey: HexKey,
+    ): String = signer.nip44DecryptOnce(ciphertext, fromPublicKey)
+
     override suspend fun decryptZapEvent(event: ZapRequestEvent): PrivateZapEvent = signer.decryptZapEvent(event)
 
     override suspend fun deriveKey(nonce: HexKey): HexKey = signer.deriveKey(nonce)

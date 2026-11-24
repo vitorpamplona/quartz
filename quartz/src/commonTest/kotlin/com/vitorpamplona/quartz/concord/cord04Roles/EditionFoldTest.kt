@@ -35,6 +35,7 @@ class EditionFoldTest {
         prevHash: ByteArray?,
         content: String,
         rumorId: String = "id-v$version",
+        author: String = this.author,
     ) = ControlEdition(
         entityKind = ControlEntityKind.CHANNEL,
         entityId = eid,
@@ -47,16 +48,16 @@ class EditionFoldTest {
         createdAt = 1_700_000_000L + version,
     )
 
-    /** A normal chain (v0 genesis → v1 → v2) folds to the highest intact version. */
+    /** A normal chain (v1 genesis → v2 → v3) folds to the highest intact version. */
     @Test
     fun foldsIntactChainToHead() {
-        val v0 = edition(0, null, "genesis")
-        val v1 = edition(1, v0.hash, "one")
+        val v1 = edition(1, null, "genesis")
         val v2 = edition(2, v1.hash, "two")
+        val v3 = edition(3, v2.hash, "three")
 
-        val head = EditionFold.foldEntity(listOf(v2, v0, v1))
-        assertEquals(2, head?.version)
-        assertEquals("two", head?.content)
+        val head = EditionFold.foldEntity(listOf(v3, v1, v2))
+        assertEquals(3, head?.version)
+        assertEquals("three", head?.content)
     }
 
     /**
@@ -88,12 +89,12 @@ class EditionFoldTest {
     /** A genuine mid-chain gap still fails closed at the intact prefix — no silent jump past the hole. */
     @Test
     fun stopsAtGapWhenGenesisPresent() {
-        val v0 = edition(0, null, "genesis")
-        // v1 is missing; v2 cites a hash we don't hold, so it can't chain onto v0.
-        val v2 = edition(2, ByteArray(32) { 0x77.toByte() }, "orphan")
+        val v1 = edition(1, null, "genesis")
+        // v2 is missing; v3 cites a hash we don't hold, so it can't chain onto v1.
+        val v3 = edition(3, ByteArray(32) { 0x77.toByte() }, "orphan")
 
-        val head = EditionFold.foldEntity(listOf(v2, v0))
-        assertEquals(0, head?.version)
+        val head = EditionFold.foldEntity(listOf(v3, v1))
+        assertEquals(1, head?.version)
         assertEquals("genesis", head?.content)
     }
 
@@ -101,5 +102,49 @@ class EditionFoldTest {
     @Test
     fun emptyFoldsToNull() {
         assertNull(EditionFold.foldEntity(emptyList()))
+    }
+
+    /** A version-0 edition never anchors, even when its rumor id sorts lower (CORD-04 §1). */
+    @Test
+    fun aVersionZeroGenesisWithTheLowerRumorIdLosesToAVersionOneGenesis() {
+        val zero = edition(0, null, "zero", rumorId = "aaa")
+        val one = edition(1, null, "one", rumorId = "bbb")
+        val two = edition(2, one.hash, "two", rumorId = "ccc")
+
+        assertEquals("ccc", EditionFold.foldEntity(listOf(zero, one, two))?.rumorId)
+        assertEquals("ccc", EditionFold.foldEntityGated(listOf(zero, one, two), rank = { 1L }) { true }?.rumorId)
+    }
+
+    /** Versions start at 1: an edition with no prev above it is no genesis (Armada anchors only at 1). */
+    @Test
+    fun onlyAVersionOneEditionWithNoPrevAnchors() {
+        val three = edition(3, null, "three", rumorId = "aaa")
+        val one = edition(1, null, "one", rumorId = "bbb")
+
+        assertEquals("bbb", EditionFold.foldEntity(listOf(three, one))?.rumorId)
+        assertEquals("bbb", EditionFold.foldEntityGated(listOf(three, one), rank = { 1L }) { true }?.rumorId)
+    }
+
+    /** `"0"` parses but never anchors a chain (CORD-04 §1), even signed by higher authority. */
+    @Test
+    fun aVersionZeroGenesisNeverAnchorsEvenWithHigherAuthority() {
+        val zero = edition(0, null, "zero", rumorId = "aaa", author = "owner")
+        val one = edition(1, null, "one", rumorId = "bbb", author = "member")
+        val two = edition(2, one.hash, "two", rumorId = "ccc", author = "member")
+        val rank = { author: String -> if (author == "owner") 0L else 5L }
+
+        assertEquals("ccc", EditionFold.foldEntityGated(listOf(zero, one, two), rank = rank) { true }?.rumorId)
+    }
+
+    /** A chain of version-0 editions alone has no head. */
+    @Test
+    fun aVersionZeroChainAloneHasNoHead() {
+        val zero = edition(0, null, "zero", rumorId = "aaa")
+        val one = edition(1, zero.hash, "one", rumorId = "bbb")
+
+        assertNull(EditionFold.foldEntity(listOf(zero)))
+        assertNull(EditionFold.foldEntityGated(listOf(zero), rank = { 1L }) { true })
+        // Its successor cites it, so it is no genesis either; it is the lowest edition held, at 1.
+        assertEquals("bbb", EditionFold.foldEntity(listOf(zero, one))?.rumorId)
     }
 }

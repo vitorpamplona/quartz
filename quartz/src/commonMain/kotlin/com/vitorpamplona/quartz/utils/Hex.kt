@@ -50,6 +50,12 @@ object Hex {
             UPPER_CASE_HEX.forEachIndexed { index, char -> this[char.code] = index }
         }
 
+    // NIP-01's form for ids, pubkeys and signatures: lowercase only, every other char -1.
+    private val lowerHexToByte: IntArray =
+        IntArray(256) { -1 }.apply {
+            LOWER_CASE_HEX.forEachIndexed { index, char -> this[char.code] = index }
+        }
+
     // Encodes both chars in a single Int variable
     private val byteToHex =
         IntArray(256) {
@@ -66,15 +72,7 @@ object Hex {
         if (hex == null) return false
         if (hex.length and 1 != 0) return false
 
-        return try {
-            internalIsHex(hex, hexToByte)
-        } catch (_: IllegalArgumentException) {
-            // there are p tags with emoji's which makes the hex[c].code > 256
-            false
-        } catch (_: IndexOutOfBoundsException) {
-            // there are p tags with emoji's which makes the hex[c].code > 256
-            false
-        }
+        return internalIsHex(hex, hexToByte)
     }
 
     // breaking this function away from the main one improves performance for some reason
@@ -82,10 +80,15 @@ object Hex {
         hex: String,
         hexToByte: IntArray,
     ): Boolean {
+        // Branchless, like [decodeExactOrNull]: -1 from the table, or `255 - code` going negative
+        // for a char above U+00FF (an emoji in a `p` tag), turns the accumulator negative. No
+        // exception thrown and caught per malformed tag.
+        var acc = 0
         for (c in hex.indices) {
-            if (hexToByte[hex[c].code] < 0) return false
+            val code = hex[c].code
+            acc = acc or hexToByte[code and 0xFF] or (255 - code)
         }
-        return true
+        return acc >= 0
     }
 
     /**
@@ -121,85 +124,17 @@ object Hex {
      * 64 chars long; it does not verify the total length: `isHex64(key + "zz")` is
      * true. To ask "is this a pubkey / event id / sha256", use [isHexKey].
      */
-    fun isHex64(hex: String): Boolean =
-        try {
-            hexToByte[hex[0].code] >= 0 &&
-                hexToByte[hex[1].code] >= 0 &&
-                hexToByte[hex[2].code] >= 0 &&
-                hexToByte[hex[3].code] >= 0 &&
-                hexToByte[hex[4].code] >= 0 &&
-                hexToByte[hex[5].code] >= 0 &&
-                hexToByte[hex[6].code] >= 0 &&
-                hexToByte[hex[7].code] >= 0 &&
-                hexToByte[hex[8].code] >= 0 &&
-                hexToByte[hex[9].code] >= 0 &&
-
-                hexToByte[hex[10].code] >= 0 &&
-                hexToByte[hex[11].code] >= 0 &&
-                hexToByte[hex[12].code] >= 0 &&
-                hexToByte[hex[13].code] >= 0 &&
-                hexToByte[hex[14].code] >= 0 &&
-                hexToByte[hex[15].code] >= 0 &&
-                hexToByte[hex[16].code] >= 0 &&
-                hexToByte[hex[17].code] >= 0 &&
-                hexToByte[hex[18].code] >= 0 &&
-                hexToByte[hex[19].code] >= 0 &&
-
-                hexToByte[hex[20].code] >= 0 &&
-                hexToByte[hex[21].code] >= 0 &&
-                hexToByte[hex[22].code] >= 0 &&
-                hexToByte[hex[23].code] >= 0 &&
-                hexToByte[hex[24].code] >= 0 &&
-                hexToByte[hex[25].code] >= 0 &&
-                hexToByte[hex[26].code] >= 0 &&
-                hexToByte[hex[27].code] >= 0 &&
-                hexToByte[hex[28].code] >= 0 &&
-                hexToByte[hex[29].code] >= 0 &&
-
-                hexToByte[hex[30].code] >= 0 &&
-                hexToByte[hex[31].code] >= 0 &&
-                hexToByte[hex[32].code] >= 0 &&
-                hexToByte[hex[33].code] >= 0 &&
-                hexToByte[hex[34].code] >= 0 &&
-                hexToByte[hex[35].code] >= 0 &&
-                hexToByte[hex[36].code] >= 0 &&
-                hexToByte[hex[37].code] >= 0 &&
-                hexToByte[hex[38].code] >= 0 &&
-                hexToByte[hex[39].code] >= 0 &&
-
-                hexToByte[hex[40].code] >= 0 &&
-                hexToByte[hex[41].code] >= 0 &&
-                hexToByte[hex[42].code] >= 0 &&
-                hexToByte[hex[43].code] >= 0 &&
-                hexToByte[hex[44].code] >= 0 &&
-                hexToByte[hex[45].code] >= 0 &&
-                hexToByte[hex[46].code] >= 0 &&
-                hexToByte[hex[47].code] >= 0 &&
-                hexToByte[hex[48].code] >= 0 &&
-                hexToByte[hex[49].code] >= 0 &&
-
-                hexToByte[hex[50].code] >= 0 &&
-                hexToByte[hex[51].code] >= 0 &&
-                hexToByte[hex[52].code] >= 0 &&
-                hexToByte[hex[53].code] >= 0 &&
-                hexToByte[hex[54].code] >= 0 &&
-                hexToByte[hex[55].code] >= 0 &&
-                hexToByte[hex[56].code] >= 0 &&
-                hexToByte[hex[57].code] >= 0 &&
-                hexToByte[hex[58].code] >= 0 &&
-                hexToByte[hex[59].code] >= 0 &&
-
-                hexToByte[hex[60].code] >= 0 &&
-                hexToByte[hex[61].code] >= 0 &&
-                hexToByte[hex[62].code] >= 0 &&
-                hexToByte[hex[63].code] >= 0
-        } catch (_: IllegalArgumentException) {
-            // there are p tags with emoji's which makes the hex[c].code > 256
-            false
-        } catch (_: IndexOutOfBoundsException) {
-            // there are p tags with emoji's which makes the hex[c].code > 256
-            false
+    fun isHex64(hex: String): Boolean {
+        if (hex.length < 64) return false
+        // table hoisted into a local; branchless accumulation, as in [internalIsHex]
+        val table = hexToByte
+        var acc = 0
+        for (i in 0 until 64) {
+            val code = hex[i].code
+            acc = acc or table[code and 0xFF] or (255 - code)
         }
+        return acc >= 0
+    }
 
     /**
      * Decodes [hex] (upper or lower case) into bytes. Requires an even length —
@@ -224,18 +159,28 @@ object Hex {
     }
 
     /**
-     * [decode] into [out] instead of a new array: [hex] must hold exactly `out.size * 2`
-     * characters (the caller checks). Like [decode], a character outside the table throws.
+     * [decode] into [out] instead of a new array, accepting **lowercase** hex only (NIP-01's form
+     * for ids, pubkeys and signatures): [hex] must hold exactly `out.size * 2` characters (the
+     * caller checks). False when any char is not `0-9a-f`, uppercase and chars above U+00FF
+     * included, with [out] then holding garbage. Branchless, as [decodeExactOrNull]: the old decode
+     * read a non-hex char as -1, so `g` in a high nibble decoded as `f` and a mutated signature
+     * string still verified.
      */
-    internal fun decodeInto(
+    internal fun decodeLowerInto(
         hex: String,
         out: ByteArray,
-    ) {
-        val table = hexToByte
+    ): Boolean {
+        val table = lowerHexToByte
+        var acc = 0
         var c = 0
         for (i in out.indices) {
-            out[i] = ((table[hex[c++].code] shl 4) or table[hex[c++].code]).toByte()
+            val c0 = hex[c++].code
+            val c1 = hex[c++].code
+            val b = (table[c0 and 0xFF] shl 4) or table[c1 and 0xFF]
+            acc = acc or b or (255 - c0) or (255 - c1)
+            out[i] = b.toByte()
         }
+        return acc >= 0
     }
 
     /**

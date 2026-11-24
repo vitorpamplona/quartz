@@ -64,6 +64,19 @@ class RelayReqRefusalsTest {
     }
 
     @Test
+    fun escalatingFromSearchOnlyToNoReadsReportsTheChange() {
+        val refusals = RelayReqRefusals(threshold = 2)
+
+        refusals.onRefused(relay, "error: search filter is required")
+        assertTrue(refusals.onRefused(relay, "error: search filter is required"), "newly blocked")
+
+        assertFalse(refusals.onRefused(relay, "restricted: this relay does not accept REQs"), "one refusal is not enough")
+        assertTrue(refusals.onRefused(relay, "restricted: this relay does not accept REQs"), "the block tightened to NO_READS")
+        assertEquals(mapOf(relay to RelayReqRefusals.Policy.NO_READS), refusals.blockedRelays())
+        assertFalse(refusals.onRefused(relay, "restricted: this relay does not accept REQs"), "nothing changes past NO_READS")
+    }
+
+    @Test
     fun authRequiredAndUnknownReasonsNeverBlock() {
         val refusals = RelayReqRefusals(threshold = 2)
 

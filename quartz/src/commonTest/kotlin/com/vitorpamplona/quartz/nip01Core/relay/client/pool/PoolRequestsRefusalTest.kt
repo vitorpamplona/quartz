@@ -174,6 +174,23 @@ class PoolRequestsRefusalTest {
         }
 
     @Test
+    fun aSearchOnlyRelayThatServesNoReadsAtAllIsDroppedFromDesiredRelays() =
+        kotlinx.coroutines.test.runTest {
+            val pool = PoolRequests(relayRefusals = RelayReqRefusals(threshold = 2))
+            pool.addOrUpdate("plain", mapOf(relay to plainFilter()), null)
+            pool.addOrUpdate("search", mapOf(relay to listOf(Filter(kinds = listOf(1), search = "nostr"))), null)
+
+            close(pool, "plain", "error: search filter is required")
+            close(pool, "plain", "error: search filter is required")
+            assertTrue(relay in pool.desiredRelays.value, "the search sub keeps the search-only relay wanted")
+
+            // It refuses the search REQs too: no REQ is served there at all.
+            close(pool, "search", "restricted: this relay does not accept REQs")
+            close(pool, "search", "restricted: this relay does not accept REQs")
+            assertTrue(relay !in pool.desiredRelays.value, "a relay escalated to NO_READS is dropped (socket closes)")
+        }
+
+    @Test
     fun authRequiredAndRateLimitedAreNeverSuppressed() =
         kotlinx.coroutines.test.runTest {
             val pool = PoolRequests(maxRefusalsBeforeSuppress = 2)

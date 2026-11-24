@@ -38,10 +38,33 @@ interface INostrClient : AutoCloseable {
 
     fun availableRelaysFlow(): StateFlow<Set<NormalizedRelayUrl>>
 
+    /**
+     * Marks the client active and dials every relay that is down and whose reconnect backoff has
+     * run out; the others are dialed when theirs does. A relay that failed recently is not
+     * redialed early: to forgive the backoff, [resetBackoff] first, or [reconnect] with
+     * `ignoreRetryDelays`.
+     */
     fun connect()
 
+    /**
+     * Marks the client inactive (the host is putting it down) and closes every connection. A
+     * relay that had a session reconnects without waiting when asked; one that was already down
+     * (a failed dial) keeps its backoff, so a background/foreground cycle does not redial every
+     * dead relay at once.
+     */
     fun disconnect()
 
+    /**
+     * Asks the pool to reconnect. Requests are debounced and merged: a full one wins over a
+     * routine one, and ignoring retry delays wins over respecting them.
+     *
+     * - [onlyIfChanged] true: a connected relay is redialed only if its transport changed; a relay
+     *   that is down is dialed once its backoff runs out, or now with [ignoreRetryDelays].
+     * - [onlyIfChanged] false: every connection is torn down and dialed again (a network change).
+     *   With [ignoreRetryDelays] every relay's backoff is cleared first ([resetBackoff]), so the new
+     *   network starts from a clean slate, relays already down included; without it, a relay that
+     *   was down keeps its backoff (see [disconnect]).
+     */
     fun reconnect(
         onlyIfChanged: Boolean = false,
         ignoreRetryDelays: Boolean = false,
@@ -105,6 +128,13 @@ interface INostrClient : AutoCloseable {
      * and when auth is successful
      */
     fun syncFilters(relay: IRelayClient)
+
+    /**
+     * Re-sends what [relay] refused, or held back, for want of authentication: called once an
+     * AUTH there was accepted. Unlike [syncFilters] (a fresh connection's full replay), what the
+     * relay is already serving is left alone. The default is [syncFilters].
+     */
+    fun syncAfterAuth(relay: IRelayClient) = syncFilters(relay)
 
     fun subscribe(
         subId: String = newSubId(),

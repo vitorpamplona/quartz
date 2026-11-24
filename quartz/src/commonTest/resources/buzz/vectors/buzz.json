@@ -1,0 +1,475 @@
+{
+  "source": "block/buzz buzz-relay 52cbc6113",
+  "relay": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+  "users": {
+    "owner": "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    "alice": "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+    "bob": "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+    "carol": "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+  },
+  "cases": [
+    {
+      "name": "stream_created.39000",
+      "event": {
+        "content": "",
+        "created_at": 1795453927,
+        "id": "f88e14f37502091eb28cc2070791d0ab4d66730dd37d038c0f9e7806fee5dae9",
+        "kind": 39000,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "0eb7d0408ca25277c6f113f4851a5bd333ec34448f9aba84e4391012cea4162d466221c3074ca06bf80d2da27d6cdccce0ee8452316cd8a8efa0b9a674ffc0c3",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "a channel for people who love pizza"
+          ],
+          [
+            "public"
+          ],
+          [
+            "t",
+            "stream"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "created_at",
+            "1795453926"
+          ],
+          [
+            "join_role",
+            "member"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "0b0b0b0b-0000-4000-8000-000000000001",
+        "name": "pizza-lovers",
+        "about": "a channel for people who love pizza",
+        "private": false,
+        "channel_type": "stream",
+        "listed": true,
+        "dm": false
+      }
+    },
+    {
+      "name": "stream_created.39001",
+      "event": {
+        "content": "",
+        "created_at": 1795453927,
+        "id": "48fa8090a3bca50e5d3af990e2e97abf748506b6e77712c98a6567f6d69f17ef",
+        "kind": 39001,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "6521c9fbe0c87991e577a2883a3a93deb8a51f4883e384d8b1f6933011a3c07c65720774797c7d3df6f8b313f844779eefd831ab00162722ddd891c6c20a70f8",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "t",
+            "stream"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "p",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+            "owner"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "0b0b0b0b-0000-4000-8000-000000000001",
+        "admins": {
+          "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa": [
+            "owner"
+          ]
+        }
+      }
+    },
+    {
+      "name": "roles_set.39001",
+      "event": {
+        "content": "",
+        "created_at": 1795453929,
+        "id": "8034e2f07fa4a362867eaada7b4834acdeb796b970ba8e4c4f9d8c840d8c865e",
+        "kind": 39001,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "5a6756664447ed393e23f3657793dc5a0aa22f669ea37d2f52fb1349244a79a3b338eb2e9160b2b1ea0e7272c92ea13dbe1a58e1db9e10b2a33e0515917923ee",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "t",
+            "stream"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "p",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+            "owner"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "admin"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "0b0b0b0b-0000-4000-8000-000000000001",
+        "admins": {
+          "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa": [
+            "owner"
+          ],
+          "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b": [
+            "admin"
+          ]
+        }
+      }
+    },
+    {
+      "name": "roles_set.39002",
+      "event": {
+        "content": "",
+        "created_at": 1795453929,
+        "id": "b511b94ac8c25c1ce6adeda9bb7f0d1e3d8049e9722edbfb5f2777946ea9c077",
+        "kind": 39002,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "44922a0f490012fbb7ed61bdcd0b05f2eafe872e79e06adf3f52fb277a30e7f112c8865c31106e65692a88a2da1257eecec9a06ba87ba759eb96b8d053da4ebe",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "t",
+            "stream"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "p",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+            "",
+            "owner"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+            "",
+            "member"
+          ],
+          [
+            "p",
+            "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b",
+            "",
+            "admin"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "0b0b0b0b-0000-4000-8000-000000000001",
+        "members": [
+          "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+          "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+        ]
+      }
+    },
+    {
+      "name": "two_pinned.30623",
+      "event": {
+        "content": "",
+        "created_at": 1795453930,
+        "id": "7b055a558ac8c003a48c15664b236318ec9fe964cab3de8264ebdde19d44a2ed",
+        "kind": 30623,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "869bd2eb92f23be0b16b77d5f7589b8e0983c0733761a581d5d3c0994db0f9cfaf2d122dd62bebf7781144bbdd28e995dda5f2237ef88a1a5157873f61d19946",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "e",
+            "ef70d6a7435e8c7026127f04552d7c606f58ce12043897127e64377217c678a0"
+          ],
+          [
+            "e",
+            "1470c9ffc4827ef2fb9a02def2bb35dd8aa017c850f30b8c8df3da99f5cabb29"
+          ]
+        ]
+      },
+      "expect": {
+        "channel": "0b0b0b0b-0000-4000-8000-000000000001",
+        "pinned": [
+          "ef70d6a7435e8c7026127f04552d7c606f58ce12043897127e64377217c678a0",
+          "1470c9ffc4827ef2fb9a02def2bb35dd8aa017c850f30b8c8df3da99f5cabb29"
+        ]
+      }
+    },
+    {
+      "name": "one_unpinned.30623",
+      "event": {
+        "content": "",
+        "created_at": 1795453931,
+        "id": "6e6a3331a15488986ea7419d127a69da5f0eefa6f24bd27894fda603b97679c6",
+        "kind": 30623,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "dc4156432765798154f6a3ed3c17e097b9fd58e9754e44670f6594c25b48d7896eda77fd897eca237f17073b1647f71a4de1c15300f62e91ebd5dcbbcff082b4",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ],
+          [
+            "e",
+            "ef70d6a7435e8c7026127f04552d7c606f58ce12043897127e64377217c678a0"
+          ]
+        ]
+      },
+      "expect": {
+        "channel": "0b0b0b0b-0000-4000-8000-000000000001",
+        "pinned": [
+          "ef70d6a7435e8c7026127f04552d7c606f58ce12043897127e64377217c678a0"
+        ]
+      }
+    },
+    {
+      "name": "forum_created.39000",
+      "event": {
+        "content": "",
+        "created_at": 1795453933,
+        "id": "6109d0b26ceaf7f3184707a81dcc072400c7caa7eeeed9a7efac7dbd4ce995b7",
+        "kind": 39000,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "8556eacadf2de4b9d9f0aae3899ea6db08af4bd29a422fe748540f491c8a06d83fbe1f94a7525ec167ec8edeb6e90407290ac9f66264a7baf306882ce90b3be4",
+        "tags": [
+          [
+            "d",
+            "0b0b0b0b-0000-4000-8000-000000000002"
+          ],
+          [
+            "name",
+            "pizza-lovers"
+          ],
+          [
+            "about",
+            "recipes"
+          ],
+          [
+            "private"
+          ],
+          [
+            "restricted"
+          ],
+          [
+            "closed"
+          ],
+          [
+            "t",
+            "forum"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "created_at",
+            "1795453932"
+          ],
+          [
+            "join_role",
+            "member"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "0b0b0b0b-0000-4000-8000-000000000002",
+        "name": "pizza-lovers",
+        "about": "recipes",
+        "private": true,
+        "channel_type": "forum",
+        "listed": false,
+        "dm": false
+      }
+    },
+    {
+      "name": "dm_opened.39000",
+      "event": {
+        "content": "",
+        "created_at": 1795453933,
+        "id": "2dd2091972136efeb9136239cb507c4096009248c17eeab4b4acaf209310d8ea",
+        "kind": 39000,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "407e42580ae7f3196c62cba2c85be1d4038457e08e613640aa147390b9fb8c789b9325408d39e29bd3ae46be777c7d59ea86849e5cd4098f79ceb8963e7b4ef8",
+        "tags": [
+          [
+            "d",
+            "68f627da-a32f-4422-a17e-2f4076b3f8f7"
+          ],
+          [
+            "name",
+            "DM"
+          ],
+          [
+            "private"
+          ],
+          [
+            "restricted"
+          ],
+          [
+            "hidden"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"
+          ],
+          [
+            "p",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "closed"
+          ],
+          [
+            "t",
+            "dm"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "created_at",
+            "1795453933"
+          ],
+          [
+            "join_role",
+            "member"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "68f627da-a32f-4422-a17e-2f4076b3f8f7",
+        "private": true,
+        "channel_type": "dm",
+        "listed": false,
+        "dm": true
+      }
+    },
+    {
+      "name": "dm_grown.39002",
+      "event": {
+        "content": "",
+        "created_at": 1795453934,
+        "id": "01efe243fa4eabbe4a96229a7511d629f5e951acd12dfe9351ca9e88d782370a",
+        "kind": 39002,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "7c0992a14d703df95a3f5ce2d43d7c01bc0a54f14e78d9608d31f0287d032085eda9fd2659e7d4efe0d72a1b1aac10f3c5e2bc024a13ff79364c6ccedce5620a",
+        "tags": [
+          [
+            "d",
+            "68f627da-a32f-4422-a17e-2f4076b3f8f7"
+          ],
+          [
+            "t",
+            "dm"
+          ],
+          [
+            "P",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"
+          ],
+          [
+            "p",
+            "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+            "",
+            "member"
+          ],
+          [
+            "p",
+            "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+            "",
+            "member"
+          ],
+          [
+            "p",
+            "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30",
+            "",
+            "member"
+          ]
+        ]
+      },
+      "expect": {
+        "group_id": "68f627da-a32f-4422-a17e-2f4076b3f8f7",
+        "members": [
+          "2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+          "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "5ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30"
+        ]
+      }
+    },
+    {
+      "name": "thread.39005",
+      "event": {
+        "content": "{\"descendant_count\":2,\"last_reply_at\":1795453935,\"participants\":[\"4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa\",\"9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b\"],\"reply_count\":2}",
+        "created_at": 1795453936,
+        "id": "7fa923134940c7aa93df2ef2744b05a008773925a7ccbda93a36eb21d1caa6e9",
+        "kind": 39005,
+        "pubkey": "7962d45b38e8bcf82fa8efa8432a01f20c9a53e24c7d3f11df197cb8e70926da",
+        "sig": "477c584868d900fa8f44269062c7ae1829185b34514a73475e753615b0f85d6e7ccfc2cc0e1357a09a2f1d99a017a28e7de3da53006d6238f2a259db69c0b52c",
+        "tags": [
+          [
+            "e",
+            "faa921205cf16be73ee19ef941bc40f3491e0b92ea4693808bd9e27cc944bab9"
+          ],
+          [
+            "d",
+            "faa921205cf16be73ee19ef941bc40f3491e0b92ea4693808bd9e27cc944bab9"
+          ],
+          [
+            "h",
+            "0b0b0b0b-0000-4000-8000-000000000001"
+          ]
+        ]
+      },
+      "expect": {
+        "root": "faa921205cf16be73ee19ef941bc40f3491e0b92ea4693808bd9e27cc944bab9",
+        "channel": "0b0b0b0b-0000-4000-8000-000000000001",
+        "reply_count": 2,
+        "participants": [
+          "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+          "9ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
+        ]
+      }
+    }
+  ]
+}

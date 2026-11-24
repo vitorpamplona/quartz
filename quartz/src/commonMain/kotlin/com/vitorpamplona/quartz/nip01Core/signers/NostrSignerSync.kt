@@ -132,6 +132,21 @@ class NostrSignerSync(
         )
     }
 
+    /** [nip44Decrypt] from a key used once: the conversation key skips the shared cache ([Nip44.decryptOnce]). */
+    fun nip44DecryptOnce(
+        ciphertext: String,
+        fromPublicKey: HexKey,
+    ): String {
+        if (keyPair.privKey == null) throw SignerExceptions.ReadOnlyException()
+        if (ciphertext.isBlank()) throw SignerExceptions.NothingToDecrypt()
+
+        return Nip44.decryptOnce(
+            payload = ciphertext,
+            privateKey = keyPair.privKey,
+            pubKey = fromPublicKey.hexToByteArray(),
+        )
+    }
+
     fun decryptZapEvent(event: ZapRequestEvent): PrivateZapEvent = PrivateZapRequestBuilder().decryptZapEvent(event, this)
 
     /**

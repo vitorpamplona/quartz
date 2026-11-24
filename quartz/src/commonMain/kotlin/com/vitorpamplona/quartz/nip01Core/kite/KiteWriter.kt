@@ -47,7 +47,8 @@ import com.vitorpamplona.quartz.nip59Giftwrap.rumors.Rumor
  * serializers wrote uppercase hex, so events Quartz signed with such chars carry ids no one
  * else, Quartz included now, verifies.) Two modes share that rule:
  *
- * - **Text** ([toJson]) builds a `String`. A lone surrogate is written as is.
+ * - **Text** ([toJson]) builds a `String`. A surrogate pair is written as is and a lone surrogate
+ *   escaped as `\uxxxx`: it has no UTF-8 form, so written raw it reaches the wire as `?`.
  * - **UTF-8** (the id hash) writes the bytes SHA-256 reads: a surrogate pair becomes one 4-byte
  *   sequence and a lone surrogate is escaped as `\uxxxx`, as `JSON.stringify` does.
  *
@@ -147,8 +148,27 @@ class KiteWriter internal constructor() {
     private fun escapedBody(s: String) {
         val sb = sb
         var start = 0
-        for (k in s.indices) {
+        var k = 0
+        while (k < s.length) {
             val c = s[k]
+            if (c.isSurrogate()) {
+                // A pair is written as is. A lone surrogate has no UTF-8 form, so the wire would
+                // carry '?' instead and the id (hashed over `\uxxxx`, as JSON.stringify writes it)
+                // would no longer match: escape it the same way here.
+                if (c.isHighSurrogate() && k + 1 < s.length && s[k + 1].isLowSurrogate()) {
+                    k += 2
+                    continue
+                }
+                if (k > start) sb.appendRange(s, start, k)
+                sb.append("\\u")
+                sb.append(HEX[c.code shr 12])
+                sb.append(HEX[(c.code shr 8) and 0xF])
+                sb.append(HEX[(c.code shr 4) and 0xF])
+                sb.append(HEX[c.code and 0xF])
+                k++
+                start = k
+                continue
+            }
             if (c < ' ' || c == '"' || c == '\\') {
                 if (k > start) sb.appendRange(s, start, k)
                 sb.append('\\')
@@ -189,6 +209,7 @@ class KiteWriter internal constructor() {
                 }
                 start = k + 1
             }
+            k++
         }
         if (start < s.length) sb.appendRange(s, start, s.length)
     }
@@ -509,9 +530,22 @@ class KiteWriter internal constructor() {
         private const val LONG_MIN = "-9223372036854775808"
         private const val BACKSLASH = '\\'.code.toByte()
 
-        private fun hasNoControlChar(s: String): Boolean {
-            for (k in s.indices) {
-                if (s[k] < ' ') return false
+        /**
+         * No char below 0x20 and no unpaired surrogate: nothing [escapedBody] would have to look at.
+         * A pair (every emoji past the BMP) is written as is, so it stays on the copy path.
+         */
+        internal fun hasNoControlChar(s: String): Boolean {
+            var k = 0
+            val n = s.length
+            while (k < n) {
+                val c = s[k]
+                if (c < ' ') return false
+                if (c >= '\uD800' && c <= '\uDFFF') {
+                    if (c > '\uDBFF' || k + 1 >= n || !s[k + 1].isLowSurrogate()) return false
+                    k += 2
+                    continue
+                }
+                k++
             }
             return true
         }
@@ -640,7 +674,7 @@ class KiteWriter internal constructor() {
                 else -> null
             }
 
-        /** NIP-01's id preimage as text, the string whose UTF-8 [idPreimageBytes] holds (except for lone surrogates). */
+        /** NIP-01's id preimage as text, the string whose UTF-8 [idPreimageBytes] holds. */
         fun idPreimageJson(
             pubKey: HexKey,
             createdAt: Long,

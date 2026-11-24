@@ -535,6 +535,9 @@ import com.vitorpamplona.quartz.openagents.nipCapCapabilities.discovery.Capabili
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.listing.ExtensionListingEvent
 import com.vitorpamplona.quartz.openagents.nipExtExtensions.release.ExtensionReleaseEvent
 import com.vitorpamplona.quartz.routstr.node.RoutstrNodeEvent
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
+import kotlin.concurrent.Volatile
 
 interface EventBuilder {
     fun build(
@@ -547,9 +550,60 @@ interface EventBuilder {
     ): Event
 }
 
+/**
+ * A [MutableMap] for a registry written rarely (at startup) and read from every thread: reads see
+ * an immutable snapshot with no lock, writes swap in a new snapshot under a lock. A plain HashMap
+ * written while relay threads read it can be corrupted mid-resize. The key, value and entry views
+ * are snapshots: mutating them does not write through.
+ */
+private class CopyOnWriteMap<K, V> : MutableMap<K, V> {
+    @Volatile
+    private var snapshot: Map<K, V> = emptyMap()
+    private val lock = PlatformLock()
+
+    override val size: Int get() = snapshot.size
+
+    override fun isEmpty(): Boolean = snapshot.isEmpty()
+
+    override fun containsKey(key: K): Boolean = snapshot.containsKey(key)
+
+    override fun containsValue(value: V): Boolean = snapshot.containsValue(value)
+
+    override fun get(key: K): V? = snapshot[key]
+
+    override val keys: MutableSet<K> get() = snapshot.keys.toMutableSet()
+
+    override val values: MutableCollection<V> get() = snapshot.values.toMutableList()
+
+    override val entries: MutableSet<MutableMap.MutableEntry<K, V>> get() = snapshot.toMutableMap().entries
+
+    private inline fun <R> write(change: (LinkedHashMap<K, V>) -> R): R =
+        lock.withLock {
+            val next = LinkedHashMap(snapshot)
+            val result = change(next)
+            snapshot = next
+            result
+        }
+
+    override fun put(
+        key: K,
+        value: V,
+    ): V? = write { it.put(key, value) }
+
+    override fun remove(key: K): V? = write { it.remove(key) }
+
+    override fun putAll(from: Map<out K, V>) = write { it.putAll(from) }
+
+    override fun clear() = write { it.clear() }
+}
+
 class EventFactory {
     companion object {
-        val factories: MutableMap<Int, EventBuilder> = mutableMapOf()
+        /**
+         * Builders for kinds Quartz does not know, registered by the app. Safe to read from any
+         * thread while another registers (copy-on-write).
+         */
+        val factories: MutableMap<Int, EventBuilder> = CopyOnWriteMap()
 
         fun <T : Event> create(
             id: HexKey,
@@ -569,7 +623,8 @@ class EventFactory {
                     ?: createPart2(id, pubKey, createdAt, kind, tags, content, sig)
                     ?: createPart3(id, pubKey, createdAt, kind, tags, content, sig)
                     ?: createPart4(id, pubKey, createdAt, kind, tags, content, sig)
-                    ?: factories[kind]?.build(id, pubKey, createdAt, tags, content, sig)
+                    // isEmpty first: nothing registered is the norm, and the lookup boxes the kind.
+                    ?: (if (factories.isEmpty()) null else factories[kind])?.build(id, pubKey, createdAt, tags, content, sig)
                     ?: Event(id, pubKey, createdAt, kind, tags, content, sig)
             ) as T
 

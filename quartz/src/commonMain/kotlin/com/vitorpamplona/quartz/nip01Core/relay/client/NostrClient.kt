@@ -217,6 +217,11 @@ class NostrClient(
     override fun connect() {
         isActiveFlow.value = true
         relayPool.connect()
+        // The pool dials only relays whose backoff has run out: each of the others is asked
+        // again the moment it does, rather than at the next keep-alive sweep. A relay still
+        // dialing needs no retry (its failure schedules one in onDisconnected): asking for every
+        // wanted relay launched one coroutine per relay on each foreground.
+        relayPool.relaysWaitingToRedial().forEach { if (isWanted(it.url)) retryWhenBackoffEnds(it) }
     }
 
     override fun disconnect() {
@@ -259,10 +264,19 @@ class NostrClient(
             .debounce(200)
             .onEach { emitted ->
                 val request = pendingReconnect.getAndUpdate { null } ?: emitted
+                // A reconnect asked for just before the host called disconnect() (a subscribe as
+                // the app backgrounds) must not dial once the client is inactive.
+                if (!isActive()) return@onEach
                 if (request.onlyIfChanged) {
                     relayPool.reconnectIfNeedsTo(request.ignoreRetryDelays)
                 } else {
                     relayPool.disconnect()
+                    // disconnect() starts a relay that had a session on a fresh backoff, but a
+                    // relay already down (a failed dial) keeps its own, and connect() respects it.
+                    // Ignoring retry delays is the caller saying those failures belong to a network
+                    // that is gone (wifi to cellular, a resume): without this, a relay that had
+                    // failed DNS stayed down for up to five minutes on the new network.
+                    if (request.ignoreRetryDelays) relayPool.resetBackoff()
                     relayPool.connect()
                 }
             }.stateIn(
@@ -506,6 +520,14 @@ class NostrClient(
             activeRequests.syncState(relay.url, relay::sendFromSync)
             activeCounts.syncState(relay.url, relay::sendFromSync)
             eventOutbox.syncState(relay.url, relay::sendFromSync)
+        }
+    }
+
+    override fun syncAfterAuth(relay: IRelayClient) {
+        if (isActive()) {
+            activeRequests.syncAfterAuth(relay.url, relay::sendFromSync)
+            activeCounts.syncAfterAuth(relay.url, relay::sendFromSync)
+            eventOutbox.syncAfterAuth(relay.url, relay::sendFromSync)
         }
     }
 

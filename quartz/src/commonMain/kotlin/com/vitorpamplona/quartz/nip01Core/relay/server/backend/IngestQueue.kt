@@ -148,11 +148,15 @@ class IngestQueue(
         val onComplete: (IEventStore.InsertOutcome) -> Unit,
     )
 
-    private val incoming = Channel<Submission>(capacity)
-    private val scope = CoroutineScope(parentContext + SupervisorJob())
-
     /** Submissions accepted but whose outcome hasn't been dispatched yet. */
     private val pending = AtomicInt(0)
+
+    // A submission that never reaches the writer (its send was cancelled while the queue was full,
+    // or the queue was cancelled with it buffered) is no longer pending: without this its count
+    // leaked, [hasBacklog] stayed true for good, and the FTS catch-up, which yields to a backlog,
+    // never ran again.
+    private val incoming = Channel<Submission>(capacity) { pending.addAndFetch(-1) }
+    private val scope = CoroutineScope(parentContext + SupervisorJob())
 
     /**
      * True while publishes are queued or mid-batch. Deferred maintenance
@@ -191,6 +195,8 @@ class IngestQueue(
     ) {
         ensureWriterStarted()
         pending.addAndFetch(1)
+        // A send that fails (cancelled, or the queue closed) hands the submission to [incoming]'s
+        // undelivered-element handler, which takes it off [pending].
         incoming.send(Submission(event, skipVerify, onComplete))
     }
 

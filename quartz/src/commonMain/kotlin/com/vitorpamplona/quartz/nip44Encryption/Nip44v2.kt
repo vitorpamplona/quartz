@@ -24,7 +24,6 @@ import com.vitorpamplona.crypto.chacha.ChaCha20
 import com.vitorpamplona.crypto.equalsConstantTime
 import com.vitorpamplona.crypto.kdf.Hkdf
 import com.vitorpamplona.crypto.random.RandomInstance
-import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.nip44Encryption.crypto.MessageKey
 import com.vitorpamplona.quartz.nip44Encryption.crypto.fastExpand
 import com.vitorpamplona.quartz.utils.Secp256k1Instance
@@ -116,9 +115,8 @@ class Nip44v2(
     ) {
         val calculatedMac = hmacAad(messageKey.hmacKey, decoded.ciphertext, decoded.nonce)
 
-        check(calculatedMac.equalsConstantTime(decoded.mac)) {
-            "Invalid Mac: Calculated ${calculatedMac.toHexKey()}, decoded: ${decoded.mac.toHexKey()}"
-        }
+        // Never print the expected MAC: it is what a forger needs to make the next try pass.
+        check(calculatedMac.equalsConstantTime(decoded.mac)) { "Invalid Mac" }
     }
 
     fun decrypt(

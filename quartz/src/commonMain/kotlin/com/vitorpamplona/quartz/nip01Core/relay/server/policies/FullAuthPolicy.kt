@@ -52,7 +52,8 @@ import com.vitorpamplona.quartz.utils.TimeUtils
  * reaches [onAuthenticated], so there is no rollback to reason about.
  *
  * It does not verify the AUTH event's signature or id: stack it after [VerifyPolicy]
- * (`VerifyPolicy + FullAuthPolicy(relay)`). On its own, anyone can AUTH as any pubkey.
+ * (`VerifyPolicy + FullAuthPolicy(relay)`), or after [VerifyAuthOnlyPolicy] when the ingest queue
+ * verifies EVENTs. On its own, anyone can AUTH as any pubkey.
  *
  * To bridge to an external auth system, override [authorize] (a `suspend` hook)
  * and do the post-verification I/O there — e.g. exchange the verified event for

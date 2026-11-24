@@ -178,12 +178,13 @@ class RefusalOnAnIdTest {
 
     @Test
     fun aReqTheCapRefusesCancelsTheCountOnItsId() =
-        refusalTest(LimitsPolicy(RelayLimits(maxSubscriptions = 1))) { h ->
+        // Two: the REQ on "a" and the COUNT on "x" (a running COUNT counts against the cap).
+        refusalTest(LimitsPolicy(RelayLimits(maxSubscriptions = 2))) { h ->
             h.session.receive("""["REQ","a",{"kinds":[1]}]""")
             aRefusedReqCancelsTheCountOnItsId(
                 h,
                 """["REQ","x",{"kinds":[1]}]""",
-                """["CLOSED","x","rate-limited: too many concurrent subscriptions (max 1)"]""",
+                """["CLOSED","x","rate-limited: too many concurrent subscriptions (max 2)"]""",
             )
         }
 

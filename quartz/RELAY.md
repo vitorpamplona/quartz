@@ -270,9 +270,10 @@ val server = NostrServer(
 )
 ```
 
-Always stack it after `VerifyPolicy`. `FullAuthPolicy` checks an AUTH event's challenge, relay
-and timestamp but not its signature, and a `policyBuilder` replaces the default `VerifyPolicy`.
-On its own, anyone can AUTH as any pubkey, and EVENTs with bad signatures are stored.
+Always stack it after `VerifyPolicy` (or `VerifyAuthOnlyPolicy` with `parallelVerify`).
+`FullAuthPolicy` checks an AUTH event's challenge, relay and timestamp but not its signature,
+and a `policyBuilder` replaces the default `VerifyPolicy`. On its own, anyone can AUTH as any
+pubkey, and EVENTs with bad signatures are stored.
 
 A relay that answers at more than one address (clearnet and a `.onion`) passes them all:
 `FullAuthPolicy(relays = setOf(clearnet, onion))` (or `OptionalAuthPolicy(setOf(…))`) accepts an
@@ -504,9 +505,11 @@ like any other policy — you can also split them across several policies:
 - **COUNT runs off the command loop**, like a REQ's replay: a COUNT waiting on
   the backend never holds up the frames behind it (a CLOSE that would free the
   backend's permit included), and its one answer, `COUNT` or `CLOSED`, can
-  arrive after frames from later commands (NIP-45 pairs them by id). The session
-  does not cap how many run at once: that is the backend's to bound, as it bounds
-  a connection's REQ replays. A backend failure, an `Error` such as `TODO()`'s
+  arrive after frames from later commands (NIP-45 pairs them by id). A running
+  COUNT counts as an open subscription for the policy's `acceptSubscription`
+  (`maxSubscriptions`), beside the open REQs: past the cap a new COUNT, or REQ, is
+  refused `CLOSED rate-limited:`; one replacing a COUNT on its id is not. Without
+  a cap the session runs any number at once. A backend failure, an `Error` such as `TODO()`'s
   included, answers `CLOSED error:` (a REQ's too); only a fatal VM error is
   rethrown.
 - **CLOSE, a replacement and a refusal cancel at once.** A COUNT is cancelled by

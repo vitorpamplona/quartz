@@ -43,6 +43,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -178,14 +180,32 @@ class RelayAuthenticator(
             }
         }
 
+    /**
+     * [relay]'s status, created if the connection opened before this authenticator was attached:
+     * only [RelayConnectionListener.onConnecting] used to create it, so an authenticator attached
+     * to a client whose relays were already up never answered their challenges.
+     */
+    private fun statusFor(relay: IRelayClient): RelayAuthStatus {
+        authStatus.get(relay.url)?.let { return it }
+        connections.put(relay.url, relay)
+        return authStatus.getOrCreate(relay.url) { RelayAuthStatus() }
+    }
+
     private fun authenticate(
         relay: IRelayClient,
         challenge: String,
         interactive: Boolean,
     ) {
-        val status = authStatus.get(relay.url)
+        val status = statusFor(relay)
         // Store the challenge so a later `auth-required:` CLOSED can reuse it (NIP-42).
-        status?.rememberChallenge(challenge)
+        status.rememberChallenge(challenge)
+        // One round per connection: a challenge that arrives while one signs is queued, and the
+        // newest is signed when that round ends. One coroutine per AUTH frame put a signer prompt
+        // up for every frame of a relay that re-challenges.
+        if (!status.beginRound(challenge, interactive)) {
+            publishSnapshot(relay.url)
+            return
+        }
         // Open the SIGNING window here — synchronously, before the coroutine is launched
         // and before this callback returns. The `auth-required:` CLOSED that lands us here
         // was already delivered to subscription listeners (NostrClient dispatches those
@@ -193,43 +213,75 @@ class RelayAuthenticator(
         // right after we return. Marking inside the launch would leave a scheduling-width
         // hole in which the relay reads as "nobody is answering" and the fetch gives up on
         // an AUTH that was about to be signed.
-        status?.signingStarted()
+        status.signingStarted()
         publishSnapshot(relay.url)
         signingScope.launch {
-            // Relay auth is automatic and not user-initiated. Signing can fail in
-            // benign, expected ways — e.g. an external NIP-55 signer prompt that the
-            // user ignores surfaces as SignerExceptions.TimedOutException. Those must
-            // never escape this fire-and-forget launch: the host's scope may not carry
-            // a CoroutineExceptionHandler (viewModelScope, rememberCoroutineScope, …),
-            // so an uncaught throwable here crashes the whole app. Swallow + log them.
+            var current = challenge
+            var prompt = interactive
+            var finished = false
             try {
-                val ev = RelayAuthEvent.build(relay.url, challenge)
-                signWithAllLoggedInUsers(relay.url, ev, interactive).forEach { authEvent ->
-                    // destroy() may have run while the signer worked. A signer that
-                    // returns without suspending never hits a cancellation point, so
-                    // check here: no AUTH may go out after destroy().
-                    ensureActive()
-                    // only send replies to new challenges to avoid infinite loop:
-                    if (authStatus.get(relay.url)?.saveAuthSubmission(authEvent) == true) {
-                        relay.sendIfConnected(AuthCmd(authEvent))
-                        publishSnapshot(relay.url)
-                    }
+                while (true) {
+                    signAndSend(relay, status, current, prompt)
+                    val next = status.endRound() ?: break
+                    current = next.first
+                    prompt = next.second
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SignerExceptions) {
-                Log.d("RelayAuthenticator") { "Could not sign auth for ${relay.url}: ${e.message}" }
-            } catch (e: Exception) {
-                Log.w("RelayAuthenticator", "Failed to authenticate with ${relay.url}", e)
+                finished = true
             } finally {
+                if (!finished) status.abandonRound()
                 // Closes the SIGNING window on EVERY exit — an AUTH sent, an empty list
                 // (the responder declining this relay), a signer timeout, a throw, or
                 // cancellation. Anyone waiting on the outcome is unblocked by the publish;
                 // leaving it open on a decline is what would turn "refused" back into the
                 // indefinite silence this whole state exists to end.
-                status?.signingFinished()
+                status.signingFinished()
                 publishSnapshot(relay.url)
+                // An AUTH of this round may have been accepted while later identities were signing.
+                resyncIfSettled(relay)
             }
+        }
+    }
+
+    /**
+     * Signs [challenge] with every logged-in identity and sends the AUTHs, as long as [status] is
+     * still [relay]'s connection and [challenge] its newest challenge: the status is the one the
+     * challenge arrived on, captured before signing. Read again after signing, a reconnect during a
+     * slow signature sent the old connection's AUTH on the new one.
+     */
+    private suspend fun signAndSend(
+        relay: IRelayClient,
+        status: RelayAuthStatus,
+        challenge: String,
+        interactive: Boolean,
+    ) {
+        // Relay auth is automatic and not user-initiated. Signing can fail in
+        // benign, expected ways — e.g. an external NIP-55 signer prompt that the
+        // user ignores surfaces as SignerExceptions.TimedOutException. Those must
+        // never escape this fire-and-forget launch: the host's scope may not carry
+        // a CoroutineExceptionHandler (viewModelScope, rememberCoroutineScope, …),
+        // so an uncaught throwable here crashes the whole app. Swallow + log them.
+        try {
+            val ev = RelayAuthEvent.build(relay.url, challenge)
+            signWithAllLoggedInUsers(relay.url, ev, interactive).forEach { authEvent ->
+                // destroy() may have run while the signer worked. A signer that
+                // returns without suspending never hits a cancellation point, so
+                // check here: no AUTH may go out after destroy().
+                currentCoroutineContext().ensureActive()
+                // The connection was replaced, or the relay sent a newer challenge (queued, and
+                // signed next): this AUTH answers nothing the relay still asks.
+                if (authStatus.get(relay.url) !== status || status.lastChallenge() != challenge) return
+                // only send replies to new challenges to avoid infinite loop:
+                if (status.saveAuthSubmission(authEvent)) {
+                    relay.sendIfConnected(AuthCmd(authEvent))
+                    publishSnapshot(relay.url)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SignerExceptions) {
+            Log.d("RelayAuthenticator") { "Could not sign auth for ${relay.url}: ${e.message}" }
+        } catch (e: Exception) {
+            Log.w("RelayAuthenticator", "Failed to authenticate with ${relay.url}", e)
         }
     }
 
@@ -247,7 +299,25 @@ class RelayAuthenticator(
         msg: ClosedMessage,
     ) {
         if (MachineReadablePrefix.parse(msg.message) != MachineReadablePrefix.AUTH_REQUIRED) return
+        authStatus.get(relay.url)?.let { oweResyncIfRefusedLate(it, "REQ ${msg.subId}") }
         reauthenticateWithStoredChallenge(relay)
+        // Nothing to sign (no round started) and nothing in flight: the re-send goes now.
+        resyncIfSettled(relay)
+    }
+
+    /**
+     * A frame sent before the AUTH and refused `auth-required:` only after the AUTH was accepted.
+     * The re-sync an accepted AUTH runs skips frames still in flight, since a relay that answers
+     * in order refuses those before the AUTH's `OK`. khatru answers each frame on its own
+     * goroutine, so the refusal can land after that re-sync, and the REQ or EVENT stayed dead for
+     * the rest of the connection. Owes the connection one more re-sync (it re-sends what is
+     * refused for want of AUTH), at most once per frame and challenge.
+     */
+    private fun oweResyncIfRefusedLate(
+        status: RelayAuthStatus,
+        frame: String,
+    ) {
+        if (status.hasAcceptedAuth() && status.firstLateRefusal(frame)) status.oweResync()
     }
 
     /**
@@ -308,14 +378,38 @@ class RelayAuthenticator(
         relay: IRelayClient,
         msg: OkMessage,
     ) {
-        val transitioned = authStatus.get(relay.url)?.checkAuthResults(msg.eventId, msg.success) == true
+        val status = authStatus.get(relay.url) ?: return
+        if (!msg.success && !status.isAuthEvent(msg.eventId) && MachineReadablePrefix.parse(msg.message) == MachineReadablePrefix.AUTH_REQUIRED) {
+            // An EVENT's refusal, picked up by the resyncIfSettled below.
+            oweResyncIfRefusedLate(status, "EVENT ${msg.eventId}")
+        }
+        val transitioned = status.checkAuthResults(msg.eventId, msg.success)
         // Publish even on failure transitions so the UI can clear "AUTHENTICATING"
         // banners and reflect AUTH_FAILED state.
         publishSnapshot(relay.url)
-        // if this is the OK of an auth event, renew all subscriptions and resend all outgoing events.
-        if (transitioned) {
-            client.syncFilters(relay)
+        // The OK of an AUTH: renew all subscriptions and resend all outgoing events, once per
+        // round. Every logged-in identity answers the challenge, and re-syncing on each accepted
+        // AUTH sent every refused event once per identity, the copies racing on the relay (one
+        // applied, the rest answered `duplicate:`). So the re-sync waits until the round's last
+        // AUTH is answered and nothing is still being signed.
+        if (transitioned) status.oweResync()
+        if (!resyncIfSettled(relay) && transitioned) {
+            // An AUTH the relay never answers would hold the round open: re-sync anyway after a grace.
+            signingScope.launch {
+                delay(RESYNC_GRACE_MS)
+                if (authStatus.get(relay.url) === status && status.takeResync()) client.syncAfterAuth(relay)
+            }
         }
+    }
+
+    /** The re-sync an accepted AUTH is owed, once no AUTH of [relay]'s round is pending or being signed. */
+    private fun resyncIfSettled(relay: IRelayClient): Boolean {
+        val status = authStatus.get(relay.url) ?: return false
+        if (status.hasFinishedAllAuths() && !status.isSigning() && status.takeResync()) {
+            client.syncAfterAuth(relay)
+            return true
+        }
+        return false
     }
 
     override fun hasFinishedAuthentication(relay: NormalizedRelayUrl) = authStatus.get(relay)?.hasFinishedAllAuths() != false
@@ -326,6 +420,11 @@ class RelayAuthenticator(
         // Publishes "AUTH is being answered on this client" so accessories can decide
         // whether waiting out an `auth-required:` refusal is worth anything.
         client.addAuthResponder(this)
+    }
+
+    private companion object {
+        /** How long an accepted AUTH waits for the rest of its round before re-syncing anyway. */
+        const val RESYNC_GRACE_MS = 3_000L
     }
 
     fun destroy() {

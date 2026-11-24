@@ -63,7 +63,7 @@ class ControlPlaneSplitTest {
             authorPubKey = owner.pubKey,
             entityKind = ControlEntityKind.METADATA,
             entityId = communityId,
-            version = 0,
+            version = 1,
             prevHash = null,
             content = """{"name":"Nostrichs"}""",
             createdAt = createdAt,

@@ -132,12 +132,12 @@ class ConcordInviteVendTest {
     private fun role(
         roleId: String,
         json: String,
-    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 0, null, null, json, owner, "role-$roleId", 0)
+    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 1, null, null, json, owner, "role-$roleId", 0)
 
     private fun grant(
         member: String,
         roleIds: List<String>,
-        version: Long = 0,
+        version: Long = 1,
         prev: ControlEdition? = null,
     ) = ControlEdition(
         ControlEntityKind.GRANT,
@@ -186,7 +186,7 @@ class ConcordInviteVendTest {
         assertEquals(setOf(alice), granted.gained)
         assertTrue(granted.lost.isEmpty())
 
-        val afterRevoke = authority(aliceIn, grant(alice, emptyList(), version = 1, prev = aliceIn))
+        val afterRevoke = authority(aliceIn, grant(alice, emptyList(), version = 2, prev = aliceIn))
         val revoked = ConcordInviteVend.accessChanges(afterGrant, afterRevoke, listOf(chanA)).single()
         assertEquals(setOf(alice), revoked.lost)
         assertTrue(ConcordInviteVend.accessChanges(afterGrant, afterGrant, listOf(chanA)).isEmpty())

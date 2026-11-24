@@ -124,7 +124,7 @@ class GuestbookTest {
     private fun role(
         roleId: String,
         json: String,
-    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 0, null, null, json, owner, "role-$roleId", 0)
+    ) = ControlEdition(ControlEntityKind.ROLE, roleId.hexToByteArray(), 1, null, null, json, owner, "role-$roleId", 0)
 
     private fun grant(
         member: String,
@@ -132,7 +132,7 @@ class GuestbookTest {
     ) = ControlEdition(
         ControlEntityKind.GRANT,
         ControlFixtures.grantEid(member).hexToByteArray(),
-        0,
+        1,
         null,
         null,
         """{"member":"$member","role_ids":[${roleIds.joinToString(",") { "\"$it\"" }}]}""",
@@ -141,7 +141,7 @@ class GuestbookTest {
         0,
     )
 
-    private fun banlist(vararg banned: String) = ControlEdition(ControlEntityKind.BANLIST, ControlFixtures.banlistEid().hexToByteArray(), 0, null, null, "[${banned.joinToString(",") { "\"$it\"" }}]", owner, "ban", 0)
+    private fun banlist(vararg banned: String) = ControlEdition(ControlEntityKind.BANLIST, ControlFixtures.banlistEid().hexToByteArray(), 1, null, null, "[${banned.joinToString(",") { "\"$it\"" }}]", owner, "ban", 0)
 
     /** Admin at position 1 (KICK|BAN|MANAGE_ROLES), Mod at position 5 (KICK only). */
     private fun roster(vararg extra: ControlEdition): AuthorityResolver =

@@ -48,9 +48,11 @@ class IMetaTag(
             ensure(tag[1].isNotEmpty()) { return null }
 
             val allTags = parseIMeta(tag)
-            return allTags[ANCHOR_PROPERTY]?.map {
-                IMetaTag(it, allTags.minus(ANCHOR_PROPERTY))
-            }
+            val urls = allTags[ANCHOR_PROPERTY] ?: return null
+            // Once, shared by every url: a copy per url cost O(urls x properties), gigabytes for
+            // one tag of 8,000 urls and 8,000 properties. The map is never mutated after this.
+            val properties = allTags - ANCHOR_PROPERTY
+            return urls.map { IMetaTag(it, properties) }
         }
 
         private fun parseIMeta(tags: Array<String>): Map<String, List<String>> {

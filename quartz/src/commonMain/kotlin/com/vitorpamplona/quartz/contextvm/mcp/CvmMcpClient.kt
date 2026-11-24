@@ -20,6 +20,7 @@
  */
 package com.vitorpamplona.quartz.contextvm.mcp
 
+import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.contextvm.cep22OversizedTransfer.OversizedFrame
 import com.vitorpamplona.quartz.contextvm.cep22OversizedTransfer.OversizedLimits
 import com.vitorpamplona.quartz.contextvm.cep22OversizedTransfer.OversizedProgressResult
@@ -45,6 +46,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /** A tool call's outcome, with anything a transfer profile delivered alongside it. */
 data class ToolCallResult(
@@ -84,7 +87,12 @@ class CvmMcpClient(
     private val oversizedLimits: OversizedLimits = OversizedLimits(),
     private val streamPolicy: OpenStreamPolicy = OpenStreamPolicy(),
 ) {
-    private var nextId = 0L
+    /**
+     * The next JSON-RPC id. Starts at a random point so ids don't say how many calls a session
+     * made, and is atomic so two concurrent calls never share one.
+     */
+    @OptIn(ExperimentalAtomicApi::class)
+    private val nextId = AtomicLong(randomFirstId())
 
     /**
      * Performs the MCP handshake.
@@ -242,7 +250,8 @@ class CvmMcpClient(
         }
     }
 
-    private fun nextId(): JsonRpcId.Num = JsonRpcId.Num(nextId++)
+    @OptIn(ExperimentalAtomicApi::class)
+    private fun nextId(): JsonRpcId.Num = JsonRpcId.Num(nextId.fetchAndAdd(1L))
 
     /**
      * How many responses this client has reassembled over CEP-22.
@@ -254,6 +263,16 @@ class CvmMcpClient(
         private set
 
     companion object {
+        /**
+         * A random first id in [1, 2^52): below 2^53 so a JavaScript peer (the reference SDK)
+         * reads every id it will see exactly, with room to count up from there.
+         */
+        private fun randomFirstId(): Long {
+            var v = 0L
+            for (b in RandomInstance.bytes(7)) v = (v shl 8) or (b.toLong() and 0xFF)
+            return (v and ((1L shl 52) - 1)) or 1L
+        }
+
         /** The MCP revision the ContextVM spec's examples use. */
         const val PROTOCOL_VERSION = "2025-07-02"
     }

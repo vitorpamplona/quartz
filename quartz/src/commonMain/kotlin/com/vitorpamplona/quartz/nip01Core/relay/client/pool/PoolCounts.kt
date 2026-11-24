@@ -21,7 +21,6 @@
 package com.vitorpamplona.quartz.nip01Core.relay.client.pool
 
 import com.vitorpamplona.quartz.nip01Core.relay.client.counts.CountQueryState
-import com.vitorpamplona.quartz.nip01Core.relay.client.counts.CountQueryStatus
 import com.vitorpamplona.quartz.nip01Core.relay.client.single.IRelayClient
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.ClosedMessage
 import com.vitorpamplona.quartz.nip01Core.relay.commands.toClient.CountMessage
@@ -138,6 +137,23 @@ class PoolCounts {
         queries.forEach { subId, filters ->
             val filters = filters[relay]
             if (!filters.isNullOrEmpty()) {
+                // Marked before the frame leaves, so a fast answer is not overwritten by the send report.
+                liveState(subId)?.markSending(relay, filters)
+                sync(CountCmd(subId, filters))
+            }
+        }
+    }
+
+    /** The COUNTs an accepted AUTH re-sends on [relay]: those it CLOSED, or never got. See [PoolRequests.syncAfterAuth]. */
+    fun syncAfterAuth(
+        relay: NormalizedRelayUrl,
+        sync: (Command) -> Unit,
+    ) {
+        queries.forEach { subId, filters ->
+            val filters = filters[relay]
+            val state = liveState(subId)
+            if (!filters.isNullOrEmpty() && state != null && state.isUnansweredOrRefused(relay)) {
+                state.markSending(relay, filters)
                 sync(CountCmd(subId, filters))
             }
         }
@@ -188,16 +204,9 @@ class PoolCounts {
         sync: (NormalizedRelayUrl, Command) -> Unit,
     ) {
         relaysToUpdate.forEach { relay ->
-            val currentState = relayState.get(queryId)?.currentState(relay)
-
-            if (currentState == CountQueryStatus.SENT) {
-                // sending multiple REQs triggers multiple EOSEs back and we then don't know which
-                // one is which.
-            } else {
-                sendToRelayIfChanged(queryId, relay) { cmd ->
-                    sync(relay, cmd)
-                }
-            }
+            // sending multiple COUNTs triggers multiple answers back and we then don't know which
+            // one is which: one in flight holds the change until it is answered.
+            decide(queryId, relay, skipIfInFlight = true)?.let { sync(relay, it) }
         }
 
         // Query is gone and every relay has been told: drop the row (see [relayState]).
@@ -214,9 +223,18 @@ class PoolCounts {
         relay: NormalizedRelayUrl,
         sync: (Command) -> Unit,
     ) {
-        val oldFilters = relayState.get(queryId)?.currentFilters(relay)
+        decide(queryId, relay, skipIfInFlight = false)?.let(sync)
+    }
+
+    /** Decides and pre-marks the command for [queryId] on [relay] under its state's lock; see [CountQueryState.decide]. */
+    private fun decide(
+        queryId: String,
+        relay: NormalizedRelayUrl,
+        skipIfInFlight: Boolean,
+    ): Command? {
         val newFilters = queries.get(queryId)?.get(relay)
-        sendToRelayIfChanged(queryId, oldFilters, newFilters, sync)
+        val state = relayState.get(queryId) ?: if (newFilters.isNullOrEmpty()) return null else subState(queryId)
+        return state.decide(queryId, relay, newFilters, skipIfInFlight)
     }
 
     fun sendToRelayIfChanged(

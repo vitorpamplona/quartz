@@ -187,7 +187,11 @@ suspend fun post(client: NostrClient) {
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
   (NIP-55) signers implement the same class.
-- `Event.verify()` checks the id and signature of events you receive from relays.
+- `Event.verify()` checks the id and signature of events you receive from relays. It refuses an
+  id, pubkey or sig that is not lowercase hex (NIP-01).
+- A channel whose authenticity rests on NIP-44 checks the payload's form before decrypting:
+  `Nip44.payloadVersion(payload)` / `Nip44.isV2Payload(payload)`, or `Nip44.decryptV2Only(...)`.
+  `Nip44.decrypt` still opens NIP-04 and NIP-44 v1 for old direct messages.
 - `event.toJson()` and `Event.fromJson(json)` / `Event.fromJsonOrNull(json)` (de)serialize one
   event; parsing returns the kind's typed subclass (`as? TextNoteEvent`).
 - Nostr JSON goes through `OptimizedJsonMapper`: Kite (`nip01Core.kite`, Quartz's own reader

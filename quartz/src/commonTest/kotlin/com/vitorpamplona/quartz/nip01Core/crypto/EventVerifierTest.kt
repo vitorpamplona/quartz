@@ -45,9 +45,15 @@ class EventVerifierTest {
         sig: String = this.sig,
     ) = Event(id, pubKey, createdAt, kind, tags, content, sig)
 
-    /** verifySignature() before the reused buffers. */
+    private fun String.isLowerHex() = all { it in '0'..'9' || it in 'a'..'f' }
+
+    /**
+     * verifySignature() before the reused buffers, with NIP-01's lowercase-hex rule: an id, pubkey
+     * or sig spelled any other way is not the string of its bytes (`g` used to decode as `f`).
+     */
     private fun Event.referenceSignature(): Boolean {
         if (id.length != 64 || pubKey.length != 64 || sig.length != 128) return false
+        if (!id.isLowerHex() || !pubKey.isLowerHex() || !sig.isLowerHex()) return false
         return Nip01Crypto.verify(Hex.decode(sig), Hex.decode(id), Hex.decode(pubKey))
     }
 

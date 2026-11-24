@@ -171,21 +171,22 @@ class ConcordAppEventVectorTest {
     }
 
     /**
-     * Channel order is not Quartz's yet: CORD-03 §2's `position` (a rank key) and Armada's legacy
-     * `custom["armada.order"]` both fall out of [com.vitorpamplona.quartz.concord.cord04Roles.ChannelEntity],
-     * so a reader orders by name (Amethyst's `ConcordChannelOrder`). Pinned here: Armada puts
-     * positioned Channels first, and Channels we write (no position) by name.
+     * Channel order ([com.vitorpamplona.quartz.concord.cord03Channels.ConcordChannelOrder]): Armada
+     * puts the Channels its legacy `custom["armada.order"]` positions first and the rest by name, and
+     * so does the fold's [ConcordCommunityState.orderedChannels]; Channels we write (no position) read
+     * by name on both sides.
      */
     @Test
     fun channelOrder() {
-        val theirs = load("armada.json")["cases"]!!.jsonArray.map { it.jsonObject }.first { name(it) == "channel_order" }
-        assertEquals(listOf("c1", "c2", "c3", "9a").map { it.repeat(32) }, theirs["expect"]!!.jsonObject["order"]!!.jsonArray.map { it.jsonPrimitive.content })
+        val theirs = load("armada.json")
+        val theirCase = theirs["cases"]!!.jsonArray.map { it.jsonObject }.first { name(it) == "channel_order" }
+        val theirState = stateOf(theirs["control"]!!.jsonArray.map(::rumor) + theirCase["rumors"]!!.jsonArray.map(::rumor))
+        val expected = theirCase["expect"]!!.jsonObject["order"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("c1", "c2", "c3", "9a").map { it.repeat(32) }, expected)
+        assertEquals(expected, theirState.orderedChannels.map { it.channelIdHex })
+
         val ours = load("ours-read-by-armada.json")["cases"]!!.jsonArray.map { it.jsonObject }.first { name(it) == "channel_order" }
         val state = stateOf(fx.ourControl() + ours["rumors"]!!.jsonArray.map(::rumor))
-        val byName =
-            state.channels.values
-                .sortedBy { it.definition.name }
-                .map { it.channelIdHex }
-        assertEquals(byName, ours["armada"]!!.jsonObject["order"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(state.orderedChannels.map { it.channelIdHex }, ours["armada"]!!.jsonObject["order"]!!.jsonArray.map { it.jsonPrimitive.content })
     }
 }

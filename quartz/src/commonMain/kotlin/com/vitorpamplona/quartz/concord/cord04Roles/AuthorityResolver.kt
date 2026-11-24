@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.hexToByteArrayOrNull
 import com.vitorpamplona.quartz.nip01Core.core.toHexKey
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.ConcurrentLruCache
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
 
 /**
  * Resolves the owner-rooted authority state of a Concord community from its
@@ -71,6 +72,20 @@ data class AuthorityResolver private constructor(
     // Derived from the constructor values, so deliberately outside the data class's equality.
     private val communityId: ByteArray by lazy { communityIdHex.hexToByteArray() }
     private val banlistEidHex: String by lazy { banlistCoordinateHex(communityId) }
+
+    /**
+     * `grant_locator(community_id, member)` per member asked about, memoized: it is an HKDF, and the
+     * gates ask [citationSatisfied] for every edition of every fold. Only members holding a Grant
+     * head are ever derived (anyone else's citation fails before the coordinate matters).
+     */
+    private val grantCoordinates = ConcurrentMap<String, String>()
+
+    private fun grantCoordinateOf(member: String): String? {
+        grantCoordinates[member]?.let { return it }
+        val coordinate = grantCoordinateOrNull(communityId, member) ?: return null
+        grantCoordinates[member] = coordinate
+        return coordinate
+    }
 
     /**
      * A member's honored Grant head: the edition every reader folded their roles from, and so
@@ -269,7 +284,7 @@ data class AuthorityResolver private constructor(
         val m = actor.lowercase()
         if (m == ownerLower) return null
         val head = grantHeads[m] ?: return null
-        val coordinate = grantCoordinateOrNull(communityId, m) ?: return null
+        val coordinate = grantCoordinateOf(m) ?: return null
         return AuthorityCitation(coordinate.hexToByteArray(), head.version, head.hashHex.hexToByteArray())
     }
 
@@ -287,8 +302,9 @@ data class AuthorityResolver private constructor(
     ): Boolean {
         val m = actor.lowercase()
         if (m == ownerLower) return true
-        val coordinate = grantCoordinateOrNull(communityId, m) ?: return false
-        return citationMatches(citation, coordinate, grantHeads[m])
+        val head = grantHeads[m] ?: return false
+        val coordinate = grantCoordinateOf(m) ?: return false
+        return citationMatches(citation, coordinate, head)
     }
 
     /** [citationSatisfied] for [edition]'s author and `vac`. */
@@ -455,6 +471,17 @@ data class AuthorityResolver private constructor(
             editions: Collection<ControlEdition>,
             communityId: ByteArray,
             ownerPubKey: String,
+        ): AuthorityResolver = resolve(editions, communityId, ownerPubKey, ConcordJson::decodeBanlist)
+
+        /**
+         * [resolve] with the legacy Banlist body decoder supplied, so a test can count how often a
+         * resolution parses a Banlist (each body must be parsed once per pass, not once per fold step).
+         */
+        internal fun resolve(
+            editions: Collection<ControlEdition>,
+            communityId: ByteArray,
+            ownerPubKey: String,
+            banlistDecoder: (String) -> List<String>?,
         ): AuthorityResolver {
             // CORD-04 §1: a marked edition bound to another Community, and an unmarked edition of a
             // kind no older client wrote, are refused before anything folds.
@@ -463,7 +490,7 @@ data class AuthorityResolver private constructor(
             // The activation check IS the ban-blind Roster fold: run it once and reuse it (CORD-04 §2).
             RankedRoster.foldIfActivated(editions, communityId, ownerPubKey)?.let { return resolveRanked(editions, communityId, ownerPubKey, it) }
 
-            val passA = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = emptySet())
+            val passA = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = emptySet(), banlistDecoder)
             // A further pass costs a whole fold, so skip it unless it could change something. Nobody
             // banned, or nobody banned who ever wrote to the Control Plane — the overwhelmingly common
             // shape, since most bans land on plain members who hold no role and author no editions —
@@ -487,7 +514,7 @@ data class AuthorityResolver private constructor(
             var mask = passA.banned
             var result = passA
             repeat(MAX_BAN_RESOLUTION_PASSES) {
-                result = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = mask)
+                result = resolveOnce(editions, communityId, ownerPubKey, bannedAuthors = mask, banlistDecoder)
                 if (result.banned == mask) return result
                 mask = result.banned
             }
@@ -627,6 +654,7 @@ data class AuthorityResolver private constructor(
             communityId: ByteArray,
             ownerPubKey: String,
             bannedAuthors: Set<String>,
+            banlistDecoder: (String) -> List<String>?,
         ): AuthorityResolver {
             val ownerLower = ownerPubKey.lowercase()
             val communityIdHex = communityId.toHexKey()
@@ -824,12 +852,29 @@ data class AuthorityResolver private constructor(
             val banlistEid = banlistCoordinateHex(communityId)
             val allBanlist = editions.filter { it.entityKind == ControlEntityKind.BANLIST && it.entityIdHex == banlistEid }
 
-            fun banGate(e: ControlEdition): Boolean {
-                if (ConcordJson.decodeBanlist(e.content) == null) return false
-                val author = e.author.lowercase()
-                if (author == ownerLower) return true
-                return author !in bannedAuthors && effectivePermissionsOf(author).has(ConcordPermissions.BAN) && cited(e)
+            // Every body parsed once per pass, lowercased, and every edition gated once: the delta
+            // rule below folds the editions under each version it judges, and each of those folds
+            // asks the gate about every edition again. Parsing per ask made a resolution cubic in
+            // the length of the Banlist's history (a few hundred edits took seconds).
+            val banBodies = HashMap<String, Set<String>?>()
+
+            fun banBodyOf(e: ControlEdition): Set<String>? {
+                if (banBodies.containsKey(e.content)) return banBodies[e.content]
+                val body = banlistDecoder(e.content)?.mapTo(HashSet()) { it.lowercase() }
+                banBodies[e.content] = body
+                return body
             }
+
+            // Keyed by the edition itself (identity), so two editions claiming one rumor id are judged apart.
+            val banGates = HashMap<ControlEdition, Boolean>()
+
+            fun banGate(e: ControlEdition): Boolean =
+                banGates.getOrPut(e) {
+                    if (banBodyOf(e) == null) return@getOrPut false
+                    val author = e.author.lowercase()
+                    if (author == ownerLower) return@getOrPut true
+                    author !in bannedAuthors && effectivePermissionsOf(author).has(ConcordPermissions.BAN) && cited(e)
+                }
 
             // CORD-04 §3's rank rule binds "every action", and it names banning as its example ("an
             // admin cannot ban a peer admin"); §5 step 3 restates it. Only §4, which defines the
@@ -858,23 +903,33 @@ data class AuthorityResolver private constructor(
                 return authorRank < targetRank
             }
 
-            val byHash = allBanlist.associateBy { it.hashHex }
+            // The head readers honour among the editions below version `v` (gated, authority first),
+            // memoized per version: what an edition at `v` acts on (CORD-04 §3: "each version acts
+            // on what the newest version the Roster admits below it left ... It is never judged on
+            // what its own `prev` names alone: its author picks that, and could name a branch where
+            // nothing stood"). Judging the delta against the author's own `prev` let a junior BAN
+            // holder fork from before a senior's ban, add nothing, and lift it by omission.
+            val headsBelow = HashMap<Long, ControlEdition?>()
+
+            fun headBelow(version: Long): ControlEdition? {
+                if (headsBelow.containsKey(version)) return headsBelow[version]
+                val below = allBanlist.filter { it.version < version }
+                val head = if (below.isEmpty()) null else EditionFold.foldEntityGated(below, rank = ::tieRank, gate = ::banGate)
+                headsBelow[version] = head
+                return head
+            }
+
             val effective = HashMap<String, Set<String>>()
 
-            // The list an edition actually establishes: its parent's effective list, plus only the
-            // additions its signer may make and minus only the removals its signer may make. Walks
-            // the parent chain, so it is memoized; `visiting` also terminates a prevHash cycle.
-            fun effectiveList(
-                edition: ControlEdition,
-                visiting: MutableSet<String>,
-            ): Set<String> {
-                effective[edition.hashHex]?.let { return it }
-                if (!visiting.add(edition.hashHex)) return emptySet()
+            // The list an edition actually establishes: the list the head below its version left,
+            // plus only the additions its signer may make and minus only the removals its signer may
+            // make. Each step goes strictly down in version, so it terminates; memoized per edition.
+            fun effectiveList(edition: ControlEdition): Set<String> {
+                effective[edition.rumorId]?.let { return it }
 
-                val parent = edition.prevHash?.toHexKey()?.let { byHash[it] }
-                val base = parent?.let { effectiveList(it, visiting) } ?: emptySet()
+                val base = headBelow(edition.version)?.let { effectiveList(it) } ?: emptySet()
                 val author = edition.author.lowercase()
-                val claimed = ConcordJson.decodeBanlist(edition.content)?.mapTo(HashSet()) { it.lowercase() }
+                val claimed = banBodyOf(edition)
 
                 // A malformed body changes nothing rather than clearing the list.
                 val result =
@@ -887,8 +942,7 @@ data class AuthorityResolver private constructor(
                         out
                     }
 
-                visiting.remove(edition.hashHex)
-                effective[edition.hashHex] = result
+                effective[edition.rumorId] = result
                 return result
             }
 
@@ -896,7 +950,7 @@ data class AuthorityResolver private constructor(
             // middle of the chain must not orphan the authorized ones chained above it (which, on
             // a banlist, would silently resurrect every ban a later unban had cleared).
             val banHead = EditionFold.foldEntityGated(allBanlist, rank = ::tieRank, gate = ::banGate)
-            val banned = banHead?.let { effectiveList(it, HashSet()) } ?: emptySet()
+            val banned = banHead?.let { effectiveList(it) } ?: emptySet()
 
             return AuthorityResolver(communityIdHex, ownerLower, roles, memberRoles.toMap(), banned, grantHeads, null, AuthorityHeads(headEditions))
         }

@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.kotlinSerialization.EventKSerializer
 import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.tags.people.PTag
 import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.LogLevel
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.serialization.Serializable
 
@@ -105,7 +106,8 @@ open class Event(
             try {
                 fromJson(json)
             } catch (e: Exception) {
-                Log.w("Event", "Unable to parse event JSON: $json", e)
+                // Guarded: the message interpolates the whole JSON, built for nothing below WARN.
+                if (Log.minLevel <= LogLevel.WARN) Log.w("Event", "Unable to parse event JSON: $json", e)
                 null
             }
 

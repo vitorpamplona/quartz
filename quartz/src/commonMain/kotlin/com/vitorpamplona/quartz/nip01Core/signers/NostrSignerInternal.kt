@@ -86,6 +86,14 @@ class NostrSignerInternal(
             signerSync.nip44Decrypt(ciphertext, fromPublicKey)
         }
 
+    override suspend fun nip44DecryptOnce(
+        ciphertext: String,
+        fromPublicKey: HexKey,
+    ): String =
+        runWrapErrors {
+            signerSync.nip44DecryptOnce(ciphertext, fromPublicKey)
+        }
+
     // always ready
     override fun hasForegroundSupport() = true
 

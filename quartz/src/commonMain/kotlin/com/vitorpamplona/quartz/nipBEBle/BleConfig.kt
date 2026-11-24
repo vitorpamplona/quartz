@@ -43,6 +43,12 @@ object BleConfig {
     const val MAX_MESSAGE_SIZE = 64 * 1024
 
     /**
+     * The most a received message may inflate to. NIP-01 JSON deflates a few times over, so a
+     * full 64 KB message is far below this; a DEFLATE bomb (up to ~1000:1) is refused at it.
+     */
+    const val MAX_INFLATED_MESSAGE_SIZE = 1024 * 1024
+
+    /**
      * Default payload size per chunk in bytes (excluding 2-byte overhead).
      * Each transmitted chunk is `DEFAULT_CHUNK_SIZE + 2` bytes on the wire.
      */

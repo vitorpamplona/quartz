@@ -105,10 +105,9 @@ class NostrClientKeepAliveTest {
                         "got ${builder.connectAttempts} attempts (baseline $beforeActiveSweep)",
                 )
 
-                // Leave the relay cleanly disconnected, then deactivate.
+                // Deactivate with the relay connected: the session disconnect() ends resets its
+                // backoff (a relay already down keeps its own).
                 builder.lastListener.onOpen(50, false)
-                builder.lastListener.onClosed(1000, "server closed")
-                settleDisconnected(builder)
                 client.disconnect()
                 val whileInactiveBaseline = builder.connectAttempts
 

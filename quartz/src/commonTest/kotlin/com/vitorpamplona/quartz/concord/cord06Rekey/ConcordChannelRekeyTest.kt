@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.concord.crypto.ConcordKeyDerivation
 import com.vitorpamplona.quartz.concord.crypto.ConcordLabels
 import com.vitorpamplona.quartz.concord.crypto.GroupKey
 import com.vitorpamplona.quartz.concord.envelope.ConcordStreamEnvelope
+import com.vitorpamplona.quartz.concord.envelope.StreamWrapOpener
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
@@ -267,5 +268,16 @@ class ConcordChannelRekeyTest {
             val partial = listOf(extension(key1, listOf(bob.pubKey), index = 3, total = 3))
             assertIs<ChannelRekeyOutcome.Adopted>(walk(partial, bob))
             assertSame(ChannelRekeyOutcome.None, walk(partial, alice))
+        }
+
+    @Test
+    fun everyWrapIsOpenedThroughTheGivenOpener() =
+        runTest {
+            val wraps = rotate(key0, 0, ByteArray(32) { 0x42 }, listOf(alice.pubKey))
+            val asked = mutableListOf<HexKey>()
+            val opener = StreamWrapOpener { wrap, stream -> ConcordStreamEnvelope.openOrNull(wrap, stream).also { asked += wrap.id } }
+            val rotations = ConcordChannelRekey.rotations(wraps, keysFor(1), channelHex, opener)
+            assertEquals(1, rotations.size)
+            assertEquals(wraps.map { it.id }, asked)
         }
 }

@@ -51,6 +51,9 @@ class BasicOkHttpWebSocket(
         private const val DRAINING = 1
         private const val CLOSED = 2
 
+        // The relay's end is being reported to [out] by the delivering coroutine, right now.
+        private const val REPORTING = 3
+
         // Exists to avoid exceptions stopping the coroutine
         val exceptionHandler =
             CoroutineExceptionHandler { _, throwable ->
@@ -101,7 +104,7 @@ class BasicOkHttpWebSocket(
     override fun needsReconnect() =
         when (state.get()) {
             OPEN -> if (socket == null) !dialing else clientChanged()
-            DRAINING -> false
+            DRAINING, REPORTING -> false
             else -> true
         }
 
@@ -160,7 +163,17 @@ class BasicOkHttpWebSocket(
         scope.launch {
             for (item in incoming) {
                 if (item is SessionEnd) {
-                    if (state.compareAndSet(DRAINING, CLOSED)) item.report()
+                    // REPORTING, not CLOSED, until the report is done: reading CLOSED before the
+                    // relay client heard of the end, a reconnect pass tore the session down and
+                    // dialed again, and the end, arriving after, was dropped as a replaced
+                    // session's, so the client never learned this one had ended.
+                    if (state.compareAndSet(DRAINING, REPORTING)) {
+                        try {
+                            item.report()
+                        } finally {
+                            state.compareAndSet(REPORTING, CLOSED)
+                        }
+                    }
                     break
                 }
                 // A listener that throws must not end delivery: the session's end is queued behind
@@ -305,7 +318,7 @@ class BasicOkHttpWebSocket(
 
     override fun send(msg: String): Boolean = socket?.send(msg) ?: false
 
-    override fun endedByPeer() = state.get() == DRAINING
+    override fun endedByPeer() = state.get().let { it == DRAINING || it == REPORTING }
 
     class Builder(
         val httpClient: (NormalizedRelayUrl) -> OkHttpClient,

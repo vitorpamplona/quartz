@@ -56,14 +56,14 @@ class ConcordInviteRegistryTest {
         eid: String,
         content: String,
         author: String = owner,
-        version: Long = 0,
+        version: Long = 1,
         prev: ControlEdition? = null,
     ) = ControlEdition(kind, eid.hexToByteArray(), version, prev?.hash, null, content, author, "r-$eid-$version-$author", version)
 
     private fun registry(
         creator: String,
         content: String,
-        version: Long = 0,
+        version: Long = 1,
         prev: ControlEdition? = null,
         at: String = registryEid(creator),
     ) = edition(ControlEntityKind.INVITE_REGISTRY, at, content, creator, version, prev)
@@ -76,7 +76,7 @@ class ConcordInviteRegistryTest {
     private fun grant(
         member: String,
         vararg roles: String,
-        version: Long = 0,
+        version: Long = 1,
         prev: ControlEdition? = null,
     ) = edition(
         ControlEntityKind.GRANT,
@@ -155,14 +155,14 @@ class ConcordInviteRegistryTest {
     @Test
     fun malformedContentFallsBackToThePreviousEditionAndJunkEntriesAreDropped() {
         val v0 = registry(owner, list(link1))
-        val broken = registry(owner, """{"links":["$link2"]}""", version = 1, prev = v0)
+        val broken = registry(owner, """{"links":["$link2"]}""", version = 2, prev = v0)
         assertEquals(listOf(link1), ControlFixtures.fold(listOf(v0, broken), owner).registryOf(owner), "not an array: the head stays at v0")
 
-        val notJson = registry(owner, "[$link2", version = 1, prev = v0)
+        val notJson = registry(owner, "[$link2", version = 2, prev = v0)
         assertEquals(listOf(link1), ControlFixtures.fold(listOf(v0, notJson), owner).registryOf(owner))
 
         // An array is well-formed whatever it holds; only 64-hex string entries survive, lowercased.
-        val mixed = registry(owner, """["$link2", 42, null, "abc", "${link3.uppercase()}", "$link2", ["$link1"]]""", version = 1, prev = v0)
+        val mixed = registry(owner, """["$link2", 42, null, "abc", "${link3.uppercase()}", "$link2", ["$link1"]]""", version = 2, prev = v0)
         assertEquals(listOf(link2, link3), ControlFixtures.fold(listOf(v0, mixed), owner).registryOf(owner))
 
         assertNull(ConcordInviteRegistry.decodeOrNull("nope"))
@@ -208,7 +208,7 @@ class ConcordInviteRegistryTest {
         assertTrue(ControlFixtures.fold(before, owner).isPublic)
 
         // The owner strips alice's roles: her registry is no longer honored, the link no longer counts.
-        val g1 = grant(alice, version = 1, prev = g0)
+        val g1 = grant(alice, version = 2, prev = g0)
         val after = ControlFixtures.fold(before + g1, owner)
         assertEquals(emptyList(), after.registryOf(alice))
         assertFalse(after.isPublic)

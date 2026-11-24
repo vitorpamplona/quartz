@@ -41,7 +41,7 @@ class ConcordCommunityStateTest {
         eid: String,
         content: String,
         author: String = owner,
-    ) = ControlEdition(kind, eid.hexToByteArray(), 0, null, null, content, author, "r-$eid", 0)
+    ) = ControlEdition(kind, eid.hexToByteArray(), 1, null, null, content, author, "r-$eid", 0)
 
     @Test
     fun foldsMetadataChannelsRolesAndAuthority() {
@@ -92,18 +92,18 @@ class ConcordCommunityStateTest {
             author: String,
         ) = ControlEdition(kind, eid.hexToByteArray(), version, prev?.hash, null, content, author, "r-$eid-$version", version)
 
-        val c0 = chained(ControlEntityKind.CHANNEL, chan, 0, null, """{"name":"general"}""", owner)
-        val c1 = chained(ControlEntityKind.CHANNEL, chan, 1, c0, """{"name":"HACKED"}""", troll)
-        val c2 = chained(ControlEntityKind.CHANNEL, chan, 2, c1, """{"name":"renamed"}""", owner)
+        val c1 = chained(ControlEntityKind.CHANNEL, chan, 1, null, """{"name":"general"}""", owner)
+        val c2 = chained(ControlEntityKind.CHANNEL, chan, 2, c1, """{"name":"HACKED"}""", troll)
+        val c3 = chained(ControlEntityKind.CHANNEL, chan, 3, c2, """{"name":"renamed"}""", owner)
 
-        val m0 = chained(ControlEntityKind.METADATA, meta, 0, null, """{"name":"My Server"}""", owner)
-        val m1 = chained(ControlEntityKind.METADATA, meta, 1, m0, """{"name":"HACKED"}""", troll)
-        val m2 = chained(ControlEntityKind.METADATA, meta, 2, m1, """{"name":"Renamed Server"}""", owner)
+        val m1 = chained(ControlEntityKind.METADATA, meta, 1, null, """{"name":"My Server"}""", owner)
+        val m2 = chained(ControlEntityKind.METADATA, meta, 2, m1, """{"name":"HACKED"}""", troll)
+        val m3 = chained(ControlEntityKind.METADATA, meta, 3, m2, """{"name":"Renamed Server"}""", owner)
 
-        val state = ControlFixtures.fold(listOf(c0, c1, c2, m0, m1, m2), owner)
+        val state = ControlFixtures.fold(listOf(c1, c2, c3, m1, m2, m3), owner)
 
-        assertEquals("renamed", state.channels[chan]?.definition?.name, "the owner's v2 rename must apply")
-        assertEquals("Renamed Server", state.metadata?.name, "the owner's v2 metadata edit must apply")
+        assertEquals("renamed", state.channels[chan]?.definition?.name, "the owner's v3 rename must apply")
+        assertEquals("Renamed Server", state.metadata?.name, "the owner's v3 metadata edit must apply")
     }
 
     private fun chainedMeta(

@@ -50,11 +50,22 @@ class OkHttpNip11Fetcher(
                 if (!response.isSuccessful) {
                     throw Nip11FetchException("HTTP ${response.code} fetching NIP-11 from ${relay.url}")
                 }
-                val body = response.body.string()
-                if (!body.startsWith("{")) {
+                // Bounded: a host that answers with an endless or huge body must not fill the heap.
+                val source = response.body.source()
+                if (source.request(MAX_DOCUMENT_BYTES + 1)) {
+                    throw Nip11FetchException("NIP-11 document from ${relay.url} is over $MAX_DOCUMENT_BYTES bytes")
+                }
+                val body = source.buffer.readUtf8()
+                // JSON may start with whitespace (a pretty-printed document, a trailing newline before it).
+                if (!body.trimStart().startsWith("{")) {
                     throw Nip11FetchException("Not a NIP-11 document from ${relay.url}")
                 }
                 Nip11RelayInformation.fromJson(body)
             }
         }
+
+    companion object {
+        /** The largest NIP-11 document read; real ones are a few kilobytes. */
+        const val MAX_DOCUMENT_BYTES = 512L * 1024
+    }
 }

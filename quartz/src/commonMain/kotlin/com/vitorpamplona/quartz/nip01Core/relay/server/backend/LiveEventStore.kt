@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
+import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
@@ -945,6 +946,14 @@ class LiveEventStore(
     private val snapshotCache = AtomicReference<CachedSnapshot?>(null)
 
     /**
+     * Quartz's SQLite store answers every caller the same set: it never reads [StoreQueryContext].
+     * Its snapshots are cached for everyone, so authenticated mirror peers reconciling one filter
+     * share the one slot instead of evicting each other. Any other store, a wrapper of it included,
+     * may be observer-relative (STORE-O01) and keeps a snapshot per caller.
+     */
+    private val answersEveryCallerAlike = store is EventStore
+
+    /**
      * Serves repeated NEG-OPENs of the same filter from one sealed
      * storage as long as no write landed in between (single slot — the
      * mirror-heartbeat pattern is many peers reconciling the same broad
@@ -957,6 +966,32 @@ class LiveEventStore(
         filters: List<Filter>,
         maxEntries: Int,
     ): IStorage? {
+        drainFtsIfSearching(filters)
+        return cachedNegentropyStorage(filters, maxEntries, emptySet())
+    }
+
+    /**
+     * The NEG-OPEN snapshot as the caller sees it: under its [StoreQueryContext], as its REQs and
+     * COUNTs are, after draining a deferred FTS backlog for a search filter (STORE-S06), and
+     * cached per caller identity. Without it, an observer-gated store answered NEG-OPEN ungated,
+     * a search NEG-OPEN missed what the backlog held, and one caller's cached snapshot was handed
+     * to the next.
+     */
+    override suspend fun sealedNegentropyStorage(
+        ctx: RequestContext,
+        filters: List<Filter>,
+        maxEntries: Int,
+    ): IStorage? {
+        drainFtsIfSearching(filters)
+        val users = ctx.authenticatedUsers
+        return withCallerIdentity(ctx) { cachedNegentropyStorage(filters, maxEntries, users) }
+    }
+
+    private suspend fun cachedNegentropyStorage(
+        filters: List<Filter>,
+        maxEntries: Int,
+        users: Set<String>,
+    ): IStorage? {
         // Full-set NEG-OPENs — a single unconstrained filter, the shape
         // relay-relay sync sends by default — are served from the store's
         // always-current index when it maintains one: no scan, no
@@ -967,7 +1002,10 @@ class LiveEventStore(
         }
 
         val generation = writeGeneration.load()
-        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries"
+        // Keyed by who asks too, unless the store answers everyone alike: an observer-relative
+        // store answers each caller its own set.
+        val asWho = if (answersEveryCallerAlike) "" else users.joinToString(",")
+        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries\u0000as=" + asWho
         val now = TimeUtils.now()
 
         val cached = snapshotCache.load()

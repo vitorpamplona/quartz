@@ -199,12 +199,12 @@ class QueryAssemblerTest : BaseDBTest() {
                     │   └── COMPOUND QUERY
                     │       ├── LEFT-MOST SUBQUERY
                     │       │   ├── CO-ROUTINE (subquery-1)
-                    │       │   │   ├── SCAN event_headers USING COVERING INDEX query_by_kind_created
+                    │       │   │   ├── SCAN event_headers USING COVERING INDEX query_by_owner_created
                     │       │   │   └── USE TEMP B-TREE FOR ORDER BY
                     │       │   └── SCAN (subquery-1)
                     │       └── UNION USING TEMP B-TREE
                     │           ├── CO-ROUTINE (subquery-3)
-                    │           │   ├── SCAN event_headers USING COVERING INDEX query_by_kind_created
+                    │           │   ├── SCAN event_headers USING COVERING INDEX query_by_owner_created
                     │           │   └── USE TEMP B-TREE FOR ORDER BY
                     │           └── SCAN (subquery-3)
                     ├── SCAN filtered
@@ -285,7 +285,7 @@ class QueryAssemblerTest : BaseDBTest() {
                     │   └── COMPOUND QUERY
                     │       ├── LEFT-MOST SUBQUERY
                     │       │   ├── CO-ROUTINE (subquery-1)
-                    │       │   │   ├── SCAN event_headers USING COVERING INDEX query_by_kind_created
+                    │       │   │   ├── SCAN event_headers USING COVERING INDEX query_by_owner_created
                     │       │   │   └── USE TEMP B-TREE FOR ORDER BY
                     │       │   └── SCAN (subquery-1)
                     │       ├── UNION USING TEMP B-TREE

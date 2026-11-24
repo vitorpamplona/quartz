@@ -22,11 +22,19 @@ package com.vitorpamplona.quartz.nip11RelayInfo
 
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.RelayUrlNormalizer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CachedNip11FetcherTest {
     private val relay = RelayUrlNormalizer.normalize("wss://nostr.example.com")
@@ -121,5 +129,51 @@ class CachedNip11FetcherTest {
             now = 100
             assertNull(fetcher.cachedOrNull(relay), "a stale hit must not be served")
             assertEquals(1, net.calls)
+        }
+
+    @Test
+    fun concurrentFetchesOfOneRelayShareOneNetworkFetch() =
+        runBlocking {
+            val gate = CompletableDeferred<Unit>()
+            var calls = 0
+            val slow =
+                object : Nip11Fetcher {
+                    override suspend fun fetch(relay: NormalizedRelayUrl): Nip11RelayInformation {
+                        calls++
+                        gate.await()
+                        return Nip11RelayInformation(name = "shared")
+                    }
+                }
+            val fetcher = CachedNip11Fetcher(slow)
+            val waiting = List(5) { async(start = CoroutineStart.UNDISPATCHED) { fetcher.fetch(relay) } }
+            gate.complete(Unit)
+            assertEquals(List(5) { "shared" }, waiting.awaitAll().map { it.name })
+            assertEquals(1, calls, "one network fetch for five callers")
+        }
+
+    private class HostileDocumentError : Error("nesting too deep")
+
+    @Test
+    fun aLeaderThatFailsWithAnErrorDoesNotHangItsWaiters() =
+        runBlocking {
+            // An Error, not an Exception: a stack overflow on a hostile document's nesting.
+            val gate = CompletableDeferred<Unit>()
+            val hostile =
+                object : Nip11Fetcher {
+                    override suspend fun fetch(relay: NormalizedRelayUrl): Nip11RelayInformation {
+                        gate.await()
+                        throw HostileDocumentError()
+                    }
+                }
+            val fetcher = CachedNip11Fetcher(hostile)
+            supervisorScope {
+                val leader = async(start = CoroutineStart.UNDISPATCHED) { fetcher.fetch(relay) }
+                val waiter = async(start = CoroutineStart.UNDISPATCHED) { fetcher.fetch(relay) }
+                gate.complete(Unit)
+                assertFailsWith<HostileDocumentError>("the leader rethrows the Error") { leader.await() }
+                val outcome = withTimeoutOrNull(5_000) { runCatching { waiter.await() } }
+                assertNotNull(outcome, "the waiter is not left hanging")
+                assertTrue(outcome.isFailure, "the waiter fails with the leader")
+            }
         }
 }
