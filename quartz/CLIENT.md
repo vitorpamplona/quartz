@@ -356,8 +356,9 @@ user's own key:
 - **Gift wraps** (NIP-59): use `GiftWrapEvent.create(...)`, which signs each wrap with a fresh
   key, or `NIP17Factory` to build whole NIP-17 messages. To open one, `unwrapAndUnsealOrNull`
   returns the rumor only when the wrap carries a seal (its author is the seal's signer), and
-  `unwrapOrNull` returns the wrapped event only when its own signature verifies (NIP-AC and
-  ContextVM wrap signed events directly).
+  `unwrapOrNull` returns the wrapped event as is (NIP-AC and ContextVM wrap signed events
+  directly). Neither verifies the inner event's signature: check it yourself (`event.verify()`)
+  before trusting its author, or skip it for an event you already hold verified.
 
 When you re-publish a replaceable or addressable event (kind 0, 3, 10002, a 30000-range
 record), stamp the new version `TimeUtils.nextCreatedAt(previous?.createdAt)`: now, or one

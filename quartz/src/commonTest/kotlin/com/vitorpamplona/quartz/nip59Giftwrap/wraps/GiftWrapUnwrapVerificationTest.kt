@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip59Giftwrap.wraps
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
+import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerInternal
 import com.vitorpamplona.quartz.nip04Dm.crypto.Nip04
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
@@ -33,14 +34,16 @@ import com.vitorpamplona.quartz.utils.EventFactory
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
  * The wrap's signature only proves its throwaway key signed it, so what it carries must prove its
- * own author: a seal by its encryption (NIP-59), any other event by its signature.
+ * own author: a seal by its encryption (NIP-59), any other event by its signature. Quartz checks
+ * the seal structure; checking a signed inner event's signature is the caller's call, so an app
+ * can skip events it already holds.
  */
 class GiftWrapUnwrapVerificationTest {
     private val me = NostrSignerInternal(KeyPair())
@@ -55,15 +58,17 @@ class GiftWrapUnwrapVerificationTest {
         runTest {
             val wrap = GiftWrapEvent.create(forgedChat(), me.pubKey)
             assertNull(wrap.unwrapAndUnsealOrNull(me))
-            assertNull(wrap.unwrapOrNull(me))
-            assertFailsWith<IllegalStateException> { wrap.unwrapThrowing(me) }
+            // Handed back unverified: the caller decides whether and when to verify it.
+            val inner = wrap.unwrapOrNull(me)
+            assertNotNull(inner)
+            assertFalse(inner.verify())
         }
 
     @Test
     fun aSignedEventWrappedWithoutASealIsNotAnUnsealedRumor() =
         runTest {
-            // NIP-AC and ContextVM wrap signed events directly: unwrapOrNull hands them back,
-            // verified, but they are not NIP-59 messages.
+            // NIP-AC and ContextVM wrap signed events directly: unwrapOrNull hands them back for
+            // the caller to verify, but they are not NIP-59 messages.
             val note = alice.sign(TextNoteEvent.build("gm"))
             val wrap = GiftWrapEvent.create(note, me.pubKey)
             assertEquals(note.id, wrap.unwrapOrNull(me)?.id)

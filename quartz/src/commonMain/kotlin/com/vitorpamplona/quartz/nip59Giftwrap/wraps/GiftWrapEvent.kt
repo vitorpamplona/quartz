@@ -28,7 +28,6 @@ import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.firstTagValue
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
-import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip01Core.hints.PubKeyHintProvider
 import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip01Core.signers.EventTemplate
@@ -104,19 +103,18 @@ open class GiftWrapEvent(
     override fun isContentEncoded() = true
 
     /**
-     * The event this wrap carries, its signature verified. NIP-59 wraps a [SealEvent]; other
-     * protocols (NIP-AC calls, ContextVM) wrap a signed event of their own. Either way the wrap's
-     * signature only proves its throwaway key signed it, so an inner event whose own signature
-     * fails is refused: unchecked, anyone able to encrypt to us could hand us an event "from" any
-     * pubkey.
+     * The event this wrap carries, **not verified**. NIP-59 wraps a [SealEvent]; other protocols
+     * (NIP-AC calls, ContextVM) wrap a signed event of their own. The wrap's signature only proves
+     * its throwaway key signed it, so the caller must check the inner event's signature before
+     * trusting its author: unchecked, anyone able to encrypt to us could hand us an event "from"
+     * any pubkey. Verifying is left to the caller so it can skip events it already holds (an app
+     * that has the seal cached need not verify it again).
      *
-     * @throws IllegalStateException when the content is not NIP-44, or the inner signature fails.
+     * @throws IllegalStateException when the content is not NIP-44.
      */
     suspend fun unwrapThrowing(signer: NostrSigner): Event {
         val giftStr = plainContent(signer)
         val gift = fromJson(giftStr)
-
-        check(gift.verify()) { "Gift wrap ${id.take(8)} carries an event whose signature does not verify" }
 
         innerEventId = gift.id
 
