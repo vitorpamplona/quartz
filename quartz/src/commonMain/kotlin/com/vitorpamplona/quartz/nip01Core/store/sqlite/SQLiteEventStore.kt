@@ -238,6 +238,11 @@ class SQLiteEventStore(
                 // Deployment overrides last, so they win over the defaults.
                 extraPragmas.forEach { db.execSQL(it) }
             },
+            // Known limit: a migration runs in one write transaction at open, and some build an
+            // index over every row (v7's query_by_owner_created). A second process opening the
+            // same file meanwhile waits busy_timeout (5 s) for it and can fail its open with
+            // SQLITE_BUSY on a large database; it opens fine once retried. One process per file
+            // is the supported deployment.
             onMigrate = { db ->
                 val currentVersion = getUserVersion(db)
                 if (currentVersion == 0) {
