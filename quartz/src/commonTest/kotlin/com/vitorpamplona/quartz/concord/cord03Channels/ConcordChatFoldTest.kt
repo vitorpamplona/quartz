@@ -174,6 +174,46 @@ class ConcordChatFoldTest {
         assertTrue(f.timeline(state).isEmpty(), "every flooded message stays deleted: a self-delete always stands")
     }
 
+    // Before the Control Plane folds no delete can be judged. A member's flood must still not push
+    // out a moderator's hide held meanwhile: unjudged deletes are evicted from whoever holds the
+    // most of them, and judged once a fold is there to judge them.
+    @Test
+    fun aFloodBeforeTheControlPlaneFoldsDoesNotEvictAModeratorsHide() {
+        val target = msg(fx.alice, "spam", 1)
+        val f = ConcordChatFold(ch, maxHeldDeletes = 5)
+        f.add(target)
+        f.add(ChannelChat.moderationHide(fx.mod, ch, e, listOf(target), roster.citationFor(fx.mod), t0 + 2))
+        repeat(50) { i ->
+            val own = msg(fx.bob, "flood $i", 10L + i)
+            f.add(own)
+            f.add(ChannelChat.delete(fx.bob, ch, e, listOf(own), t0 + 10 + i))
+        }
+        assertEquals(5, f.hides.size(ch))
+        assertFalse(f.isVisible(target.id, state), "the moderator's hide survived the unjudged flood")
+        assertTrue(f.timeline(state).isEmpty(), "every flooded message stays deleted: a self-delete always stands")
+    }
+
+    @Test
+    fun aHideHeldUnjudgedIsJudgedOnceAFoldArrives() {
+        val target = msg(fx.alice, "spam", 1)
+        val f = ConcordChatFold(ch, maxHeldDeletes = 5)
+        f.add(target)
+        f.add(ChannelChat.moderationHide(fx.mod, ch, e, listOf(target), roster.citationFor(fx.mod), t0 + 2))
+        // Several members' deletes, held before the fold, then a flood judged against it.
+        repeat(4) { i ->
+            val own = msg(fx.bob, "early $i", 5L + i)
+            f.add(own)
+            f.add(ChannelChat.delete(fx.bob, ch, e, listOf(own), t0 + 5 + i))
+        }
+        repeat(50) { i ->
+            val own = msg(fx.alice, "flood $i", 10L + i)
+            f.add(own, state)
+            f.add(ChannelChat.delete(fx.alice, ch, e, listOf(own), t0 + 10 + i), state)
+        }
+        assertEquals(5, f.hides.size(ch))
+        assertFalse(f.isVisible(target.id, state), "the moderator's hide survived once judged")
+    }
+
     @Test
     fun renderableReactions() {
         assertTrue(ConcordChatRules.isRenderableReaction(""))
