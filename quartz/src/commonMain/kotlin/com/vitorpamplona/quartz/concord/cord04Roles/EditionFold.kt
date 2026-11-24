@@ -71,8 +71,9 @@ typealias AuthorRank = (author: String) -> Long
  * §Edition Hashing & Chain Integrity).
  *
  * Rules enforced here:
- *  - **Genesis anchoring** — a chain starts at an edition with no `ep` (prev hash),
- *    the highest-authority one first (by the walk's tie-break), then the lowest version.
+ *  - **Genesis anchoring** — a chain starts at a version-1 edition with no `ep` (prev hash),
+ *    the highest-authority one first, then the lower rumor id (the walk's tie-break). Versions
+ *    start at 1 and a `"0"` parses but never anchors a chain (CORD-04 §1), as in Armada's fold.
  *  - **Anti-rollback floor** — when the caller supplies an [EntityFloor] (an
  *    entity head it already folded), the walk is *anchored at that floor*: it must
  *    find the exact edition (version + hash) it already knew. If it cannot, the
@@ -168,22 +169,6 @@ object EditionFold {
      * lower rumor id. [foldEntityGated] replaces it with authority first (CORD-04 §1).
      */
     val BY_RUMOR_ID: Comparator<ControlEdition> = compareBy { it.rumorId }
-
-    /**
-     * [authority] first, then [BY_RUMOR_ID]: the tie [foldEntityGated] walks with, kept in two parts
-     * so the genesis pick can put the version between them.
-     */
-    private class AuthorityThenRumorId(
-        val authority: Comparator<ControlEdition>,
-    ) : Comparator<ControlEdition> {
-        override fun compare(
-            a: ControlEdition,
-            b: ControlEdition,
-        ): Int {
-            val byAuthority = authority.compare(a, b)
-            return if (byAuthority != 0) byAuthority else BY_RUMOR_ID.compare(a, b)
-        }
-    }
 
     /**
      * How far above the floor the compaction arm will follow an edition in one step.
@@ -370,30 +355,20 @@ object EditionFold {
                         return floor.known
                     }
             } else {
-                // Anchor at the genesis (an edition with no prev hash), chosen AUTHORITY first by
-                // [tie], then the lower version. Version first let anyone holding the bit mint a
-                // genesis below the real one (a `"0"` version parses, CORD-04 §1) and anchor the
-                // whole entity on their own chain, stranding the owner's. Among equal authority a
-                // version-0 genesis loses to one at 1 or above: "0" never anchors a chain over one.
-                // When no genesis is present — the compacted head of a Refounded community carries
-                // a prev citing the prior epoch — a fresh joiner anchors at the lowest-version
-                // edition it does hold and accepts it as the baseline (CORD-04 §1 / CORD-06 §3).
-                // `editions` is non-empty here.
-                // The rumor id must come last: it is unique, so a tie ending in it settles every
-                // pair before the version is compared. Authority is split out of the fold's own ties
-                // (the rumor id alone, [AuthorityThenRumorId]); a caller's comparator is taken whole.
-                val versionOrder = compareBy<ControlEdition> { it.version < 1 }.then(compareBy { it.version })
-                val genesisOrder =
-                    when {
-                        tie === BY_RUMOR_ID -> versionOrder.then(BY_RUMOR_ID)
-                        tie is AuthorityThenRumorId -> tie.authority.then(versionOrder).then(BY_RUMOR_ID)
-                        else -> tie.then(versionOrder)
-                    }
+                // Anchor at the genesis: a version-1 edition with no prev hash, chosen by [tie]
+                // (authority first, then the lower rumor id, CORD-04 §1). Versions start at 1, and
+                // a `"0"` parses but never anchors a chain, so a version-0 edition is never a
+                // genesis and never a baseline: it can't strand the owner's chain under one minted
+                // below it. An edition with no prev above version 1 is no genesis either (Armada's
+                // fold anchors only at 1). When no genesis is present — the compacted head of a
+                // Refounded community carries a prev citing the prior epoch — a fresh joiner
+                // anchors at the lowest-version edition it does hold, at 1 or above, and accepts it
+                // as the baseline (CORD-04 §1 / CORD-06 §3).
                 val byVersionThenTie = compareBy<ControlEdition> { it.version }.then(tie)
                 editions
-                    .filter { it.prevHash == null }
-                    .minWithOrNull(genesisOrder)
-                    ?: editions.minWithOrNull(byVersionThenTie)
+                    .filter { it.prevHash == null && it.version == 1L }
+                    .minWithOrNull(tie)
+                    ?: editions.filter { it.version >= 1 }.minWithOrNull(byVersionThenTie)
                     ?: return null
             }
 
@@ -481,7 +456,7 @@ object EditionFold {
         // admits (a rejected sibling ranks last, so it can never anchor the chain on authority it
         // does not hold), then the lower rumor id. Memoized: a gate decodes the content.
         val score = HashMap<String, Long>()
-        val tie = AuthorityThenRumorId(compareBy { e -> score.getOrPut(e.rumorId) { if (gate(e)) rank(e.author) else Long.MAX_VALUE } })
+        val tie = compareBy<ControlEdition> { e -> score.getOrPut(e.rumorId) { if (gate(e)) rank(e.author) else Long.MAX_VALUE } }.then(BY_RUMOR_ID)
         return pickHead(candidates(editions, floor, snapshot, onGap, tie), rank, gate)
     }
 
