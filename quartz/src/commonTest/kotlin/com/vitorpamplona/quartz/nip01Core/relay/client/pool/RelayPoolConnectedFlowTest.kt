@@ -101,4 +101,47 @@ class RelayPoolConnectedFlowTest {
         assertEquals(setOf(other), pool.availableRelays.value)
         assertEquals(setOf(url, other), second)
     }
+
+    // The pool swaps clients for one url: a sample drops the idle relay just as a publish wants
+    // it again, so a new client dials while the old one's close is still being reported. The
+    // old client's end used to take the url out of the set the new, connected client had just
+    // put it in, and a NIP-77 sync waiting for the relay to show as connected waited out its
+    // whole connect bound (60 s) on a relay that was up.
+    @Test
+    fun aReplacedClientsLateCloseLeavesItsSuccessorConnected() {
+        val sockets = FakeWebsocketBuilder()
+        val pool = RelayPool(sockets)
+        pool.getOrCreateRelay(url).connect()
+        val oldSession = sockets.lastListener
+        oldSession.onOpen(pingMillis = 10, compression = false)
+
+        pool.removeRelay(url)
+        val successor = pool.getOrCreateRelay(url)
+        successor.connect()
+        sockets.lastListener.onOpen(pingMillis = 10, compression = false)
+        assertEquals(setOf(url), pool.connectedRelays.value)
+
+        // The old socket reports its end only now.
+        oldSession.onClosed(1000, "removed from the pool")
+
+        assertTrue(successor.isConnected())
+        assertEquals(setOf(url), pool.connectedRelays.value, "the url's current client is connected")
+    }
+
+    // The mirror image: a replaced client that only now finishes its handshake is not the url's
+    // client, so it does not put the url in the set while its successor is still dialing.
+    @Test
+    fun aReplacedClientsLateOpenDoesNotMarkTheUrlConnected() {
+        val sockets = FakeWebsocketBuilder()
+        val pool = RelayPool(sockets)
+        pool.getOrCreateRelay(url).connect()
+        val oldSession = sockets.lastListener
+
+        pool.removeRelay(url)
+        pool.getOrCreateRelay(url).connect()
+
+        oldSession.onOpen(pingMillis = 10, compression = false)
+
+        assertEquals(emptySet(), pool.connectedRelays.value, "the url's current client is still dialing")
+    }
 }
