@@ -91,15 +91,15 @@ class ReqStatsRepositoryTest {
         for (i in 0 until 11) stats.add("sub-$i", 1)
         for (round in 0 until 3) for (i in 0 until 11) stats.add("sub-$i", 1)
         stats.add("new", 1)
-        assertTrue(
+        val kept =
             stats
                 .snapshot()
                 .keys
                 .map { it.first }
                 .toSet()
-                .size <= 11,
-        )
-        assertTrue("new" in stats.snapshot().keys.map { it.first })
+        // evicted down to the cap, and the newcomer is never its own eviction's victim
+        assertEquals(10, kept.size)
+        assertTrue("new" in kept)
     }
 
     @Test

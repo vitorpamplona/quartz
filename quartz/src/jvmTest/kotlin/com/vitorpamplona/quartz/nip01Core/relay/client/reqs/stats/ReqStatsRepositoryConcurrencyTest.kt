@@ -84,4 +84,40 @@ class ReqStatsRepositoryConcurrencyTest {
         // each kept subscription saw exactly one event
         assertEquals(subs.size, total)
     }
+
+    @Test
+    fun aHotSubscriptionKeepsExactCountsWhileEvictionChurnsAroundIt() {
+        // every thread hits one id (as every relay does for a REQ) and adds its kinds in a
+        // different order, while one-off ids keep eviction running
+        val stats = ReqStatsRepository(maxSubscriptions = 50)
+        val threads = 8
+        val perThread = 20_000
+        val start = CountDownLatch(1)
+        val workers =
+            (0 until threads).map { t ->
+                thread {
+                    start.await()
+                    for (i in 0 until perThread) {
+                        stats.add("hot", (i * 7 + t) % 11)
+                        stats.add("cold-$t-$i", 1)
+                    }
+                }
+            }
+        start.countDown()
+        workers.forEach { it.join() }
+
+        var hot = 0
+        val hotKinds = HashSet<Int>()
+        val seen = HashSet<String>()
+        stats.printCounter { subId, kind, counter ->
+            seen.add(subId)
+            if (subId == "hot") {
+                hot += counter
+                hotKinds.add(kind)
+            }
+        }
+        assertEquals(threads * perThread, hot)
+        assertEquals((0 until 11).toSet(), hotKinds)
+        assertTrue(seen.size in 50..55, "kept ${seen.size}")
+    }
 }

@@ -72,9 +72,11 @@ class ReqStatsRepository(
     private class SubCounts(
         val subscriptionId: String,
         lastSeen: Long,
+        firstKind: Int,
     ) {
+        /** Starts with the kind of the event that made it, so a new subscription locks only once. */
         @Volatile
-        var kinds: Array<KindCount> = NO_KINDS
+        var kinds: Array<KindCount> = arrayOf(KindCount(firstKind))
 
         /** The [epoch] of this subscription's latest event: higher is more recent. */
         @Volatile
@@ -104,9 +106,10 @@ class ReqStatsRepository(
         subscriptionId: String,
         eventKind: Int,
     ) {
-        val counts = bySubscription.get(subscriptionId) ?: track(subscriptionId)
+        val counts = bySubscription.get(subscriptionId) ?: track(subscriptionId, eventKind)
         val now = epoch
-        if (counts.lastSeen != now) counts.lastSeen = now
+        // Only forward: a thread that read an older epoch must not undo a newer stamp.
+        if (counts.lastSeen < now) counts.lastSeen = now
         val kinds = counts.kinds
         for (i in kinds.indices) {
             if (kinds[i].kind == eventKind) {
@@ -133,25 +136,36 @@ class ReqStatsRepository(
         counts.kinds = now + created
     }
 
-    /** The counts of a subscription seen for the first time; two threads seeing it at once share one. */
-    private fun track(subscriptionId: String): SubCounts =
+    /**
+     * The counts of a subscription seen for the first time; two threads seeing it at once share
+     * one. Room is made before it goes in, so the new subscription is never its own eviction's
+     * victim, and after an eviction the map holds exactly [maxSubscriptions].
+     */
+    private fun track(
+        subscriptionId: String,
+        firstKind: Int,
+    ): SubCounts =
         trackLock.withLock {
             bySubscription.get(subscriptionId)?.let { return it }
-            val created = SubCounts(subscriptionId, ++epoch)
+            if (tracked >= maxSubscriptions + slack) evictLeastRecent(keep = maxSubscriptions - 1)
+            val created = SubCounts(subscriptionId, ++epoch, firstKind)
             bySubscription.put(subscriptionId, created)
-            if (++tracked > maxSubscriptions + slack) evictLeastRecent()
+            tracked++
             created
         }
 
-    /** Drops the least recently active subscriptions down to [maxSubscriptions]. Under [trackLock]. */
-    private fun evictLeastRecent() {
+    /**
+     * Drops the least recently active subscriptions down to [keep]. Under [trackLock]. Among
+     * equally recent ones, the map's iteration order picks (key order on the JVM).
+     */
+    private fun evictLeastRecent(keep: Int) {
         if (stamps.size < tracked) stamps = LongArray(tracked + slack)
         val stamps = stamps
         var n = 0
         bySubscription.forEach { _, counts -> if (n < stamps.size) stamps[n++] = counts.lastSeen }
-        if (n <= maxSubscriptions) return
+        if (n <= keep) return
         stamps.sort(0, n)
-        val toEvict = n - maxSubscriptions
+        val toEvict = n - keep
         // Everything seen before the cutoff goes, then as many seen at it as still needed: many
         // subscriptions can share a stamp (all active since the last new one), and keeping every
         // tie would let the map grow past the cap.
@@ -185,7 +199,5 @@ class ReqStatsRepository(
     companion object {
         /** Subscriptions kept by default, the most recently active first. */
         const val DEFAULT_MAX_SUBSCRIPTIONS = 1_000
-
-        private val NO_KINDS = emptyArray<KindCount>()
     }
 }
