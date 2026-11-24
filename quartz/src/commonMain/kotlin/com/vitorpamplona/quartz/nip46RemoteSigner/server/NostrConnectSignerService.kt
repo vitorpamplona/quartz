@@ -283,6 +283,9 @@ class NostrConnectSignerService(
             while (true) {
                 val arrival = events.receive()
                 val event = arrival.event
+                // Every relay sends its own copy: an id already handled was verified then, so a copy
+                // (or a forgery carrying that id) is dropped before paying for a signature check.
+                if (event.id in seen) continue
                 // The signature first, before the id is remembered: a request is only the client's
                 // when its signature says so (a relay can re-send one with a fresh created_at, so a
                 // fresh id, and the old signature), and remembering an unverified copy's id would let
