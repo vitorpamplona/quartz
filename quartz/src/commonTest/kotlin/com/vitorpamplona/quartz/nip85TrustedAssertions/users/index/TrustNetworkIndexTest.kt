@@ -275,6 +275,39 @@ class TrustNetworkIndexTest {
         assertEquals(5000, update.newestCreatedAt)
     }
 
+    /**
+     * The catch-up's order: the new cards first, then the index, in columns sized once for both.
+     * The same network as seeding first, and no doubling on the way.
+     */
+    @Test
+    fun newCardsFirstThenTheIndexMergesTheSameInColumnsSizedOnce() {
+        val subjects = List(3000) { hex() }
+        val first = TrustNetworkBuilder(provider)
+        subjects.forEach { first.add(card(it, rank = 10, createdAt = 1000)) }
+        val (index, ids) = first.build()
+        val news = listOf(card(subjects[0], rank = 70, createdAt = 5000), deletion(5000, subjects[1]), card(hex(), rank = 3, createdAt = 5000))
+
+        val seededFirst = TrustNetworkBuilder(provider)
+        seededFirst.addAll(index, ids)
+        news.forEach { seededFirst.add(it) }
+        val (expected, expectedIds) = seededFirst.build()
+
+        val catchUp = TrustNetworkBuilder(provider)
+        news.forEach { catchUp.add(it) }
+        catchUp.ensureCapacity(catchUp.cardCount + index.size + ids.tombstones)
+        val sized = catchUp.capacity
+        catchUp.addAll(index, ids)
+        assertEquals(sized, catchUp.capacity, "the index fits without growing")
+        val (merged, mergedIds) = catchUp.build()
+
+        assertTrue(expected.keys.contentEquals(merged.keys))
+        assertTrue(expected.rank.contentEquals(merged.rank))
+        assertEquals(expectedIds.tombstones, mergedIds.tombstones)
+        assertEquals(70, merged.rankOf(subjects[0]))
+        assertNull(merged.rankOf(subjects[1]))
+        assertEquals(5000, catchUp.newestCreatedAt)
+    }
+
     @Test
     fun removeEventIdsDropsExactCards() {
         val a = hex()

@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.nip85TrustedAssertions.users.index
 
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropyLocalIndex
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.countQuantileCuts
 import com.vitorpamplona.quartz.nip01Core.relay.filters.Filter
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.utils.Hex
@@ -279,6 +280,14 @@ private class PackedIdsIndex(
             val i = (packed[start + k] and POSITION_MASK).toInt()
             if (i < ids.size) IdAndTime(ids.createdAt[i], ids.idHex(i)) else IdAndTime(ids.tombstoneCreatedAt[i - ids.size], ids.tombstoneIdHex(i - ids.size))
         }
+    }
+
+    override suspend fun cutsFor(
+        window: Filter,
+        pieces: Int,
+    ): List<Long>? {
+        val (start, end) = range(window)
+        return countQuantileCuts(end - start, pieces, window.since ?: 0L, window.until ?: Long.MAX_VALUE) { packed[start + it] ushr 21 }
     }
 
     /** [start, end) of the cards with created_at in [since, until], both inclusive. */
