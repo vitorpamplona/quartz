@@ -129,22 +129,44 @@ object Nip19Parser {
     /** The longest `nembed1…` (in chars) worth decoding: past this its gzip alone exceeds what we inflate. */
     const val MAX_NEMBED_CHARS = 256 * 1024
 
-    /** [entityAt] into [out], skipping an nembed past [MAX_NEMBEDS_PER_CONTENT] or [MAX_NEMBED_CHARS]. */
+    /**
+     * [entityAt] into [out], skipping an nembed past [MAX_NEMBED_CHARS] or once [inflates] (this
+     * content's count of nembeds handed to the gunzip, one slot) reaches [MAX_NEMBEDS_PER_CONTENT].
+     * Every attempt counts, not only those that produced an event: a refused bomb or a body that is
+     * not JSON costs the same gunzip as a good one.
+     */
     private fun addEntityAt(
         out: ArrayList<Entity>,
+        inflates: IntArray,
         lowerType: String,
         s: String,
         start: Int,
         end: Int,
     ) {
         if (lowerType == "nembed1") {
-            if (end - start > MAX_NEMBED_CHARS) return
-            var embeds = 0
-            for (i in out.indices) if (out[i] is NEmbed) embeds++
-            if (embeds >= MAX_NEMBEDS_PER_CONTENT) return
+            if (end - start > MAX_NEMBED_CHARS || inflates[0] >= MAX_NEMBEDS_PER_CONTENT) return
+            // A candidate whose checksum fails never reaches the gunzip, so it costs no attempt.
+            val bytes = Bech32.decodeBytesOrNull(s, "nembed", start, end) ?: return
+            inflates[0]++
+            nembedOf(bytes, s, start, end)?.let { out.add(it) }
+            return
         }
         entityAt(lowerType, s, start, end)?.let { out.add(it) }
     }
+
+    private fun nembedOf(
+        bytes: ByteArray,
+        s: String,
+        start: Int,
+        end: Int,
+    ): NEmbed? =
+        try {
+            NEmbed.parse(bytes)
+        } catch (e: Throwable) {
+            // an nembed's gzip or JSON
+            Log.d("NIP19 Parser") { "Issue trying to Decode NIP19 ${s.substring(start, end)}: ${e.message}" }
+            null
+        }
 
     /**
      * The entity spelled by `s[start, end)`, whose prefix is [lowerType] (lowercase, with its `1`),
@@ -406,8 +428,9 @@ object Nip19Parser {
         // assigned inside the inlined scan lambda, came back empty on Kotlin/Native (linuxX64)
         // while working on the JVM.
         val returningList = ArrayList<Entity>()
+        val inflates = IntArray(1)
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            addEntityAt(returningList, prefix, content, start, dataEnd)
+            addEntityAt(returningList, inflates, prefix, content, start, dataEnd)
         }
         return returningList.ifEmpty { emptyList() }
     }
@@ -419,9 +442,10 @@ object Nip19Parser {
      */
     fun parseAllStandalone(content: String): List<Entity> {
         val returningList = ArrayList<Entity>()
+        val inflates = IntArray(1)
         forEachNip19Match(content, FIXED_58_PREFIXES, VARIABLE_PREFIXES, standaloneOnly = true) { prefix, start, dataEnd, end ->
             if (!isDomainLabelAt(content, dataEnd, end)) {
-                addEntityAt(returningList, prefix, content, start, dataEnd)
+                addEntityAt(returningList, inflates, prefix, content, start, dataEnd)
             }
         }
         return returningList.ifEmpty { emptyList() }
@@ -430,8 +454,9 @@ object Nip19Parser {
     /** Same scan as [parseAll], restricted to the event-ish entities. */
     fun parseAllEvents(content: String): List<Entity> {
         val returningList = ArrayList<Entity>()
+        val inflates = IntArray(1)
         forEachNip19Match(content, EVENT_FIXED_58_PREFIXES, EVENT_VARIABLE_PREFIXES) { prefix, start, dataEnd, _ ->
-            addEntityAt(returningList, prefix, content, start, dataEnd)
+            addEntityAt(returningList, inflates, prefix, content, start, dataEnd)
         }
         return returningList.ifEmpty { emptyList() }
     }
