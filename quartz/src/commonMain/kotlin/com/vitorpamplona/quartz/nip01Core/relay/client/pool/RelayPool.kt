@@ -159,6 +159,15 @@ class RelayPool(
         return down
     }
 
+    /** The relays in the pool with no connection open nor being opened: those waiting out a backoff. */
+    internal fun relaysWaitingToRedial(): List<IRelayClient> {
+        val down = ArrayList<IRelayClient>()
+        relays.forEach { _, relay ->
+            if (!relay.isConnected() && !(relay is BasicRelayClient && relay.isConnectionStarted())) down.add(relay)
+        }
+        return down
+    }
+
     fun connectIfDisconnected() {
         relays.forEach { url, relay ->
             relay.connectAndSyncFiltersIfDisconnected()

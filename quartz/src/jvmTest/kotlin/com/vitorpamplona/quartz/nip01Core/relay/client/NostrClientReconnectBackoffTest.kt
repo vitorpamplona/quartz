@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocket
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebSocketListener
 import com.vitorpamplona.quartz.nip01Core.relay.sockets.WebsocketBuilder
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
+import com.vitorpamplona.quartz.utils.cache.LargeCache
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
@@ -36,6 +37,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
+import java.net.UnknownHostException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -55,8 +57,11 @@ class NostrClientReconnectBackoffTest {
 
     /** Each socket it builds, with what was sent on it. [failOnConnect] makes every dial fail at once. */
     private class RecordingBuilder(
-        val failOnConnect: Boolean = false,
+        failOnConnect: Boolean = false,
     ) : WebsocketBuilder {
+        /** What every dial fails with, or null for dials that stay open. */
+        @Volatile var failure: Throwable? = if (failOnConnect) IOException("Connection refused") else null
+
         val sent = mutableListOf<MutableList<String>>()
         var builds = 0
         lateinit var lastListener: WebSocketListener
@@ -76,7 +81,7 @@ class NostrClientReconnectBackoffTest {
                 override fun needsReconnect() = false
 
                 override fun connect() {
-                    if (failOnConnect) out.onFailure(IOException("Connection refused"), null, null)
+                    failure?.let { out.onFailure(it, null, null) }
                 }
 
                 override fun disconnect() {}
@@ -139,6 +144,75 @@ class NostrClientReconnectBackoffTest {
                 client.close()
             }
         }
+
+    @Test
+    fun aFullReconnectIgnoringRetryDelaysRedialsARelayInBackoff() =
+        runTest {
+            // A relay that failed DNS waits five minutes; a network change makes that wait moot.
+            val builder = RecordingBuilder()
+            builder.failure = UnknownHostException("Unable to resolve host \"audit.example.com\"")
+            val client = NostrClient(builder, this)
+            try {
+                settle()
+                client.subscribe("feed", mapOf(url to listOf(Filter(kinds = listOf(1)))))
+                runCurrent()
+                assertEquals(1, builder.builds, "the subscription dials once, and the dial fails")
+                // The new network is up.
+                builder.failure = null
+                client.reconnect(onlyIfChanged = false, ignoreRetryDelays = true)
+                settle()
+                assertEquals(2, builder.builds, "a full reconnect ignoring retry delays redials the relay")
+            } finally {
+                client.close()
+            }
+        }
+
+    @Test
+    fun aFullReconnectThatKeepsRetryDelaysLeavesARelayInBackoffAlone() =
+        runTest {
+            val builder = RecordingBuilder()
+            builder.failure = UnknownHostException("Unable to resolve host \"audit.example.com\"")
+            val client = NostrClient(builder, this)
+            try {
+                settle()
+                client.subscribe("feed", mapOf(url to listOf(Filter(kinds = listOf(1)))))
+                runCurrent()
+                assertEquals(1, builder.builds)
+                builder.failure = null
+                client.reconnect(onlyIfChanged = false, ignoreRetryDelays = false)
+                settle()
+                assertEquals(1, builder.builds, "a relay that never connected keeps its backoff")
+            } finally {
+                client.close()
+            }
+        }
+
+    @Test
+    fun aForegroundDoesNotScheduleARetryForARelayStillDialing() =
+        runTest {
+            // A dial that has not opened yet: connect() must not queue a retry for it, one
+            // coroutine per wanted relay on every foreground.
+            val builder = RecordingBuilder()
+            val client = NostrClient(builder, this)
+            try {
+                settle()
+                client.subscribe("feed", mapOf(url to listOf(Filter(kinds = listOf(1)))))
+                runCurrent()
+                assertEquals(1, builder.builds, "the subscription starts a dial")
+                client.connect()
+                runCurrent()
+                assertEquals(0, pendingRetries(client), "no retry is scheduled for a relay still dialing")
+                assertEquals(1, builder.builds)
+            } finally {
+                client.close()
+            }
+        }
+
+    /** The retries [NostrClient] has scheduled for when a relay's backoff ends. */
+    private fun pendingRetries(client: NostrClient): Int {
+        val field = NostrClient::class.java.getDeclaredField("backoffRetries").apply { isAccessible = true }
+        return (field.get(client) as LargeCache<*, *>).size()
+    }
 
     private class NoOpListener : RelayConnectionListener
 
