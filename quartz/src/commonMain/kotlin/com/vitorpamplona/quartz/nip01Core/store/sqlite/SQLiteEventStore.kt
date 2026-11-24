@@ -43,7 +43,10 @@ import com.vitorpamplona.quartz.nip40Expiration.isExpired
 import com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions
 import com.vitorpamplona.quartz.nip65RelayList.AdvertisedRelayListEvent
 import com.vitorpamplona.quartz.nip77Negentropy.LiveNegentropyIndex
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -923,7 +926,16 @@ class SQLiteEventStore(
         if (fullSet && isKnownOverCap(maxEntries)) return null
         val generation = removalGeneration
         val storage = PrefixSumStorageVector()
-        val rows = pool.useReader { queryBuilder.snapshotIdsForNegentropy(filters.strippingSearchExtensions(), it, maxEntries) { createdAt, id -> storage.insert(createdAt, id) } }
+        // Nothing on this path suspends, so a build whose session ended would read every row.
+        val job = currentCoroutineContext()[Job]
+        var seen = 0
+        val rows =
+            pool.useReader {
+                queryBuilder.snapshotIdsForNegentropy(filters.strippingSearchExtensions(), it, maxEntries) { createdAt, id ->
+                    if (seen++ % IEventStore.NEGENTROPY_PROGRESS_EVERY == 0) job?.ensureActive()
+                    storage.insert(createdAt, id)
+                }
+            }
         if (rows > maxEntries) {
             if (fullSet) overCap = OverCap(generation, maxEntries)
             return null
@@ -971,6 +983,8 @@ class SQLiteEventStore(
         index: LiveNegentropyIndex,
         maxEntries: Int,
     ) {
+        // The scan never suspends: it checks its coroutine as it goes, so a cancelled NEG-OPEN stops it.
+        val job = currentCoroutineContext()[Job]
         val generation =
             pool.useWriter {
                 rebuildLog = ArrayList()
@@ -979,7 +993,8 @@ class SQLiteEventStore(
             }
         try {
             liveIndexScans++
-            val scan = pool.useReader { db -> queryBuilder.snapshotIdsForNegentropy(listOf(Filter()), db, maxEntries) }
+            job?.ensureActive()
+            val scan = pool.useReader { db -> queryBuilder.snapshotIdsForNegentropy(listOf(Filter()), db, maxEntries) { job?.ensureActive() } }
             pool.useWriter {
                 val log = rebuildLog
                 rebuildLog = null
