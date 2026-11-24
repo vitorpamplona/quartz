@@ -117,7 +117,7 @@ class NostrSignerRemote(
      * `get_public_key` round-trip.
      */
     fun bindUserPubkey(userPubkey: HexKey) {
-        resolvedUserPubkey = userPubkey
+        resolvedUserPubkey = userPubkey.lowercase()
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())

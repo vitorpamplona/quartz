@@ -38,6 +38,11 @@ class SignResponse {
          * those fields. A valid signature alone only proves the bunker signed *something*: a buggy
          * bunker (or a replayed response) could hand back a different event, or one under another
          * key, and the caller would publish it as asked.
+         *
+         * The binding is exact: a bunker that adds or changes tags, or moves `created_at`, before
+         * signing (some NDK-based ones do) answers with another event, and this refuses it
+         * ([SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent]). [pubKey] is
+         * compared ignoring case.
          */
         fun parse(
             response: BunkerResponse,
@@ -50,7 +55,7 @@ class SignResponse {
             // different event by design (NIP-57 Appendix), so there is nothing to bind it to.
             if (template.kind == ZapRequestEvent.KIND && template.tags.any(AnonTag::isUnsignedPrivate)) return result
             val event = result.result.event
-            if (pubKey != null && event.pubKey != pubKey) return SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent(event)
+            if (pubKey != null && !event.pubKey.equals(pubKey, ignoreCase = true)) return SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent(event)
             val expectedId = EventHasher.hashId(event.pubKey, template.createdAt, template.kind, template.tags, template.content)
             return if (event.id == expectedId) {
                 result
