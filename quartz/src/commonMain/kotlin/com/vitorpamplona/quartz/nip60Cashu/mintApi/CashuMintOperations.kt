@@ -28,7 +28,9 @@ import com.vitorpamplona.quartz.nip60Cashu.p2pk.signP2pkWitnesses
 import com.vitorpamplona.quartz.nip60Cashu.seed.CashuDeterministic
 import com.vitorpamplona.quartz.nip60Cashu.token.CashuProof
 import com.vitorpamplona.quartz.nip60Cashu.token.TokenContent
+import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.runCatchingCancellable
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * High-level mint operations: mint-from-LN, swap, melt-to-LN, send-as-token,
@@ -147,7 +149,9 @@ class CashuMintOperations(
         // 0-fee keyset against a mint whose active keyset charges a fee
         // (e.g. mint.coinos.io) reserves a fee the mint doesn't take and
         // the mint rejects the swap as "inputs/outputs not balanced".
-        val feeAtoms = computeInputFee(proofs, fetchInputFeePpkByKeyset())
+        // The same list resolves any NUT-00 short keyset id to the full id
+        // the mint knows — see [priceInputs].
+        val (inputs, feeAtoms) = priceInputs(proofs)
         val outputTotal = total - feeAtoms
         if (targetSplit != null && targetSplit > outputTotal) {
             throw IllegalArgumentException("Target split $targetSplit exceeds outputs after fee ($outputTotal)")
@@ -176,7 +180,7 @@ class CashuMintOperations(
         val response =
             client.swap(
                 SwapRequestDto(
-                    inputs = proofs.map { it.toDto() },
+                    inputs = inputs.map { it.toDto() },
                     outputs = allOutputs.map { it.toDto() },
                 ),
             )
@@ -265,7 +269,7 @@ class CashuMintOperations(
         // NUT-02: reserve per-input fees (priced per each input proof's own
         // keyset — see [swap]); change shrinks by the fee, send amount stays
         // whole (the recipient gets exactly targetSplit sats).
-        val feeAtoms = computeInputFee(proofs, fetchInputFeePpkByKeyset())
+        val (inputs, feeAtoms) = priceInputs(proofs)
         val keepAmount = total - targetSplit - feeAtoms
         if (keepAmount < 0L) {
             throw IllegalArgumentException("Inputs $total don't cover send $targetSplit + fee $feeAtoms")
@@ -282,7 +286,7 @@ class CashuMintOperations(
         val response =
             client.swap(
                 SwapRequestDto(
-                    inputs = proofs.map { it.toDto() },
+                    inputs = inputs.map { it.toDto() },
                     outputs = allOutputs.map { it.toDto() },
                 ),
             )
@@ -334,19 +338,19 @@ class CashuMintOperations(
      * invoice / target amount so the subsequent [meltProofs] or [swap] isn't
      * left short by the fee.
      */
-    suspend fun inputFeeFor(proofs: List<CashuProof>): Long = computeInputFee(proofs, fetchInputFeePpkByKeyset())
+    suspend fun inputFeeFor(proofs: List<CashuProof>): Long = priceInputs(proofs).fee
 
     /**
      * Pay the bolt11 invoice. Spends [inputs], which must total at least
-     * `quote.amount + quote.fee_reserve`. Any change is returned blinded so the
-     * mint signs unused fee proofs that the wallet can later spend.
+     * `quote.amount + quote.fee_reserve` plus the NUT-02 input fee. The fees the mint doesn't
+     * spend come back as fresh proofs — see [unblindMeltChange].
      */
     suspend fun meltProofs(
         quote: MeltQuoteBolt11ResponseDto,
         inputs: List<CashuProof>,
         /**
-         * NUT-08: whether to send blinded change outputs so the mint can
-         * return the unused portion of the fee_reserve as fresh proofs.
+         * NUT-08: whether to send the blank outputs the mint imprints its
+         * refund of the unspent fees into, returned here as fresh proofs.
          * The NIP-60 wallet keeps this on (default) and rolls the change
          * into a new kind:7375. A one-shot redemption with nowhere to store
          * proofs (e.g. melting a received token straight to a Lightning
@@ -356,28 +360,36 @@ class CashuMintOperations(
     ): MeltResult {
         val total = inputs.sumOf { it.amount }
         val keyset = fetchKeyset()
+        val (meltInputs, inputFee) = priceInputs(inputs)
         // NUT-02 input fee — separate from quote.feeReserve, which is the
         // upper bound on LN routing fees. The mint subtracts both from
         // inputs before paying the invoice; we must reserve both. Fees are
         // priced per each input proof's own keyset (which may be an
         // inactive, rotated-out keyset — see [swap]), so read them from
         // /v1/keysets rather than the active output keyset.
-        val inputFee = computeInputFee(inputs, fetchInputFeePpkByKeyset())
         val required = quote.amount + quote.feeReserve + inputFee
         if (total < required) throw IllegalArgumentException("Inputs total $total < required $required")
 
-        // Pre-blind change outputs at the fee_reserve denominations so the
-        // mint can return whatever LN fees were not consumed. Upper bound
-        // excludes the (already-paid) NUT-02 input fee.
+        // NUT-08: blank outputs for the fees the mint doesn't spend. It splits the refund into
+        // power-of-two denominations, imprints one into each LEADING output and keeps what
+        // doesn't fit, so the count matters. At most `total - quote.amount - inputFee` comes
+        // back — the fee reserve plus anything the inputs hold beyond it — and sizing for that
+        // maximum covers NUT-08's own `max(ceil(log2(fee_reserve)), 1)`, which the check above
+        // guarantees to be no larger. The outputs are blank (`amount: 0`): the mint sets the
+        // value, so the denominations are never ours to choose.
         val changeAmount = total - quote.amount - inputFee
         val changeOutputs =
-            if (requestChange && changeAmount > 0) secretOutputsFor(splitAmounts(changeAmount), keyset) else emptyList()
+            if (requestChange && changeAmount > 0) {
+                secretOutputsFor(List(blankOutputsFor(changeAmount)) { 0L }, keyset)
+            } else {
+                emptyList()
+            }
 
         val response =
             client.meltBolt11(
                 MeltBolt11RequestDto(
                     quote = quote.quote,
-                    inputs = inputs.map { it.toDto() },
+                    inputs = meltInputs.map { it.toDto() },
                     outputs = changeOutputs.map { it.toDto() }.ifEmpty { null },
                 ),
             )
@@ -387,26 +399,152 @@ class CashuMintOperations(
             throw MintProtocolException("Melt not completed (state=${response.state})")
         }
 
-        // Unblind any change the mint returned. The mint can return *fewer*
-        // change signatures than we provided outputs for (only the actually-
-        // unused fee gets signed) — we match by output amount.
+        // The invoice is paid from here on: nothing below may throw its way out, or the caller
+        // would report an unpaid invoice for proofs the mint has already spent.
         val changeProofs =
-            response.change?.let { sigs ->
-                val byAmount = changeOutputs.associateBy { it.amount }.toMutableMap()
-                val out = mutableListOf<CashuProof>()
-                for (sig in sigs) {
-                    val src =
-                        byAmount.remove(sig.amount)
-                            ?: throw IllegalStateException("Mint returned change for amount ${sig.amount} we didn't request")
-                    out += unblindOne(src, sig, keyset)
-                }
-                out
-            } ?: emptyList()
+            response.change?.let { sigs -> unblindMeltChange(changeOutputs, sigs, keyset) } ?: emptyList()
 
         return MeltResult(
             preimage = response.payment_preimage,
             changeProofs = changeProofs,
             keysetId = keyset.id,
+        )
+    }
+
+    /**
+     * Unblind the mint's NUT-08 refund of the fees it didn't spend.
+     *
+     * The mint splits the refund into power-of-two denominations of its own choosing, imprints
+     * them into the LEADING blank outputs we sent, and returns those signatures in output order,
+     * omitting the rest. So a signature belongs to the output at its position — never to the
+     * first output whose amount it echoes, which is what an earlier version did: with outputs
+     * then valued `[1, 8, 16]` and a 17-sat refund imprinted as `[16, 1]`, it paired the 16-sat
+     * signature with the 16-sat output and unblinded it with the wrong r — silently, into a
+     * proof the mint rejects at spend time.
+     *
+     * A NUT-12 DLEQ proof binds a signature to the exact blinded message, so it decides first
+     * whenever the mint emits one; that is also what keeps a mint answering out of order from
+     * mis-pairing. Each signature is unblinded with the keyset it names, as NUT-08 requires;
+     * NUT-02 binds the mint to the outputs' keyset, so that is a second request only when the
+     * mint substituted another.
+     *
+     * The melt has already paid, so a signature that can't be paired or unblinded is dropped
+     * with a log line rather than thrown: the throw this replaces reported an unpaid invoice
+     * for proofs the mint had spent, and discarded a refund that was still recoverable.
+     */
+    private suspend fun unblindMeltChange(
+        outputs: List<BlindOutput>,
+        signatures: List<BlindSignatureDto>,
+        keyset: KeysetDto,
+    ): List<CashuProof> {
+        val keysetsById = HashMap<String, KeysetDto>().apply { put(keyset.id, keyset) }
+        val taken = BooleanArray(outputs.size)
+        val out = ArrayList<CashuProof>(signatures.size)
+        signatures.forEachIndexed { position, sig ->
+            try {
+                // The outputs' keyset is the spec case; another one is one /v1/keys/{id} round trip.
+                val sigKeyset = keysetsById[sig.id] ?: fetchKeysetById(sig.id).also { keysetsById[sig.id] = it }
+                val index = changeOutputIndex(outputs, taken, position, sig, sigKeyset)
+                if (index < 0) {
+                    Log.w(TAG) { "Melt change: no output left for signature $position of ${signatures.size} (amount ${sig.amount}), dropping it" }
+                    return@forEachIndexed
+                }
+                taken[index] = true
+                out += unblindChangeOne(outputs[index], sig, sigKeyset)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Melt change: dropping signature $position of ${signatures.size} (amount ${sig.amount}, keyset ${sig.id})", e)
+            }
+        }
+        return out
+    }
+
+    /**
+     * The output a melt-change [sig] at [position] pairs with, or -1 when none is left. Its
+     * DLEQ proof names the blinded message when the mint emits one; otherwise NUT-08's order
+     * applies, and the output at [position] may already be taken by a signature that DLEQ
+     * paired elsewhere.
+     */
+    private fun changeOutputIndex(
+        outputs: List<BlindOutput>,
+        taken: BooleanArray,
+        position: Int,
+        sig: BlindSignatureDto,
+        keyset: KeysetDto,
+    ): Int {
+        val dleq = sig.dleq
+        if (dleq != null) {
+            val mintPubKey = keyset.keys[sig.amount.toString()]?.hexToByteArray()
+            if (mintPubKey != null) {
+                val cTick = sig.cTick.hexToByteArray()
+                outputs.indices
+                    .firstOrNull { index ->
+                        !taken[index] &&
+                            Bdhke.verifyDleq(
+                                e = dleq.e.hexToByteArray(),
+                                s = dleq.s.hexToByteArray(),
+                                blindedMessage = outputs[index].bTick,
+                                blindSignature = cTick,
+                                mintPubKey = mintPubKey,
+                            )
+                    }?.let { return it }
+            }
+        }
+        return if (position < outputs.size && !taken[position]) position else -1
+    }
+
+    /**
+     * Unblind one melt-change pair. Unlike [unblindOne] this takes the denomination from the
+     * signature — the mint imprinted it into a blank output — and files the proof under the
+     * keyset the signature names, so the key that unblinds it is always the right one.
+     */
+    private fun unblindChangeOne(
+        output: BlindOutput,
+        signature: BlindSignatureDto,
+        keyset: KeysetDto,
+    ): CashuProof {
+        val amount = signature.amount
+        val mintPubKeyHex =
+            keyset.keys[amount.toString()]
+                ?: throw IllegalStateException("Mint keyset has no key for amount $amount")
+        val mintPubKey = mintPubKeyHex.hexToByteArray()
+        val cTickBytes = signature.cTick.hexToByteArray()
+
+        // NUT-12 DLEQ verification — same contract as [unblindOne]: a
+        // present proof must verify before the proof is trusted.
+        signature.dleq?.let { dleq ->
+            val ok =
+                Bdhke.verifyDleq(
+                    e = dleq.e.hexToByteArray(),
+                    s = dleq.s.hexToByteArray(),
+                    blindedMessage = output.bTick,
+                    blindSignature = cTickBytes,
+                    mintPubKey = mintPubKey,
+                )
+            if (!ok) {
+                throw MintProtocolException(
+                    "NUT-12 DLEQ verification failed for amount $amount — mint signature does not match its published keyset key",
+                )
+            }
+        }
+
+        val c =
+            Bdhke.unblind(
+                blindSignature = cTickBytes,
+                r = output.r,
+                mintPubKey = mintPubKey,
+            )
+        val dleq =
+            signature.dleq?.let { src ->
+                DleqProofDto(e = src.e, s = src.s, r = output.r.toHexKey())
+            }
+        return CashuProof(
+            id = signature.id,
+            amount = amount,
+            secret = output.secretHex,
+            c = c.toHexKey(),
+            dleq = dleq,
         )
     }
 
@@ -648,11 +786,13 @@ class CashuMintOperations(
         // Fetch all keysets the mint exposes so cross-keyset tokens
         // verify against the right amount key. Cheap — one round-trip.
         val allKeysets = client.activeKeysets().keysets.associateBy { it.id }
+        // NUT-00: resolve a short keyset id first — looked up as it came, it
+        // would miss and the proof would skip verification unnoticed.
         return proofs.filter { proof ->
             val dleq = proof.dleq ?: return@filter false
             val r = dleq.r ?: return@filter false
             val keyset =
-                allKeysets[proof.id]
+                allKeysets[fullKeysetId(proof.id, allKeysets.keys)]
                     // Mint that issued the proof may have rotated keysets
                     // since — without the original keyset's keys we can't
                     // verify offline. Fall through to spend-time check.
@@ -725,17 +865,76 @@ class CashuMintOperations(
             ?: throw IllegalStateException("Mint exposes no keysets")
     }
 
+    /** A proof set under the keyset ids the mint's input endpoints take, and the NUT-02 fee it pays. */
+    private data class PricedInputs(
+        val proofs: List<CashuProof>,
+        val fee: Long,
+    )
+
     /**
-     * NUT-02 per-keyset input fees from /v1/keysets. Unlike /v1/keys
-     * (active keysets only), /v1/keysets lists EVERY keyset the mint has
-     * ever published — active and inactive — each with its own
-     * `input_fee_ppk`. That distinction matters: input proofs are
-     * frequently minted under a keyset the mint has since rotated out,
-     * and the fee charged on a spend follows the proof's own keyset, not
-     * whatever keyset is active now. Maps keyset id → input_fee_ppk
-     * (absent / null → 0).
+     * [proofs] with every NUT-00 short keyset id resolved to its full id and priced for the
+     * NUT-02 input fee, from a single `/v1/keysets` fetch. Fees are charged per the keyset of
+     * EACH input proof — which may be an inactive, rotated-out keyset whose fee differs from the
+     * active one — so they are read from `/v1/keysets`, which lists every keyset, not from
+     * `/v1/keys`. Resolving first matters: a proof under a short id would otherwise be priced
+     * as a keyset the list doesn't know, at no fee.
+     *
+     * @throws AmbiguousKeysetIdException when a short id prefixes several of the mint's keysets.
      */
-    private suspend fun fetchInputFeePpkByKeyset(): Map<String, Long> = client.keysets().keysets.associate { it.id to (it.inputFeePpk ?: 0L) }
+    private suspend fun priceInputs(proofs: List<CashuProof>): PricedInputs {
+        val keysets = fetchKeysetList()
+        val resolved = resolveKeysetIds(proofs, keysets.map { it.id })
+        return PricedInputs(resolved, computeInputFee(resolved, feePpkByKeyset(keysets)))
+    }
+
+    /** The mint's keyset list, exactly as `/v1/keysets` serves it. */
+    private suspend fun fetchKeysetList(): List<KeysetSummaryDto> = client.keysets().keysets
+
+    private fun feePpkByKeyset(keysets: List<KeysetSummaryDto>): Map<String, Long> = keysets.associate { it.id to (it.inputFeePpk ?: 0L) }
+
+    /**
+     * NUT-00: [proofs] under their full keyset ids.
+     *
+     * A v4 token may name a keyset by its short id, the first 8 bytes of the 33-byte id —
+     * `01fc0ec0e59cd6fa` for `01fc0ec0e59cd6fa01b7…a821` — and the wallet MUST resolve it before
+     * processing the proofs: the mint never sees the short form, and every endpoint takes the
+     * full id. It is resolved by prefix against [keysetIds], the ids the mint publishes, which
+     * every caller here already holds for fee pricing or key lookup. An id the list doesn't
+     * extend — a keyset the mint no longer lists, or not a short id at all — is left as it came,
+     * for the mint to refuse with its own error.
+     *
+     * @throws AmbiguousKeysetIdException when a short id prefixes more than one keyset. NUT-00
+     * requires the wallet to fail rather than guess.
+     */
+    private fun resolveKeysetIds(
+        proofs: List<CashuProof>,
+        keysetIds: Collection<String>,
+    ): List<CashuProof> {
+        if (keysetIds.isEmpty()) return proofs
+        return proofs.map { proof ->
+            val fullId = fullKeysetId(proof.id, keysetIds)
+            if (fullId == proof.id) proof else proof.copy(id = fullId)
+        }
+    }
+
+    /**
+     * The full keyset id [id] stands for among [keysetIds]: itself when they list it; when it is
+     * a short id, the one keyset that extends it. A short id they don't extend stays as it came.
+     *
+     * @throws AmbiguousKeysetIdException when [id] is a short id prefixing several of them.
+     */
+    private fun fullKeysetId(
+        id: String,
+        keysetIds: Collection<String>,
+    ): String {
+        if (id in keysetIds || id.length != SHORT_KEYSET_ID_HEX_LENGTH) return id
+        val matches = keysetIds.filter { it.startsWith(id) }
+        return when (matches.size) {
+            0 -> id
+            1 -> matches.single()
+            else -> throw AmbiguousKeysetIdException(id, matches)
+        }
+    }
 
     private suspend fun createBlindedOutputs(
         amount: Long,
@@ -877,6 +1076,28 @@ class CashuMintOperations(
     }
 
     companion object {
+        private const val TAG = "CashuMintOperations"
+
+        /** NUT-00: a short keyset id is the first 8 bytes of the 33-byte id — 16 of its 66 hex characters. */
+        private const val SHORT_KEYSET_ID_HEX_LENGTH: Int = 16
+
+        /**
+         * NUT-08: how many blank melt outputs carry a refund of up to [amount] back in full.
+         *
+         * The mint splits a refund into power-of-two denominations and imprints one into each
+         * leading blank output, keeping what doesn't fit. `ceil(log2(amount))` outputs are enough
+         * for every split of any refund up to [amount], and one is enough for a refund of 1. That
+         * is the spec's `max(ceil(log2(fee_reserve)), 1)`, taken on the most the mint can return.
+         *
+         * `ceil(log2(amount))` is the bit length of `amount - 1`: no floating point, so it holds
+         * for amounts past 2^53.
+         */
+        internal fun blankOutputsFor(amount: Long): Int {
+            require(amount >= 0L) { "Amount must be non-negative" }
+            if (amount <= 1L) return amount.toInt()
+            return (amount - 1).toString(2).length
+        }
+
         /**
          * Upper bound on outputs per `/v1/restore` request body. The cashu
          * spec doesn't pin a value; nutshell + CDK + minibits all enforce
@@ -972,6 +1193,18 @@ class SwapFeeExceedsInputsException(
     val inputTotal: Long,
     val fee: Long,
 ) : IllegalArgumentException("Inputs $inputTotal don't cover NUT-02 fee $fee: nothing left to swap")
+
+/**
+ * A NUT-00 short keyset id that prefixes more than one of the mint's keysets ([candidates]), so
+ * the proofs under it can't be attributed to a single one. NUT-00 has the wallet fail rather
+ * than guess; the mint's keyset list decides, so retrying fails the same way until it changes.
+ *
+ * An [IllegalArgumentException], like the other "these inputs can't work" refusals of [CashuMintOperations.swap].
+ */
+class AmbiguousKeysetIdException(
+    val keysetId: String,
+    val candidates: List<String>,
+) : IllegalArgumentException("Short keyset id $keysetId matches ${candidates.size} of the mint's keysets, so it can't be resolved")
 
 data class SwapResult(
     val send: List<CashuProof>,

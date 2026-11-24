@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.utils.secp256k1.Secp256k1
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,12 +38,16 @@ class DleqFailuresTest {
     private val mintKey = Bdhke.randomScalar()
     private val mintPubHex = Secp256k1.pubKeyCompress(Secp256k1.pubkeyCreate(mintKey)).toHexKey()
 
-    private inner class KeysOnlyMint : MintHttpTransport {
+    /** Answers `/v1/keys` with every keyset it is given, all under [mintPubHex]. */
+    private inner class KeysOnlyMint(
+        vararg val keysets: String = arrayOf(keysetId),
+    ) : MintHttpTransport {
         var keyFetches = 0
 
         override suspend fun get(url: String): MintHttpResponse {
             keyFetches++
-            return MintHttpResponse(200, """{"keysets":[{"id":"$keysetId","unit":"sat","keys":{"2":"$mintPubHex"}}]}""")
+            val rows = keysets.joinToString(",") { """{"id":"$it","unit":"sat","keys":{"2":"$mintPubHex"}}""" }
+            return MintHttpResponse(200, """{"keysets":[$rows]}""")
         }
 
         override suspend fun postJson(
@@ -51,15 +56,45 @@ class DleqFailuresTest {
         ): MintHttpResponse = MintHttpResponse(404, "{}")
     }
 
-    /** A 2-sat proof the mint really signed, with a Carol DLEQ; [tamper] breaks its `e`. */
-    private fun proof(tamper: Boolean = false): CashuProof {
+    /** A 2-sat proof the mint really signed, with a Carol DLEQ; [tamper] breaks its `e`. Carried under [id]. */
+    private fun proof(
+        tamper: Boolean = false,
+        id: String = keysetId,
+    ): CashuProof {
         val secret = Bdhke.randomScalar().toHexKey()
         val r = Bdhke.randomScalar()
         val bPrime = Bdhke.blind(secret.encodeToByteArray(), r)
         val (cPrime, e, s) = Bdhke.signFull(bPrime, mintKey)
         val c = Bdhke.unblind(cPrime, r, mintPubHex.hexToByteArray())
         val eHex = if (tamper) Bdhke.randomScalar().toHexKey() else e.toHexKey()
-        return CashuProof(id = keysetId, amount = 2, secret = secret, c = c.toHexKey(), dleq = DleqProofDto(e = eHex, s = s.toHexKey(), r = r.toHexKey()))
+        return CashuProof(id = id, amount = 2, secret = secret, c = c.toHexKey(), dleq = DleqProofDto(e = eHex, s = s.toHexKey(), r = r.toHexKey()))
+    }
+
+    @Test
+    fun `a proof under a short keyset id is verified against the keyset it prefixes`() {
+        val fullId = "01fc0ec0e59cd6fa01b7a88f8cd77fce81fd1e64bca67d752e984992b7a3c3a821"
+        val mint = KeysOnlyMint(fullId)
+        // Looked up as it came, the short id would miss the keyset and skip verification.
+        val good = proof(id = fullId.take(16))
+        val bad = proof(tamper = true, id = fullId.take(16))
+
+        val failures = runBlocking { ops(mint).dleqFailures(listOf(good, bad)) }
+
+        assertEquals(listOf(bad.secret), failures.map { it.secret })
+        assertEquals(1, mint.keyFetches)
+    }
+
+    @Test
+    fun `an ambiguous short keyset id is refused, not guessed`() {
+        val prefix = "01fc0ec0e59cd6fa"
+        val mint = KeysOnlyMint("$prefix${"01".repeat(25)}", "$prefix${"ff".repeat(25)}")
+
+        val error =
+            assertThrows(AmbiguousKeysetIdException::class.java) {
+                runBlocking { ops(mint).dleqFailures(listOf(proof(id = prefix))) }
+            }
+
+        assertEquals(2, error.candidates.size)
     }
 
     private fun ops(mint: KeysOnlyMint) = CashuMintOperations(MintHttpClient("https://mint.example.com", transport = mint))
