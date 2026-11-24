@@ -181,6 +181,13 @@ mirror rebuilt from nothing) sends the relay its whole matched set as one `NEG-O
 index in `.withRelayCount(client, relay)` to split on the relay's NIP-45 `COUNT` as well, for one
 `COUNT` per window counted.
 
+Where it splits is the index's call too: an index that knows where its events are implements
+`cutsFor(window, pieces)` and the engine cuts at its count quantiles, so every piece holds about the
+same number of our events. Without it (`NegentropyLocalIndex.of(store)`), the engine cuts equal
+spans of time, which puts most pieces where nothing is when a set is dense (a NIP-85 provider's
+run, signed within a few seconds): each empty piece is still a `NEG-OPEN`. The in-memory indexes
+(`of(entries)`, `TrustNetworkIds.negentropyIndex()`) implement it.
+
 To keep a store in sync with relays (both directions, deletions, page fallback), use
 `NegentropyStoreSync(client, store, Config(...)).sync(filtersByRelay)` or `.syncGroup(relay,
 filter)` instead of composing the above. For pushing a store upstream: `shareSnapshots` takes

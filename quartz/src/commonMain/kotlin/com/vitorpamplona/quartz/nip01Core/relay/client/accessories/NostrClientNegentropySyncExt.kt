@@ -941,6 +941,33 @@ internal suspend fun reconcileWindows(
         }
     }
 
+    /**
+     * Cuts `[lo, hi]` after each of [cuts] (ascending seconds inside it, from
+     * [NegentropyLocalIndex.cutsFor]) and queues the pieces. Ignores cuts outside the window, so a
+     * misbehaving index can only cost windows, never lose one or loop on it.
+     */
+    suspend fun splitAt(
+        pendingWindow: Filter,
+        lo: Long,
+        hi: Long,
+        cuts: List<Long>,
+    ) {
+        val inside = ArrayList<Long>(cuts.size)
+        for (cut in cuts) if (cut >= lo && cut < hi && (inside.isEmpty() || cut > inside.last())) inside.add(cut)
+        if (inside.isEmpty()) {
+            splitInto(pendingWindow, lo, hi)
+            return
+        }
+        remaining.addAndFetch(inside.size)
+        var start = lo
+        for (cut in inside) {
+            pending.send(pendingWindow.copy(since = start, until = cut))
+            start = cut + 1
+        }
+        // The top piece keeps this window's own `until`, as in [splitInto].
+        pending.send(pendingWindow.copy(since = start, until = pendingWindow.until))
+    }
+
     val reconcilers =
         List(reconcileConcurrency.coerceAtLeast(1)) { reconcilerIndex ->
             launch {
@@ -966,8 +993,20 @@ internal suspend fun reconcileWindows(
                             // Long arithmetic: `mine` can be near Int.MAX on a
                             // corpus this size, and the +ceiling would wrap.
                             val over = (mine.toLong() + ceiling - 1) / ceiling
-                            splitInto(window, lo, hi, pieces = over.coerceAtMost(MAX_SPLIT_FANOUT.toLong()).toInt())
-                            continue
+                            val pieces = over.coerceAtMost(MAX_SPLIT_FANOUT.toLong()).toInt()
+                            // Where our events are, when the index can say: equal spans of
+                            // time leave most pieces empty here, and each is still a NEG-OPEN.
+                            val cuts = local.cutsFor(window, pieces)
+                            if (cuts == null) {
+                                splitInto(window, lo, hi, pieces)
+                                continue
+                            }
+                            if (cuts.isNotEmpty()) {
+                                splitAt(window, lo, hi, cuts)
+                                continue
+                            }
+                            // Our side sits in one second: send it whole, the relay's refusal
+                            // still splits it.
                         }
                     }
 

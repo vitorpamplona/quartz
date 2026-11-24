@@ -109,6 +109,13 @@ NIP-09 kind 5 `a`-tagging `30382:<provider>:<subject>` (`GrapeRankPublisher` in
 `reconcileTrustNetwork` (`TrustNetworkSync.kt`) fetch it; `TrustNetworkBuilder` applies
 supersession, rank-0/kind-5 removal and tombstones; `TrustNetworkCodec` persists it.
 
+The hourly catch-up, `catchUpTrustNetwork`, is one paged REQ for the cards and kind 5s newer than
+the header's `syncCursor` (every card held is at or before it): no COUNT, no negentropy, however
+often the provider signs. It reads the id column only when the REQ brought something, and returns
+null when nothing was published. The weekly `reconcileTrustNetwork` catches what a REQ past the
+cursor cannot see: the rest of a run still reaching the relay at the cursor's own second, a card
+the relay dropped, the tail of a second denser than the relay's page.
+
 ## Stability (2026-10)
 
 - Settled: the kind map, the 10040 entry shape, `rank` / `followers` / `hops` on 30382,

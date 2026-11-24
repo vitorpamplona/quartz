@@ -150,14 +150,18 @@ internal changes or additive overloads that keep the old signatures (see AGENTS.
      - count bytes for `RelayStats` once in `BasicRelayClient` instead of through a listener.
 3. **Fixed: `RelayLogger` built its tag on every frame with logging off.** *Measured* through the
    listener: 176 → 0 B per EVENT frame. The tag is built only where a line is written.
-4. **Fixed: `RelayReqStats` boxed, allocated a lambda and leaked per EVENT.** *Measured*: 40 → 0 B
+4. **Fixed: `RelayReqStats` boxed and allocated a lambda per EVENT.** *Measured*: 40 → 0 B
    per frame on HotSpot, which had already scalarized part of it.
    - The empty `super.onIncomingMessage` call, which made the override a state machine, is gone.
    - `ReqStatsRepository` keys by the frame's subscription id with a per-kind atomic count, so
      two subscriptions no longer share a hashed counter. A REQ shares one id across every relay,
      so the hot path takes no lock; only a new subscription or kind does.
-   - It keeps at most 1,000 subscriptions; past that, the one with the fewest events goes, so
-     long-lived feeds outlast one-off fetches.
+   - It keeps the 1,000 most recently active subscriptions, which is LRU-like and concurrent.
+     - Recency is an epoch that advances per new subscription, copied into each subscription
+       by its events (written only when it changed), so the hot path shares no counter.
+     - Past the cap plus 10%, one sort drops the least recently active back to 1,000.
+     - Cost: 0 B per frame while fewer than 1,000 subscriptions are active. With 2,000 active
+       round-robin (the worst case for any LRU), each frame re-tracks an evicted one: 195 B.
 5. **Fixed in part: `CachingEventDecoder` materialized the subId and id twice for new events.**
    *Measured* over 50,000 capture frames (27% new, 73% duplicates) under 40 random 10-char
    subscription ids: 614 → 505 B per frame.

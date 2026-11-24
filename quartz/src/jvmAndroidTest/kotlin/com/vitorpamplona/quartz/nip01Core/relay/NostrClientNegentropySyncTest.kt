@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip01Core.relay.client.NostrClient
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropyLocalIndex
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.NegentropySyncException
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.fetchAllPages
+import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropyReconcile
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySync
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySyncEvents
 import com.vitorpamplona.quartz.nip01Core.relay.client.accessories.negentropySyncOrFetch
@@ -592,6 +593,59 @@ class NostrClientNegentropySyncTest : RelayClientTest() {
             assertTrue(result.windows > 1, "the local count alone must have split the filter")
             assertTrue(asked.isNotEmpty(), "windows must be counted before they are asked for")
             assertNull(result.peerCap, "nothing was refused, so there is no cap to report")
+        }
+
+    /**
+     * A set signed within a few seconds, at the end of a filter that starts at 0 (a NIP-85
+     * provider's run). Equal spans of time put most pieces where nothing is, and each piece is
+     * still a NEG-OPEN: 157k cards reconciled as 36 windows, 25 of them empty here. An index that
+     * knows where its events are ([NegentropyLocalIndex.cutsFor]) cuts at its own count quantiles.
+     */
+    @Test
+    fun aDenseSetIsCutWhereItsEventsAreNotIntoEqualSpansOfTime() =
+        runBlocking {
+            val t = 1_785_000_000L
+            // 10 events in each of four seconds.
+            val all = (0 until 40).map { SyntheticEvents.fakeEvent(idSeed = it + 1, kind = 1, createdAt = t + it / 10) }
+            defaultRelay.preload(all)
+            val ours = all.map { IdAndTime(it.createdAt, it.id) }
+
+            suspend fun windows(index: NegentropyLocalIndex): Int =
+                withTimeout(60_000) {
+                    client.negentropyReconcile(relay = defaultRelayUrl, filter = Filter(kinds = listOf(1)), localIndex = index, targetWindow = 10) { }.windows
+                }
+
+            assertEquals(4, windows(NegentropyLocalIndex.of(ours)), "one window per second of events")
+
+            // The same index without cutsFor: the engine falls back to equal spans of time.
+            val timeSplit =
+                object : NegentropyLocalIndex {
+                    val inner = NegentropyLocalIndex.of(ours)
+
+                    override suspend fun count(window: Filter) = inner.count(window)
+
+                    override suspend fun entriesFor(window: Filter) = inner.entriesFor(window)
+                }
+            assertTrue(windows(timeSplit) > 8, "equal spans of time from 0 open many empty windows")
+        }
+
+    /** Events of one second cannot be cut apart: the window goes whole, however many it holds. */
+    @Test
+    fun oneDenseSecondIsSentWhole() =
+        runBlocking {
+            val all = (0 until 40).map { SyntheticEvents.fakeEvent(idSeed = it + 1, kind = 1, createdAt = 1_785_000_000L) }
+            defaultRelay.preload(all)
+            val result =
+                withTimeout(60_000) {
+                    client.negentropyReconcile(
+                        relay = defaultRelayUrl,
+                        filter = Filter(kinds = listOf(1)),
+                        localIndex = NegentropyLocalIndex.of(all.map { IdAndTime(it.createdAt, it.id) }),
+                        targetWindow = 5,
+                    ) { }
+                }
+            assertEquals(0, result.needCount)
+            assertTrue(result.windows <= 2, "the empty years before it and the second itself: ${result.windows}")
         }
 
     /**

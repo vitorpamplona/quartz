@@ -357,6 +357,17 @@ class GcPressureBenchmark {
         measure("RelayLogger (logging off)", captured!!)
         RelayReqStats(client)
         measure("RelayReqStats", captured!!)
+
+        // More subscriptions receiving events than the stats keep: the LRU churns.
+        for (active in listOf(500, 2_000)) {
+            val spread = events.mapIndexed { i, e -> EventMessage("sub-${i % active}", e) }
+            RelayReqStats(client)
+            val listener = captured!!
+            val call = RelayConnectionListener::class.java.getMethod("onIncomingMessage", IRelayClient::class.java, String::class.java, Message::class.java, Continuation::class.java)
+            val baseline = threadAlloc(spread.size) { i -> call.invoke(NoOpListener, relay, texts[i], spread[i], cont) }
+            val bytes = threadAlloc(spread.size) { i -> call.invoke(listener, relay, texts[i], spread[i], cont) }
+            println("  %-40s %9d B/frame".format("RelayReqStats, $active active subs", (bytes - baseline) / spread.size))
+        }
     }
 
     private object NoOpListener : RelayConnectionListener
