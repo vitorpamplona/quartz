@@ -299,7 +299,25 @@ class RelayAuthenticator(
         msg: ClosedMessage,
     ) {
         if (MachineReadablePrefix.parse(msg.message) != MachineReadablePrefix.AUTH_REQUIRED) return
+        authStatus.get(relay.url)?.let { oweResyncIfRefusedLate(it, "REQ ${msg.subId}") }
         reauthenticateWithStoredChallenge(relay)
+        // Nothing to sign (no round started) and nothing in flight: the re-send goes now.
+        resyncIfSettled(relay)
+    }
+
+    /**
+     * A frame sent before the AUTH and refused `auth-required:` only after the AUTH was accepted.
+     * The re-sync an accepted AUTH runs skips frames still in flight, since a relay that answers
+     * in order refuses those before the AUTH's `OK`. khatru answers each frame on its own
+     * goroutine, so the refusal can land after that re-sync, and the REQ or EVENT stayed dead for
+     * the rest of the connection. Owes the connection one more re-sync (it re-sends what is
+     * refused for want of AUTH), at most once per frame and challenge.
+     */
+    private fun oweResyncIfRefusedLate(
+        status: RelayAuthStatus,
+        frame: String,
+    ) {
+        if (status.hasAcceptedAuth() && status.firstLateRefusal(frame)) status.oweResync()
     }
 
     /**
@@ -361,6 +379,10 @@ class RelayAuthenticator(
         msg: OkMessage,
     ) {
         val status = authStatus.get(relay.url) ?: return
+        if (!msg.success && !status.isAuthEvent(msg.eventId) && MachineReadablePrefix.parse(msg.message) == MachineReadablePrefix.AUTH_REQUIRED) {
+            // An EVENT's refusal, picked up by the resyncIfSettled below.
+            oweResyncIfRefusedLate(status, "EVENT ${msg.eventId}")
+        }
         val transitioned = status.checkAuthResults(msg.eventId, msg.success)
         // Publish even on failure transitions so the UI can clear "AUTHENTICATING"
         // banners and reflect AUTH_FAILED state.

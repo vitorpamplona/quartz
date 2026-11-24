@@ -85,6 +85,16 @@ class RelayAuthStatus {
     private var queuedChallenge: String? = null
     private var queuedInteractive = false
 
+    // The challenge the running round is signing, and whether it may prompt. A challenge the relay
+    // repeats while it is signed is answered by that signature: queued, it signed the same round
+    // again, a second prompt on an external signer for an AUTH the dedup then never sent.
+    private var signingChallenge: String? = null
+    private var signingInteractive = false
+
+    // Frames (REQ/COUNT ids, EVENT ids) refused `auth-required:` after an AUTH on this connection
+    // was accepted, each with the challenge it was retried on. See [firstLateRefusal].
+    private val lateRefusalsRetried: LruCache<ChallengePair, ChallengePair> = LruCache(500)
+
     // Guards [saveAuthSubmission]'s check-then-put.
     private val submissionLock = PlatformLock()
 
@@ -103,6 +113,8 @@ class RelayAuthStatus {
                 false
             } else {
                 signingRound = true
+                signingChallenge = challenge
+                signingInteractive = interactive
                 true
             }
         }
@@ -110,17 +122,23 @@ class RelayAuthStatus {
     /**
      * The current round ended. Returns the challenge queued meanwhile, with whether it may prompt,
      * for the caller to sign next in the same round; null when nothing is queued (the round is over).
+     * A queued challenge equal to the one just signed is dropped, unless it may prompt and the
+     * round just signed could not: that signature already answered it.
      */
     fun endRound(): Pair<String, Boolean>? =
         roundLock.withLock {
             val next = queuedChallenge
-            if (next == null) {
+            val interactive = queuedInteractive
+            queuedChallenge = null
+            queuedInteractive = false
+            if (next == null || (next == signingChallenge && (signingInteractive || !interactive))) {
                 signingRound = false
+                signingChallenge = null
+                signingInteractive = false
                 null
             } else {
-                val interactive = queuedInteractive
-                queuedChallenge = null
-                queuedInteractive = false
+                signingChallenge = next
+                signingInteractive = interactive
                 next to interactive
             }
         }
@@ -131,6 +149,8 @@ class RelayAuthStatus {
             signingRound = false
             queuedChallenge = null
             queuedInteractive = false
+            signingChallenge = null
+            signingInteractive = false
         }
     }
 
@@ -141,6 +161,29 @@ class RelayAuthStatus {
 
     /** Takes the owed re-sync, if any: true for exactly one caller per [oweResync]. */
     fun takeResync(): Boolean = resyncOwed.compareAndSet(1, 0)
+
+    /** Whether an AUTH was accepted on this connection. */
+    internal fun hasAcceptedAuth(): Boolean = successCount.load() > 0
+
+    /** Whether [eventId] is an AUTH this connection sent, as opposed to an EVENT. */
+    internal fun isAuthEvent(eventId: HexKey): Boolean = authResponseWatcher[eventId] != null
+
+    /**
+     * True the first time [frame] (a subscription or event id, prefixed by its kind) is refused
+     * `auth-required:` on the stored challenge, false after: a frame is retried at most once per
+     * challenge, so a relay that keeps refusing it is not asked forever.
+     */
+    internal fun firstLateRefusal(frame: String): Boolean {
+        val key = ChallengePair(frame, lastChallenge ?: return false)
+        return submissionLock.withLock {
+            if (lateRefusalsRetried[key] == null) {
+                lateRefusalsRetried.put(key, key)
+                true
+            } else {
+                false
+            }
+        }
+    }
 
     fun rememberChallenge(challenge: String) {
         lastChallenge = challenge

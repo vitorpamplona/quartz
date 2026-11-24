@@ -601,8 +601,10 @@ class PoolRequests(
      * yet serve for want of it. Those it CLOSED (an `auth-required:` refusal keeps the sub CLOSED
      * with its filters), those with no REQ on this connection, and LIVE ones whose EOSE carried the
      * NIP-42 `"auth"` hint (the relay held matches back). A REQ in flight or LIVE without the hint
-     * is left alone: relays answer frames in order, so one sent before the AUTH was answered
+     * is left alone: relays that answer frames in order answered one sent before the AUTH
      * (refused or served) before the AUTH's `OK`, and one sent after it is served authenticated.
+     * A relay that answers out of order (khatru) can refuse it after the `OK`; the authenticator
+     * then runs this again for it ([com.vitorpamplona.quartz.nip01Core.relay.client.auth.RelayAuthenticator]).
      * [syncState] re-sent every desired REQ instead, restarting every LIVE subscription (its whole
      * replay again) on every accepted AUTH.
      */
