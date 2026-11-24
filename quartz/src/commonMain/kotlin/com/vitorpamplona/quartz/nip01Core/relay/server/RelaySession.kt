@@ -159,9 +159,13 @@ class RelaySession(
     private var lanesOrNull: LargeCache<String, Lane>? = null
 
     /**
-     * COUNTs whose coroutine is still running. They count against
-     * [IRelayPolicy.acceptSubscription]'s cap beside the open REQs: with no bound a client could
-     * keep any number of slow COUNTs running on one connection, each a store query.
+     * COUNTs still running for the client: from the frame until the COUNT is cancelled or its
+     * coroutine ends, whichever comes first. They count against [IRelayPolicy.acceptSubscription]'s
+     * cap beside the open REQs: with no bound a client could keep any number of slow COUNTs running
+     * on one connection, each a store query. A cancelled one frees its slot at once, as a closed REQ
+     * does, even when its store ignores the cancellation and keeps working (the backend's to bound):
+     * held until the coroutine ended, a re-COUNT held two slots and refused REQs the client had room
+     * for.
      */
     private val runningCounts = AtomicInt(0)
 
@@ -686,8 +690,9 @@ class RelaySession(
         dropFailedReqs()
 
         // A new COUNT is one more running request, held to the same cap as a REQ; one that replaces
-        // a COUNT still running on its id does not grow the count.
-        if (countsOrNull?.get(queryId)?.isEnded != false) {
+        // a COUNT still running on its id does not grow the count, and neither is one on an open
+        // REQ's id: the cap's refusal would close that REQ too, which a COUNT beside it never did.
+        if (countsOrNull?.get(queryId)?.holdsSlot != true && !subscriptions.containsKey(queryId)) {
             policy.acceptSubscription(queryId, openRequests())?.let { reason ->
                 refuse(queryId, ClosedMessage(queryId, reason))
                 return
@@ -731,8 +736,8 @@ class RelaySession(
                     }
                 count.answer(answer)
             }
-        // Runs once however the job ends, at once if it already has.
-        job.invokeOnCompletion { runningCounts.addAndFetch(-1) }
+        // Runs once however the job ends, at once if it already has; a cancel may free it first.
+        job.invokeOnCompletion { count.releaseSlot() }
         count.attach(job)
         // A disconnect on another thread may have swept [counts] before this landed in it.
         if (sessionEnded) count.cancel()
@@ -749,8 +754,19 @@ class RelaySession(
     ) {
         private val state = AtomicInt(COUNT_PENDING)
 
+        /** 1 while this COUNT holds its slot in [runningCounts]; freed once, on cancel or on completion. */
+        private val slot = AtomicInt(1)
+
         @Volatile
         private var job: Job? = null
+
+        /** Still counted in [runningCounts]. */
+        val holdsSlot: Boolean get() = slot.load() == 1
+
+        /** Frees this COUNT's slot in [runningCounts], the first time only. */
+        fun releaseSlot() {
+            if (slot.compareAndSet(1, 0)) runningCounts.addAndFetch(-1)
+        }
 
         /** Completes once this COUNT sends nothing more. */
         val quiet: CompletableJob = Job()
@@ -783,6 +799,7 @@ class RelaySession(
         fun cancel(): Boolean {
             if (!state.compareAndSet(COUNT_PENDING, COUNT_CANCELLED)) return false
             job?.cancel()
+            releaseSlot()
             becomeQuiet()
             return true
         }
