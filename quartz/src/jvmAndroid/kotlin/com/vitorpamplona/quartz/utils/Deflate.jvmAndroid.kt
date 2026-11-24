@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.utils
 
 import java.io.ByteArrayOutputStream
+import java.util.zip.DataFormatException
 import java.util.zip.Deflater
 import java.util.zip.Inflater
 
@@ -63,6 +64,8 @@ actual object Deflate {
                 if (total > maxBytes) return null
                 bos.write(buffer, 0, count)
             }
+            // Input that ends before its final block is not a stream we can return a prefix of.
+            if (!inflater.finished()) throw DataFormatException("Truncated DEFLATE stream")
             return bos.toByteArray()
         } finally {
             inflater.end()

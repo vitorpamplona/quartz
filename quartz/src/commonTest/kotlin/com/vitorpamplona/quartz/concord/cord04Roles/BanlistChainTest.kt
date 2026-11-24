@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.concord.cord04Roles
 
 import com.vitorpamplona.quartz.nip01Core.core.hexToByteArray
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -124,5 +125,53 @@ class BanlistChainTest {
         val r = banned(o1, b2, o3, x2, x3, x4)
         assertTrue(r.isBanned(dave), "bob lifted the owner's ban of an admin by forking around it")
         assertTrue(r.isBanned(carol))
+    }
+
+    // A long legacy Banlist chain, every edition adding one plain member, with bob (BAN) lifting
+    // every fifth addition on top of the owner's, and racing every owner edit with a sibling of his
+    // own at the same version (which the owner's authority wins). Each body must be parsed a bounded
+    // number of times per resolution: judging every edition against the head below its version used
+    // to re-run the gated fold, whose ties asked the gate, which re-decoded the body, on every run.
+    private fun member(i: Int) = (0x40 + i % 64).toString(16).padStart(2, '0') + (i / 64).toString(16).padStart(2, '0') + "77".repeat(30)
+
+    private fun longChain(length: Int): List<ControlEdition> {
+        val out = ArrayList<ControlEdition>()
+        val listed = ArrayList<String>()
+        var prev: ControlEdition? = null
+        var version = 1L
+        for (i in 0 until length) {
+            out.add(ban(version, prev, bob, "s$i", *listed.toTypedArray(), member(1000 + i)))
+            listed.add(member(i))
+            val o = ban(version++, prev, owner, "o$i", *listed.toTypedArray())
+            out.add(o)
+            prev = o
+            if (i % 5 == 4) {
+                listed.removeAt(listed.size - 1)
+                val b = ban(version++, prev, bob, "b$i", *listed.toTypedArray())
+                out.add(b)
+                prev = b
+            }
+        }
+        return out
+    }
+
+    private fun countingResolve(editions: List<ControlEdition>): Pair<AuthorityResolver, Int> {
+        val cited = ControlFixtures.cited(editions, owner)
+        var decodes = 0
+        val resolver =
+            AuthorityResolver.resolve(cited, ControlFixtures.communityId, owner) {
+                decodes++
+                ConcordJson.decodeBanlist(it)
+            }
+        return resolver to decodes
+    }
+
+    @Test
+    fun aLongBanlistChainParsesEachBodyOncePerPass() {
+        val chain = longChain(60)
+        val (r, decodes) = countingResolve(roster + chain)
+        for (i in 0 until 60) assertEquals(i % 5 != 4, r.isBanned(member(i)), "member $i")
+        for (i in 0 until 60) assertFalse(r.isBanned(member(1000 + i)), "bob's losing sibling $i")
+        assertTrue(decodes <= chain.size, "$decodes Banlist parses for ${chain.size} editions")
     }
 }

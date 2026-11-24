@@ -48,7 +48,9 @@ object Nip44 {
      * The encryption version [payload] is written in, read from its form alone without decrypting:
      * [EncryptedInfo.V] (0, NIP-04 ciphertext), [Nip44v1.EncryptedInfo.V] (1) or
      * [Nip44v2.EncryptedInfo.V] (2), from the `{"v":…}` JSON form or the base64 form's first byte.
-     * -1 when it is neither. A NIP-04 `?iv=` string is not a NIP-44 payload and reads as -1 too.
+     * -1 when it is neither. A NIP-04 `?iv=` string is not a NIP-44 payload and reads as -1 too:
+     * its first byte is random (about 3 in 256 would pass for 0, 1 or 2), so it is told apart by
+     * the `?`, which base64 never contains.
      *
      * Lets a channel refuse a form before handing the payload to any signer, local or remote:
      * [decrypt] accepts every version, which is right for old DMs but not for a channel whose
@@ -65,7 +67,7 @@ object Nip44 {
                 -1
             }
         }
-        if (payload.length < 4 || payload[0] == '#') return -1
+        if (payload.length < 4 || payload[0] == '#' || payload.indexOf('?') >= 0) return -1
         return try {
             when (val version = Base64.decode(payload, 0, 4)[0].toInt()) {
                 EncryptedInfo.V, Nip44v1.EncryptedInfo.V, Nip44v2.EncryptedInfo.V -> version

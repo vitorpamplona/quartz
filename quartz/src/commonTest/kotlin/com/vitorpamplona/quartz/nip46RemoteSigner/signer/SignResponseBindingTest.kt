@@ -25,7 +25,9 @@ import com.vitorpamplona.quartz.nip01Core.crypto.KeyPair
 import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponseEvent
+import com.vitorpamplona.quartz.nip46RemoteSigner.BunkerResponsePublicKey
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /** A bunker's `sign_event` answer must be the template we sent, signed by the user's key. */
@@ -57,5 +59,25 @@ class SignResponseBindingTest {
         assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(
             SignResponse.parse(BunkerResponseEvent("r1", other.sign(TextNoteEvent.build("else"))), null, asked),
         )
+    }
+
+    // Hex is case-insensitive: a bunker answering get_public_key in upper case still names the key
+    // its events are signed with (lower case, as NIP-01 serializes it).
+    @Test
+    fun anUpperCasePublicKeyAnswerStillBindsTheSignature() {
+        val answered = PubKeyResponse.parse(BunkerResponsePublicKey("k1", user.pubKey.uppercase()))
+        assertIs<SignerResult.RequestAddressed.Successful<PublicKeyResult>>(answered)
+        assertEquals(user.pubKey, answered.result.pubkey)
+
+        val signed = user.sign(asked)
+        assertIs<SignerResult.RequestAddressed.Successful<*>>(SignResponse.parse(BunkerResponseEvent("r1", signed), user.pubKey.uppercase(), asked))
+    }
+
+    // The binding is exact: a bunker that adds a tag or moves created_at before signing (some
+    // NDK-based ones do) returns another event, and sign refuses it.
+    @Test
+    fun aTemplateTheBunkerChangedBeforeSigningIsRefused() {
+        val retimed = TextNoteEvent.build("asked", createdAt = 1_700_000_001L)
+        assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(answer(user.sign(retimed)))
     }
 }

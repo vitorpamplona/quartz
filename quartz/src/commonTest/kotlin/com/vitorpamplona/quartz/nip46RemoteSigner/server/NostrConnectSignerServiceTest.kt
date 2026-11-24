@@ -50,6 +50,9 @@ import com.vitorpamplona.quartz.nip46RemoteSigner.signer.SwitchRelaysResponse
 import com.vitorpamplona.quartz.nip46RemoteSigner.signer.SwitchRelaysResult
 import com.vitorpamplona.quartz.nip57Zaps.PrivateZapEvent
 import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
+import com.vitorpamplona.quartz.utils.Log
+import com.vitorpamplona.quartz.utils.LogLevel
+import com.vitorpamplona.quartz.utils.LogSink
 import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -578,6 +581,39 @@ class NostrConnectSignerServiceTest {
             assertEquals(1, client.published.size)
             val reply = (client.published.single() as NostrConnectEvent).decryptMessage(clientSigner()) as BunkerResponse
             assertEquals("p2", reply.id, "the genuine request is the one answered")
+        }
+
+    // Every relay sends its copy of a request: once one copy was verified and handled, the others are
+    // dropped by id before their signature is checked again. A copy carrying the handled id is
+    // either that request or a forgery of it, and neither is serviced.
+    @Test
+    fun aCopyOfAHandledRequestIsDroppedBeforeItsSignatureIsChecked() =
+        runTest {
+            val client = LoopbackClient()
+            val signer = serverSigner()
+            val processor = BunkerRequestProcessor(signer, { setOf(relay) }, AllowAuthorizer())
+            val service = NostrConnectSignerService(client, signer, processor, setOf(relay))
+
+            val originalSink = Log.sink
+            val originalLevel = Log.minLevel
+            val rejected = ArrayList<String>()
+            Log.minLevel = LogLevel.DEBUG
+            Log.sink = LogSink { _, tag, message, _ -> if (tag == "NIP46Signer" && "does not verify" in message) rejected.add(message) }
+            try {
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { service.run() }
+
+                val genuine = request(ping("p3"))
+                client.deliver(genuine)
+                client.deliver(genuine)
+                // The genuine id with a broken signature: only a verify would notice, and none runs.
+                client.deliver(NostrConnectEvent(genuine.id, genuine.pubKey, genuine.createdAt, genuine.tags, genuine.content, "00".repeat(64)))
+
+                assertEquals(1, client.published.size, "one request, one reply")
+                assertTrue(rejected.isEmpty(), "a copy of a handled request was verified again: $rejected")
+            } finally {
+                Log.sink = originalSink
+                Log.minLevel = originalLevel
+            }
         }
 
     @Test

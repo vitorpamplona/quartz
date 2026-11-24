@@ -28,6 +28,7 @@ import com.vitorpamplona.quartz.utils.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class KiteSurrogateAndTrailingTest {
@@ -70,5 +71,24 @@ class KiteSurrogateAndTrailingTest {
         val json = signed("hello").toJson()
         assertEquals("hello", Event.fromJson("$json \n").content)
         assertFailsWith<IllegalArgumentException> { Event.fromJson(json + "garbage]]{") }
+    }
+
+    // Text with emoji takes the copy-as-is path: only an unpaired surrogate (or a char below 0x20)
+    // needs the escaping loop.
+    @Test
+    fun emojiPairsTakeTheFastPathAndOnlyLoneSurrogatesLeaveIt() {
+        assertTrue(KiteWriter.hasNoControlChar("gm 🌍🚀 nostr"))
+        assertTrue(KiteWriter.hasNoControlChar("😀"))
+        assertTrue(KiteWriter.hasNoControlChar("family 👩‍👧"))
+        assertFalse(KiteWriter.hasNoControlChar("cut \uD83D"))
+        assertFalse(KiteWriter.hasNoControlChar("\uDE00 low first"))
+        assertFalse(KiteWriter.hasNoControlChar("\uD83D😀"))
+        assertFalse(KiteWriter.hasNoControlChar("😀\uDE00"))
+        assertFalse(KiteWriter.hasNoControlChar("tab\there"))
+
+        val e = signed("gm 🌍🚀 nostr")
+        val json = e.toJson()
+        assertTrue(json.contains("\"content\":\"gm 🌍🚀 nostr\""), json)
+        assertTrue(Event.fromJson(json).verify())
     }
 }

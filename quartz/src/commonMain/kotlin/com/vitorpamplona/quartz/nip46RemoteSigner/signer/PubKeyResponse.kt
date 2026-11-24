@@ -29,7 +29,9 @@ class PubKeyResponse {
         fun parse(response: BunkerResponse): SignerResult.RequestAddressed<PublicKeyResult> =
             when (response) {
                 is BunkerResponsePublicKey -> {
-                    SignerResult.RequestAddressed.Successful(PublicKeyResult(response.pubkey))
+                    // Hex is case-insensitive on the wire but not in a comparison: lower case, as
+                    // NIP-01 serializes the pubkey of every event this key signs.
+                    SignerResult.RequestAddressed.Successful(PublicKeyResult(response.pubkey.lowercase()))
                 }
 
                 is BunkerResponseError -> {

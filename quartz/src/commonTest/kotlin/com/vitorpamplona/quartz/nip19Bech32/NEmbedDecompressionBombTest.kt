@@ -26,6 +26,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * `nembed1…` carries a gzip'd event, and the parser runs on ingest for every note that cites one
@@ -57,5 +58,25 @@ class NEmbedDecompressionBombTest {
     fun rejects_gzip_bomb_through_the_uri_parser() {
         val uri = "nostr:" + bomb(16 * 1024 * 1024).toNEmbed()
         assertNull(Nip19Parser.uriToRoute(uri))
+    }
+
+    // The per-content cap counts every inflate attempted, not only those that produced an event:
+    // a refused bomb or a body that is not JSON costs the same gunzip as a good one.
+    @Test
+    fun refused_embeds_count_toward_the_per_content_cap() {
+        val refused =
+            List(Nip19Parser.MAX_NEMBEDS_PER_CONTENT / 2) { "nostr:" + bomb(NEmbed.MAX_INFLATED_BYTES + 1024).toNEmbed() } +
+                List(Nip19Parser.MAX_NEMBEDS_PER_CONTENT / 2) { "nostr:" + GZip.compress("not json $it").toNEmbed() }
+        val content = (refused + ("nostr:" + GZip.compress(event).toNEmbed())).joinToString(" ")
+
+        assertTrue(Nip19Parser.parseAll(content).isEmpty())
+        assertTrue(Nip19Parser.parseAllEvents(content).isEmpty())
+        assertTrue(Nip19Parser.parseAllStandalone(content).isEmpty())
+    }
+
+    @Test
+    fun embeds_within_the_cap_still_parse_after_a_refused_one() {
+        val content = "nostr:" + GZip.compress("not json").toNEmbed() + " nostr:" + GZip.compress(event).toNEmbed()
+        assertEquals(1, Nip19Parser.parseAll(content).size)
     }
 }

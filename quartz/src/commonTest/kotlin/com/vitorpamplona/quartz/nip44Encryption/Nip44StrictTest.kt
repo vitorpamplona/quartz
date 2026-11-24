@@ -52,6 +52,19 @@ class Nip44StrictTest {
         assertEquals(-1, Nip44.payloadVersion("#not-a-payload"))
     }
 
+    // A NIP-04 string is base64 then `?iv=`: its first byte is random, so about 3 in 256 of them
+    // used to read as version 0, 1 or 2. Base64 has no `?`, so no NIP-44 payload carries one.
+    @Test
+    fun aNip04StringIsNeverReadAsAVersion() {
+        val iv = Base64.encode(ByteArray(16))
+        for (first in 0..2) {
+            val nip04 = Base64.encode(byteArrayOf(first.toByte()) + ByteArray(15)) + "?iv=" + iv
+            assertEquals(-1, Nip44.payloadVersion(nip04), "a NIP-04 ciphertext starting with byte $first")
+            assertFalse(Nip44.isV2Payload(nip04))
+        }
+        repeat(64) { assertEquals(-1, Nip44.payloadVersion(Nip04.encrypt("hello $it", alice.privKey!!, bob.pubKey))) }
+    }
+
     @Test
     fun onlyTheBase64V2FormIsAV2Payload() {
         assertTrue(Nip44.isV2Payload(v2Payload()))

@@ -205,6 +205,11 @@ class ConcordHeldDelete(
  * whose author could not moderate the Channel when they were held (a member's own deletes, mostly)
  * are evicted first, oldest first, re-judged against the fold at eviction: a flood of self-deletes
  * can never push a moderator's hide out. Only moderators' own hides push each other out.
+ *
+ * A delete held with no fold to judge it (before the Control Plane folds) is unjudged. Those go
+ * after the judged-unprivileged ones, are judged once an eviction has a fold, and while none is
+ * there are evicted from whoever holds the most of them, oldest first: a member flooding deletes
+ * before the fold pushes out their own, not a moderator's few hides.
  */
 class ConcordModerationHides(
     val maxPerChannel: Int = DEFAULT_MAX_PER_CHANNEL,
@@ -219,6 +224,9 @@ class ConcordModerationHides(
 
     // Channel id -> deletion ids whose author could not moderate when held: evicted first.
     private val unprivileged = HashMap<HexKey, LinkedHashSet<HexKey>>()
+
+    // Channel id -> deletion ids held with no fold to judge them: evicted after the unprivileged.
+    private val unjudged = HashMap<HexKey, LinkedHashSet<HexKey>>()
 
     /**
      * Holds [delete], judging whether its author may moderate against [state]. False when it was
@@ -235,11 +243,17 @@ class ConcordModerationHides(
             val targets = byTarget.getOrPut(delete.channelIdHex) { HashMap() }
             delete.targets.forEach { targets.getOrPut(it) { ArrayList(1) }.add(delete) }
             val weak = unprivileged.getOrPut(delete.channelIdHex) { LinkedHashSet() }
-            if (!ConcordChatRules.mayModerate(delete, state)) weak.add(delete.deletionId)
+            val pending = unjudged.getOrPut(delete.channelIdHex) { LinkedHashSet() }
+            if (state == null) {
+                pending.add(delete.deletionId)
+            } else if (!ConcordChatRules.mayModerate(delete, state)) {
+                weak.add(delete.deletionId)
+            }
             while (held.size > maxPerChannel) {
-                val victim = nextEvictionLocked(held, weak, state) ?: break
+                val victim = nextEvictionLocked(held, weak, pending, state) ?: break
                 held.remove(victim.deletionId)
                 weak.remove(victim.deletionId)
+                pending.remove(victim.deletionId)
                 victim.targets.forEach { target ->
                     val list = targets[target] ?: return@forEach
                     list.remove(victim)
@@ -265,6 +279,7 @@ class ConcordModerationHides(
     private fun nextEvictionLocked(
         held: LinkedHashMap<HexKey, ConcordHeldDelete>,
         weak: LinkedHashSet<HexKey>,
+        pending: LinkedHashSet<HexKey>,
         state: ConcordCommunityState?,
     ): ConcordHeldDelete? {
         while (weak.isNotEmpty()) {
@@ -274,7 +289,44 @@ class ConcordModerationHides(
             // One granted the bit since it was held is promoted out of the weak set here.
             if (!ConcordChatRules.mayModerate(delete, state)) return delete
         }
+        if (state != null) {
+            // A fold is here at last: judge the unjudged, oldest first, promoting the moderators'.
+            while (pending.isNotEmpty()) {
+                val id = pending.first()
+                pending.remove(id)
+                val delete = held[id] ?: continue
+                if (!ConcordChatRules.mayModerate(delete, state)) return delete
+            }
+        } else if (pending.isNotEmpty()) {
+            return busiestPendingLocked(held, pending) ?: held.values.firstOrNull()
+        }
         return held.values.firstOrNull()
+    }
+
+    // The oldest unjudged delete of the deleter holding the most of them (the earliest such
+    // deleter on a tie), so nobody's flood can evict anyone else's deletes before its own.
+    private fun busiestPendingLocked(
+        held: LinkedHashMap<HexKey, ConcordHeldDelete>,
+        pending: LinkedHashSet<HexKey>,
+    ): ConcordHeldDelete? {
+        val counts = LinkedHashMap<HexKey, Int>()
+        for (id in pending) {
+            val deleter = held[id]?.deleter ?: continue
+            counts[deleter] = (counts[deleter] ?: 0) + 1
+        }
+        var busiest: HexKey? = null
+        var most = 0
+        for ((deleter, count) in counts) {
+            if (count > most) {
+                busiest = deleter
+                most = count
+            }
+        }
+        for (id in pending) {
+            val delete = held[id] ?: continue
+            if (delete.deleter == busiest) return delete
+        }
+        return null
     }
 
     /** The held deletes on [channelIdHex] naming [rumorId]. */

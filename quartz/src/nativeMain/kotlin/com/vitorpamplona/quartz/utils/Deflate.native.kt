@@ -59,31 +59,34 @@ actual object Deflate {
                 Z_DEFAULT_STRATEGY,
             ).let { check(it == Z_OK) { "deflateInit2 failed: $it" } }
 
-            val maxSize = deflateBound(stream.ptr, input.size.toULong()).toInt()
-            val output = ByteArray(maxSize)
+            try {
+                val maxSize = deflateBound(stream.ptr, input.size.toULong()).toInt()
+                val output = ByteArray(maxSize)
 
-            val written =
-                input.usePinned { pinIn ->
-                    output.usePinned { pinOut ->
-                        if (input.isNotEmpty()) {
-                            stream.next_in = pinIn.addressOf(0).reinterpret()
+                val written =
+                    input.usePinned { pinIn ->
+                        output.usePinned { pinOut ->
+                            if (input.isNotEmpty()) {
+                                stream.next_in = pinIn.addressOf(0).reinterpret()
+                            }
+                            stream.avail_in = input.size.toUInt()
+
+                            if (output.isNotEmpty()) {
+                                stream.next_out = pinOut.addressOf(0).reinterpret()
+                            }
+                            stream.avail_out = maxSize.toUInt()
+
+                            deflate(stream.ptr, Z_FINISH)
+                                .let { check(it == Z_STREAM_END) { "deflate failed: $it" } }
+
+                            maxSize - stream.avail_out.toInt()
                         }
-                        stream.avail_in = input.size.toUInt()
-
-                        if (output.isNotEmpty()) {
-                            stream.next_out = pinOut.addressOf(0).reinterpret()
-                        }
-                        stream.avail_out = maxSize.toUInt()
-
-                        deflate(stream.ptr, Z_FINISH)
-                            .let { check(it == Z_STREAM_END) { "deflate failed: $it" } }
-
-                        maxSize - stream.avail_out.toInt()
                     }
-                }
 
-            deflateEnd(stream.ptr)
-            output.copyOf(written)
+                output.copyOf(written)
+            } finally {
+                deflateEnd(stream.ptr)
+            }
         }
 
     actual fun decompress(input: ByteArray): ByteArray = decompress(input, Int.MAX_VALUE)!!
@@ -95,7 +98,9 @@ actual object Deflate {
         if (input.isEmpty()) return ByteArray(0)
 
         val chunks = ArrayList<ByteArray>()
-        val chunkSize = maxOf(input.size * 4, 4096)
+        // One inflate call fills at most one chunk, so the chunk is never more than one byte past
+        // what may come out: a bigger one let a single call overshoot [maxBytes] by up to 4x the input.
+        val chunkSize = minOf(maxOf(input.size.toLong() * 4, 4096L), maxBytes.toLong() + 1).coerceAtLeast(1L).toInt()
         var total = 0L
         var overLimit = false
 
@@ -106,33 +111,35 @@ actual object Deflate {
             inflateInit2(stream.ptr, -15)
                 .let { check(it == Z_OK) { "inflateInit2 failed: $it" } }
 
-            input.usePinned { pinIn ->
-                if (input.isNotEmpty()) {
+            // Freed on every exit: a malformed or truncated input throws below, and a peer can send
+            // one again and again, each leaking zlib's inflate state (~40 KB) without this.
+            try {
+                input.usePinned { pinIn ->
                     stream.next_in = pinIn.addressOf(0).reinterpret()
-                }
-                stream.avail_in = input.size.toUInt()
+                    stream.avail_in = input.size.toUInt()
 
-                var status: Int = Z_OK
-                do {
-                    val chunk = ByteArray(chunkSize)
-                    chunk.usePinned { pinOut ->
-                        stream.next_out = pinOut.addressOf(0).reinterpret()
-                        stream.avail_out = chunkSize.toUInt()
-                        status = inflate(stream.ptr, Z_NO_FLUSH)
-                        val produced = chunkSize - stream.avail_out.toInt()
-                        total += produced
-                        if (total > maxBytes) {
-                            overLimit = true
-                        } else if (produced > 0) {
-                            chunks.add(chunk.copyOf(produced))
+                    var status: Int = Z_OK
+                    do {
+                        val chunk = ByteArray(chunkSize)
+                        chunk.usePinned { pinOut ->
+                            stream.next_out = pinOut.addressOf(0).reinterpret()
+                            stream.avail_out = chunkSize.toUInt()
+                            status = inflate(stream.ptr, Z_NO_FLUSH)
+                            val produced = chunkSize - stream.avail_out.toInt()
+                            total += produced
+                            if (total > maxBytes) {
+                                overLimit = true
+                            } else if (produced > 0) {
+                                chunks.add(chunk.copyOf(produced))
+                            }
                         }
-                    }
-                } while (status == Z_OK && !overLimit)
+                    } while (status == Z_OK && !overLimit)
 
-                if (!overLimit) check(status == Z_STREAM_END) { "inflate failed: $status" }
+                    if (!overLimit) check(status == Z_STREAM_END) { "inflate failed: $status" }
+                }
+            } finally {
+                inflateEnd(stream.ptr)
             }
-
-            inflateEnd(stream.ptr)
         }
         if (overLimit) return null
 

@@ -102,4 +102,29 @@ class EditionFoldTest {
     fun emptyFoldsToNull() {
         assertNull(EditionFold.foldEntity(emptyList()))
     }
+
+    /**
+     * At equal authority a version-0 genesis loses to one at 1 or above, even when its rumor id
+     * sorts lower (CORD-04 §1: "0" parses, but never anchors a chain over a real genesis). The
+     * rumor id only settles a tie among geneses at the same version.
+     */
+    @Test
+    fun aVersionZeroGenesisWithTheLowerRumorIdLosesToAVersionOneGenesis() {
+        val zero = edition(0, null, "zero", rumorId = "aaa")
+        val one = edition(1, null, "one", rumorId = "bbb")
+        val two = edition(2, one.hash, "two", rumorId = "ccc")
+
+        assertEquals("ccc", EditionFold.foldEntity(listOf(zero, one, two))?.rumorId)
+        assertEquals("ccc", EditionFold.foldEntityGated(listOf(zero, one, two), rank = { 1L }) { true }?.rumorId)
+    }
+
+    /** Among geneses at 1 or above and equal authority, the lower version anchors, then the lower rumor id. */
+    @Test
+    fun theLowerVersionGenesisAnchorsAtEqualAuthority() {
+        val three = edition(3, null, "three", rumorId = "aaa")
+        val one = edition(1, null, "one", rumorId = "bbb")
+
+        assertEquals("bbb", EditionFold.foldEntity(listOf(three, one))?.rumorId)
+        assertEquals("bbb", EditionFold.foldEntityGated(listOf(three, one), rank = { 1L }) { true }?.rumorId)
+    }
 }
