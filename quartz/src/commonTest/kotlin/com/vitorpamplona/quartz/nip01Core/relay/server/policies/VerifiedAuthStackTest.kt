@@ -29,18 +29,37 @@ import com.vitorpamplona.quartz.nip42RelayAuth.RelayAuthEvent
 import kotlin.test.Test
 import kotlin.test.assertIs
 
-/** FullAuthPolicy checks the AUTH event's signature itself, with no VerifyPolicy in front. */
-class FullAuthPolicyVerifiesTest {
+/**
+ * FullAuthPolicy runs the NIP-42 handshake; signatures are VerifyPolicy's job (or VerifyAuthOnlyPolicy's
+ * when the ingest queue verifies EVENTs). Stacked in front, either refuses a forged AUTH before
+ * FullAuthPolicy sees it, so the login is never recorded.
+ */
+class VerifiedAuthStackTest {
     private val relayUrl = NormalizedRelayUrl("wss://relay.example.com/")
 
-    @Test
-    fun aForgedAuthIsRefusedWithoutAVerifyPolicyInFront() {
-        val policy = FullAuthPolicy(relayUrl)
+    private fun genuineAndForged(policy: FullAuthPolicy): Pair<RelayAuthEvent, RelayAuthEvent> {
         val signed = NostrSignerSync().sign(RelayAuthEvent.build(relayUrl, policy.challenge))
         val impostor = KeyPair().pubKey.toHexKey()
-        val forged = RelayAuthEvent(signed.id, impostor, signed.createdAt, signed.tags, signed.content, signed.sig)
+        return signed to RelayAuthEvent(signed.id, impostor, signed.createdAt, signed.tags, signed.content, signed.sig)
+    }
 
-        assertIs<PolicyResult.Accepted<*>>(policy.accept(AuthCmd(signed)), "a genuine AUTH passes")
-        assertIs<PolicyResult.Rejected<*>>(policy.accept(AuthCmd(forged)), "a forged one does not")
+    @Test
+    fun verifyPolicyInFrontRefusesAForgedAuth() {
+        val auth = FullAuthPolicy(relayUrl)
+        val stack = VerifyPolicy + auth
+        val (signed, forged) = genuineAndForged(auth)
+
+        assertIs<PolicyResult.Accepted<*>>(stack.accept(AuthCmd(signed)), "a genuine AUTH passes")
+        assertIs<PolicyResult.Rejected<*>>(stack.accept(AuthCmd(forged)), "a forged one does not")
+    }
+
+    @Test
+    fun verifyAuthOnlyPolicyInFrontRefusesAForgedAuth() {
+        val auth = FullAuthPolicy(relayUrl)
+        val stack = VerifyAuthOnlyPolicy + auth
+        val (signed, forged) = genuineAndForged(auth)
+
+        assertIs<PolicyResult.Accepted<*>>(stack.accept(AuthCmd(signed)), "a genuine AUTH passes")
+        assertIs<PolicyResult.Rejected<*>>(stack.accept(AuthCmd(forged)), "a forged one does not")
     }
 }
