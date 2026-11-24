@@ -287,7 +287,8 @@ suspend fun INostrClient.downloadTrustNetwork(
  * them. Returns null when nothing was published since, the common case.
  *
  * [ids] is read only when the REQ brought something: it is the index's id column (12 MB at 300k
- * cards), which the merge rewrites.
+ * cards), which the merge rewrites. Throws [TrustNetworkCatchUpException] when the walk did not
+ * drain (the relay dropped, went silent or refused), without reading [ids].
  *
  * No COUNT and no negentropy, however often the provider signs: an on-demand provider signs a
  * card every few minutes, and a reconcile per change put a negentropy state on the relay per
@@ -317,17 +318,24 @@ suspend fun INostrClient.catchUpTrustNetwork(
     val detail = "req $fetched (${paged.end}${paged.message?.let { ": $it" } ?: ""})"
     if (paged.drained && fetched == 0 && !builder.hasRemovals && builder.newestCreatedAt == 0L) return null
 
-    val held = ids()
-    // A walk cut short (the relay dropped, went silent, refused) moves nothing: the next one asks again.
-    if (!paged.drained) return TrustNetworkSyncResult(header, index, held, complete = false, invalid = invalid.load(), received = fetched, detail = detail)
+    // A walk cut short (the relay dropped, went silent, refused) moves nothing, and the id column
+    // is not read for it: the next catch-up asks again.
+    if (!paged.drained) throw TrustNetworkCatchUpException(detail)
 
+    val held = ids()
+    builder.ensureCapacity(fetched + index.size + held.tombstones)
     builder.addAll(index, held)
     val cursor = cursorAfter(header.syncCursor, builder.newestCreatedAt, startedAt)
+
+    fun unchanged() = TrustNetworkSyncResult(header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(held), index, held, complete = true, invalid = invalid.load(), received = 0, detail = detail, unchanged = true)
+
     // A kind 5 that named nothing here still moves the cursor past it, or the next update finds it again.
-    if (fetched == 0 && !builder.hasRemovals) {
-        return TrustNetworkSyncResult(header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(held), index, held, complete = true, invalid = invalid.load(), received = 0, detail = detail, unchanged = true)
-    }
+    if (fetched == 0 && !builder.hasRemovals) return unchanged()
     val (newIndex, newIds) = builder.build()
+    // Only kind 5s, and none of them hit a card held: with nothing added, a removal can only shrink
+    // the index or bury a card, so equal sizes are the same set. Same instances: nothing is
+    // rewritten and no feed keyed on the index rebuilds.
+    if (fetched == 0 && newIndex.size == index.size && newIds.tombstones == held.tombstones) return unchanged()
     return TrustNetworkSyncResult(
         header = header.copy(syncCursor = cursor, lastUpdate = TimeUtils.now()).withHeldCounts(newIds),
         index = newIndex,
@@ -339,9 +347,14 @@ suspend fun INostrClient.catchUpTrustNetwork(
     )
 }
 
+/** A [catchUpTrustNetwork] walk that did not drain: the relay dropped, went silent or refused it. */
+class TrustNetworkCatchUpException(
+    detail: String,
+) : Exception(detail)
+
 /**
  * [catchUpTrustNetwork] with the id column already read. [knownNews] that says nothing changed
- * ends it before the REQ, as before.
+ * ends it before the REQ, as before. Throws [TrustNetworkCatchUpException] like it.
  */
 suspend fun INostrClient.updateTrustNetwork(
     header: TrustNetworkHeader,

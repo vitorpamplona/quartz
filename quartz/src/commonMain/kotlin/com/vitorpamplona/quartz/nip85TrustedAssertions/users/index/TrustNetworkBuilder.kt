@@ -286,8 +286,21 @@ class TrustNetworkBuilder(
         size++
     }
 
-    private fun grow() {
-        val capacity = (k0.size * 2).coerceAtLeast(16)
+    /**
+     * Makes room for [capacity] cards at once, so a merge that knows its size (an index added to
+     * a few new cards) allocates each column once instead of doubling up to it: at 157k cards
+     * the doubling peaks at ~31 MB of columns, this at ~12.5 MB.
+     */
+    internal fun ensureCapacity(capacity: Int) {
+        if (capacity > k0.size) resize(capacity)
+    }
+
+    /** Cards the columns hold before they next grow. */
+    internal val capacity: Int get() = k0.size
+
+    private fun grow() = resize((k0.size * 2).coerceAtLeast(16))
+
+    private fun resize(capacity: Int) {
         k0 = k0.copyOf(capacity)
         k1 = k1.copyOf(capacity)
         k2 = k2.copyOf(capacity)
