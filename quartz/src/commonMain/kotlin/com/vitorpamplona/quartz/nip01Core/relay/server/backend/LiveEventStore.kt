@@ -29,6 +29,7 @@ import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.IdAndTime
 import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
+import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
@@ -945,6 +946,14 @@ class LiveEventStore(
     private val snapshotCache = AtomicReference<CachedSnapshot?>(null)
 
     /**
+     * Quartz's SQLite store answers every caller the same set: it never reads [StoreQueryContext].
+     * Its snapshots are cached for everyone, so authenticated mirror peers reconciling one filter
+     * share the one slot instead of evicting each other. Any other store, a wrapper of it included,
+     * may be observer-relative (STORE-O01) and keeps a snapshot per caller.
+     */
+    private val answersEveryCallerAlike = store is EventStore
+
+    /**
      * Serves repeated NEG-OPENs of the same filter from one sealed
      * storage as long as no write landed in between (single slot — the
      * mirror-heartbeat pattern is many peers reconciling the same broad
@@ -993,8 +1002,10 @@ class LiveEventStore(
         }
 
         val generation = writeGeneration.load()
-        // Keyed by who asks too: an observer-relative store answers each caller its own set.
-        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries\u0000as=" + users.joinToString(",")
+        // Keyed by who asks too, unless the store answers everyone alike: an observer-relative
+        // store answers each caller its own set.
+        val asWho = if (answersEveryCallerAlike) "" else users.joinToString(",")
+        val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries\u0000as=" + asWho
         val now = TimeUtils.now()
 
         val cached = snapshotCache.load()
