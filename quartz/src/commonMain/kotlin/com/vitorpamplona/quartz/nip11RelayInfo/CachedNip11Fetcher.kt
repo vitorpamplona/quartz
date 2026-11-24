@@ -117,6 +117,9 @@ class CachedNip11Fetcher(
                 shared.complete(Result.failure(e))
                 throw e
             } finally {
+                // An Error (a stack overflow on a hostile document's nesting, out of memory) is not
+                // caught above and goes on to the leader's caller; its waiters must not wait forever.
+                if (!shared.isCompleted) shared.complete(Result.failure(Nip11FetchException("NIP-11 fetch for ${relay.url} failed")))
                 lock.withLock { if (inFlight[relay] === shared) inFlight.remove(relay) }
             }
         }
