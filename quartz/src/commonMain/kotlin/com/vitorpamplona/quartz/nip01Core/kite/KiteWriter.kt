@@ -530,11 +530,22 @@ class KiteWriter internal constructor() {
         private const val LONG_MIN = "-9223372036854775808"
         private const val BACKSLASH = '\\'.code.toByte()
 
-        /** No char below 0x20 and no surrogate: nothing [escapedBody] would have to look at. */
-        private fun hasNoControlChar(s: String): Boolean {
-            for (k in s.indices) {
+        /**
+         * No char below 0x20 and no unpaired surrogate: nothing [escapedBody] would have to look at.
+         * A pair (every emoji past the BMP) is written as is, so it stays on the copy path.
+         */
+        internal fun hasNoControlChar(s: String): Boolean {
+            var k = 0
+            val n = s.length
+            while (k < n) {
                 val c = s[k]
-                if (c < ' ' || (c >= '\uD800' && c <= '\uDFFF')) return false
+                if (c < ' ') return false
+                if (c >= '\uD800' && c <= '\uDFFF') {
+                    if (c > '\uDBFF' || k + 1 >= n || !s[k + 1].isLowSurrogate()) return false
+                    k += 2
+                    continue
+                }
+                k++
             }
             return true
         }
