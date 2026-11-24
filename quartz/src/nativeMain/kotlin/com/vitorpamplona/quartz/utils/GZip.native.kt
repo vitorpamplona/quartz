@@ -119,7 +119,8 @@ actual object GZip {
         if (content.isEmpty()) return ByteArray(0)
 
         val chunks = ArrayList<ByteArray>()
-        val chunkSize = maxOf(content.size * 4, 4096)
+        // Never more than one byte past what may come out, so one inflate call cannot overshoot it.
+        val chunkSize = minOf(maxOf(content.size.toLong() * 4, 4096L), maxBytes.toLong() + 1).coerceAtLeast(1L).toInt()
         var totalSize = 0L
         var overflow = false
 
