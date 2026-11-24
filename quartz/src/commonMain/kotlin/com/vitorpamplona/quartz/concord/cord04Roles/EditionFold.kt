@@ -170,6 +170,22 @@ object EditionFold {
     val BY_RUMOR_ID: Comparator<ControlEdition> = compareBy { it.rumorId }
 
     /**
+     * [authority] first, then [BY_RUMOR_ID]: the tie [foldEntityGated] walks with, kept in two parts
+     * so the genesis pick can put the version between them.
+     */
+    private class AuthorityThenRumorId(
+        val authority: Comparator<ControlEdition>,
+    ) : Comparator<ControlEdition> {
+        override fun compare(
+            a: ControlEdition,
+            b: ControlEdition,
+        ): Int {
+            val byAuthority = authority.compare(a, b)
+            return if (byAuthority != 0) byAuthority else BY_RUMOR_ID.compare(a, b)
+        }
+    }
+
+    /**
      * How far above the floor the compaction arm will follow an edition in one step.
      *
      * The arm trades contiguity for cross-epoch tolerance, which made VERSION the only contest an
@@ -363,10 +379,16 @@ object EditionFold {
                 // a prev citing the prior epoch — a fresh joiner anchors at the lowest-version
                 // edition it does hold and accepts it as the baseline (CORD-04 §1 / CORD-06 §3).
                 // `editions` is non-empty here.
+                // The rumor id must come last: it is unique, so a tie ending in it settles every
+                // pair before the version is compared. Authority is split out of the fold's own ties
+                // (the rumor id alone, [AuthorityThenRumorId]); a caller's comparator is taken whole.
+                val versionOrder = compareBy<ControlEdition> { it.version < 1 }.then(compareBy { it.version })
                 val genesisOrder =
-                    tie
-                        .then(compareBy<ControlEdition> { it.version < 1 })
-                        .then(compareBy { it.version })
+                    when {
+                        tie === BY_RUMOR_ID -> versionOrder.then(BY_RUMOR_ID)
+                        tie is AuthorityThenRumorId -> tie.authority.then(versionOrder).then(BY_RUMOR_ID)
+                        else -> tie.then(versionOrder)
+                    }
                 val byVersionThenTie = compareBy<ControlEdition> { it.version }.then(tie)
                 editions
                     .filter { it.prevHash == null }
@@ -459,9 +481,7 @@ object EditionFold {
         // admits (a rejected sibling ranks last, so it can never anchor the chain on authority it
         // does not hold), then the lower rumor id. Memoized: a gate decodes the content.
         val score = HashMap<String, Long>()
-        val tie =
-            compareBy<ControlEdition> { e -> score.getOrPut(e.rumorId) { if (gate(e)) rank(e.author) else Long.MAX_VALUE } }
-                .then(BY_RUMOR_ID)
+        val tie = AuthorityThenRumorId(compareBy { e -> score.getOrPut(e.rumorId) { if (gate(e)) rank(e.author) else Long.MAX_VALUE } })
         return pickHead(candidates(editions, floor, snapshot, onGap, tie), rank, gate)
     }
 
