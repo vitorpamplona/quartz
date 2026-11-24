@@ -48,9 +48,9 @@ class SignResponseBindingTest {
     }
 
     @Test
-    fun aValidlySignedDifferentEventIsNotTheAnswer() {
+    fun aValidlySignedEventOfAnotherKindIsNotTheAnswer() {
         val asked = unsigned("asked")
-        val other = user.sign(TextNoteEvent.build("something else"))
+        val other = user.sign<Event>(asked.createdAt, 7, emptyArray(), "+")
         assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(SignResponse.parse(IntentResult(event = other.toJson()), asked))
     }
 

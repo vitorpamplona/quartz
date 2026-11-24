@@ -21,21 +21,19 @@
 package com.vitorpamplona.quartz.nip55AndroidSigner.api
 
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
 import com.vitorpamplona.quartz.nip57Zaps.tags.AnonTag
 
 /**
- * Whether [signed] is [unsignedEvent] signed: same pubkey, and its id the hash of exactly the
- * fields we asked to have signed. An unsigned private zap is the exception, since the signer
- * replaces it with an event under a throwaway key over encrypted content (NIP-57).
+ * Whether [signed] answers [unsignedEvent]: same pubkey and same kind. The rest is not pinned to
+ * the request, since NIP-55 doesn't forbid a signer from adjusting what it signs and the signer
+ * holds the key anyway. An unsigned private zap is the exception, since the signer replaces it
+ * with an event under a throwaway key over encrypted content (NIP-57).
  */
 internal fun isAnswerTo(
     signed: Event,
     unsignedEvent: Event,
 ): Boolean {
     if (unsignedEvent.kind == ZapRequestEvent.KIND && unsignedEvent.tags.any(AnonTag::isUnsignedPrivate)) return true
-    if (signed.pubKey != unsignedEvent.pubKey) return false
-    val expectedId = EventHasher.hashId(unsignedEvent.pubKey, unsignedEvent.createdAt, unsignedEvent.kind, unsignedEvent.tags, unsignedEvent.content)
-    return signed.id == expectedId
+    return signed.pubKey == unsignedEvent.pubKey && signed.kind == unsignedEvent.kind
 }

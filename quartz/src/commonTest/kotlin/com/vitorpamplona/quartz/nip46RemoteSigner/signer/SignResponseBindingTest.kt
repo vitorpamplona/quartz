@@ -30,7 +30,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-/** A bunker's `sign_event` answer must be the template we sent, signed by the user's key. */
+/** A bunker's `sign_event` answer must be signed by the user's key and be of the kind we asked for. */
 class SignResponseBindingTest {
     private val user = NostrSignerSync(KeyPair())
     private val asked = TextNoteEvent.build("asked", createdAt = 1_700_000_000L)
@@ -43,8 +43,8 @@ class SignResponseBindingTest {
     }
 
     @Test
-    fun aValidlySignedDifferentEventIsRefused() {
-        assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(answer(user.sign(TextNoteEvent.build("else"))))
+    fun aValidlySignedEventOfAnotherKindIsRefused() {
+        assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(answer(user.sign<Event>(asked.createdAt, 7, emptyArray(), "+")))
     }
 
     @Test
@@ -57,7 +57,7 @@ class SignResponseBindingTest {
         val other = NostrSignerSync(KeyPair())
         assertIs<SignerResult.RequestAddressed.Successful<*>>(SignResponse.parse(BunkerResponseEvent("r1", other.sign(asked)), null, asked))
         assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(
-            SignResponse.parse(BunkerResponseEvent("r1", other.sign(TextNoteEvent.build("else"))), null, asked),
+            SignResponse.parse(BunkerResponseEvent("r1", other.sign<Event>(asked.createdAt, 7, emptyArray(), "+")), null, asked),
         )
     }
 
@@ -73,11 +73,11 @@ class SignResponseBindingTest {
         assertIs<SignerResult.RequestAddressed.Successful<*>>(SignResponse.parse(BunkerResponseEvent("r1", signed), user.pubKey.uppercase(), asked))
     }
 
-    // The binding is exact: a bunker that adds a tag or moves created_at before signing (some
-    // NDK-based ones do) returns another event, and sign refuses it.
+    // NIP-46 doesn't pin the answer to the template: a bunker that adds a tag or moves created_at
+    // before signing (some NDK-based ones do) is still answering the request.
     @Test
-    fun aTemplateTheBunkerChangedBeforeSigningIsRefused() {
-        val retimed = TextNoteEvent.build("asked", createdAt = 1_700_000_001L)
-        assertIs<SignerResult.RequestAddressed.ReceivedButCouldNotVerifyResultingEvent<*>>(answer(user.sign(retimed)))
+    fun aTemplateTheBunkerAdjustedBeforeSigningIsAccepted() {
+        val retimed = TextNoteEvent.build("asked", createdAt = 1_700_000_001L) { add(arrayOf("client", "some-bunker")) }
+        assertIs<SignerResult.RequestAddressed.Successful<*>>(answer(user.sign(retimed)))
     }
 }

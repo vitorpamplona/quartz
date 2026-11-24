@@ -650,11 +650,11 @@ val keyPair = KeyPair(pubKey = hexToByteArray("your-64-char-hex-public-key"))
 val signer = NostrSignerInternal(keyPair)
 ```
 
-A NIP-46 bunker (`NostrSignerRemote`) must sign exactly the template it was sent, under the
-user's key: `sign` refuses any other event, even one validly signed, so a bunker that adds or
-changes tags or `created_at` before signing (some NDK-based bunkers do) now fails `sign` with
-an `IllegalStateException` ("Failed to verify event"). The user's key from `get_public_key` is
-compared ignoring case.
+A NIP-46 bunker (`NostrSignerRemote`) must answer `sign` with a validly signed event under the
+user's key and of the requested kind; anything else fails `sign` with an `IllegalStateException`
+("Failed to verify event"). The rest is not pinned to the template, so a bunker that adds a tag
+or moves `created_at` before signing (some NDK-based ones do) still works. The user's key from
+`get_public_key` is compared ignoring case.
 
 ## Event Kinds
 
