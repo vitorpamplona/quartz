@@ -27,12 +27,12 @@ import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
 import com.vitorpamplona.quartz.nip19Bech32.entities.NEmbed
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * An `nembed1…` carries a whole event, gunzipped and parsed on ingest, whose signature nobody
- * checked before its id entered `linkedEventIds` and `findCitations`.
+ * An `nembed1…` is gunzipped and parsed on ingest, so how many are decoded per content is capped.
+ * Its id is a citation like an `nevent1`'s, verified or not: a citation is a reference anyone can
+ * write, and whoever renders or stores the embedded event verifies it.
  */
 class NEmbedCitationTest {
     private val author = NostrSignerSync(KeyPair())
@@ -40,13 +40,13 @@ class NEmbedCitationTest {
     private fun note(content: String): TextNoteEvent = author.sign(TextNoteEvent.build(content))
 
     @Test
-    fun anUnverifiedEmbedIsNotACitation() {
+    fun anEmbedCitesItsIdLikeAnNevent() {
         val real = note("embedded")
-        val forged = Event("ab".repeat(32), real.pubKey, real.createdAt, real.kind, real.tags, real.content, real.sig)
-        val citing = note("look nostr:${NEmbed.create(forged)} and nostr:${NEmbed.create(real)}")
+        val unverified = Event("ab".repeat(32), real.pubKey, real.createdAt, real.kind, real.tags, real.content, real.sig)
+        val citing = note("look nostr:${NEmbed.create(unverified)} and nostr:${NEmbed.create(real)}")
 
-        assertFalse(forged.id in citing.findCitations(), "an unverified embed's id is a citation")
-        assertFalse(forged.id in citing.linkedEventIds())
+        assertTrue(unverified.id in citing.findCitations())
+        assertTrue(unverified.id in citing.linkedEventIds())
         assertTrue(real.id in citing.findCitations())
         assertTrue(real.id in citing.linkedEventIds())
     }

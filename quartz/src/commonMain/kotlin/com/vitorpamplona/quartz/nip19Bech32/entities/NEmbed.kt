@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip19Bech32.entities
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.Event
-import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip19Bech32.toNEmbed
 import com.vitorpamplona.quartz.utils.GZip
 
@@ -30,13 +29,6 @@ import com.vitorpamplona.quartz.utils.GZip
 data class NEmbed(
     val event: Event,
 ) : Entity {
-    /**
-     * Whether the embedded [event]'s id and signature check out, computed once. Nothing proves an
-     * embed is the event it claims to be, so only a verified one may count as a citation of its id
-     * (`findCitations`, `linkedEventIds`): an unverified one could name any event.
-     */
-    val isVerified: Boolean by lazy { event.verify() }
-
     companion object {
         /**
          * Ceiling on the inflated event JSON. This runs on ingest for every note citing a

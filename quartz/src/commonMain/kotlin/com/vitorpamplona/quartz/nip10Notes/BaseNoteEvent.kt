@@ -97,8 +97,9 @@ open class BaseNoteEvent(
                 is NEvent -> citations.add(entity.hex)
                 is NAddress -> citations.add(entity.aTag())
                 is NNote -> citations.add(entity.hex)
-                // Only an embed whose signature checks out cites its id (see NEmbed.isVerified).
-                is NEmbed -> if (entity.isVerified) citations.add(entity.event.id)
+                // A citation is a reference, like an nevent1, which anyone can write for any id:
+                // verifying the embed would prove nothing here. Whoever renders or stores it verifies.
+                is NEmbed -> citations.add(entity.event.id)
             }
         }
 
