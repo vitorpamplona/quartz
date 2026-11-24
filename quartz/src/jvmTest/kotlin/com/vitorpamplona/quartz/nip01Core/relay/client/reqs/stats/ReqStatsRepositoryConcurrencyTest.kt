@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** A REQ goes to every relay under one id, so its events are counted from many threads at once. */
 class ReqStatsRepositoryConcurrencyTest {
@@ -57,5 +58,30 @@ class ReqStatsRepositoryConcurrencyTest {
         }
         assertEquals(threads * perThread, feedTotal)
         assertEquals((0 until 7).toSet(), feedKinds)
+    }
+
+    @Test
+    fun evictionUnderManyThreadsStaysBoundedAndConsistent() {
+        val stats = ReqStatsRepository(maxSubscriptions = 100)
+        val start = CountDownLatch(1)
+        val workers =
+            (0 until 8).map { t ->
+                thread {
+                    start.await()
+                    for (i in 0 until 20_000) stats.add("t$t-$i", i % 3)
+                }
+            }
+        start.countDown()
+        workers.forEach { it.join() }
+
+        val subs = HashSet<String>()
+        var total = 0
+        stats.printCounter { subId, _, counter ->
+            subs.add(subId)
+            total += counter
+        }
+        assertTrue(subs.size in 100..110, "kept ${subs.size}")
+        // each kept subscription saw exactly one event
+        assertEquals(subs.size, total)
     }
 }

@@ -23,6 +23,7 @@ package com.vitorpamplona.quartz.nip01Core.relay.client.reqs.stats
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ReqStatsRepositoryTest {
     private fun ReqStatsRepository.snapshot(): Map<Pair<String, Int>, Int> {
@@ -49,18 +50,56 @@ class ReqStatsRepositoryTest {
     }
 
     @Test
-    fun pastTheCapTheSubscriptionWithTheFewestEventsGoes() {
+    fun theLeastRecentlyActiveSubscriptionsGoFirst() {
+        // cap 3: a fourth is allowed as slack, the fifth brings it back to 3
         val stats = ReqStatsRepository(maxSubscriptions = 3)
-        repeat(100) { stats.add("feed", 1) }
-        repeat(50) { stats.add("notifications", 1) }
-        stats.add("fetch-1", 1)
-        // one-off fetches churn through the last slot; the long-lived feeds stay
-        for (i in 2..10) stats.add("fetch-$i", 1)
+        stats.add("a", 1)
+        stats.add("b", 1)
+        stats.add("c", 1)
+        stats.add("d", 1)
+        stats.add("a", 1) // "a" is now as recent as "d"
+        stats.add("e", 1)
 
         val counts = stats.snapshot()
-        assertEquals(setOf("feed", "notifications", "fetch-10"), counts.keys.map { it.first }.toSet())
-        assertEquals(100, counts["feed" to 1])
-        assertEquals(50, counts["notifications" to 1])
+        assertEquals(setOf("a", "d", "e"), counts.keys.map { it.first }.toSet())
+        assertEquals(2, counts["a" to 1])
+    }
+
+    @Test
+    fun manyNewSubscriptionsKeepTheMostRecentNearTheCap() {
+        val stats = ReqStatsRepository()
+        for (i in 0 until 5_000) stats.add("sub-$i", 1)
+
+        val kept =
+            stats
+                .snapshot()
+                .keys
+                .map { it.first }
+                .toSet()
+        val cap = ReqStatsRepository.DEFAULT_MAX_SUBSCRIPTIONS
+        assertTrue(kept.size in cap..cap + cap / 10, "kept ${kept.size}")
+        assertTrue("sub-4999" in kept)
+        assertTrue("sub-0" !in kept)
+        // the newest cap ids are all there
+        assertTrue((5_000 - cap until 5_000).all { "sub-$it" in kept })
+    }
+
+    @Test
+    fun manySubscriptionsActiveInTheSameStretchStillStayWithinTheCap() {
+        // all active since the last new one: one shared stamp, so ties at the cutoff must go too
+        val stats = ReqStatsRepository(maxSubscriptions = 10)
+        for (i in 0 until 11) stats.add("sub-$i", 1)
+        for (round in 0 until 3) for (i in 0 until 11) stats.add("sub-$i", 1)
+        stats.add("new", 1)
+        assertTrue(
+            stats
+                .snapshot()
+                .keys
+                .map { it.first }
+                .toSet()
+                .size <= 11,
+        )
+        assertTrue("new" in stats.snapshot().keys.map { it.first })
     }
 
     @Test
