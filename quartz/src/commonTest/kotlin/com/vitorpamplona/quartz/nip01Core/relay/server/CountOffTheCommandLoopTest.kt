@@ -358,4 +358,85 @@ class CountOffTheCommandLoopTest {
 
     @Test
     fun aReCountThePolicyRefusesCancelsTheRunningCount() = runTest { aRefusalOnTheIdCancelsTheRunningCount("""["COUNT","c",{"kinds":[9]}]""", """["CLOSED","c","blocked: no kind 9"]""", NoKind9Counts) }
+
+    /** Holds a connection to [max] open requests, REQs and running COUNTs together. */
+    private class AtMost(
+        val max: Int,
+    ) : PassThroughPolicy() {
+        override fun acceptSubscription(
+            subId: String,
+            openSubscriptions: Int,
+        ): String? = if (openSubscriptions >= max) "rate-limited: too many open requests" else null
+    }
+
+    /** REQs stay open for their live tail; each count waits for the test, even once cancelled. */
+    private class OpenReqsHeldCounts : SessionBackend {
+        val answers = mutableListOf<CompletableDeferred<Int>>()
+
+        override suspend fun query(
+            ctx: RequestContext,
+            filters: List<Filter>,
+            onEach: (Event) -> Unit,
+            onEose: () -> Unit,
+        ) {
+            onEose()
+            awaitCancellation()
+        }
+
+        override suspend fun count(
+            ctx: RequestContext,
+            filters: List<Filter>,
+        ): Int {
+            val answer = CompletableDeferred<Int>()
+            answers.add(answer)
+            return withContext(NonCancellable) { answer.await() }
+        }
+    }
+
+    private fun Connection.json() = frames.messages.map { it.toJson() }
+
+    /**
+     * Audit 3, finding 5: a COUNT replaced on its id stopped counting against the cap only once its
+     * coroutine ended, so a store that ignores the cancellation held two slots for one COUNT.
+     */
+    @Test
+    fun aReplacedCountFreesItsSlotWhenItIsCancelled() =
+        runTest {
+            val backend = OpenReqsHeldCounts()
+            val connection = Connection(this, backend, AtMost(2))
+
+            connection.incoming.send("""["COUNT","c",{"kinds":[1]}]""")
+            connection.incoming.send("""["COUNT","c",{"kinds":[7]}]""")
+            connection.incoming.send("""["REQ","s",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("""["EOSE","s"]"""), connection.json().filter { "\"s\"" in it }, "one COUNT and one REQ fit under a cap of two")
+            backend.answers.forEach { it.complete(1) }
+            testScheduler.advanceUntilIdle()
+            assertEquals(listOf("""["COUNT","c",{"count":1}]"""), connection.onId("c"))
+            connection.end()
+        }
+
+    /**
+     * Audit 3, finding 6: at the cap, a COUNT on an open REQ's id was refused, and the refusal
+     * closed the REQ with it. The id already holds a request, as a re-COUNT's does.
+     */
+    @Test
+    fun aCountOnAnOpenReqsIdAtTheCapIsAnsweredAndKeepsTheReq() =
+        runTest {
+            val backend = OpenReqsHeldCounts()
+            val connection = Connection(this, backend, AtMost(1))
+
+            connection.incoming.send("""["REQ","s",{"kinds":[1]}]""")
+            connection.incoming.send("""["COUNT","s",{"kinds":[1]}]""")
+            testScheduler.advanceUntilIdle()
+            backend.answers.forEach { it.complete(3) }
+            testScheduler.advanceUntilIdle()
+            // An open REQ closes silently; an unknown id would answer "no such subscription".
+            connection.incoming.send("""["CLOSE","s"]""")
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(listOf("""["COUNT","s",{"count":3}]"""), connection.onId("s"))
+            connection.end()
+        }
 }

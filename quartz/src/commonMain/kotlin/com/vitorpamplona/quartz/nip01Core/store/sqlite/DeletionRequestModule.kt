@@ -128,8 +128,7 @@ class DeletionRequestModule(
         if (event !is DeletionRequestEvent) return emptySet()
         val rows = LinkedHashSet<IdAndTime>()
         deleteSQL(event.pubKey, event.createdAt, event.deleteEventIds(), event.deleteAddresses(), hasher(db)).forEach { delete ->
-            val select = "SELECT created_at, id FROM event_headers" + delete.sql.substringAfter("DELETE FROM event_headers") + " LIMIT ${limit + 1}"
-            db.prepare(select).use { stmt ->
+            db.prepare(selectSQL(delete, limit + 1)).use { stmt ->
                 delete.args.forEachIndexed { i, arg -> stmt.bindAny(i + 1, arg) }
                 while (stmt.step()) rows.add(IdAndTime(stmt.getLong(0), stmt.getText(1)))
             }
@@ -137,6 +136,12 @@ class DeletionRequestModule(
         }
         return rows
     }
+
+    /** [delete] as the `SELECT created_at, id` [rowsDeletedBy] runs before it, same predicate. */
+    internal fun selectSQL(
+        delete: SqlArgs,
+        limit: Int,
+    ): String = "SELECT created_at, id FROM event_headers" + delete.sql.substringAfter("DELETE FROM event_headers") + " LIMIT $limit"
 
     /**
      * Creates a Delete statement that correctly deletes by id,
@@ -182,6 +187,10 @@ class DeletionRequestModule(
         val replaceableKindsParam = replaceablesByKind.keys.joinToString(",") { "?" }
         val replaceableKindsValues = replaceablesByKind.keys.map { it.toLong() }
 
+        // `+pubkey_owner_hash`: without ANALYZE stats, three or more ids made SQLite pick
+        // query_by_owner_created over the unique id index, walking every event of the author,
+        // gift wraps included, under the writer. The unary + keeps the owner a filter on the
+        // rows the id index finds. [rowsDeletedBy] runs the same predicate as a select.
         val deleteById =
             if (idValues.isNotEmpty()) {
                 SqlArgs(
@@ -189,7 +198,7 @@ class DeletionRequestModule(
                     DELETE FROM event_headers
                     WHERE
                         id IN ($idParams) AND
-                        pubkey_owner_hash = ? AND
+                        +pubkey_owner_hash = ? AND
                         kind NOT IN ($IMMUNE_KINDS)
                     """.trimIndent(),
                     idValues.plus(owner).toTypedArray(),

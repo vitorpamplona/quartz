@@ -38,9 +38,14 @@ import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.concurrent.Volatile
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Per-connection NIP-77 negentropy state and dispatch.
@@ -50,10 +55,18 @@ import kotlin.concurrent.Volatile
  * so the connection class only routes commands while this class owns
  * the negentropy lifecycle and error mapping.
  *
- * With a [scope], a NEG-OPEN's snapshot is built off the command loop, like a COUNT: a scan of a
- * large corpus held every frame behind it on the connection until it finished. NEG-MSGs on that
- * subId wait for it, in order, without holding the loop either. The map is under a lock, since a
- * disconnect clears it from another thread while an open is running.
+ * With a [scope], a NEG-OPEN's snapshot is built off the command loop, on the IO pool: a
+ * scan of a large corpus held every frame behind it on the connection until it finished, and a
+ * store that never suspends (SQLite) ran it on the connection's own thread even when launched
+ * from it. NEG-MSGs on that subId wait for it, in order, without holding the loop either. The map
+ * is under a lock, since a disconnect clears it from another thread while an open is running.
+ *
+ * A build ends with its session: a NEG-CLOSE, a re-open or a disconnect cancels it, with the
+ * messages queued behind it. One that keeps running after that (a store that ignores the
+ * cancellation) still holds its slot under [NegentropySettings.maxSessionsPerConnection] until
+ * it ends, so a client looping NEG-OPEN / NEG-CLOSE cannot queue scans without bound. A reply goes
+ * out only while its session is the current one on its subId, checked under the lock it is sent
+ * under, so a replaced session's answer never follows its replacement's.
  *
  * The snapshot is taken as the caller ([context]): an observer-relative store (STORE-O01)
  * answers a NEG-OPEN the same set it answers that connection's REQ and COUNT.
@@ -83,21 +96,64 @@ class NegSessionRegistry(
     private class Entry {
         @Volatile var session: NegentropyServerSession? = null
 
+        /** The snapshot build, when it runs off the loop. */
+        @Volatile var build: Job? = null
+
         /** The last job queued on this subId (the open, then each message); null when none ran off the loop. */
         @Volatile var tail: Job? = null
+
+        /** Its build has not ended yet. Under [lock]. */
+        var building = false
+
+        /** Stops the build and every message queued behind it. */
+        fun cancel() {
+            build?.cancel()
+            tail?.cancel()
+        }
     }
+
+    /**
+     * Where a build runs: the IO pool when the connection's scope runs on [Dispatchers.Default]
+     * (or names no dispatcher, which means it). A build is a blocking scan of up to
+     * [NegentropySettings.maxSyncEvents] rows; on the cores-sized Default pool a few concurrent
+     * NEG-OPENs would starve the CPU work (verification, JSON) of every connection. A dispatcher
+     * the app chose for the scope is kept, as is a test's.
+     */
+    private val buildContext: CoroutineContext =
+        when (scope?.coroutineContext?.get(ContinuationInterceptor)) {
+            null, Dispatchers.Default -> Dispatchers.IO
+            else -> EmptyCoroutineContext
+        }
 
     private val lock = PlatformLock()
     private val sessions = HashMap<String, Entry>()
 
+    /** Entries no longer in [sessions] whose build still runs: each holds a slot until it ends. Under [lock]. */
+    private val draining = HashSet<Entry>()
+
     private fun entry(subId: String): Entry? = lock.withLock { sessions[subId] }
 
-    /** Drops [subId]'s entry if it is still [entry]. */
-    private fun dropIfCurrent(
+    /** Removes [subId]'s entry, keeping its slot while its build runs. Under [lock]. */
+    private fun removeLocked(subId: String): Entry? =
+        sessions.remove(subId)?.also {
+            if (it.building) draining.add(it)
+        }
+
+    /**
+     * Sends [message] if [entry] is still [subId]'s session, under the lock, so a re-open or a close
+     * cannot land between the check and the send. With [drop], the session ends with it.
+     */
+    private fun sendIfCurrent(
         subId: String,
         entry: Entry,
+        message: Message,
+        drop: Boolean = false,
     ) {
-        lock.withLock { if (sessions[subId] === entry) sessions.remove(subId) }
+        lock.withLock {
+            if (sessions[subId] !== entry) return
+            if (drop) removeLocked(subId)
+            send(message)
+        }
     }
 
     /**
@@ -115,9 +171,12 @@ class NegSessionRegistry(
      *
      * Two strfry-parity protections fire here:
      *  - **Per-connection session cap.** If an OPEN would push the
-     *    map past [NegentropySettings.maxSessionsPerConnection], we
+     *    sessions, plus the builds still running after their session
+     *    ended, past [NegentropySettings.maxSessionsPerConnection], we
      *    send a NOTICE (matching strfry's
-     *    `"too many concurrent NEG requests"`) and drop the OPEN.
+     *    `"too many concurrent NEG requests"`) and drop the OPEN. A
+     *    same-subId re-open first ends the session it replaces, so it
+     *    is refused only when that one's build is still running at the cap.
      *  - **Snapshot size cap.** The store is asked for at most
      *    `maxSyncEvents + 1` entries; if the +1 sentinel comes back,
      *    the corpus exceeds the cap and we send NEG-ERR
@@ -135,27 +194,40 @@ class NegSessionRegistry(
         val filters = listOf((gate as PolicyResult.Accepted).cmd.filter)
 
         val entry = Entry()
-        val replaced =
-            lock.withLock {
-                // Per-connection cap. Only fires when this is a NEW subId —
-                // a same-subId re-open replaces the prior session 1-for-1.
-                val isReopen = sessions.containsKey(cmd.subId)
-                if (!isReopen && sessions.size >= settings.maxSessionsPerConnection) return@withLock null
-                // NIP-77: same-subId OPEN replaces any prior session.
-                sessions.put(cmd.subId, entry) ?: Entry()
+        val runScope = scope
+        // Lazy, so it is the entry's before anything can cancel the entry, and dispatched once
+        // started: launched UNDISPATCHED, a store that never suspends ran the whole scan inline.
+        val job =
+            runScope?.launch(buildContext, start = CoroutineStart.LAZY) { build(cmd, filters, entry) }?.also { job ->
+                entry.build = job
+                entry.tail = job
+                // Runs however the job ends, even cancelled before it started.
+                job.invokeOnCompletion {
+                    lock.withLock {
+                        entry.building = false
+                        draining.remove(entry)
+                    }
+                }
             }
-        if (replaced == null) {
+        var replaced: Entry? = null
+        val admitted =
+            lock.withLock {
+                // NIP-77: same-subId OPEN replaces any prior session; it ends here, first.
+                replaced = removeLocked(cmd.subId)
+                // Per-connection cap, over the sessions and the builds that outlived theirs.
+                if (sessions.size + draining.size >= settings.maxSessionsPerConnection) return@withLock false
+                sessions[cmd.subId] = entry
+                if (job != null && !job.isCompleted) entry.building = true
+                true
+            }
+        replaced?.cancel()
+        if (!admitted) {
+            job?.cancel()
             send(NoticeMessage("too many concurrent NEG requests"))
             return
         }
-        replaced.tail?.cancel()
 
-        val runScope = scope
-        if (runScope == null) {
-            build(cmd, filters, entry)
-        } else {
-            entry.tail = runScope.launch(start = CoroutineStart.UNDISPATCHED) { build(cmd, filters, entry) }
-        }
+        if (job == null) build(cmd, filters, entry) else job.start()
     }
 
     private suspend fun build(
@@ -178,21 +250,19 @@ class NegSessionRegistry(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                dropIfCurrent(cmd.subId, entry)
-                send(NegErrMessage(cmd.subId, "error: ${e.message ?: "snapshot failed"}"))
+                sendIfCurrent(cmd.subId, entry, NegErrMessage(cmd.subId, "error: ${e.message ?: "snapshot failed"}"), drop = true)
                 return
             }
         // Closed, replaced or cleared while the snapshot was built: nothing is owed.
         if (entry(cmd.subId) !== entry) return
         if (sealedStorage == null) {
-            dropIfCurrent(cmd.subId, entry)
             // The cap rides along with the refusal. A client cannot discover
             // this number any other way — NIP-11 has no field for it — so
             // without it the only route to a window we WILL answer is guessing,
             // halving, one refused NEG-OPEN at a time. Every one of those costs
             // us the snapshot scan that produced this rejection, which makes
             // stating it cheaper for the relay than staying quiet.
-            send(NegErrMessage(cmd.subId, "blocked: too many query results", settings.maxSyncEvents.toLong()))
+            sendIfCurrent(cmd.subId, entry, NegErrMessage(cmd.subId, "blocked: too many query results", settings.maxSyncEvents.toLong()), drop = true)
             return
         }
 
@@ -249,18 +319,17 @@ class NegSessionRegistry(
      * error response in NIP-77 for an unknown close.
      */
     fun close(cmd: NegCloseCmd) {
-        lock.withLock { sessions.remove(cmd.subId) }?.tail?.cancel()
+        lock.withLock { removeLocked(cmd.subId) }?.cancel()
     }
 
     /** Dropped on `RelaySession.cancelAllSubscriptions`. */
     fun clear() {
         val dropped =
             lock.withLock {
-                val all = sessions.values.toList()
-                sessions.clear()
-                all
+                val all = sessions.keys.toList()
+                all.mapNotNull { removeLocked(it) }
             }
-        dropped.forEach { it.tail?.cancel() }
+        dropped.forEach { it.cancel() }
     }
 
     /** Test/diagnostic accessor. */
@@ -274,12 +343,11 @@ class NegSessionRegistry(
     ) {
         try {
             val response = block(session)
-            if (response != null) send(response)
+            if (response != null) sendIfCurrent(subId, entry, response)
         } catch (_: Exception) {
             // strfry sends `PROTOCOL-ERROR` on library reconcile()
             // parse failure and tears the session down.
-            dropIfCurrent(subId, entry)
-            send(NegErrMessage(subId, "PROTOCOL-ERROR"))
+            sendIfCurrent(subId, entry, NegErrMessage(subId, "PROTOCOL-ERROR"), drop = true)
         }
     }
 }

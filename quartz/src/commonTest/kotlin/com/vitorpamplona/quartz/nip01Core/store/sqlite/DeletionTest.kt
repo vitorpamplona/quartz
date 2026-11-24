@@ -34,6 +34,8 @@ import com.vitorpamplona.quartz.utils.TimeUtils
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class DeletionTest : BaseDBTest() {
     val signer = NostrSignerSync()
@@ -244,7 +246,7 @@ class DeletionTest : BaseDBTest() {
                 DELETE FROM event_headers
                 WHERE
                     id IN ("ca29c211f","ca29c211d") AND
-                    pubkey_owner_hash = "1573573083296714675" AND
+                    +pubkey_owner_hash = "1573573083296714675" AND
                     kind NOT IN (5, 62)
                 ├── SEARCH event_headers USING INDEX event_headers_id (id=?)
                 ├── SEARCH event_vanish USING INTEGER PRIMARY KEY (rowid=?)
@@ -253,6 +255,35 @@ class DeletionTest : BaseDBTest() {
                 """.trimIndent(),
                 db.store.explainQuery(sql.sql, sql.args),
             )
+        }
+
+    /**
+     * Audit 3, finding 1: with no ANALYZE stats, a kind 5 naming three or more ids switched the
+     * id delete (and [DeletionRequestModule.rowsDeletedBy]'s select) to `query_by_owner_created`,
+     * scanning every event of the author, gift wraps included, under the writer.
+     */
+    @Test
+    fun testDeleteByIdUsesTheIdIndexAtEverySize() =
+        forEachDB { db ->
+            for (count in listOf(1, 3, 50)) {
+                val delete =
+                    db.store.deletionModule
+                        .deleteSQL(
+                            pubkey = "key1",
+                            createdAt = 1766686500,
+                            idValues = List(count) { "ca29c211$it" },
+                            addresses = emptyList(),
+                            hasher = TagNameValueHasher(0),
+                        ).first()
+
+                val deletePlan = db.store.explainQuery(delete.sql, delete.args)
+                assertTrue("event_headers_id" in deletePlan, "delete of $count ids:\n$deletePlan")
+                assertFalse("query_by_owner_created" in deletePlan, "delete of $count ids:\n$deletePlan")
+
+                val selectPlan = db.store.explainQuery(db.store.deletionModule.selectSQL(delete, 100), delete.args)
+                assertTrue("event_headers_id" in selectPlan, "select of $count ids:\n$selectPlan")
+                assertFalse("query_by_owner_created" in selectPlan, "select of $count ids:\n$selectPlan")
+            }
         }
 
     @Test
