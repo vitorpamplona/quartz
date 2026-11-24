@@ -93,8 +93,10 @@ class RelayReqRefusals(
 
     /**
      * Feed a CLOSED (or NOTICE) reason for [relay]; escalates to a block once the class
-     * repeats. Returns true only when this call *newly* blocked the relay, so the caller can
-     * drop it from the desired-relay set (closing the socket) exactly once.
+     * repeats. Returns true only when this call changed the relay's block: newly blocked it, or
+     * tightened a [Policy.SEARCH_ONLY] block to [Policy.NO_READS], so the caller rebuilds the
+     * desired-relay set (dropping the relay closes its socket). A relay kept wanted only by
+     * search subscriptions is dropped once it turns out to serve no REQ at all.
      */
     fun onRefused(
         relay: NormalizedRelayUrl,
@@ -111,10 +113,10 @@ class RelayReqRefusals(
                 if (old.candidate == candidate) Progress(candidate, old.hits + 1) else Progress(candidate, 1)
             }
         if (next.hits >= threshold) {
-            val wasBlocked = blocked[relay] != null
-            blocked[relay] = candidate
-            if (!wasBlocked) {
-                blockedSet.update { it + relay }
+            val before = blocked[relay]
+            if (before != candidate) {
+                blocked[relay] = candidate
+                if (before == null) blockedSet.update { it + relay }
                 return true
             }
         }
