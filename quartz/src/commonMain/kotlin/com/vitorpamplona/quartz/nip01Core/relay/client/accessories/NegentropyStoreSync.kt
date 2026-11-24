@@ -516,6 +516,12 @@ class NegentropyStoreSync(
                 // whole-sync watchdog is disabled (idleTimeoutMs = 0) — a page that
                 // never EOSEs must not hang the sync forever.
                 val pageIdleMs = if (config.idleTimeoutMs > 0) config.idleTimeoutMs else DEFAULT_DOWNLOAD_IDLE_MS
+                // The trade-off: fetchAllPages calls this on the relay's shared reader, so while
+                // the inserter is PAGE_INSERT_BUFFER behind, that connection's other frames (OK,
+                // AUTH, other subscriptions) wait behind this one too. Not decoupled: a buffer that
+                // never suspends would hold a relay's whole answer in memory when it pages in one
+                // REQ, and dropping or failing events would lose them. The wait lasts only as long
+                // as the store is slower than the relay, and the walk's idle timer does not count it.
                 client.fetchAllPages(relay, listOf(filter), pageIdleMs) { event -> events.send(event) }
             } finally {
                 events.close()
