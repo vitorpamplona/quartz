@@ -126,6 +126,14 @@ class SQLiteEventStore(
     @Volatile
     private var removalGeneration = 0L
 
+    /**
+     * A kind 5 or a vanish in the open transaction deleted rows: [removalGeneration] moves once it
+     * committed ([publishRemovals]). Bumped inside the transaction, a reader could read the new
+     * generation, scan the snapshot from before the commit and remember "over the cap" under a
+     * generation that stays current after it. Under the writer mutex.
+     */
+    private var removalPending = false
+
     private class OverCap(
         val removalGeneration: Long,
         val maxEntries: Int,
@@ -157,9 +165,24 @@ class SQLiteEventStore(
     internal var liveIndexScans = 0L
         private set
 
+    /** Commits a live-index rebuild replayed onto its scan, having landed while it ran; for tests. */
+    @Volatile
+    internal var liveIndexReplayed = 0L
+        private set
+
     private fun isKnownOverCap(maxEntries: Int): Boolean {
         val known = overCap ?: return false
         return known.removalGeneration == removalGeneration && maxEntries <= known.maxEntries
+    }
+
+    /**
+     * Moves [removalGeneration] for the removals [innerInsertEvent] recorded, once their transaction
+     * ended. A rolled-back one leaves it set, which only costs one rescan. Under the writer mutex.
+     */
+    private fun publishRemovals() {
+        if (!removalPending) return
+        removalPending = false
+        removalGeneration++
     }
 
     /** Drops the live index, and marks anything that counted on the stored set staying as it was. Under the writer mutex. */
@@ -519,8 +542,8 @@ class SQLiteEventStore(
         // Likewise what a vanish will delete: one row is enough to know it deletes anything.
         val vanishing = rightToVanishModule.rowsVanishedBy(event, relay, db, if (delta != null) ITEMIZE_LIMIT + 1 else 1)
         rightToVanishModule.insert(event, relay, headerId, db)
-        // Conservative on a rollback: a stale "something was removed" only costs one rescan.
-        if (deletedRows > 0 || vanishing.isNotEmpty()) removalGeneration++
+        // Published after the commit; conservative on a rollback: a stale "something was removed" only costs one rescan.
+        if (deletedRows > 0 || vanishing.isNotEmpty()) removalPending = true
         if (delta != null) {
             val removed =
                 when {
@@ -539,8 +562,12 @@ class SQLiteEventStore(
 
         pool.useWriter { db ->
             val delta = newDeltaOrNull()
-            db.transaction {
-                innerInsertEvent(event, this, delta)
+            try {
+                db.transaction {
+                    innerInsertEvent(event, this, delta)
+                }
+            } finally {
+                publishRemovals()
             }
             // Still holding the writer mutex: the transaction above has
             // committed, and applying here keeps index updates in exact
@@ -573,10 +600,14 @@ class SQLiteEventStore(
         val outcomes = ArrayList<IEventStore.InsertOutcome>(events.size)
         pool.useWriter { db ->
             val delta = newDeltaOrNull()
-            db.transaction {
-                events.forEachIndexed { i, event ->
-                    outcomes.add(insertWithSavepoint(event, i, this, delta))
+            try {
+                db.transaction {
+                    events.forEachIndexed { i, event ->
+                        outcomes.add(insertWithSavepoint(event, i, this, delta))
+                    }
                 }
+            } finally {
+                publishRemovals()
             }
             // Post-commit, pre-mutex-release: see insertEvent.
             applyAfterCommit(delta)
@@ -770,10 +801,14 @@ class SQLiteEventStore(
     suspend fun transaction(body: Transaction.() -> Unit) {
         pool.useWriter { db ->
             val delta = newDeltaOrNull()
-            db.transaction {
-                with(Transaction(this, delta)) {
-                    body()
+            try {
+                db.transaction {
+                    with(Transaction(this, delta)) {
+                        body()
+                    }
                 }
+            } finally {
+                publishRemovals()
             }
             // Post-commit, pre-mutex-release: see insertEvent.
             applyAfterCommit(delta)
@@ -948,6 +983,7 @@ class SQLiteEventStore(
                 } else if (log != null && !rebuildPoisoned && log.none { it.invalidateAll }) {
                     index.rebuild(scan, maxEntries)
                     log.forEach { applyTo(index, it) }
+                    liveIndexReplayed += log.size
                 }
             }
         } finally {
