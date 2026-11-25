@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip30CustomEmoji.selection
 
+import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -54,5 +56,23 @@ class EmojiListAccessorsTest {
         assertEquals(listOf(pack), list.emojiPackIds())
         assertEquals(listOf(pack), list.emojiPacks().map { it.toValue() })
         assertEquals(listOf(pack), list.linkedAddressIds())
+    }
+
+    /** NIP-51: kind 10030 also carries the user's own preferred emojis as NIP-30 `emoji` tags. */
+    @Test
+    fun emojisAreTheListsOwnValidEmojiTags() {
+        val url = "https://gleasonator.com/emoji/Gleasonator/soapbox.png"
+        val pack = "30030:$other:cats"
+        val list =
+            EmojiListEvent(
+                id,
+                pk,
+                1L,
+                arrayOf(arrayOf("emoji", "soapbox", url, pack), arrayOf("emoji", "pepe laugh", url), arrayOf("a", pack), arrayOf("emoji", "blank", "")),
+                "",
+                sig,
+            )
+
+        assertEquals(listOf(EmojiUrlTag("soapbox", url, Address(30030, other, "cats"))), list.emojis())
     }
 }

@@ -675,7 +675,7 @@ Not in the vocabulary tables yet; each needs the maintainer's review like the ta
 
 | Kind | Class | Links | Built from | Notes |
 |---|---|---|---|---|
-| 10030 | `EmojiListEvent` | a -> MEMBER (A); emoji[emoji-set-address] -> EMOJI_SET (A) | emojiPackIds() (EmojiPackTag::parseAddressId: kind 30030 `a` only); emoji tags: EmojiUrlTag (slot 3 new parser) | NIP-51 'Emojis: user preferred emojis and pointers to emoji sets' (a = kind 30030). Draft lists 10030 under MEMBER. UNCERTAIN / possible DRAFT FIX: the a entries are sets the user USES (a selection), which reads closer to SUBSCRIBED than to membership; rule 7 would name it after the list ('emoji sets'). Loose emoji tags (URLs) not modelled. |
+| 10030 | `EmojiListEvent` | a -> MEMBER (A); emoji[emoji-set-address] -> EMOJI_SET (A) | emojiPackIds() (EmojiPackTag::parseAddressId: kind 30030 `a` only); emojis() (EmojiUrlTag; slot 3 new parser) | NIP-51 'Emojis: user preferred emojis and pointers to emoji sets' (a = kind 30030). Draft lists 10030 under MEMBER. UNCERTAIN / possible DRAFT FIX: the a entries are sets the user USES (a selection), which reads closer to SUBSCRIBED than to membership; rule 7 would name it after the list ('emoji sets'). Loose emoji tags (URLs) not modelled. |
 | 30030 | `EmojiPackEvent` | emoji[emoji-set-address] -> EMOJI_SET (A) | tags.emojis() (EmojiUrlTag; slot 3 new parser); private emojis in NIP-44 content | NIP-51 emoji set / NIP-30. The emoji tags themselves are shortcode+URL (not modelled); only the optional 4th slot (the set an emoji came from, NIP-30) is a link. UNCERTAIN: may point at the pack itself - skip self-links. |
 
 ### `nip35Torrents` (2)

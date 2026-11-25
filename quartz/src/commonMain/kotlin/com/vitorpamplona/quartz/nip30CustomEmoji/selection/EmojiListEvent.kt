@@ -31,6 +31,8 @@ import com.vitorpamplona.quartz.nip01Core.signers.eventTemplate
 import com.vitorpamplona.quartz.nip01Core.signers.eventUpdate
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.ATag
 import com.vitorpamplona.quartz.nip01Core.tags.aTag.toATag
+import com.vitorpamplona.quartz.nip30CustomEmoji.EmojiUrlTag
+import com.vitorpamplona.quartz.nip30CustomEmoji.emojis
 import com.vitorpamplona.quartz.nip30CustomEmoji.pack.EmojiPackEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 
@@ -54,6 +56,9 @@ class EmojiListEvent(
 
     /** The `kind:pubkey:d` ids of [emojiPacks]. */
     fun emojiPackIds() = tags.emojiPackIds()
+
+    /** NIP-51: the user's own preferred emojis, the list's NIP-30 `emoji` tags, in tag order. */
+    fun emojis(): List<EmojiUrlTag> = tags.emojis()
 
     /** Whether the emoji pack [addressId] (`kind:pubkey:d`) is selected in this list. */
     fun hasEmojiPack(addressId: String): Boolean = tags.any { ATag.isTagged(it, addressId) }
