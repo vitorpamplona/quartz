@@ -24,6 +24,7 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.appendTo
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
 import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNullTo
 import com.vitorpamplona.quartz.nip01Core.hints.AddressHintProvider
@@ -53,7 +54,6 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import com.vitorpamplona.quartz.nip50Search.IndexableFieldVisitor
 import com.vitorpamplona.quartz.nip50Search.SearchableEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
-import com.vitorpamplona.quartz.utils.lastNotNullOfOrNull
 
 @Immutable
 @Deprecated("Replaced by NIP-22")
@@ -130,8 +130,8 @@ class GitReplyEvent(
 
     fun repository() = tags.firstNotNullOfOrNull(ATag::parse)
 
-    /** The issue or patch this reply is in: the `e` marked `root`, else NIP-10's first unmarked `e`. */
-    fun rootIssueOrPatch(): HexKey? = tags.lastNotNullOfOrNull(MarkedETag::parseRootId) ?: unmarkedRoot()?.eventId
+    /** The issue or patch this reply is in: the first `e` marked `root` (NIP-10 sorts `e` tags root first), else NIP-10's first unmarked `e`. */
+    fun rootIssueOrPatch(): HexKey? = tags.fastFirstNotNullOfOrNull(MarkedETag::parseRootId) ?: unmarkedRoot()?.eventId
 
     @Suppress("DEPRECATION")
     companion object {
