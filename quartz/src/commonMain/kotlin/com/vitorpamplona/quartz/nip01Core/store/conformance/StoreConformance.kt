@@ -249,6 +249,14 @@ object StoreConformance {
                 listOf("STORE-C01", "STORE-F07"),
                 countOnly = true,
             )
+        // The empty filter matches everything, so a union holding one does too.
+        checks +=
+            Check(
+                "count union with the empty filter",
+                listOf(Filter(kinds = listOf(1), since = tMid), Filter()),
+                listOf("STORE-C01", "STORE-F07", "STORE-F10"),
+                countOnly = true,
+            )
 
         // Aggregates: everything a deletion, supersession or rejected re-offer left behind.
         checks += Check("count all", Filter(), listOf("STORE-C01", "STORE-F10", "STORE-W01", "STORE-W02", "STORE-D01", "STORE-D05"), countOnly = true)

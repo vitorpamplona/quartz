@@ -231,7 +231,7 @@ class QueryBuilder(
         // a rank column) — a non-search branch has no defined relevance, so a
         // mixed REQ falls back to created_at.
         val rankSearch = fts.enabled && filters.all { hasSearchTerm(it.search) }
-        val rowIdSubqueries = unionSubqueriesIfNeeded(filters, hasher, projectRank = rankSearch)
+        val rowIdSubqueries = if (filters.any(::matchesEverything)) null else unionSubqueriesIfNeeded(filters, hasher, projectRank = rankSearch)
 
         return if (rowIdSubqueries == null) {
             QuerySpec(
@@ -375,7 +375,7 @@ class QueryBuilder(
         filters: List<Filter>,
         hasher: TagNameValueHasher,
     ): QuerySpec {
-        val rowIdSubqueries = unionSubqueriesIfNeeded(filters, hasher)
+        val rowIdSubqueries = if (filters.any(::matchesEverything)) null else unionSubqueriesIfNeeded(filters, hasher)
         return if (rowIdSubqueries == null) {
             QuerySpec("SELECT id, created_at FROM event_headers")
         } else {
@@ -648,6 +648,7 @@ class QueryBuilder(
         filters: List<Filter>,
         db: SQLiteConnection,
     ): Int {
+        if (filters.any(::matchesEverything)) return db.countEverything()
         val rowIdSubqueries = unionSubqueriesIfNeeded(filters, hasher(db)) ?: return db.countEverything()
 
         return db.countIn(rowIdSubqueries.sql, rowIdSubqueries.args)
@@ -765,6 +766,15 @@ class QueryBuilder(
         return changes()
     }
 
+    /**
+     * The empty filter, which [prepareRowIDSubQueries] answers with no subquery. A blank search is
+     * no constraint (STORE-S01), so a filter carrying nothing else is the empty filter too. It
+     * matches every row (STORE-F10), so a union holding one matches every row as well (STORE-F07):
+     * query, count and negentropy check for it before [unionSubqueriesIfNeeded], which drops the
+     * branch. Only a delete reads it as no row, so a stray `{}` can't wipe the store.
+     */
+    private fun matchesEverything(filter: Filter): Boolean = filter.isEmpty() || (filter.search != null && !hasSearchTerm(filter.search) && filter.copy(search = null).isEmpty())
+
     // ---------------------------------
     // Prepare unions of all the filters
     // ---------------------------------
@@ -832,12 +842,7 @@ class QueryBuilder(
         // `row_id IN (…)`) and don't rank.
         projectRank: Boolean = false,
     ): QuerySpec? {
-        if (filter.isEmpty()) return null
-
-        // A blank search is no constraint (STORE-S01), so a filter carrying
-        // nothing else IS the empty filter — a delete must not read it as
-        // "every row" (STORE-F10).
-        if (filter.search != null && !hasSearchTerm(filter.search) && filter.copy(search = null).isEmpty()) return null
+        if (matchesEverything(filter)) return null
 
         // With FTS off there is no event_fts table to MATCH/JOIN against.
         // A non-blank search can never match, so this filter contributes
