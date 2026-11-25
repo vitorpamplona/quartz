@@ -301,6 +301,14 @@ interface IEventStore : AutoCloseable {
      * [com.vitorpamplona.quartz.nip01Core.store.sqlite.IndexingStrategy.maintainLiveNegentropyIndex])
      * or the set exceeds [maxEntries] — callers fall back to the scan
      * path either way.
+     *
+     * The index is the full set as an ungated caller sees it. `LiveEventStore`
+     * asks for it only for an unauthenticated NEG-OPEN, or for any caller of
+     * Quartz's SQLite store, which answers every caller alike; an authenticated
+     * caller of any other store gets the scan path, under its
+     * [StoreQueryContext]. A store that gates even unauthenticated callers (an
+     * operator-default observer, STORE-O02) returns `null` here or applies that
+     * gate.
      */
     suspend fun liveNegentropySnapshot(maxEntries: Int): IStorage? = null
 

@@ -132,10 +132,11 @@ interface SessionBackend {
      *
      * Reconciliation only reads the storage, so implementations may hand
      * the same sealed instance to any number of concurrent sessions —
-     * [LiveEventStore] caches the most recent one and reuses it until a
-     * write invalidates it, which turns the periodic-mirror heartbeat
-     * ("anything new since last sync?") from a full scan + sort per
-     * NEG-OPEN into a cache hit. The default builds fresh per call.
+     * [LiveEventStore] caches a few recent ones and reuses each until a
+     * write that can change its set lands, which turns the periodic-mirror
+     * heartbeat ("anything new since last sync?") and a router's windowed
+     * reconciles from a full scan + sort per NEG-OPEN into a cache hit. The
+     * default builds fresh per call.
      */
     suspend fun sealedNegentropyStorage(
         filters: List<Filter>,

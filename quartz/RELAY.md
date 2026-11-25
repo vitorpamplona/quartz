@@ -374,6 +374,14 @@ and negentropy snapshots must agree for the same observer. Access control stays
 in the relay policy. `observer` is the first key that authenticated on the
 connection, so the lens is deterministic when a connection carries several.
 
+`LiveEventStore` caches a few NEG-OPEN snapshots (least recently used out, bounded by count
+and by the ids they hold, 30 s at most each), keyed by filters and, for any store but
+Quartz's SQLite one, by caller; concurrent opens of one key share one walk. An accepted write
+drops only the snapshots it can change under the store rules (what it matches, the version it
+supersedes, what a kind 5 or kind 62 deletes) on the SQLite store, and every snapshot on any
+other store, which may gate by something the write feeds. A gated store that knows which writes
+feed its gate passes `writeIsFilterLocal` (false for those events) to keep the rest cached.
+
 A search/redirector relay is just a custom policy (or, for computed results, a
 custom `IEventStore` whose `query` answers the REQ) that reads the parsed query:
 
