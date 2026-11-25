@@ -292,7 +292,8 @@ non-itemizable cases).
 
 **STORE-N02 —** `sealedNegentropyStorage(filters, maxEntries)` is the same set sealed, `null`
 past `maxEntries`; the relay's `LiveEventStore` builds every NEG-OPEN's storage through it, after
-`liveNegentropySnapshot` for an empty filter. The default seals `snapshotIdsForNegentropy`'s list;
+`liveNegentropySnapshot` for an empty filter (for an unauthenticated caller, or any caller of the
+SQLite store: the index is the ungated set). The default seals `snapshotIdsForNegentropy`'s list;
 a store that walks its ids overrides it to insert each page straight into the storage, so a
 single-filter snapshot holds no per-id objects (a multi-filter one still dedups by id). An
 override answers exactly the set STORE-N01 does, and a decorator forwards it or loses the
@@ -335,6 +336,11 @@ use): fall back to an operator default, or no gate.
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
 
+- 2026-11-25 (pending) STORE-N02 — `LiveEventStore` asks `liveNegentropySnapshot` only for an
+  unauthenticated NEG-OPEN or a caller of the SQLite store; an authenticated caller of any other
+  store is walked under its lens. Its snapshot cache keeps several snapshots and drops only those a
+  write can change (by these rules: W01/W02 supersession, D01/D02/D07 deletion, W06 ownership);
+  a store that gates answers which writes feed its gate (`writeIsFilterLocal`).
 - 2026-11-23 (pending) STORE-N02/O01 — the SQLite store now overrides `sealedNegentropyStorage`
   (rows stream into the storage), and the relay builds a NEG-OPEN's storage under the caller's
   `StoreQueryContext` (`SessionBackend.sealedNegentropyStorage(ctx, …)`), draining a deferred FTS

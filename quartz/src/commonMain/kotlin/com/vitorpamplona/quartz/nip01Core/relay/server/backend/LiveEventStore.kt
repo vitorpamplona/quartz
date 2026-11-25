@@ -31,17 +31,16 @@ import com.vitorpamplona.quartz.nip01Core.store.RawEvent
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
 import com.vitorpamplona.quartz.utils.Log
-import com.vitorpamplona.quartz.utils.TimeUtils
 import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
 import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
-import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -90,18 +89,33 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *  EOSE: a slow replay under heavy ingest then costs the REQ its clean `limit`, never an
  *  event and never unbounded memory. 1,000 with the two-argument constructor; 0 holds
  *  nothing, every live event forwarding as it arrives, as before the hold existed.
+ * @param writeIsFilterLocal Whether an accepted event changes what [store] answers only the way
+ *  the store rules say a write does: it joins the sets of the filters it matches, and it removes
+ *  what it supersedes (a replaceable or addressable version) or deletes (a kind 5, a kind 62),
+ *  for every caller alike. Then a NEG-OPEN snapshot of filters the write cannot touch stays
+ *  cached across it. A store whose answers also follow something a write feeds (an observer's
+ *  trust built from follow lists or provider lists, a spam score built from reports) answers
+ *  false for those events, and each of them drops every cached snapshot. `null`: true for every
+ *  event on Quartz's SQLite [EventStore], false for every event on any other store, a wrapper of
+ *  it included, since it may gate (STORE-O01). Called once per accepted write, before its `OK`,
+ *  on the ingest's callback thread: keep it cheap. A throw counts as false.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class LiveEventStore(
     private val store: IEventStore,
     private val ingest: EventIngest,
     val maxHeldBeforeEose: Int,
+    writeIsFilterLocal: ((Event) -> Boolean)?,
 ) : LiveSubscriptionBackend {
     constructor(store: IEventStore, ingest: EventIngest) : this(store, ingest, DEFAULT_MAX_HELD_BEFORE_EOSE)
+
+    constructor(store: IEventStore, ingest: EventIngest, maxHeldBeforeEose: Int) : this(store, ingest, maxHeldBeforeEose, null)
 
     init {
         require(maxHeldBeforeEose >= 0) { "maxHeldBeforeEose must not be negative: $maxHeldBeforeEose" }
     }
+
+    private val writeIsFilterLocal: (Event) -> Boolean = writeIsFilterLocal ?: if (store is EventStore) EVERY_WRITE else NO_WRITE
 
     /**
      * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
@@ -323,7 +337,7 @@ class LiveEventStore(
             try {
                 drainFtsIfSearching(filters)
                 val seen = seen ?: throw IllegalStateException("a subscription replays once")
-                withCallerIdentity(ctx) { rows(seen) }
+                withCallerIdentity(ctx.authenticatedUsers) { rows(seen) }
                 onEose()
                 if (!openIfNothingHeld()) {
                     val executor = partition.executor
@@ -562,7 +576,8 @@ class LiveEventStore(
             ingest.submit(event, skipVerify) { outcome ->
                 try {
                     val accepted = outcome is IEventStore.InsertOutcome.Accepted
-                    if (accepted) writeGeneration.addAndFetch(1L)
+                    // Before the OK: an open after it must not be served a snapshot without this write.
+                    if (accepted) snapshots.onAccepted(event, isFilterLocal(event))
                     if (verdictFirst) {
                         // The ingest only calls back once the write is durable, and the
                         // publisher's OK need not wait for live delivery.
@@ -594,6 +609,14 @@ class LiveEventStore(
             throw e
         }
     }
+
+    private fun isFilterLocal(event: Event): Boolean =
+        try {
+            writeIsFilterLocal(event)
+        } catch (e: Exception) {
+            Log.w(TAG, "writeIsFilterLocal threw; dropping every cached negentropy snapshot", e)
+            false
+        }
 
     /** One submission of [id] is done; releases the subscriptions that kept it once none is left. */
     private fun leave(id: String) {
@@ -783,22 +806,21 @@ class LiveEventStore(
 
     /**
      * Runs [block] with a [StoreQueryContext] carrying the connection's
-     * NIP-42-authenticated pubkeys, so observer-relative stores can read
-     * the caller's identity from the coroutine context. Skipped entirely
-     * for unauthenticated connections — the element's contract is
-     * "present means non-empty".
+     * NIP-42-authenticated pubkeys ([users], read once from the [RequestContext]
+     * by the caller), so observer-relative stores can read the caller's
+     * identity from the coroutine context. Skipped entirely for
+     * unauthenticated connections — the element's contract is "present means
+     * non-empty".
      */
     private suspend inline fun <R> withCallerIdentity(
-        ctx: RequestContext,
+        users: Set<String>,
         crossinline block: suspend () -> R,
-    ): R {
-        val users = ctx.authenticatedUsers
-        return if (users.isEmpty()) {
+    ): R =
+        if (users.isEmpty()) {
             block()
         } else {
             withContext(StoreQueryContext(users)) { block() }
         }
-    }
 
     /**
      * With deferred FTS, a search query must first drain the catch-up
@@ -879,7 +901,7 @@ class LiveEventStore(
         filters: List<Filter>,
     ): Int {
         drainFtsIfSearching(filters)
-        return withCallerIdentity(ctx) { store.count(filters) }
+        return withCallerIdentity(ctx.authenticatedUsers) { store.count(filters) }
     }
 
     /**
@@ -927,47 +949,38 @@ class LiveEventStore(
     // ------------------------------------------------------------------
 
     /**
-     * Bumped after every accepted write. A cached negentropy snapshot is
-     * only valid while this hasn't moved. Deletion paths that bypass the
-     * ingest queue (expiration sweeps, NIP-86 admin purges) don't bump it,
-     * which is why cache entries also carry a short TTL: a snapshot is a
-     * point-in-time set by NIP-77's nature, and a few seconds of staleness
-     * only means a peer momentarily re-offers ids the relay just dropped.
+     * The sealed storages recent NEG-OPENs were served from, by (caller, filters, cap): see
+     * [NegentropySnapshotCache] for the bounds, the single flight and the invalidation rules.
      */
-    private val writeGeneration = AtomicLong(0L)
-
-    private class CachedSnapshot(
-        val filterKey: String,
-        val generation: Long,
-        val builtAt: Long,
-        val storage: IStorage?,
-    )
-
-    private val snapshotCache = AtomicReference<CachedSnapshot?>(null)
+    private val snapshots = NegentropySnapshotCache(MAX_SNAPSHOT_SLOTS, MAX_SNAPSHOT_IDS, SNAPSHOT_TTL_SECONDS)
 
     /**
      * Quartz's SQLite store answers every caller the same set: it never reads [StoreQueryContext].
      * Its snapshots are cached for everyone, so authenticated mirror peers reconciling one filter
-     * share the one slot instead of evicting each other. Any other store, a wrapper of it included,
-     * may be observer-relative (STORE-O01) and keeps a snapshot per caller.
+     * share one slot, and its always-current full-set index serves every caller. Any other store,
+     * a wrapper of it included, may be observer-relative (STORE-O01): it keeps a snapshot per
+     * caller, and an authenticated caller's full set is walked under its lens.
      */
     private val answersEveryCallerAlike = store is EventStore
 
     /**
-     * Serves repeated NEG-OPENs of the same filter from one sealed
-     * storage as long as no write landed in between (single slot — the
-     * mirror-heartbeat pattern is many peers reconciling the same broad
-     * filter, not many filters). Rebuilding on every open costs a full
-     * scan + O(n log n) seal that grows with the corpus: relayBench
-     * measured 342 ms per identical-set reconcile at 50k events vs
-     * strfry's 26 ms off its always-current tree.
+     * Serves repeated NEG-OPENs of the same filter from one sealed storage while no write
+     * that can change its set landed in between, for a few filters at once (routers reconcile
+     * many windows; mirror peers one broad filter), and shares one walk between opens that arrive
+     * together. Rebuilding on every open costs a full scan + O(n log n) seal that grows with the
+     * corpus: relayBench measured 342 ms per identical-set reconcile at 50k events vs strfry's
+     * 26 ms off its always-current tree.
+     *
+     * Without a [RequestContext], the caller is whoever the coroutine's [StoreQueryContext] names,
+     * if anyone.
      */
     override suspend fun sealedNegentropyStorage(
         filters: List<Filter>,
         maxEntries: Int,
     ): IStorage? {
         drainFtsIfSearching(filters)
-        return cachedNegentropyStorage(filters, maxEntries, emptySet())
+        val users = currentCoroutineContext()[StoreQueryContext]?.authenticatedUsers ?: emptySet()
+        return cachedNegentropyStorage(filters, maxEntries, users)
     }
 
     /**
@@ -976,6 +989,9 @@ class LiveEventStore(
      * cached per caller identity. Without it, an observer-gated store answered NEG-OPEN ungated,
      * a search NEG-OPEN missed what the backlog held, and one caller's cached snapshot was handed
      * to the next.
+     *
+     * [RequestContext.authenticatedUsers] is read once: an AUTH landing mid-open must not build
+     * the snapshot as one caller and cache it as another.
      */
     override suspend fun sealedNegentropyStorage(
         ctx: RequestContext,
@@ -984,7 +1000,7 @@ class LiveEventStore(
     ): IStorage? {
         drainFtsIfSearching(filters)
         val users = ctx.authenticatedUsers
-        return withCallerIdentity(ctx) { cachedNegentropyStorage(filters, maxEntries, users) }
+        return withCallerIdentity(users) { cachedNegentropyStorage(filters, maxEntries, users) }
     }
 
     private suspend fun cachedNegentropyStorage(
@@ -996,40 +1012,41 @@ class LiveEventStore(
         // relay-relay sync sends by default — are served from the store's
         // always-current index when it maintains one: no scan, no
         // O(n log n) seal, cold or not. `null` falls through to the scan
-        // path, which also owns the over-cap NEG-ERR detection.
-        if (filters.size == 1 && filters[0].isEmpty()) {
+        // path, which also owns the over-cap NEG-ERR detection. Only for a
+        // caller the store answers ungated: an observer-relative store's
+        // index of everything is not what it answers an authenticated caller.
+        if (filters.size == 1 && filters[0].isEmpty() && (users.isEmpty() || answersEveryCallerAlike)) {
             store.liveNegentropySnapshot(maxEntries)?.let { return it }
         }
 
-        val generation = writeGeneration.load()
         // Keyed by who asks too, unless the store answers everyone alike: an observer-relative
         // store answers each caller its own set.
         val asWho = if (answersEveryCallerAlike) "" else users.joinToString(",")
         val key = filters.joinToString("\u0000") { it.toJson() } + "\u0000cap=$maxEntries\u0000as=" + asWho
-        val now = TimeUtils.now()
-
-        val cached = snapshotCache.load()
-        if (cached != null &&
-            cached.filterKey == key &&
-            cached.generation == generation &&
-            now - cached.builtAt <= SNAPSHOT_TTL_SECONDS
-        ) {
-            return cached.storage
-        }
 
         // The store builds it, so one that walks its ids can stream them into the storage.
-        val built = store.sealedNegentropyStorage(filters, maxEntries)
-        snapshotCache.store(CachedSnapshot(key, generation, now, built))
-        return built
+        return snapshots.getOrBuild(key, filters) { store.sealedNegentropyStorage(filters, maxEntries) }
     }
 
     private companion object {
         /**
          * Ceiling on how long a cached snapshot may serve NEG-OPENs even
          * with no observed writes — bounds staleness from delete paths
-         * the generation counter can't see.
+         * this layer can't see (expiry sweeps, admin purges on the store).
          */
         const val SNAPSHOT_TTL_SECONDS = 30L
+
+        /** Cached NEG-OPEN snapshots: a router's handful of windows, or several peers' filters. */
+        const val MAX_SNAPSHOT_SLOTS = 8
+
+        /**
+         * Ids the cached snapshots may hold together, ~80 MB of storage. The newest snapshot stays
+         * even when it alone is larger, as the single slot before it did.
+         */
+        const val MAX_SNAPSHOT_IDS = 2_000_000L
+
+        val EVERY_WRITE: (Event) -> Boolean = { true }
+        val NO_WRITE: (Event) -> Boolean = { false }
 
         const val TAG = "LiveEventStore"
 
