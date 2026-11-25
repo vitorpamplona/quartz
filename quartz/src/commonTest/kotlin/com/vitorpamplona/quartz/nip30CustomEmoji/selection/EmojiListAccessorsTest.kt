@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.nip30CustomEmoji.selection
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -42,5 +43,16 @@ class EmojiListAccessorsTest {
 
         assertTrue(list.hasEmojiPack(pack))
         assertFalse(list.hasEmojiPack("30030:$other:dogs"))
+    }
+
+    /** NIP-51: kind 10030's `a` tags point at kind 30030 emoji sets; any other `a` is not a pack. */
+    @Test
+    fun emojiPacksAreOnlyTheKind30030Addresses() {
+        val pack = "30030:$other:cats"
+        val list = EmojiListEvent(id, pk, 1L, arrayOf(arrayOf("a", pack, relay), arrayOf("a", addressId)), "", sig)
+
+        assertEquals(listOf(pack), list.emojiPackIds())
+        assertEquals(listOf(pack), list.emojiPacks().map { it.toValue() })
+        assertEquals(listOf(pack), list.linkedAddressIds())
     }
 }

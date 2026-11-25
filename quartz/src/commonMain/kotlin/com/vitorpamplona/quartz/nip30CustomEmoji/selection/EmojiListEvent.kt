@@ -44,13 +44,16 @@ class EmojiListEvent(
     sig: HexKey,
 ) : BaseReplaceableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     AddressHintProvider {
-    override fun addressHints() = tags.mapNotNull(ATag::parseAsHint)
+    override fun addressHints() = tags.emojiPackHints()
 
+    /** `MEMBER`: the kind 30030 emoji sets the user picked (`a`). */
     override fun linkedAddressIds() = emojiPackIds()
 
-    fun emojiPacks() = tags.mapNotNull(ATag::parseAddress)
+    /** NIP-51: the emoji sets (kind 30030 `a` tags) in this list. An `a` of any other kind is skipped. */
+    fun emojiPacks() = tags.emojiPacks()
 
-    fun emojiPackIds() = tags.mapNotNull(ATag::parseAddressId)
+    /** The `kind:pubkey:d` ids of [emojiPacks]. */
+    fun emojiPackIds() = tags.emojiPackIds()
 
     /** Whether the emoji pack [addressId] (`kind:pubkey:d`) is selected in this list. */
     fun hasEmojiPack(addressId: String): Boolean = tags.any { ATag.isTagged(it, addressId) }
