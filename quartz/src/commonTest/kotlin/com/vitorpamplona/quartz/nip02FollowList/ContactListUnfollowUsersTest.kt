@@ -64,4 +64,30 @@ class ContactListUnfollowUsersTest {
             assertSame(list, ContactListEvent.unfollowUsers(list, setOf(other), signer))
             assertSame(list, ContactListEvent.unfollowUsers(list, emptySet(), signer))
         }
+
+    @Test
+    fun unfollowUserDropsOnlyThatUsersFollow() =
+        runTest {
+            val list =
+                ContactListEvent.create(
+                    content = "",
+                    tags =
+                        arrayOf(
+                            arrayOf("p", pk),
+                            arrayOf("p", other, relay, "bob"),
+                            arrayOf("t", other),
+                            arrayOf("e", eventId),
+                            arrayOf("alt"),
+                            arrayOf("p", third),
+                        ),
+                    signer = signer,
+                )
+
+            val updated = ContactListEvent.unfollowUser(list, other, signer)
+
+            assertEquals(
+                listOf(listOf("p", pk), listOf("t", other), listOf("e", eventId), listOf("alt"), listOf("p", third)),
+                updated.tags.map { it.toList() },
+            )
+        }
 }
