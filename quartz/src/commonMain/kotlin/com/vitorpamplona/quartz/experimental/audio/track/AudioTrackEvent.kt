@@ -67,6 +67,7 @@ class AudioTrackEvent(
 
     fun subject() = tags.firstNotNullOfOrNull(SubjectTag::parse)
 
+    /** The track's participants (`p`) with their roles: Zapstr's `["p", pubkey, "Host"]`, in tag order. */
     fun participants() = tags.mapNotNull(ParticipantTag::parse)
 
     /** The participants' pubkeys (every valid `p` tag, in tag order), without building [ParticipantTag]s. */
