@@ -31,8 +31,10 @@ import com.vitorpamplona.quartz.nip01Core.signers.NostrSignerSync
 import com.vitorpamplona.quartz.nip01Core.store.IEventStore
 import com.vitorpamplona.quartz.nip01Core.store.StoreQueryContext
 import com.vitorpamplona.quartz.nip01Core.store.sqlite.EventStore
+import com.vitorpamplona.quartz.nip02FollowList.ContactListEvent
 import com.vitorpamplona.quartz.nip09Deletions.DeletionRequestEvent
 import com.vitorpamplona.quartz.nip10Notes.TextNoteEvent
+import com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions
 import com.vitorpamplona.quartz.nip59Giftwrap.wraps.GiftWrapEvent
 import com.vitorpamplona.quartz.nip62RequestToVanish.RequestToVanishEvent
 import com.vitorpamplona.quartz.nip77Negentropy.NegentropyServerSession
@@ -351,8 +353,130 @@ class LiveEventStoreSnapshotSlotsTest {
             store.close()
         }
 
+    // ------------------------------------------------------------------
+    // Search filters: the store says which searches only narrow by each event's own facts
+    // ------------------------------------------------------------------
+
+    /** A mirror peer's filter on a gating store: `include:spam` picks the trust view, it carries no text. */
+    private val spamView = listOf(Filter(kinds = listOf(1), search = "include:spam"))
+
+    /** Follow lists feed this store's trust view; nothing else does. */
+    private val followsFeedTheView: (Event) -> Boolean = { it.kind != ContactListEvent.KIND }
+
+    /** A gating store whose extension-only views are search-local and whose text search is not: RELAY.md's example. */
+    private fun spamViewIsLocal(store: IEventStore) = LiveEventStore(store, StoreIngest(store), LiveEventStore.DEFAULT_MAX_HELD_BEFORE_EOSE, followsFeedTheView, searchIsFilterLocal = { it.strippingSearchExtensions().search.isNullOrBlank() })
+
     @Test
-    fun aSearchSnapshotIsDroppedByAnyWrite() =
+    fun aSearchLocalSnapshotSurvivesAWriteItCannotHold() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(note("a", 1_000))
+            val store = Slow(inner)
+            val live = spamViewIsLocal(store)
+
+            val first = live.sealedNegentropyStorage(spamView, 100)
+            live.insert(reaction(1_001))
+            assertSame(first, live.sealedNegentropyStorage(spamView, 100), "a reaction is in no kind-1 view")
+            assertEquals(1, store.walks)
+            live.insert(signer.sign<Event>(1_002, 3, arrayOf(arrayOf("p", other.pubKey)), ""))
+            assertNotSame(first, live.sealedNegentropyStorage(spamView, 100), "a follow list may move the view: writeIsFilterLocal guards it")
+            inner.close()
+        }
+
+    @Test
+    fun aSearchLocalSnapshotIsDroppedByAWriteItMayHold() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(note("a", 1_000))
+            val store = Slow(inner)
+            val live = spamViewIsLocal(store)
+
+            assertEquals(1, live.sealedNegentropyStorage(spamView, 100)!!.size())
+            live.insert(note("b", 1_001))
+            assertEquals(2, live.sealedNegentropyStorage(spamView, 100)!!.size(), "the next open sees the accepted note")
+            inner.close()
+        }
+
+    @Test
+    fun aSearchLocalSnapshotIsDroppedByASupersedingReplaceable() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(signer.sign<Event>(1_000, 0, emptyArray(), "{}"))
+            val store = Slow(inner)
+            val live = spamViewIsLocal(store)
+            val window = listOf(Filter(kinds = listOf(0), until = 1_500, search = "include:spam"))
+
+            assertEquals(1, live.sealedNegentropyStorage(window, 100)!!.size())
+            live.insert(signer.sign<Event>(2_000, 0, emptyArray(), "{\"name\":\"new\"}"))
+            assertEquals(0, live.sealedNegentropyStorage(window, 100)!!.size(), "the old version was superseded")
+            inner.close()
+        }
+
+    @Test
+    fun aSearchLocalSnapshotIsDroppedByADeletionFromAnAuthorItMayHold() =
+        runTest {
+            val inner = EventStore(null)
+            val target = note("a", 1_000)
+            inner.insert(target)
+            val store = Slow(inner)
+            val live = spamViewIsLocal(store)
+            val mine = listOf(Filter(kinds = listOf(1), authors = listOf(signer.pubKey), search = "include:spam"))
+
+            val first = live.sealedNegentropyStorage(mine, 100)
+            assertEquals(1, first!!.size())
+            live.insert(other.sign(DeletionRequestEvent.build(listOf(note("x", 1_000, other)))))
+            assertSame(first, live.sealedNegentropyStorage(mine, 100), "another author's kind 5 deletes nothing it holds")
+            live.insert(signer.sign(DeletionRequestEvent.build(listOf(target))))
+            assertEquals(0, live.sealedNegentropyStorage(mine, 100)!!.size(), "the deleted note is gone")
+            inner.close()
+        }
+
+    @Test
+    fun aSearchSnapshotIsDroppedByAnyWriteWhenTheStoreDoesNotSayItIsLocal() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(note("a", 1_000))
+            val unsaid = LiveEventStore(Slow(inner), StoreIngest(inner), 1_000, followsFeedTheView)
+            val notLocal = LiveEventStore(Slow(inner), StoreIngest(inner), 1_000, followsFeedTheView, searchIsFilterLocal = { false })
+            listOf(unsaid, notLocal).forEachIndexed { i, live ->
+                val first = live.sealedNegentropyStorage(spamView, 100)
+                live.insert(reaction(1_001L + i))
+                assertNotSame(first, live.sealedNegentropyStorage(spamView, 100), "what a search selects is the store's call")
+            }
+            inner.close()
+        }
+
+    @Test
+    fun oneNonLocalSearchAmongTheFiltersDropsTheSnapshotOnAnyWrite() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(note("hello", 1_000))
+            val store = Slow(inner)
+            val live = spamViewIsLocal(store)
+            val mixed = spamView + Filter(kinds = listOf(30_023), search = "hello")
+
+            val first = live.sealedNegentropyStorage(mixed, 100)
+            live.insert(reaction(1_001))
+            assertNotSame(first, live.sealedNegentropyStorage(mixed, 100), "the text search may rank by the whole corpus")
+            inner.close()
+        }
+
+    @Test
+    fun aThrowingSearchScopeCountsAsNotLocal() =
+        runTest {
+            val inner = EventStore(null)
+            inner.insert(note("a", 1_000))
+            val store = Slow(inner)
+            val live = LiveEventStore(store, StoreIngest(store), 1_000, followsFeedTheView, searchIsFilterLocal = { throw IllegalStateException("boom") })
+
+            val first = live.sealedNegentropyStorage(spamView, 100)
+            live.insert(reaction(1_001))
+            assertNotSame(first, live.sealedNegentropyStorage(spamView, 100))
+            inner.close()
+        }
+
+    @Test
+    fun theSqliteStoreKeepsASearchSnapshotAcrossAWriteItCannotHold() =
         runTest {
             val store = EventStore(null)
             store.insert(note("hello", 1_000))
@@ -361,7 +485,39 @@ class LiveEventStoreSnapshotSlotsTest {
 
             val first = live.sealedNegentropyStorage(search, 100)
             live.insert(reaction(1_001))
-            assertNotSame(first, live.sealedNegentropyStorage(search, 100), "what a text engine matches is its own call")
+            assertSame(first, live.sealedNegentropyStorage(search, 100), "its snapshot of a search is an FTS match cut by created_at")
+            live.insert(note("hello again", 1_002))
+            assertEquals(2, live.sealedNegentropyStorage(search, 100)!!.size(), "and a note it may hold drops it")
+            store.close()
+        }
+
+    /**
+     * Why the SQLite store's searches default to local: its NEG-OPEN set is each event's own FTS
+     * match, cut to `limit` by `created_at`. Its REQs rank by bm25, whose scores move with the
+     * corpus, so a write no field of the filter matches reorders the REQ's top 1, and not the
+     * snapshot's.
+     */
+    @Test
+    fun theSqliteStoresSearchSnapshotDependsOnlyOnEachEvent() =
+        runTest {
+            val store = EventStore(null)
+            val short = note("apple", 1_000)
+            val long = note("apple apple pear plum fig kiwi lime date lemon melon", 999)
+            store.insert(short)
+            store.insert(long)
+            val top1 = Filter(kinds = listOf(1), authors = listOf(signer.pubKey), search = "apple", limit = 1)
+
+            val rankedBefore = store.query<Event>(top1).map { it.id }
+            val snapshotBefore = store.snapshotIdsForNegentropy(listOf(top1), null).map { it.id }
+            // Long notes by someone the filter cannot hold: no field of it matches them.
+            repeat(20) { i -> store.insert(note(List(100) { "word$i" }.joinToString(" "), 2_000L + i, other)) }
+            val rankedAfter = store.query<Event>(top1).map { it.id }
+            val snapshotAfter = store.snapshotIdsForNegentropy(listOf(top1), null).map { it.id }
+
+            assertEquals(listOf(short.id), rankedBefore)
+            assertEquals(listOf(long.id), rankedAfter, "bm25 moved the REQ's top 1: the corpus' average length changed")
+            assertEquals(listOf(short.id), snapshotBefore, "the snapshot keeps the newest match")
+            assertEquals(snapshotBefore, snapshotAfter, "and no write it cannot hold changes it")
             store.close()
         }
 

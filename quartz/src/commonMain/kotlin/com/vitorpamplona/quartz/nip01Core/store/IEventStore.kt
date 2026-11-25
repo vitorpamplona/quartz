@@ -51,6 +51,12 @@ import kotlin.coroutines.cancellation.CancellationException
  *   [com.vitorpamplona.quartz.nip50Search.strippingSearchExtensions] — this
  *   is what the built-in SQLite and filesystem stores do. An extensions-only
  *   search therefore collapses to an unconstrained query.
+ * - Whether a search only narrows what the filter's other fields select, by
+ *   each event's own facts, or also depends on other writes (corpus-wide
+ *   relevance cut to a `limit`, a trust view fed by follow lists) is the
+ *   store's knowledge too: the relay's `LiveEventStore` asks for it with its
+ *   `searchIsFilterLocal` predicate before it keeps a search's NEG-OPEN
+ *   snapshot across writes.
  *
  * ## Caller identity
  *

@@ -38,6 +38,23 @@ store may rank by it and may gate by it, answering a subset of the filter's matc
 floor); it must never widen past the filter, must answer `query`, `count` and negentropy
 snapshots alike for one observer, and is not access control (that is the relay policy's).
 
+## Keeping NEG-OPEN snapshots cached on a gating store
+
+Quartz's relay `LiveEventStore` caches NEG-OPEN snapshots. On any store but Quartz's SQLite one
+it drops every one on every accepted write, and on any store it drops a `search` filter's on
+every write, since a gate or a text engine may follow what any write feeds. A store that knows
+better passes two predicates to `LiveEventStore(store, ingest, maxHeldBeforeEose,
+writeIsFilterLocal, searchIsFilterLocal)` (`LiveEventStore.DEFAULT_MAX_HELD_BEFORE_EOSE` keeps
+the usual hold):
+
+- `writeIsFilterLocal: (Event) -> Boolean`: false for the events that feed its gate (follow lists
+  behind a trust view, reports behind a spam score), true for the rest.
+- `searchIsFilterLocal: (Filter) -> Boolean`: true when the filter's `search` only narrows what
+  its other fields select, by facts in each event or by state whose writes `writeIsFilterLocal`
+  already answers false for (`include:spam`, `observer:<hex>`); false when it ranks over the
+  corpus with a `limit`, ranks by others' state, or is approximate. Then those snapshots are kept
+  across writes their other fields cannot match, supersede or delete.
+
 ## Parsing the search string: `SearchQuery`
 
 `Filter.search` reaches the store verbatim. `SearchQuery.parse(search)` (`nip50Search`):

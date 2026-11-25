@@ -60,12 +60,15 @@ import kotlin.coroutines.CoroutineContext
  * a walk of its own instead of joining it. A walk that starts after the write's commit sees it.
  * So an open never gets a snapshot that misses a write acknowledged before it, or keeps an event
  * such a write deleted or replaced. Deletions this layer never sees (an expiry sweep, an admin
- * purge on the store itself) are bounded by [ttlSeconds] only.
+ * purge on the store itself) are bounded by [ttlSeconds] only. A `search` filter is judged by
+ * its other fields only where [searchIsFilterLocal] says its search is local; it runs once per
+ * search filter of each open, outside the lock, and must not throw.
  */
 internal class NegentropySnapshotCache(
     private val maxSlots: Int,
     private val maxIds: Long,
     private val ttlSeconds: Long,
+    private val searchIsFilterLocal: (Filter) -> Boolean = SnapshotScope.NO_SEARCH_IS_LOCAL,
     private val clock: () -> Long = { TimeUtils.now() },
 ) {
     init {
@@ -116,7 +119,7 @@ internal class NegentropySnapshotCache(
         build: suspend () -> IStorage?,
     ): IStorage? {
         val now = clock()
-        val scope = SnapshotScope(filters)
+        val scope = SnapshotScope(filters, searchIsFilterLocal)
         val context = currentCoroutineContext().minusKey(Job)
         var started: Build? = null
         val joined: Build =
@@ -267,17 +270,25 @@ internal class NegentropySnapshotCache(
  *   everything its author owns (D07): events whose pubkey is the author, and gift wraps addressed
  *   to them (W06), whose pubkey is a one-time key. Every filter that could hold an event by the
  *   author, or a gift wrap.
- * - A `search` filter's set is the store's text engine's call: every write may change it.
+ * - A `search` filter's set is the store's call: every write may change it, unless
+ *   `searchIsFilterLocal` says its search only narrows what its other fields select by each
+ *   event's own facts. Then it is judged by those fields, as above, since a write they cannot match
+ *   cannot join the narrower set either. One filter whose search is not local is enough for every
+ *   write to touch the snapshot. [searchIsFilterLocal] runs here, once per search filter, when the
+ *   scope is made: never per write.
  * - Ephemeral events are never stored (W03), but are checked like any other: harmless.
  */
 internal class SnapshotScope(
     filters: List<Filter>,
+    searchIsFilterLocal: (Filter) -> Boolean = NO_SEARCH_IS_LOCAL,
 ) {
     private val parts = Array(filters.size) { Part(filters[it]) }
-    private val anySearch = filters.any { !it.search.isNullOrEmpty() }
+
+    /** A filter whose `search` may follow other writes: then every write may change the set. */
+    private val everyWrite = filters.any { !it.search.isNullOrEmpty() && !searchIsFilterLocal(it) }
 
     fun affectedBy(event: Event): Boolean {
-        if (anySearch) return true
+        if (everyWrite) return true
         val kind = event.kind
         val supersedes = kind.isReplaceable() || kind.isAddressable()
         val deletes = kind == DeletionRequestEvent.KIND || kind == RequestToVanishEvent.KIND
@@ -287,6 +298,11 @@ internal class SnapshotScope(
             if (deletes && (part.mayHoldBy(event.pubKey) || part.mayHoldKind(GiftWrapEvent.KIND))) return true
         }
         return false
+    }
+
+    companion object {
+        /** Today's rule for a store that says nothing: no search is local. */
+        val NO_SEARCH_IS_LOCAL: (Filter) -> Boolean = { false }
     }
 
     private class Part(
