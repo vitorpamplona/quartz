@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip99Classifieds
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -82,7 +84,10 @@ class ClassifiedsEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     // A listing is searched by where it is and what category it is in as much as by
     // its title: the location and the `t` categories follow the body.
     override fun indexableContent() = (listOfNotNull(title(), summary(), content, location()) + categories()).joinToString("\n")

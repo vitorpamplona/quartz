@@ -183,6 +183,12 @@ suspend fun post(client: NostrClient) {
   Trusted List's members with their scores, a NIP-51 people list's `p`s):
   `SubjectReferences.of(event)` in `nip01Core.hints`, kind-dispatched, values canonical. Mentions
   and threading links are the hint providers' (`linkedPubKeys()`, …), not subjects.
+- **The markup of an event's `content`**, as its NIP names it: `ContentFormats.of(event)` (or
+  `ContentFormats.of(kind)`) in `kinds` returns `PLAIN_TEXT` (kinds 1, 14, 24, 1111), `MARKDOWN`
+  (NIP-23, NIP-34 issues and pull requests, NIP-99, …), `DJOT` (NIP-54 wiki) or `ASCIIDOC`
+  (NKBIP-01 sections), and null when the NIP names none. Pick a renderer from it rather than
+  guessing from the text. It is the spec's answer: a client that still draws markdown it finds in
+  a kind-1 note decides that itself.
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app

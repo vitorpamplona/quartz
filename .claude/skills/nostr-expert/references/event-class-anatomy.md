@@ -108,6 +108,15 @@ diff must show only your kind). Numbers about another event, ciphertext and key 
 searchable. A kind that carries a title but stays out of search says why in its class KDoc, starting
 `Not searchable:` (`InteractiveStoryReadingStateEvent` copies its story's title); the audit reads it.
 
+### Content format or not
+
+A kind is `FormattedContentEvent` (`kinds/ContentFormat.kt`) when its NIP names the markup of its
+`content`: plain text, Markdown, Djot or AsciiDoc. Override `contentFormat()` with what the spec
+says, not with what clients happen to render (kind 1 is `PLAIN_TEXT`; NIP-10 says markup SHOULD
+NOT be used), and add the kind to `kinds/ContentFormats.kt` `KINDS` in the same change. A kind
+whose NIP says nothing about its content's format, or whose content is not prose (JSON, a patch,
+ciphertext), leaves it out.
+
 ### Builders
 
 Every kind has an unsigned template builder in its companion. Signing is the caller's
@@ -188,6 +197,7 @@ the kind's name is not this event's. Then:
 | `utils/EventFactory.kt` | a branch in a `createPartN` (and `probe` for a shared kind) | the kind parses as plain `Event` without it |
 | `kinds/KindNames.kt` | a name | `KindNamesCoverageTest` |
 | `nip50Search/` | `SearchableKinds.ALL` and the golden file, when searchable | `SearchableKindsTest`, `IndexableContentGoldenTest` |
+| `kinds/ContentFormats.kt` | `KINDS`, when the NIP names its content's format | `ContentFormatsTest` |
 | skill references | `searchable-kinds.md` row; `nip-catalog.md` regenerated with `scripts/nip-catalog.py` (never hand-edited) | review |
 | graph-link appendix | one row per class | review |
 | Amethyst `EventCache.justConsumeInnerInner` | a branch, or the event is dropped with "Event Not Supported" | its tests |

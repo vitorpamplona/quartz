@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip34Git.issue
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.appendTo
@@ -66,7 +68,10 @@ class GitIssueEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     // The `t` tags are the issue's NIP-34 labels, appended after the body.
     override fun indexableContent() = (listOfNotNull(subject(), content) + topics()).joinToString("\n")
 

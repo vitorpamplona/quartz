@@ -24,6 +24,8 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.forks.IForkableEvent
 import com.vitorpamplona.quartz.experimental.forks.parseForkedAddress
 import com.vitorpamplona.quartz.experimental.forks.parseForkedEventId
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -70,7 +72,10 @@ class TextNoteEvent(
     AddressHintProvider,
     PubKeyHintProvider,
     IForkableEvent,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.PLAIN_TEXT
+
     override fun indexableContent() = listOfNotNull(subject(), content).joinToString("\n")
 
     // The read path: hands over the same fields indexableContent() joins, without
