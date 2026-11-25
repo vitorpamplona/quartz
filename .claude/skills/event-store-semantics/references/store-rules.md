@@ -83,7 +83,8 @@ single-SQL plan (ordering caveat per STORE-F08).
 **STORE-F10 — empty filter.** `query(Filter())` / `count(Filter())` match **everything**
 (`Filter.isEmpty()` → the "everything" query). `delete(Filter())` is deliberately asymmetric:
 it deletes **nothing** and returns 0, so a stray empty filter can't wipe the store (documented
-on `QueryBuilder.delete`).
+on `QueryBuilder.delete`). In a multi-filter REQ, COUNT or negentropy snapshot the empty filter
+still matches everything, so the union does too (F07); only a multi-filter delete drops it.
 
 **STORE-F11 — empty lists (`kinds = emptyList()` etc.) are a client error with inconsistent
 handling; don't rely on either outcome.** On the single-filter simple path an empty list
