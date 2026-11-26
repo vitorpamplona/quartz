@@ -21,6 +21,7 @@
 package com.vitorpamplona.quartz.experimental.forks
 
 import com.vitorpamplona.quartz.nip01Core.core.Address
+import com.vitorpamplona.quartz.nip01Core.relay.normalizer.NormalizedRelayUrl
 import com.vitorpamplona.quartz.nip10Notes.tags.MarkedETag
 
 /**
@@ -34,3 +35,12 @@ fun parseForkedAddress(tag: Array<String>): Address? {
     if (tag[3] != MarkedETag.MARKER.FORK.code) return null
     return Address.parse(tag[1])
 }
+
+/**
+ * The `a` tag [parseForkedAddress] reads: `["a", <address>, <relay>, "fork"]`, the relay left empty
+ * when there is no hint, as the marker must stay in the fourth place.
+ */
+fun assembleForkedAddress(
+    address: Address,
+    relay: NormalizedRelayUrl?,
+): Array<String> = arrayOf("a", address.toValue(), relay?.url ?: "", MarkedETag.MARKER.FORK.code)
