@@ -117,6 +117,13 @@ NOT be used), and add the kind to `kinds/ContentFormats.kt` `KINDS` in the same 
 whose NIP says nothing about its content's format, or whose content is not prose (JSON, a patch,
 ciphertext), leaves it out.
 
+### Forkable or not
+
+A kind whose events can be copied and reworked by another author (NIP-54 articles, NIP texts) is
+`IForkableEvent` (`experimental/forks/`): it reads the `a` and `e` tags marked `fork` with
+`parseForkedAddress` and `MarkedETag.parseForkedEventId`. Builders write them with
+`forkOf(version, relay)` (`experimental/forks/TagArrayBuilderExt.kt`), never by hand.
+
 ### Builders
 
 Every kind has an unsigned template builder in its companion. Signing is the caller's
