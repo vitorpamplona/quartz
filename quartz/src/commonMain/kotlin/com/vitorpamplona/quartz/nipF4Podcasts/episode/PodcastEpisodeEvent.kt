@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nipF4Podcasts.episode
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -54,7 +56,10 @@ class PodcastEpisodeEvent(
 ) : Event(id, pubKey, createdAt, KIND, tags, content, sig),
     PodcastEpisode,
     RootScope,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     override fun indexableContent() = listOfNotNull(title(), description(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

@@ -20,6 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip34Git.status
 
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.fastMapNotNull
@@ -54,7 +56,10 @@ abstract class GitStatusEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     override fun indexableContent() = content
 
     // The read path: the same fields indexableContent() joins, handed over without

@@ -209,7 +209,7 @@ Live events never precede a REQ's `EOSE`. The registration comes first, so nothi
 during the replay is missed, but `LiveEventStore` holds those events and forwards them, in
 acceptance order, right after the replay's `onEose`: everything before `EOSE` is the stored answer
 the filters' `limit` bounds. A REQ holds at most `maxHeldBeforeEose` events (the third constructor
-argument, 1,000 by default); past it the held events go out at once and later ones as they arrive,
+argument, `LiveEventStore.DEFAULT_MAX_HELD_BEFORE_EOSE` = 1,000 by default); past it the held events go out at once and later ones as they arrive,
 ahead of `EOSE`, so a slow replay under heavy ingest loses its clean `limit` but never an event.
 `0` turns the hold off. Only the replay's `EOSE` releases what is held: a wrapper must run the
 inner `replayRaw`/`replay` (or `cancel` the subscription), never answer the REQ itself and keep the
@@ -381,6 +381,28 @@ drops only the snapshots it can change under the store rules (what it matches, t
 supersedes, what a kind 5 or kind 62 deletes) on the SQLite store, and every snapshot on any
 other store, which may gate by something the write feeds. A gated store that knows which writes
 feed its gate passes `writeIsFilterLocal` (false for those events) to keep the rest cached.
+
+A `search` filter's snapshot is judged the same way only where `searchIsFilterLocal` says its
+search is local: it only narrows what the filter's other fields select, by facts in each event
+or by stored state whose writes `writeIsFilterLocal` already answers false for, and never makes
+the set depend on other writes (no corpus-wide relevance cut to a `limit`, no ranking by others'
+state, no approximate top-k). Elsewhere every write drops it. Unset, it is true on the SQLite
+store, whose NEG-OPEN set for a search is each event's FTS match cut to `limit` by `created_at`
+(its REQs rank by bm25, its snapshots do not), and false on any other. A mirror peer reconciling
+`{"kinds":[1],"search":"include:spam"}` against a trust-gated store keeps its snapshot cached
+once the store says `include:spam` only picks the view:
+
+```kotlin
+val live =
+    LiveEventStore(
+        store,
+        ingest,
+        LiveEventStore.DEFAULT_MAX_HELD_BEFORE_EOSE,
+        writeIsFilterLocal = { it.kind != ContactListEvent.KIND },
+        // Only extensions, no text: the view is a fact of each event plus the follow lists above.
+        searchIsFilterLocal = { it.strippingSearchExtensions().search.isNullOrBlank() },
+    )
+```
 
 A search/redirector relay is just a custom policy (or, for computed results, a
 custom `IEventStore` whose `query` answers the REQ) that reads the parsed query:

@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nipA4PublicMessages
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.any
@@ -66,7 +68,10 @@ class PublicMessageEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.PLAIN_TEXT
+
     override fun indexableContent() = content
 
     // The read path: the same fields indexableContent() joins, handed over without

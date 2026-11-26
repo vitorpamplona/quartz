@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip34Git.pr
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -69,7 +71,10 @@ class GitPullRequestEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     // The `t` tags are the PR's NIP-34 labels, appended after the body.
     override fun indexableContent() = (listOfNotNull(subject(), content) + labels()).joinToString("\n")
 

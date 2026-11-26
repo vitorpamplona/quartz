@@ -20,18 +20,87 @@
  */
 package com.vitorpamplona.quartz.nipBCOnchainZaps.chain
 
-import okhttp3.OkHttpClient
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * Tests the JSON-parsing layer of [EsploraBackend] against representative
+ * Tests [EsploraClient]: its JSON parsing against representative
  * mempool.space / blockstream.info response bodies. The parse functions are
- * pure (string in, model out) so no HTTP client is exercised.
+ * pure (string in, model out); the request flow runs on a [FakeTransport].
  */
-class EsploraBackendTest {
-    private val backend = EsploraBackend({ "https://example.test/api" }, OkHttpClient())
+class EsploraClientTest {
+    /** Answers each URL from [answers] (404 when absent) and records what was asked. */
+    private class FakeTransport(
+        private val answers: Map<String, EsploraHttpResponse>,
+    ) : EsploraHttpTransport {
+        val calls = mutableListOf<String>()
+
+        private fun answer(
+            kind: String,
+            url: String,
+        ): EsploraHttpResponse {
+            calls += "$kind $url"
+            return answers[url] ?: EsploraHttpResponse(404, "Not Found", "")
+        }
+
+        override suspend fun getJson(url: String) = answer("GET json", url)
+
+        override suspend fun get(url: String) = answer("GET", url)
+
+        override suspend fun postText(
+            url: String,
+            body: String,
+        ) = answer("POST $body", url)
+    }
+
+    private val base = "https://example.test/api"
+
+    private val backend = EsploraClient({ base }, FakeTransport(emptyMap()))
+
+    private fun ok(body: String) = EsploraHttpResponse(200, "OK", body)
+
+    @Test
+    fun missingTransactionIsNull() =
+        runTest {
+            assertNull(EsploraClient({ base }, FakeTransport(emptyMap())).getTx("ab"))
+        }
+
+    @Test
+    fun serverErrorThrowsWithTheStatus() =
+        runTest {
+            val transport = FakeTransport(mapOf("$base/address/bc1p/utxo" to EsploraHttpResponse(503, "Service Unavailable", "")))
+            val e = assertFailsWith<OnchainBackendException> { EsploraClient({ base }, transport).getUtxosForAddress("bc1p") }
+            assertTrue(e.message!!.contains("503"), e.message)
+        }
+
+    @Test
+    fun tipHeightIsPlainText() =
+        runTest {
+            val transport = FakeTransport(mapOf("$base/blocks/tip/height" to ok("871234\n")))
+            assertEquals(871234L, EsploraClient({ base }, transport).tipHeight())
+            assertEquals(listOf("GET $base/blocks/tip/height"), transport.calls)
+        }
+
+    @Test
+    fun broadcastPostsTheHexAndReturnsTheTxid() =
+        runTest {
+            val transport = FakeTransport(mapOf("$base/tx" to ok(" deadbeef \n")))
+            assertEquals("deadbeef", EsploraClient({ base }, transport).broadcast("0200"))
+            assertEquals(listOf("POST 0200 $base/tx"), transport.calls)
+        }
+
+    @Test
+    fun feesFallBackToFeeEstimatesWhenRecommendedIsMissing() =
+        runTest {
+            val transport = FakeTransport(mapOf("$base/fee-estimates" to ok("""{"1": 30.5, "3": 20.0, "6": 10.0, "144": 2.0}""")))
+            val fees = EsploraClient({ base }, transport).feeEstimates()
+            assertEquals(listOf("GET json $base/v1/fees/recommended", "GET json $base/fee-estimates"), transport.calls)
+            assertEquals(FeeEstimates(30.5, 10.0, 2.0), fees)
+        }
 
     @Test
     fun parsesConfirmedTransaction() {

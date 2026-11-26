@@ -337,6 +337,12 @@ use): fall back to an operator default, or no gate.
 
 Add one line per behavior change, newest first: `YYYY-MM-DD <short sha> <rule id> — what changed`.
 
+- 2026-11-25 (pending) STORE-N02 — `LiveEventStore`'s snapshot cache no longer drops a `search`
+  filter's snapshot on every write when the store says its search is local
+  (`searchIsFilterLocal`: it only narrows the other fields' set by each event's own facts, or by
+  state `writeIsFilterLocal` guards); it is judged by its other fields instead. Default: true on
+  the SQLite store (its NEG-OPEN set for a search is the FTS match cut by `created_at`, never
+  bm25), false elsewhere.
 - 2026-11-25 (pending) STORE-N02 — `LiveEventStore` asks `liveNegentropySnapshot` only for an
   unauthenticated NEG-OPEN or a caller of the SQLite store; an authenticated caller of any other
   store is walked under its lens. Its snapshot cache keeps several snapshots and drops only those a

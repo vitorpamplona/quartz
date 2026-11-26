@@ -56,11 +56,25 @@ class NegentropySnapshotRaceTest {
         override fun close() {}
     }
 
+    /** Any store but Quartz's SQLite one, so nothing is local unless the hooks say so. */
+    private class Wrapped(
+        inner: IEventStore,
+    ) : IEventStore by inner
+
     @Test
-    fun noOpenMissesAnAcknowledgedWriteOrKeepsAnAcknowledgedDeletion() =
+    fun noOpenMissesAnAcknowledgedWriteOrKeepsAnAcknowledgedDeletion() = race { store -> LiveEventStore(store, StoreIngest(store)) }
+
+    @Test
+    fun noSearchLocalOpenMissesAnAcknowledgedWriteOrKeepsAnAcknowledgedDeletion() =
+        race { store ->
+            val wrapped = Wrapped(store)
+            LiveEventStore(wrapped, StoreIngest(wrapped), LiveEventStore.DEFAULT_MAX_HELD_BEFORE_EOSE, { true }, { true })
+        }
+
+    private fun race(live: (EventStore) -> LiveEventStore) =
         runBlocking {
             val store = EventStore(null)
-            val live = LiveEventStore(store, StoreIngest(store))
+            val live = live(store)
             val acked = ConcurrentHashMap<String, Event>()
             // Deletions submitted (they may or may not be in a snapshot yet), and acknowledged.
             val deleting = ConcurrentHashMap.newKeySet<String>()
@@ -71,6 +85,8 @@ class NegentropySnapshotRaceTest {
                     listOf(Filter(kinds = listOf(1))),
                     listOf(Filter(kinds = listOf(1), until = 1_000_000L + 400)),
                     listOf(Filter(kinds = listOf(1), since = 1_000_000L + 400)),
+                    // A trust view, no text: the SQLite store strips it, Filter.match ignores it.
+                    listOf(Filter(kinds = listOf(1), until = 1_000_000L + 600, search = "include:spam")),
                 )
             val failures = ConcurrentHashMap.newKeySet<String>()
 

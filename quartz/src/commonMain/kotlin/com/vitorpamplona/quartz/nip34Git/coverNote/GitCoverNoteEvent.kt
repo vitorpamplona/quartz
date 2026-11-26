@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip34Git.coverNote
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -82,7 +84,10 @@ class GitCoverNoteEvent(
     EventHintProvider,
     PubKeyHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     override fun indexableContent() = content
 
     override fun eventHints(): List<EventIdHint> {

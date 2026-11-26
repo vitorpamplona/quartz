@@ -116,6 +116,21 @@ class NegentropySnapshotCacheTest {
             assertEquals(0L, cache.idsHeld)
         }
 
+    @Test
+    fun theCacheJudgesSearchesByTheHookItWasGiven() =
+        runTest {
+            val spam = listOf(Filter(kinds = listOf(1), search = "include:spam"))
+            val local = NegentropySnapshotCache(8, 1_000, ttlSeconds = 30, searchIsFilterLocal = { true }, clock = { now })
+            val kept = local.getOrBuild("spam", spam) { storage(1) }
+            local.onAccepted(event(7), filterLocal = true)
+            assertSame(kept, local.getOrBuild("spam", spam) { storage(1) })
+
+            val plain = cache()
+            val dropped = plain.getOrBuild("spam", spam) { storage(1) }
+            plain.onAccepted(event(7), filterLocal = true)
+            assertNotSame(dropped, plain.getOrBuild("spam", spam) { storage(1) }, "without the hook a search is dropped by every write")
+        }
+
     // ------------------------------------------------------------------
     // SnapshotScope
     // ------------------------------------------------------------------
@@ -150,6 +165,35 @@ class NegentropySnapshotCacheTest {
         val noDTag = event(30_023)
         assertTrue(scope(Filter(kinds = listOf(30_023), tags = mapOf("d" to listOf("")))).affectedBy(noDTag), "F05: no d tag parses as d = \"\"")
         assertTrue(scope(Filter(kinds = listOf(1), search = "zzz")).affectedBy(event(7)), "a search filter is the text engine's call")
+    }
+
+    /** A store whose `include:spam` only picks the trust view and whose text search ranks corpus-wide. */
+    private val spamViewIsLocal: (Filter) -> Boolean = { it.search == "include:spam" }
+
+    private fun localScope(vararg filters: Filter) = SnapshotScope(filters.toList(), spamViewIsLocal)
+
+    @Test
+    fun aSearchTheStoreCallsLocalIsJudgedByTheFiltersOtherFields() {
+        val spam = Filter(kinds = listOf(1), search = "include:spam")
+        assertFalse(localScope(spam).affectedBy(event(7)), "a reaction joins no kind-1 set, whatever the view")
+        assertFalse(localScope(spam.copy(authors = listOf(other.pubKey))).affectedBy(note()), "nor does a note by an author it cannot hold")
+        assertTrue(localScope(spam).affectedBy(note()), "a note may join it")
+        assertTrue(localScope(Filter(kinds = listOf(0), until = 1_500, search = "include:spam")).affectedBy(event(0, at = 2_000)), "W01")
+        assertTrue(localScope(spam.copy(until = 10)).affectedBy(event(5)), "D01: a kind 5 by an author it may hold")
+        assertFalse(localScope(spam.copy(authors = listOf(signer.pubKey))).affectedBy(event(5, by = other)), "a kind 5 by someone it cannot hold")
+    }
+
+    @Test
+    fun aSearchTheStoreDoesNotCallLocalIsTouchedByEveryWrite() {
+        assertTrue(localScope(Filter(kinds = listOf(1), search = "hello")).affectedBy(event(7)))
+        assertTrue(SnapshotScope(listOf(Filter(kinds = listOf(1), search = "include:spam"))).affectedBy(event(7)), "no hook: the text engine's call")
+    }
+
+    @Test
+    fun oneNonLocalSearchAmongTheFiltersMakesEveryWriteTouchTheSnapshot() {
+        val filters = arrayOf(Filter(kinds = listOf(1), search = "include:spam"), Filter(kinds = listOf(30_023), search = "hello"))
+        assertTrue(localScope(*filters).affectedBy(event(7)))
+        assertFalse(localScope(filters[0], Filter(kinds = listOf(30_023))).affectedBy(event(7)), "with a plain second filter, it is judged by fields")
     }
 
     @Test

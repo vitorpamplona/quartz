@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip23LongContent.draft
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -87,7 +89,10 @@ class LongFormDraftEvent(
     PubKeyHintProvider,
     AddressHintProvider,
     PublishedAtProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     override fun indexableContent() = tags.longFormIndexableContent(content)
 
     // The read path: hands over the same fields indexableContent() joins, without

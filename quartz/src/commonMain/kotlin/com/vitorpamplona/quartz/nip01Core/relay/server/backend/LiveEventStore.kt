@@ -88,7 +88,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *  Past it the held events are forwarded at once and later ones as they arrive, ahead of
  *  EOSE: a slow replay under heavy ingest then costs the REQ its clean `limit`, never an
  *  event and never unbounded memory. 1,000 with the two-argument constructor; 0 holds
- *  nothing, every live event forwarding as it arrives, as before the hold existed.
+ *  nothing, every live event forwarding as it arrives, as before the hold existed. Pass
+ *  [DEFAULT_MAX_HELD_BEFORE_EOSE] to keep that default with the longer constructors.
  * @param writeIsFilterLocal Whether an accepted event changes what [store] answers only the way
  *  the store rules say a write does: it joins the sets of the filters it matches, and it removes
  *  what it supersedes (a replaceable or addressable version) or deletes (a kind 5, a kind 62),
@@ -99,6 +100,21 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *  event on Quartz's SQLite [EventStore], false for every event on any other store, a wrapper of
  *  it included, since it may gate (STORE-O01). Called once per accepted write, before its `OK`,
  *  on the ingest's callback thread: keep it cheap. A throw counts as false.
+ * @param searchIsFilterLocal Whether a NEG-OPEN filter's NIP-50 `search` only narrows the set its
+ *  other fields select, by facts in each event itself (its content, its tags, a label the store
+ *  keeps per event) or by stored state whose writes [writeIsFilterLocal] already answers false
+ *  for (a trust view built from follow lists: `include:spam`, `observer:<hex>`), and never makes
+ *  the set or its order depend on other writes: no relevance over the whole corpus cut to a
+ *  `limit`, no ranking by others' state, no approximate top-k. True: a cached snapshot of that
+ *  filter is judged by its other fields exactly as a filter without `search` is (what a write may
+ *  match, supersede or delete). False: any accepted write may change its set, and drops it, as
+ *  for every search before this hook. Decided per filter; one filter of a snapshot that is not
+ *  local is enough for every write to drop it. `null`: true for every filter on Quartz's SQLite
+ *  [EventStore], whose snapshot of a search is each event's own FTS match cut to `limit` by
+ *  `created_at` (its REQs rank by bm25, its NEG-OPEN sets do not), and false for every filter on
+ *  any other store, a wrapper of it included. Called when a NEG-OPEN of the filter arrives, once
+ *  per search filter, on the opener's coroutine, never per write: keep it cheap. A throw counts
+ *  as false.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class LiveEventStore(
@@ -106,16 +122,26 @@ class LiveEventStore(
     private val ingest: EventIngest,
     val maxHeldBeforeEose: Int,
     writeIsFilterLocal: ((Event) -> Boolean)?,
+    searchIsFilterLocal: ((Filter) -> Boolean)?,
 ) : LiveSubscriptionBackend {
     constructor(store: IEventStore, ingest: EventIngest) : this(store, ingest, DEFAULT_MAX_HELD_BEFORE_EOSE)
 
     constructor(store: IEventStore, ingest: EventIngest, maxHeldBeforeEose: Int) : this(store, ingest, maxHeldBeforeEose, null)
+
+    constructor(
+        store: IEventStore,
+        ingest: EventIngest,
+        maxHeldBeforeEose: Int,
+        writeIsFilterLocal: ((Event) -> Boolean)?,
+    ) : this(store, ingest, maxHeldBeforeEose, writeIsFilterLocal, null)
 
     init {
         require(maxHeldBeforeEose >= 0) { "maxHeldBeforeEose must not be negative: $maxHeldBeforeEose" }
     }
 
     private val writeIsFilterLocal: (Event) -> Boolean = writeIsFilterLocal ?: if (store is EventStore) EVERY_WRITE else NO_WRITE
+
+    private val searchIsFilterLocal: (Filter) -> Boolean = searchIsFilterLocal ?: if (store is EventStore) EVERY_SEARCH else NO_SEARCH
 
     /**
      * Subscriptions whose connection declares no [FanoutExecutor]: matched and delivered on
@@ -618,6 +644,15 @@ class LiveEventStore(
             false
         }
 
+    /** [searchIsFilterLocal], once per search filter of a NEG-OPEN the cache does not hold. */
+    private fun isSearchLocal(filter: Filter): Boolean =
+        try {
+            searchIsFilterLocal(filter)
+        } catch (e: Exception) {
+            Log.w(TAG, "searchIsFilterLocal threw; any write will drop this negentropy snapshot", e)
+            false
+        }
+
     /** One submission of [id] is done; releases the subscriptions that kept it once none is left. */
     private fun leave(id: String) {
         val waiting = inFlight.remove(id) ?: return
@@ -952,7 +987,7 @@ class LiveEventStore(
      * The sealed storages recent NEG-OPENs were served from, by (caller, filters, cap): see
      * [NegentropySnapshotCache] for the bounds, the single flight and the invalidation rules.
      */
-    private val snapshots = NegentropySnapshotCache(MAX_SNAPSHOT_SLOTS, MAX_SNAPSHOT_IDS, SNAPSHOT_TTL_SECONDS)
+    private val snapshots = NegentropySnapshotCache(MAX_SNAPSHOT_SLOTS, MAX_SNAPSHOT_IDS, SNAPSHOT_TTL_SECONDS, ::isSearchLocal)
 
     /**
      * Quartz's SQLite store answers every caller the same set: it never reads [StoreQueryContext].
@@ -1028,44 +1063,51 @@ class LiveEventStore(
         return snapshots.getOrBuild(key, filters) { store.sealedNegentropyStorage(filters, maxEntries) }
     }
 
-    private companion object {
+    companion object {
+        /**
+         * [LiveEventStore.maxHeldBeforeEose] for the two-argument constructor: pass it to the
+         * longer ones to keep that default while setting [writeIsFilterLocal] or
+         * `searchIsFilterLocal`.
+         */
+        const val DEFAULT_MAX_HELD_BEFORE_EOSE = 1_000
+
         /**
          * Ceiling on how long a cached snapshot may serve NEG-OPENs even
          * with no observed writes — bounds staleness from delete paths
          * this layer can't see (expiry sweeps, admin purges on the store).
          */
-        const val SNAPSHOT_TTL_SECONDS = 30L
+        private const val SNAPSHOT_TTL_SECONDS = 30L
 
         /** Cached NEG-OPEN snapshots: a router's handful of windows, or several peers' filters. */
-        const val MAX_SNAPSHOT_SLOTS = 8
+        private const val MAX_SNAPSHOT_SLOTS = 8
 
         /**
          * Ids the cached snapshots may hold together, ~80 MB of storage. The newest snapshot stays
          * even when it alone is larger, as the single slot before it did.
          */
-        const val MAX_SNAPSHOT_IDS = 2_000_000L
+        private const val MAX_SNAPSHOT_IDS = 2_000_000L
 
-        val EVERY_WRITE: (Event) -> Boolean = { true }
-        val NO_WRITE: (Event) -> Boolean = { false }
+        private val EVERY_WRITE: (Event) -> Boolean = { true }
+        private val NO_WRITE: (Event) -> Boolean = { false }
 
-        const val TAG = "LiveEventStore"
+        private val EVERY_SEARCH: (Filter) -> Boolean = { true }
+        private val NO_SEARCH: (Filter) -> Boolean = { false }
 
-        /** [LiveEventStore.maxHeldBeforeEose] for the two-argument constructor. */
-        const val DEFAULT_MAX_HELD_BEFORE_EOSE = 1_000
+        private const val TAG = "LiveEventStore"
 
         /** [LiveSub]'s gate: live events are held for after EOSE. */
-        const val HOLDING = 0
+        private const val HOLDING = 0
 
         /** Draining what was held; events arriving now still queue behind it. */
-        const val FORWARDING = 1
+        private const val FORWARDING = 1
 
         /** Live events go straight to the listener. */
-        const val OPEN = 2
+        private const val OPEN = 2
 
         /**
          * A relay has one fan-out executor per delivery thread; this many means executors are
          * being made per connection, which turns each fan-out back into a walk.
          */
-        const val MANY_PARTITIONS = 256
+        private const val MANY_PARTITIONS = 256
     }
 }

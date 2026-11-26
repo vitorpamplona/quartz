@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip22Comments
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.Event
@@ -82,7 +84,10 @@ class CommentEvent(
     EventHintProvider,
     PubKeyHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.PLAIN_TEXT
+
     override fun indexableContent() = (listOf(content) + tags.hashtags()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, without the join.
