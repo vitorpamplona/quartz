@@ -24,28 +24,45 @@ import androidx.compose.runtime.Stable
 import com.vitorpamplona.quartz.nip01Core.core.has
 import com.vitorpamplona.quartz.utils.ensure
 
+/**
+ * NIP-90 job feedback status: `["status", <status>, <extra-info>]`.
+ *
+ * [description] is the tag's own extra information (slot 2), empty when the tag has none. The
+ * feedback event's `content` is a separate field (a sample of partial results, or the encrypted
+ * payload of a private job) and is never read here.
+ */
 @Stable
 class StatusTag(
     val code: String,
     val description: String,
 ) {
+    /** The tag's human-readable extra information, or null when it has none. */
+    val extraInfo: String? get() = description.ifEmpty { null }
+
     companion object {
         const val TAG_NAME = "status"
 
         fun isTag(tag: Array<String>) = tag.has(1) && tag[0] == TAG_NAME && tag[1].isNotEmpty()
 
+        fun parse(tag: Array<String>): StatusTag? {
+            ensure(tag.has(1)) { return null }
+            ensure(tag[0] == TAG_NAME) { return null }
+            ensure(tag[1].isNotEmpty()) { return null }
+            return StatusTag(tag[1], tag.getOrNull(2) ?: "")
+        }
+
+        @Deprecated(
+            "Reads the event content as the description whenever it is not empty, but NIP-90 keeps the " +
+                "content (partial results, encrypted payloads) apart from the tag's extra info. Use " +
+                "parse(tag) for the extra info and the event's content for partial results. Removed in 3.0.0.",
+            ReplaceWith("parse(tag)"),
+        )
         fun parse(
             tag: Array<String>,
             content: String,
         ): StatusTag? {
-            ensure(tag.has(1)) { return null }
-            ensure(tag[0] == TAG_NAME) { return null }
-            ensure(tag[1].isNotEmpty()) { return null }
-            return if (tag.has(2) && content.isEmpty()) {
-                StatusTag(tag[1], tag[2])
-            } else {
-                StatusTag(tag[1], content)
-            }
+            val status = parse(tag) ?: return null
+            return if (content.isEmpty()) status else StatusTag(status.code, content)
         }
 
         fun assemble(

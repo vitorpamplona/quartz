@@ -164,7 +164,9 @@ class ContactListEvent(
 
             return create(
                 content = earlierVersion.content,
-                tags = earlierVersion.tags.filter { it.size > 1 && it[1] != pubKeyHex }.toTypedArray(),
+                // Only the `p` follows of that key go: hashtags, events, communities and any other
+                // tag that happens to carry the same value stay, as do tags without a value.
+                tags = earlierVersion.tags.filterNot { ContactTag.isTagged(it, pubKeyHex) }.toTypedArray(),
                 signer = signer,
                 createdAt = createdAt,
             )

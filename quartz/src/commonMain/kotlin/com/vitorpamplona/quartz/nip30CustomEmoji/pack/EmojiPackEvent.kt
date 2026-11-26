@@ -93,6 +93,7 @@ class EmojiPackEvent(
 
     companion object {
         const val KIND = 30030
+        const val KIND_STR = "30030"
         const val ALT_DESCRIPTION = "Emoji pack"
 
         @OptIn(ExperimentalUuidApi::class)

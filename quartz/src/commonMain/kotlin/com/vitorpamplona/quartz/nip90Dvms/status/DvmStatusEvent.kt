@@ -36,7 +36,12 @@ class DvmStatusEvent(
     content: String,
     sig: HexKey,
 ) : DvmResponseEvent(id, pubKey, createdAt, KIND, tags, content, sig) {
-    fun status() = tags.status(content)
+    /**
+     * NIP-90: the `status` tag, whose [StatusTag.description] is the tag's own extra info. The
+     * `content` is not part of it: it holds partial results, or the encrypted payload of a
+     * private job.
+     */
+    fun status() = tags.status()
 
     fun firstAmount() = tags.firstAmount()
 

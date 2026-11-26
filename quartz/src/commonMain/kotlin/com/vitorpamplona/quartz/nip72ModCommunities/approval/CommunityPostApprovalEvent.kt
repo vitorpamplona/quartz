@@ -110,12 +110,18 @@ class CommunityPostApprovalEvent(
         const val KIND = 4550
         val KIND_LIST = listOf(CommunityPostApprovalEvent.KIND)
 
+        /**
+         * Approves [approvedPost] in [community]. As NIP-72 asks, the content is the post itself,
+         * JSON-stringified: the exact version approved, which is the only copy left once a relay
+         * replaces an approved replaceable event. The tags are the community `a`, the post's `e`
+         * (and `a` when it is addressable), its author's `p` and a `k` with its kind.
+         */
         fun build(
             approvedPost: EventHintBundle<Event>,
             community: EventHintBundle<CommunityDefinitionEvent>,
             createdAt: Long = TimeUtils.now(),
             initializer: TagArrayBuilder<CommunityPostApprovalEvent>.() -> Unit = {},
-        ) = eventTemplate(KIND, "", createdAt) {
+        ) = eventTemplate(KIND, approvedPost.event.toJson(), createdAt) {
             community(community)
             approved(approvedPost)
             notifyAuthor(approvedPost)

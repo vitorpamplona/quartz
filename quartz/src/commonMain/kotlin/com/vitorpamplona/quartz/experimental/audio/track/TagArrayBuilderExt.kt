@@ -22,6 +22,7 @@ package com.vitorpamplona.quartz.experimental.audio.track
 
 import com.vitorpamplona.quartz.experimental.audio.track.tags.CoverTag
 import com.vitorpamplona.quartz.experimental.audio.track.tags.MediaTag
+import com.vitorpamplona.quartz.experimental.audio.track.tags.ParticipantTag
 import com.vitorpamplona.quartz.experimental.audio.track.tags.PriceTag
 import com.vitorpamplona.quartz.experimental.audio.track.tags.TypeTag
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
@@ -36,3 +37,7 @@ fun TagArrayBuilder<AudioTrackEvent>.media(mediaUrl: String) = addUnique(MediaTa
 fun TagArrayBuilder<AudioTrackEvent>.type(type: String) = addUnique(TypeTag.assemble(type))
 
 fun TagArrayBuilder<AudioTrackEvent>.subject(subject: String) = addUnique(SubjectTag.assemble(subject))
+
+fun TagArrayBuilder<AudioTrackEvent>.participant(participant: ParticipantTag) = add(participant.toTagArray())
+
+fun TagArrayBuilder<AudioTrackEvent>.participants(participants: List<ParticipantTag>) = addAll(participants.map { it.toTagArray() })

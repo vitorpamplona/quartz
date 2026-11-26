@@ -21,9 +21,23 @@
 package com.vitorpamplona.quartz.nip90Dvms.status
 
 import com.vitorpamplona.quartz.nip01Core.core.TagArray
+import com.vitorpamplona.quartz.nip01Core.core.fastFirstNotNullOfOrNull
 import com.vitorpamplona.quartz.nip90Dvms.status.tags.AmountTag
 import com.vitorpamplona.quartz.nip90Dvms.status.tags.StatusTag
 
-fun TagArray.status(content: String) = firstNotNullOfOrNull { StatusTag.parse(it, content) }
+/** NIP-90: the feedback's `status` tag, its extra info read from the tag alone. */
+fun TagArray.status() = fastFirstNotNullOfOrNull(StatusTag::parse)
+
+@Deprecated(
+    "Reads the event content as the status description whenever it is not empty, but NIP-90 keeps the " +
+        "content (partial results, encrypted payloads) apart from the tag's extra info. Use status() for " +
+        "the extra info and the event's content for partial results. Removed in 3.0.0.",
+    ReplaceWith("status()"),
+)
+fun TagArray.status(content: String) =
+    fastFirstNotNullOfOrNull {
+        @Suppress("DEPRECATION")
+        StatusTag.parse(it, content)
+    }
 
 fun TagArray.firstAmount() = firstNotNullOfOrNull(AmountTag::parse)
