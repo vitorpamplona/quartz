@@ -24,6 +24,8 @@ import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.forks.IForkableEvent
 import com.vitorpamplona.quartz.experimental.forks.parseForkedAddress
 import com.vitorpamplona.quartz.experimental.forks.parseForkedEventId
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.AddressSerializer
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
@@ -83,7 +85,10 @@ class WikiArticleEvent(
     PublishedAtProvider,
     IForkableEvent,
     RootScope,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.DJOT
+
     override fun indexableContent() = listOfNotNull(title(), summary(), content).joinToString("\n")
 
     // The read path: hands over the same fields indexableContent() joins, without

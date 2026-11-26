@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip23LongContent
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.AddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -58,7 +60,10 @@ class LongFormContentEvent(
     AddressHintProvider,
     PublishedAtProvider,
     RootScope,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     // Topics (`t`) are appended after the body, as CommentEvent does: authors pick
     // topics that the article text does not necessarily mention. Shared with the draft (30024).
     override fun indexableContent() = tags.longFormIndexableContent(content)

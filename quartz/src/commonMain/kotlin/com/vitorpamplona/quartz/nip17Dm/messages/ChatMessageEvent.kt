@@ -21,6 +21,8 @@
 package com.vitorpamplona.quartz.nip17Dm.messages
 
 import androidx.compose.runtime.Immutable
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip01Core.core.TagArrayBuilder
 import com.vitorpamplona.quartz.nip01Core.core.appendTo
@@ -60,7 +62,10 @@ class ChatMessageEvent(
 ) : BaseDMGroupEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.PLAIN_TEXT
+
     // content is the decrypted (plaintext) direct-message body; the optional
     // NIP-14 subject (`changeSubject()`) names the conversation.
     override fun indexableContent() = listOfNotNull(subject(), content).joinToString("\n")

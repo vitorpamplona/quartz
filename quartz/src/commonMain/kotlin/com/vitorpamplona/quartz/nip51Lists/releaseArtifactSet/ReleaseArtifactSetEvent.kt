@@ -31,6 +31,8 @@ import com.vitorpamplona.quartz.experimental.nip82SoftwareApps.release.commit
 import com.vitorpamplona.quartz.experimental.nip82SoftwareApps.release.isNip82SoftwareRelease
 import com.vitorpamplona.quartz.experimental.nip82SoftwareApps.release.platforms
 import com.vitorpamplona.quartz.experimental.nip82SoftwareApps.release.version
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -77,7 +79,10 @@ class ReleaseArtifactSetEvent(
 ) : BaseAddressableEvent(id, pubKey, createdAt, KIND, tags, content, sig),
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.MARKDOWN
+
     override fun indexableContent() = listOfNotNull(title(), description(), searchableReleaseNotes()).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without

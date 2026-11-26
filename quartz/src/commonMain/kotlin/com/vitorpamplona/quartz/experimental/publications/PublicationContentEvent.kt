@@ -22,6 +22,8 @@ package com.vitorpamplona.quartz.experimental.publications
 
 import androidx.compose.runtime.Immutable
 import com.vitorpamplona.quartz.experimental.publications.tags.WikilinkTag
+import com.vitorpamplona.quartz.kinds.ContentFormat
+import com.vitorpamplona.quartz.kinds.FormattedContentEvent
 import com.vitorpamplona.quartz.nip01Core.core.Address
 import com.vitorpamplona.quartz.nip01Core.core.BaseAddressableEvent
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
@@ -70,7 +72,10 @@ class PublicationContentEvent(
     PubKeyHintProvider,
     EventHintProvider,
     AddressHintProvider,
-    SearchableEvent {
+    SearchableEvent,
+    FormattedContentEvent {
+    override fun contentFormat() = ContentFormat.ASCIIDOC
+
     override fun indexableContent() = listOfNotNull(title(), content).joinToString("\n")
 
     // The read path: the same fields indexableContent() joins, handed over without
