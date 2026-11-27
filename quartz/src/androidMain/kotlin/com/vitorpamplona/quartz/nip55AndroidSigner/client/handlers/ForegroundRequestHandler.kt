@@ -22,7 +22,6 @@ package com.vitorpamplona.quartz.nip55AndroidSigner.client.handlers
 
 import android.content.ContentResolver
 import android.content.Intent
-import android.net.Uri
 import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.IResult
@@ -47,9 +46,8 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.respon
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.responses.SignResponse
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.PayloadPlan
 import com.vitorpamplona.quartz.nip57Zaps.ZapRequestEvent
-import com.vitorpamplona.quartz.utils.Log
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -94,68 +92,31 @@ class ForegroundRequestHandler(
             return launcher.launchWaitAndParse(assemble, parser)
         }
 
-        val prepared =
-            withContext(Dispatchers.IO) {
-                if (!streams.isSupportedOrFalse()) {
-                    Prepared.Unsupported
-                } else if (Nip55PayloadStreams.needsStaging(payload)) {
-                    try {
-                        // A fresh handle: the background query, if it ran, already consumed its own.
-                        Prepared.Staged(streams.stage(payload))
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        if (Nip55PayloadStreams.fitsInline(payload)) {
-                            // Small enough for the Intent itself. Staging also fails when the signer
-                            // stopped exporting PAYLOADS: then it needs the plain Intent.
-                            Log.w("NIP55", "Failed to stage a large payload on the Signer app; sending it inline", e)
-                            if (streams.isSupportedOrFalse()) Prepared.Inline else Prepared.Unsupported
-                        } else {
-                            // Too big for an Intent: startActivityForResult would throw.
-                            Log.w("NIP55", "Failed to stage a large payload on the Signer app", e)
-                            Prepared.Failed(e)
-                        }
-                    }
-                } else {
-                    Prepared.Inline
-                }
-            }
+        // A fresh handle when staged: the background query, if it ran, already consumed its own.
+        val plan = withContext(Dispatchers.IO) { PayloadPlan.plan(payload, streams::isSupportedOrFalse, streams::stage) }
 
-        return when (prepared) {
-            is Prepared.Unsupported -> {
+        return when (plan) {
+            is PayloadPlan.Unsupported -> {
                 launcher.launchWaitAndParse(assemble, parser)
             }
 
-            is Prepared.Failed -> {
-                SignerResult.RequestAddressed.ReceivedButCouldNotPerform("Could not stage the payload on the signer: ${prepared.error.message}")
+            is PayloadPlan.Failed -> {
+                plan.toResult()
             }
 
-            is Prepared.Inline -> {
+            is PayloadPlan.Inline -> {
                 launcher.launchWaitAndParse({ streams.extendIntent(assemble(), null) }, parser)
             }
 
-            is Prepared.Staged -> {
+            is PayloadPlan.Staged -> {
                 try {
-                    launcher.launchWaitAndParse({ streams.extendIntent(assemble(), prepared.handle, signatureOnly) }, parser)
+                    launcher.launchWaitAndParse({ streams.extendIntent(assemble(), plan.handle, signatureOnly) }, parser)
                 } finally {
                     // The signer consumes the handle when it opens the request; this frees it if it never did.
-                    withContext(NonCancellable + Dispatchers.IO) { streams.release(prepared.handle) }
+                    withContext(NonCancellable + Dispatchers.IO) { streams.release(plan.handle) }
                 }
             }
         }
-    }
-
-    private sealed interface Prepared {
-        object Unsupported : Prepared
-
-        object Inline : Prepared
-
-        class Staged(
-            val handle: Uri,
-        ) : Prepared
-
-        class Failed(
-            val error: Exception,
-        ) : Prepared
     }
 
     suspend fun sign(unsignedEvent: Event) =
