@@ -51,6 +51,9 @@ interface INostrClient : AutoCloseable {
      * relay that had a session reconnects without waiting when asked; one that was already down
      * (a failed dial) keeps its backoff, so a background/foreground cycle does not redial every
      * dead relay at once.
+     *
+     * The client stays usable until [connect]. A throwaway client must be [close]d instead,
+     * which also cancels its jobs; a disconnected one keeps them.
      */
     fun disconnect()
 

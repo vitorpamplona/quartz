@@ -56,11 +56,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -177,8 +177,13 @@ class NostrClient(
     /**
      * Whatches for any changes in the relay list from subscriptions or outbox
      * and updates the relayPool as needed.
+     *
+     * Reacts to changes rather than sampling: `sample()` runs a ticker for as long as it is
+     * collected, so every client woke the scheduler every 300 ms for its whole life, idle or
+     * after [disconnect] (issue #166). Here a change waits [RELAY_SET_COALESCE_MS] before it
+     * reaches the pool, as it did under the sample, and [conflate] folds whatever lands in that
+     * window into the one update. No timer runs while the sets stand still.
      */
-    @OptIn(FlowPreview::class)
     private val allRelays =
         combine(
             activeRequests.desiredRelays,
@@ -187,10 +192,14 @@ class NostrClient(
             keptRelays,
         ) { reqs, counts, outbox, kept ->
             reqs + counts + outbox + kept.keys
-        }.sample(300)
+        }.conflate()
             .onEach {
-                // The sample only says when to look. What the pool keeps is read now, and read
-                // again before each drop: a publish that came in after the sample has already sent
+                // Waits before acting, not after: a relay dropped and wanted again within the
+                // window (an unsubscribe followed by a resubscribe) keeps its socket instead of
+                // being closed and redialed. The changes landing meanwhile conflate into one.
+                delay(RELAY_SET_COALESCE_MS)
+                // The emission only says when to look. What the pool keeps is read now, and read
+                // again before each drop: a publish that came in after the emission has already sent
                 // its EVENT on the socket a stale set would close, losing that EVENT's OK until
                 // the keep-alive sweep redialed (a minute, measured on a one-at-a-time publisher).
                 val added = relayPool.updatePool(wantedRelays(), ::isWanted)
@@ -355,6 +364,7 @@ class NostrClient(
     companion object {
         private const val KEEP_ALIVE_INTERVAL_MS = 60_000L
         private const val DECODER_AGE_OUT_MS = 30_000L
+        private const val RELAY_SET_COALESCE_MS = 300L
     }
 
     override fun reconnect(
@@ -392,7 +402,7 @@ class NostrClient(
     }
 
     override fun releaseConnection(url: NormalizedRelayUrl) {
-        // The next sample drops the relay if nothing else wants it.
+        // The next relay-set update drops the relay if nothing else wants it.
         keptRelays.update { kept ->
             val holds = kept[url] ?: return@update kept
             if (holds <= 1) kept - url else kept + (url to holds - 1)
@@ -631,8 +641,8 @@ class NostrClient(
         // The reconnect path is debounced and goes through
         // reconnectIfNeedsTo, which respects each relay's exponential
         // backoff so we don't hammer dead relays.
-        // Live, not allRelays.value: that is a 300ms sample, and a relay that drops within one
-        // sample of joining would not be in it yet.
+        // Live, not allRelays.value: that lags up to 300ms behind, and a relay that drops within
+        // that window of joining would not be in it yet.
         if (isActive() && isWanted(relay.url)) {
             reconnect(onlyIfChanged = true)
             retryWhenBackoffEnds(relay)
