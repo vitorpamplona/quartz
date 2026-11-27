@@ -27,6 +27,7 @@ import com.vitorpamplona.quartz.nip01Core.core.Event
 import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.IResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.isSupportedOrFalse
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.IntentRequestManager
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.requests.DecryptZapRequest
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.requests.DeriveKeyRequest
@@ -95,16 +96,7 @@ class ForegroundRequestHandler(
 
         val prepared =
             withContext(Dispatchers.IO) {
-                val supported =
-                    try {
-                        streams.isSupported()
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        Log.w("NIP55", "Failed to probe the Signer app for payload streams", e)
-                        false
-                    }
-
-                if (!supported) {
+                if (!streams.isSupportedOrFalse()) {
                     Prepared.Unsupported
                 } else if (Nip55PayloadStreams.needsStaging(payload)) {
                     try {
@@ -112,8 +104,16 @@ class ForegroundRequestHandler(
                         Prepared.Staged(streams.stage(payload))
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        Log.w("NIP55", "Failed to stage a large payload on the Signer app", e)
-                        Prepared.Failed(e)
+                        if (Nip55PayloadStreams.fitsInline(payload)) {
+                            // Small enough for the Intent itself. Staging also fails when the signer
+                            // stopped exporting PAYLOADS: then it needs the plain Intent.
+                            Log.w("NIP55", "Failed to stage a large payload on the Signer app; sending it inline", e)
+                            if (streams.isSupportedOrFalse()) Prepared.Inline else Prepared.Unsupported
+                        } else {
+                            // Too big for an Intent: startActivityForResult would throw.
+                            Log.w("NIP55", "Failed to stage a large payload on the Signer app", e)
+                            Prepared.Failed(e)
+                        }
                     }
                 } else {
                     Prepared.Inline

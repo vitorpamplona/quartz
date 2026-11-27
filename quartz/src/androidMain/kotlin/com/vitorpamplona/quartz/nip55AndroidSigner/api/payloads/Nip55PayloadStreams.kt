@@ -28,7 +28,9 @@ import android.net.Uri
 import androidx.core.net.toUri
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.TimeUtils
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -58,14 +60,15 @@ class Nip55PayloadStreams(
 
     /**
      * True when the signer exports the `PAYLOADS` authority. The answer is cached per signer
-     * package: a yes for the life of the process, a no for [NEGATIVE_PROBE_TTL_SECONDS], so a
-     * signer updated while the app runs is picked up. The probe is a Binder call that may start
-     * the signer's process: call it off the main thread.
+     * package: a yes for [POSITIVE_PROBE_TTL_SECONDS], a no for [NEGATIVE_PROBE_TTL_SECONDS], so
+     * a signer updated, downgraded or replaced while the app runs is picked up. The probe is a
+     * Binder call that may start the signer's process: call it off the main thread.
      */
     fun isSupported(): Boolean {
-        if (supported.contains(packageName)) return true
-        val lastNo = unsupportedAt[packageName]
         val now = TimeUtils.now()
+        val lastYes = supportedAt[packageName]
+        if (lastYes != null && now - lastYes < POSITIVE_PROBE_TTL_SECONDS) return true
+        val lastNo = unsupportedAt[packageName]
         if (lastNo != null && now - lastNo < NEGATIVE_PROBE_TTL_SECONDS) return false
 
         val found =
@@ -80,12 +83,18 @@ class Nip55PayloadStreams(
             }
 
         if (found) {
-            supported.add(packageName)
+            supportedAt[packageName] = now
             unsupportedAt.remove(packageName)
         } else {
+            supportedAt.remove(packageName)
             unsupportedAt[packageName] = now
         }
         return found
+    }
+
+    /** Forgets a cached yes, so the next [isSupported] probes again. */
+    fun forgetSupport() {
+        supportedAt.remove(packageName)
     }
 
     /**
@@ -98,8 +107,13 @@ class Nip55PayloadStreams(
 
     fun stage(payload: ByteArray): Uri {
         val handle =
-            contentResolver.insert("content://$authority".toUri(), ContentValues())
-                ?: throw IOException("Signer $packageName did not allocate a payload handle")
+            try {
+                contentResolver.insert("content://$authority".toUri(), ContentValues())
+            } catch (e: IllegalArgumentException) {
+                // Unknown URL: the signer no longer exports the authority. (A null is a full quota.)
+                forgetSupport()
+                throw IOException("Signer $packageName no longer exports $authority", e)
+            } ?: throw IOException("Signer $packageName did not allocate a payload handle")
 
         if (!isSignerPayloadUri(handle.toString(), packageName)) {
             release(handle)
@@ -130,8 +144,9 @@ class Nip55PayloadStreams(
     /**
      * Reads a response handle the signer returned (`result_uri`, `event_uri`, `results_uri`).
      * Refuses anything but a handle on this signer's `PAYLOADS` authority, so a signer can't
-     * make the app open its own files or another app's provider. Blocking: call it off the main
-     * thread.
+     * make the app open its own files or another app's provider, and throws past
+     * [MAX_STREAM_BYTES]. Blocking, with no timeout of its own (a pipe read ignores
+     * cancellation): call it off the main thread, and bound the wait where it matters.
      */
     fun read(uriString: String): String {
         if (!isSignerPayloadUri(uriString, packageName)) {
@@ -140,7 +155,7 @@ class Nip55PayloadStreams(
         val stream =
             contentResolver.openInputStream(uriString.toUri())
                 ?: throw IOException("Signer $packageName did not open the response handle")
-        return stream.use { it.readBytes().decodeToString() }
+        return stream.use { readCapped(it, MAX_STREAM_BYTES).decodeToString() }
     }
 
     /**
@@ -220,7 +235,20 @@ class Nip55PayloadStreams(
 
         const val RETURN_TYPE_SIGNATURE = "signature"
 
-        private val supported: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        /**
+         * The largest payload sent inline when staging fails. Above it a payload can't go inline
+         * at all: Binder marshals it as UTF-16 into a 1 MB buffer the whole process shares.
+         */
+        const val MAX_INLINE_FALLBACK_BYTES = 256 * 1024
+
+        /** The most a response handle may hold, well above the signer's own 16 MB cap. */
+        const val MAX_STREAM_BYTES = 32 * 1024 * 1024
+
+        private const val READ_CHUNK_BYTES = 64 * 1024
+
+        const val POSITIVE_PROBE_TTL_SECONDS = 600L
+
+        private val supportedAt = ConcurrentHashMap<String, Long>()
         private val unsupportedAt = ConcurrentHashMap<String, Long>()
 
         private val TOKEN = Regex("[0-9a-f]{32}")
@@ -228,11 +256,35 @@ class Nip55PayloadStreams(
         /** True when [payload] is too big to send inline. */
         fun needsStaging(payload: String): Boolean = utf8Size(payload) > INLINE_THRESHOLD_BYTES
 
+        /** True when [payload] can still go inline, when staging it failed. */
+        fun fitsInline(payload: String): Boolean = utf8Size(payload, MAX_INLINE_FALLBACK_BYTES) <= MAX_INLINE_FALLBACK_BYTES
+
         /**
-         * UTF-8 size of [text], counted without encoding it, stopping once it passes the
-         * threshold.
+         * Reads [input] to the end, throwing once it passes [maxBytes] instead of growing without
+         * bound.
          */
-        internal fun utf8Size(text: String): Int {
+        internal fun readCapped(
+            input: InputStream,
+            maxBytes: Int,
+        ): ByteArray {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(READ_CHUNK_BYTES)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (out.size() + read > maxBytes) throw IOException("Signer response is over $maxBytes bytes")
+                out.write(buffer, 0, read)
+            }
+            return out.toByteArray()
+        }
+
+        /**
+         * UTF-8 size of [text], counted without encoding it, stopping once it passes [limit].
+         */
+        internal fun utf8Size(
+            text: String,
+            limit: Int = INLINE_THRESHOLD_BYTES,
+        ): Int {
             var size = 0
             var i = 0
             while (i < text.length) {
@@ -247,7 +299,7 @@ class Nip55PayloadStreams(
                         }
                         else -> 3
                     }
-                if (size > INLINE_THRESHOLD_BYTES) return size
+                if (size > limit) return size
                 i++
             }
             return size

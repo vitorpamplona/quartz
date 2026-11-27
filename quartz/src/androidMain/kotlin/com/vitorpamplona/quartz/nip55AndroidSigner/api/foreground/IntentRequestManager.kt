@@ -33,6 +33,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,7 +56,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * With [payloadStreams], results the signer moved to handles (the NIP-55 large-payloads
  * extension: `result_uri`, `event_uri`, `results_uri`) are read on [Dispatchers.IO], never on the
- * thread that calls [newResponse].
+ * thread that calls [newResponse]. A result handle that isn't read within [STREAM_READ_TIMEOUT_MS]
+ * fails its request. A batch handle (`results_uri`) that can't be read fails every request in the
+ * batch as [SignerResult.RequestAddressed.TimedOut]: the request ids are inside it.
  */
 class IntentRequestManager(
     val foregroundApprovalTimeout: Long = 30000,
@@ -102,8 +105,10 @@ class IntentRequestManager(
         val resultsUri = data.getStringExtra(Nip55PayloadStreams.EXTRA_RESULTS_URI)
         if (resultsUri != null) {
             val streams = payloadStreams
+            // The request ids are inside the batch, so a batch that can't be read can't be routed:
+            // its requests wait out foregroundApprovalTimeout and report TimedOut.
             if (streams == null) {
-                Log.w("NIP55") { "dropping a batch result handle: no payload streams to read it with" }
+                Log.w("NIP55") { "dropping a batch result handle: no payload streams to read it with; its requests will time out" }
                 return
             }
             streamReads.launch {
@@ -111,7 +116,7 @@ class IntentRequestManager(
                     dispatchBatch(streams.read(resultsUri))
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    Log.w("NIP55", "Could not read the signer's batch result handle", e)
+                    Log.w("NIP55", "Could not read the signer's batch result handle; its requests will time out", e)
                 }
             }
             return
@@ -202,7 +207,14 @@ class IntentRequestManager(
             when (delivery) {
                 null -> SignerResult.RequestAddressed.TimedOut()
                 else -> {
-                    val resultIntent = resolve(delivery)
+                    // A pipe read ignores cancellation, so wait on it from here instead: the request
+                    // gets an answer on time even if the read stays stuck until the signer closes it.
+                    val resultIntent =
+                        if (delivery.resultUri == null && delivery.eventUri == null) {
+                            delivery.result
+                        } else {
+                            withTimeoutOrNull(STREAM_READ_TIMEOUT_MS) { streamReads.async { resolve(delivery) }.await() }
+                        }
                     if (resultIntent == null) {
                         SignerResult.RequestAddressed.ReceivedButCouldNotPerform("Could not read the signer's streamed result")
                     } else {
@@ -214,5 +226,10 @@ class IntentRequestManager(
             pending.remove(callId)
             channel.close()
         }
+    }
+
+    companion object {
+        /** How long a request waits for the signer's streamed result to be read. */
+        const val STREAM_READ_TIMEOUT_MS = 30_000L
     }
 }

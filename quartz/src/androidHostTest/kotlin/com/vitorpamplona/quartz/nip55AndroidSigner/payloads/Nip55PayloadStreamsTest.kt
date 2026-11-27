@@ -22,8 +22,13 @@ package com.vitorpamplona.quartz.nip55AndroidSigner.payloads
 
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams.Companion.INLINE_THRESHOLD_BYTES
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams.Companion.MAX_INLINE_FALLBACK_BYTES
+import java.io.ByteArrayInputStream
+import java.io.IOException
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -49,6 +54,32 @@ class Nip55PayloadStreamsTest {
     fun utf8SizeMatchesTheEncoder() {
         val text = "aé中😀z"
         assertEquals(text.encodeToByteArray().size, Nip55PayloadStreams.utf8Size(text))
+    }
+
+    @Test
+    fun aFailedStageFallsBackInlineOnlyUnderTheBinderSafeCap() {
+        assertTrue(Nip55PayloadStreams.fitsInline("a".repeat(200_000)))
+        assertTrue(Nip55PayloadStreams.fitsInline("a".repeat(MAX_INLINE_FALLBACK_BYTES)))
+        assertFalse(Nip55PayloadStreams.fitsInline("a".repeat(MAX_INLINE_FALLBACK_BYTES + 1)))
+        assertFalse(Nip55PayloadStreams.fitsInline("中".repeat(MAX_INLINE_FALLBACK_BYTES / 3 + 1)))
+    }
+
+    @Test
+    fun utf8SizeStopsPastItsLimit() {
+        val size = Nip55PayloadStreams.utf8Size("a".repeat(1_000_000), limit = 10)
+        assertEquals(11, size)
+    }
+
+    @Test
+    fun readCappedReturnsStreamsUpToTheCap() {
+        val bytes = ByteArray(200_000) { (it % 251).toByte() }
+        assertContentEquals(bytes, Nip55PayloadStreams.readCapped(ByteArrayInputStream(bytes), bytes.size))
+    }
+
+    @Test
+    fun readCappedThrowsPastTheCap() {
+        val bytes = ByteArray(200_001)
+        assertFailsWith<IOException> { Nip55PayloadStreams.readCapped(ByteArrayInputStream(bytes), 200_000) }
     }
 
     @Test
