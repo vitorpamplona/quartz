@@ -26,14 +26,16 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.DecryptionResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.getStringByName
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.query
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 
 class Nip44DecryptQuery(
     val loggedInUser: HexKey,
     val packageName: String,
     val contentResolver: ContentResolver,
 ) {
+    val streams = Nip55PayloadStreams(packageName, contentResolver)
+
     val uri = "content://$packageName.${CommandType.NIP44_DECRYPT}".toUri()
 
     fun query(
@@ -41,10 +43,12 @@ class Nip44DecryptQuery(
         fromPubKey: HexKey,
     ): SignerResult<DecryptionResult> =
         contentResolver.query(
+            streams,
             uri,
-            arrayOf(ciphertext, fromPubKey, loggedInUser),
+            ciphertext,
+            arrayOf(fromPubKey, loggedInUser),
         ) { cursor ->
-            val plaintext = cursor.getStringByName("result")
+            val plaintext = streams.readColumn(cursor, "result", Nip55PayloadStreams.COLUMN_RESULT_URI)
             if (!plaintext.isNullOrBlank()) {
                 SignerResult.RequestAddressed.Successful(DecryptionResult(plaintext))
             } else {

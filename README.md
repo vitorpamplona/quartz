@@ -133,6 +133,11 @@ val amberSigner =
     )
 ```
 
+When the signer supports NIP-55's large-payloads extension (it exports
+`content://<package>.PAYLOADS`), `NostrSignerExternal` streams payloads over 128 KB through it
+instead of sending them inline, so big events, ciphertexts and PSBTs don't overflow Binder.
+Nothing to configure: signers without it get the inline payloads as before.
+
 Create a single `NostrClient` for the entire application and control which relays it will access by
 registering subscriptions and sending events. The pool will automatically change based on filters +
 outbox events.
