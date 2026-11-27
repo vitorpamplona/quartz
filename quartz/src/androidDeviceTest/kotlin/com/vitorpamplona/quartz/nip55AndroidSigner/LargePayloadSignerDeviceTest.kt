@@ -35,6 +35,8 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.client.ExternalSignerLogin
 import com.vitorpamplona.quartz.nip55AndroidSigner.client.NostrSignerExternal
 import com.vitorpamplona.quartz.utils.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
@@ -113,6 +115,57 @@ class LargePayloadSignerDeviceTest {
                 assertTrue(ciphertext.length > Nip55PayloadStreams.INLINE_THRESHOLD_BYTES)
                 assertEquals(plaintext, signer.nip04Decrypt(ciphertext, pubKey))
                 Log.i(tag) { "nip04 round trip of ${plaintext.length} chars took ${System.currentTimeMillis() - start} ms" }
+            }
+        }
+
+    /**
+     * Concurrent foreground requests, which the signer answers as one batch (`results`, or
+     * `results_uri` when the batch is over the inline threshold). Needs the app in manual-approval
+     * mode on the signer and someone to approve each batch, so it only runs with `-P…batch=true`.
+     */
+    @Test
+    fun concurrentRequestsComeBackAsOneBatch() =
+        runBlocking {
+            assumeTrue("pass batch=true to run", InstrumentationRegistry.getArguments().getString("batch") == "true")
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val context = instrumentation.targetContext
+            val signerPackage = InstrumentationRegistry.getArguments().getString("signer") ?: "com.greenart7c3.nostrsigner.debug"
+
+            ActivityScenario.launch(SignerHostActivity::class.java).use { scenario ->
+                val login = CompletableDeferred<SignerResult<PubKeyResult>>()
+                SignerHostActivity.onResult = { login.complete(ExternalSignerLogin.parseResult(it)) }
+                // No standing NIP-04 grant, so those requests need the approval screen too.
+                val loginIntent = ExternalSignerLogin.createIntent(listOf(Permission(CommandType.SIGN_EVENT, 22242)), signerPackage)
+                scenario.onActivity { it.launch(loginIntent) }
+                val loginResult = withTimeout(180_000) { login.await() }
+                assertTrue(loginResult is SignerResult.RequestAddressed.Successful<PubKeyResult>, "login failed: $loginResult")
+                val pubKey = loginResult.result.pubkey
+
+                val signer = NostrSignerExternal(pubKey, signerPackage, context.contentResolver)
+                SignerHostActivity.onResult = { signer.newResponse(it) }
+                signer.registerForegroundLauncher { intent -> scenario.onActivity { it.launch(intent) } }
+
+                // Inline requests whose results, together, are over the threshold.
+                val plaintexts = listOf("d".repeat(100_000), "e".repeat(100_000))
+                var start = System.currentTimeMillis()
+                val ciphertexts = plaintexts.map { async { signer.nip04Encrypt(it, pubKey) } }.awaitAll()
+                Log.i(tag) { "batch nip04_encrypt of ${plaintexts.size} -> ${ciphertexts.map { it.length }} chars in ${System.currentTimeMillis() - start} ms" }
+
+                // Staged requests, results over the threshold too.
+                start = System.currentTimeMillis()
+                val decrypted = ciphertexts.map { async { signer.nip04Decrypt(it, pubKey) } }.awaitAll()
+                assertEquals(plaintexts, decrypted)
+                Log.i(tag) { "batch nip04_decrypt of ${ciphertexts.size} in ${System.currentTimeMillis() - start} ms" }
+
+                // Staged sign_events, answered with signatures.
+                start = System.currentTimeMillis()
+                val contents = listOf("f".repeat(300_000), "g".repeat(300_000))
+                val events = contents.map { async { signer.sign<Event>(1_700_000_000L, 1, emptyArray(), it) } }.awaitAll()
+                events.forEachIndexed { i, event ->
+                    assertTrue(event.verify(), "signature does not verify")
+                    assertEquals(contents[i], event.content)
+                }
+                Log.i(tag) { "batch sign of ${contents.size} x 300000 chars in ${System.currentTimeMillis() - start} ms" }
             }
         }
 
