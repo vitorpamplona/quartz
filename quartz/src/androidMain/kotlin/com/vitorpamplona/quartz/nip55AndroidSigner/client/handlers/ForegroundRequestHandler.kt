@@ -95,19 +95,28 @@ class ForegroundRequestHandler(
 
         val prepared =
             withContext(Dispatchers.IO) {
-                try {
-                    if (!streams.isSupported()) {
-                        Prepared.Unsupported
-                    } else if (Nip55PayloadStreams.needsStaging(payload)) {
+                val supported =
+                    try {
+                        streams.isSupported()
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        Log.w("NIP55", "Failed to probe the Signer app for payload streams", e)
+                        false
+                    }
+
+                if (!supported) {
+                    Prepared.Unsupported
+                } else if (Nip55PayloadStreams.needsStaging(payload)) {
+                    try {
                         // A fresh handle: the background query, if it ran, already consumed its own.
                         Prepared.Staged(streams.stage(payload))
-                    } else {
-                        Prepared.Inline
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        Log.w("NIP55", "Failed to stage a large payload on the Signer app", e)
+                        Prepared.Failed(e)
                     }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    Log.w("NIP55", "Failed to stage a large payload on the Signer app", e)
-                    Prepared.Failed(e)
+                } else {
+                    Prepared.Inline
                 }
             }
 
