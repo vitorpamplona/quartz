@@ -98,18 +98,51 @@ fun <T : IResult> ContentResolver.query(
         }
 
         is PayloadPlan.Staged -> {
-            try {
-                query(
-                    streams.extendQueryUri(uri, staged = true, signatureOnly = signatureOnly),
-                    arrayOf(plan.handle.toString(), *arguments),
-                    PayloadPlan.readFailuresAreFinal(map),
-                )
-            } finally {
-                // The signer consumes the handle when it reads the query; this frees it if it didn't.
-                streams.release(plan.handle)
-            }
+            queryStaged(streams, uri, plan.handle, payload, arguments, signatureOnly, map)
         }
     }
+
+/**
+ * Sends the query with [handle] in place of [payload]. When the signer answers with
+ * `retained_payload_uri` (it needs approval and kept the payload, `retain_payload`), the handle
+ * is kept for the Intent that follows and the request reads as needing approval.
+ */
+private fun <T : IResult> ContentResolver.queryStaged(
+    streams: Nip55PayloadStreams,
+    uri: Uri,
+    handle: Uri,
+    payload: String,
+    arguments: Array<out String>,
+    signatureOnly: Boolean,
+    map: (cursor: Cursor) -> SignerResult<T>,
+): SignerResult<T> {
+    val readResult = PayloadPlan.readFailuresAreFinal(map)
+    var retainedHandle: String? = null
+    val stagedMap: (Cursor) -> SignerResult<T> = { cursor ->
+        val retainedIndex = cursor.getColumnIndex(Nip55PayloadStreams.COLUMN_RETAINED_PAYLOAD_URI)
+        if (retainedIndex >= 0) {
+            val retained = cursor.getString(retainedIndex)
+            if (!retained.isNullOrBlank() && streams.keepForIntent(payload, retained)) {
+                retainedHandle = retained
+            }
+            SignerResult.RequestIncomplete.RequiresManualApproval()
+        } else {
+            readResult(cursor)
+        }
+    }
+
+    return try {
+        query(
+            streams.extendQueryUri(uri, staged = true, signatureOnly = signatureOnly),
+            arrayOf(handle.toString(), *arguments),
+            stagedMap,
+        )
+    } finally {
+        // The signer consumes the handle when it reads the query; this frees it if it didn't,
+        // unless the signer retained the payload under this same handle for the Intent.
+        if (retainedHandle != handle.toString()) streams.release(handle)
+    }
+}
 
 /** [Nip55PayloadStreams.isSupported], with a failed probe read as unsupported. */
 internal fun Nip55PayloadStreams.isSupportedOrFalse(): Boolean =

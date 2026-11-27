@@ -88,12 +88,20 @@ class ForegroundRequestHandler(
         signatureOnly: Boolean = false,
     ): SignerResult.RequestAddressed<T> {
         val streams = payloadStreams
-        if (streams == null || !launcher.hasForegroundActivity()) {
+        if (streams == null) return launcher.launchWaitAndParse(assemble, parser)
+
+        if (!launcher.hasForegroundActivity()) {
+            // No Intent will pass the handle the background query may have kept: free it now.
+            withContext(NonCancellable + Dispatchers.IO) { streams.dropRetained(payload) }
             return launcher.launchWaitAndParse(assemble, parser)
         }
 
-        // A fresh handle when staged: the background query, if it ran, already consumed its own.
-        val plan = withContext(Dispatchers.IO) { PayloadPlan.plan(payload, streams::isSupportedOrFalse, streams::stage) }
+        // The handle the signer kept from the background query (retain_payload), or a fresh one:
+        // the query consumed its own.
+        val plan =
+            withContext(Dispatchers.IO) {
+                PayloadPlan.plan(payload, streams::isSupportedOrFalse) { streams.takeRetained(it) ?: streams.stage(it) }
+            }
 
         return when (plan) {
             is PayloadPlan.Unsupported -> {
