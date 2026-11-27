@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- NIP-55: see and launch the signer apps the large-payload device test talks to. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="nostrsigner" />
+        </intent>
+    </queries>
+
+    <application>
+        <activity
+            android:name="com.vitorpamplona.quartz.nip55AndroidSigner.SignerHostActivity"
+            android:exported="false" />
+    </application>
 </manifest>

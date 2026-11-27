@@ -28,8 +28,8 @@ import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.ZapEventDecryptionResult
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.getStringByName
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.query
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 import com.vitorpamplona.quartz.nip57Zaps.PrivateZapEvent
 
 class DecryptZapQuery(
@@ -37,12 +37,16 @@ class DecryptZapQuery(
     val packageName: String,
     val contentResolver: ContentResolver,
 ) {
+    val streams = Nip55PayloadStreams(packageName, contentResolver)
+
     fun query(event: Event): SignerResult<ZapEventDecryptionResult> =
         contentResolver.query(
+            streams,
             "content://$packageName.${CommandType.DECRYPT_ZAP_EVENT}".toUri(),
-            arrayOf(event.toJson(), event.pubKey, loggedInUser),
+            event.toJson(),
+            arrayOf(event.pubKey, loggedInUser),
         ) { cursor ->
-            val decryptedEventAsJson = cursor.getStringByName("result")
+            val decryptedEventAsJson = streams.readColumn(cursor, "result", Nip55PayloadStreams.COLUMN_RESULT_URI)
             if (!decryptedEventAsJson.isNullOrBlank()) {
                 if (decryptedEventAsJson.startsWith("{")) {
                     val event = Event.fromJsonOrNull(decryptedEventAsJson) as? PrivateZapEvent

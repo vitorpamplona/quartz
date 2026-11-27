@@ -26,9 +26,17 @@ import com.vitorpamplona.crypto.random.RandomInstance
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.IResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.foreground.intents.results.IntentResult
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 import com.vitorpamplona.quartz.utils.Log
 import com.vitorpamplona.quartz.utils.cache.LargeCache
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -45,13 +53,32 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Duplicate, unknown, or late deliveries (e.g. if the activity surfaces multiple results for the
  * same id) atomically read out as null and are dropped after a debug log line — no continuation
  * is ever resumed twice.
+ *
+ * With [payloadStreams], results the signer moved to handles (the NIP-55 large-payloads
+ * extension: `result_uri`, `event_uri`, `results_uri`) are read on [Dispatchers.IO], never on the
+ * thread that calls [newResponse]. A result handle that isn't read within [STREAM_READ_TIMEOUT_MS]
+ * fails its request. A batch handle (`results_uri`) that can't be read fails every request in the
+ * batch as [SignerResult.RequestAddressed.TimedOut]: the request ids are inside it.
  */
 class IntentRequestManager(
     val foregroundApprovalTimeout: Long = 30000,
+    val payloadStreams: Nip55PayloadStreams? = null,
 ) {
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    constructor(foregroundApprovalTimeout: Long = 30000) : this(foregroundApprovalTimeout, null)
+
     val activityNotFoundIntent = Intent()
 
-    private val pending = LargeCache<String, Channel<IntentResult>>()
+    /** A result as delivered, before any streamed field is read. */
+    private class Delivery(
+        val result: IntentResult,
+        val resultUri: String? = null,
+        val eventUri: String? = null,
+    )
+
+    private val pending = LargeCache<String, Channel<Delivery>>()
+
+    private val streamReads = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var appLauncher: ((Intent) -> Unit)? = null
 
@@ -71,25 +98,77 @@ class IntentRequestManager(
         val results = data.getStringExtra("results")
         if (results != null) {
             // This happens when the intent responds to many requests at the same time.
-            IntentResult.fromJsonArray(results).forEach { result ->
-                if (result.id != null) dispatch(result.id, result)
+            dispatchBatch(results)
+            return
+        }
+
+        val resultsUri = data.getStringExtra(Nip55PayloadStreams.EXTRA_RESULTS_URI)
+        if (resultsUri != null) {
+            val streams = payloadStreams
+            // The request ids are inside the batch, so a batch that can't be read can't be routed:
+            // its requests wait out foregroundApprovalTimeout and report TimedOut.
+            if (streams == null) {
+                Log.w("NIP55") { "dropping a batch result handle: no payload streams to read it with; its requests will time out" }
+                return
             }
-        } else {
-            val result = IntentResult.fromIntent(data)
-            if (result.id != null) dispatch(result.id, result)
+            streamReads.launch {
+                try {
+                    dispatchBatch(streams.read(resultsUri))
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w("NIP55", "Could not read the signer's batch result handle; its requests will time out", e)
+                }
+            }
+            return
+        }
+
+        val result = IntentResult.fromIntent(data)
+        if (result.id != null) {
+            dispatch(
+                result.id,
+                Delivery(
+                    result = result,
+                    resultUri = data.getStringExtra(Nip55PayloadStreams.EXTRA_RESULT_URI),
+                    eventUri = data.getStringExtra(Nip55PayloadStreams.EXTRA_EVENT_URI),
+                ),
+            )
+        }
+    }
+
+    private fun dispatchBatch(results: String) {
+        IntentResult.fromJsonArray(results).forEach { result ->
+            if (result.id != null) dispatch(result.id, Delivery(result))
         }
     }
 
     private fun dispatch(
         id: String,
-        result: IntentResult,
+        delivery: Delivery,
     ) {
         val channel = pending.remove(id)
         if (channel == null) {
             Log.d("NIP55") { "no channel for intent result id=$id (duplicate, unknown, or late)" }
             return
         }
-        channel.trySend(result)
+        channel.trySend(delivery)
+    }
+
+    /** Replaces streamed fields with their contents. Null when a handle can't be read. */
+    private suspend fun resolve(delivery: Delivery): IntentResult? {
+        if (delivery.resultUri == null && delivery.eventUri == null) return delivery.result
+        val streams = payloadStreams ?: return null
+        return withContext(Dispatchers.IO) {
+            try {
+                delivery.result.copy(
+                    result = delivery.resultUri?.let { streams.read(it) } ?: delivery.result.result,
+                    event = delivery.eventUri?.let { streams.read(it) } ?: delivery.result.event,
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w("NIP55", "Could not read the signer's result handle", e)
+                null
+            }
+        }
     }
 
     fun hasForegroundActivity() = appLauncher != null
@@ -113,7 +192,7 @@ class IntentRequestManager(
         requestIntent.putExtra("id", callId)
         requestIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
-        val channel = Channel<IntentResult>(capacity = 1)
+        val channel = Channel<Delivery>(capacity = 1)
         pending.put(callId, channel)
 
         return try {
@@ -124,14 +203,33 @@ class IntentRequestManager(
                 return SignerResult.RequestAddressed.SignerNotFound()
             }
 
-            val resultIntent = withTimeoutOrNull(foregroundApprovalTimeout) { channel.receive() }
-            when (resultIntent) {
+            val delivery = withTimeoutOrNull(foregroundApprovalTimeout) { channel.receive() }
+            when (delivery) {
                 null -> SignerResult.RequestAddressed.TimedOut()
-                else -> parser(resultIntent)
+                else -> {
+                    // A pipe read ignores cancellation, so wait on it from here instead: the request
+                    // gets an answer on time even if the read stays stuck until the signer closes it.
+                    val resultIntent =
+                        if (delivery.resultUri == null && delivery.eventUri == null) {
+                            delivery.result
+                        } else {
+                            withTimeoutOrNull(STREAM_READ_TIMEOUT_MS) { streamReads.async { resolve(delivery) }.await() }
+                        }
+                    if (resultIntent == null) {
+                        SignerResult.RequestAddressed.ReceivedButCouldNotPerform("Could not read the signer's streamed result")
+                    } else {
+                        parser(resultIntent)
+                    }
+                }
             }
         } finally {
             pending.remove(callId)
             channel.close()
         }
+    }
+
+    companion object {
+        /** How long a request waits for the signer's streamed result to be read. */
+        const val STREAM_READ_TIMEOUT_MS = 30_000L
     }
 }

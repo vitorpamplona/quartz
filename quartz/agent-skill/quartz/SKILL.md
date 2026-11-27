@@ -192,7 +192,10 @@ suspend fun post(client: NostrClient) {
 - `NostrSigner` is the abstraction to code against (`sign`, `nip44Encrypt` /
   `nip44Decrypt`, `nip04Encrypt` / `nip04Decrypt`, all `suspend`).
   `NostrSignerInternal` holds a local key; remote (NIP-46) and Android external-app
-  (NIP-55) signers implement the same class.
+  (NIP-55) signers implement the same class. `NostrSignerExternal` streams payloads over 128 KB
+  through the signer's `content://<package>.PAYLOADS` handles when it exports them
+  (`Nip55PayloadStreams`, NIP-55's large-payloads extension); don't cap payload sizes for such a
+  signer yourself.
 - `Event.verify()` checks the id and signature of events you receive from relays. It refuses an
   id, pubkey or sig that is not lowercase hex (NIP-01).
 - A channel whose authenticity rests on NIP-44 checks the payload's form before decrypting:
