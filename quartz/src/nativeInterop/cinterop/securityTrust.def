@@ -1,0 +1,95 @@
+# Security trust adapter. CoreFoundation containers and trust evaluation stay in native code.
+headers = Security/Security.h
+headerFilter = Security/Security.h
+language = Objective-C
+package = com.vitorpamplona.quartz.security
+compilerOpts = -framework Security
+linkerOpts = -framework Security
+---
+static inline CFMutableArrayRef quartz_sec_certificate_array_create(void) {
+    return CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+}
+
+static inline bool quartz_sec_certificate_array_add_der(
+    CFMutableArrayRef certificates,
+    const uint8_t *der_bytes,
+    size_t der_length
+) {
+    if (certificates == NULL || der_bytes == NULL || der_length == 0) return false;
+    CFDataRef data = CFDataCreate(NULL, der_bytes, (CFIndex)der_length);
+    if (data == NULL) return false;
+    SecCertificateRef certificate = SecCertificateCreateWithData(NULL, data);
+    CFRelease(data);
+    if (certificate == NULL) return false;
+    CFArrayAppendValue(certificates, certificate);
+    CFRelease(certificate);
+    return true;
+}
+
+static inline bool quartz_sec_trust_evaluate_with_pins(
+    SecTrustRef trust,
+    CFArrayRef _Nullable pinned_certificates,
+    bool verify_hostname
+) {
+    if (!verify_hostname) {
+        SecPolicyRef policy = SecPolicyCreateBasicX509();
+        if (policy == NULL) return false;
+        OSStatus status = SecTrustSetPolicies(trust, policy);
+        CFRelease(policy);
+        if (status != errSecSuccess) return false;
+    }
+
+    if (SecTrustEvaluateWithError(trust, NULL)) return true;
+    if (pinned_certificates == NULL || CFArrayGetCount(pinned_certificates) == 0) return false;
+    if (SecTrustSetAnchorCertificates(trust, pinned_certificates) != errSecSuccess) return false;
+    if (SecTrustSetAnchorCertificatesOnly(trust, true) != errSecSuccess) return false;
+    return SecTrustEvaluateWithError(trust, NULL);
+}
+
+static inline SecTrustRef _Nullable quartz_sec_trust_create_with_der(
+    const uint8_t *der_bytes,
+    size_t der_length,
+    const char *hostname
+) {
+    CFDataRef data = CFDataCreate(NULL, der_bytes, (CFIndex)der_length);
+    if (data == NULL) return NULL;
+    SecCertificateRef certificate = SecCertificateCreateWithData(NULL, data);
+    CFRelease(data);
+    if (certificate == NULL) return NULL;
+    CFStringRef host = CFStringCreateWithCString(NULL, hostname, kCFStringEncodingUTF8);
+    SecPolicyRef policy = host == NULL ? NULL : SecPolicyCreateSSL(true, host);
+    SecTrustRef trust = NULL;
+    OSStatus status = policy == NULL ? errSecParam : SecTrustCreateWithCertificates(certificate, policy, &trust);
+    if (policy != NULL) CFRelease(policy);
+    if (host != NULL) CFRelease(host);
+    CFRelease(certificate);
+    return status == errSecSuccess ? trust : NULL;
+}
+
+static inline sec_identity_t _Nullable quartz_sec_identity_create_from_pkcs12(
+    const uint8_t *pkcs12_bytes,
+    size_t pkcs12_length,
+    const char *password
+) {
+    CFDataRef data = CFDataCreate(NULL, pkcs12_bytes, (CFIndex)pkcs12_length);
+    if (data == NULL) return NULL;
+    CFStringRef passphrase = CFStringCreateWithCString(NULL, password, kCFStringEncodingUTF8);
+    const void *keys[] = { kSecImportExportPassphrase };
+    const void *values[] = { passphrase };
+    CFDictionaryRef options = passphrase == NULL ? NULL : CFDictionaryCreate(
+        NULL, keys, values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks
+    );
+    CFArrayRef items = NULL;
+    OSStatus status = options == NULL ? errSecParam : SecPKCS12Import(data, options, &items);
+    sec_identity_t result = NULL;
+    if (status == errSecSuccess && items != NULL && CFArrayGetCount(items) > 0) {
+        CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(items, 0);
+        SecIdentityRef identity = (SecIdentityRef)CFDictionaryGetValue(item, kSecImportItemIdentity);
+        if (identity != NULL) result = sec_identity_create(identity);
+    }
+    if (items != NULL) CFRelease(items);
+    if (options != NULL) CFRelease(options);
+    if (passphrase != NULL) CFRelease(passphrase);
+    CFRelease(data);
+    return result;
+}

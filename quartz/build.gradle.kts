@@ -2,6 +2,7 @@ import com.vanniktech.maven.publish.KotlinMultiplatform
 import com.vanniktech.maven.publish.SourcesJar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
@@ -65,6 +66,14 @@ kotlin {
     val appleVersion = project.findProperty("VERSION_NAME")?.toString() ?: "0.0.0"
 
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
+        if (target.name.startsWith("ios")) {
+            listOf("networkReceive", "securityTrust", "socks5Framer").forEach { name ->
+                target.compilations.getByName("main").cinterops.create(name) {
+                    definitionFile.set(project.file("src/nativeInterop/cinterop/$name.def"))
+                }
+            }
+        }
+
         target.binaries.framework {
             baseName = "QuartzKit"
             isStatic = false
@@ -115,6 +124,12 @@ kotlin {
         environment("TEST_RESOURCES_ROOT", rootDir)
         // This is necessary to have the variable propagated on iOS
         environment("SIMCTL_CHILD_TEST_RESOURCES_ROOT", rootDir)
+    }
+
+    tasks.named<KotlinNativeSimulatorTest>("iosSimulatorArm64Test") {
+        // Standalone simctl children cannot reach trustd (SecTrustEvaluateWithError fails
+        // with OSStatus -26276). Run in the simulator's normal launchd session for TLS tests.
+        standalone.set(false)
     }
 
     // Enable LLVM optimizations for the linuxX64 test binary only. Added for the

@@ -1,0 +1,349 @@
+# Proxy-only SOCKS5 CONNECT framer. TLS can be inserted above the established tunnel.
+headers = Network/Network.h Foundation/Foundation.h
+headerFilter = Network/Network.h
+language = Objective-C
+package = com.vitorpamplona.quartz.network
+compilerOpts = -framework Network -framework Foundation -framework Security
+linkerOpts = -framework Network -framework Foundation -framework Security
+---
+#include <errno.h>
+#include <string.h>
+
+typedef struct {
+    uint8_t stage;
+    bool ready;
+    bool failed;
+} quartz_socks5_state;
+
+static inline void quartz_nw_socks5_fail(
+    nw_framer_t framer,
+    quartz_socks5_state *state,
+    int error_code
+) {
+    if (state->failed) return;
+    state->failed = true;
+    nw_framer_mark_failed_with_error(framer, error_code);
+}
+
+static inline nw_protocol_options_t _Nullable quartz_nw_socks5_create_options(
+    const char *hostname,
+    uint16_t port,
+    nw_protocol_options_t _Nullable tls_options
+) {
+    if (hostname == NULL || port == 0) return NULL;
+    NSString *target_host = [NSString stringWithUTF8String:hostname];
+    const char *target_utf8 = target_host == nil ? NULL : [target_host UTF8String];
+    size_t target_length = target_utf8 == NULL ? 0 : strlen(target_utf8);
+    if (target_length == 0 || target_length > 255) return NULL;
+
+    nw_protocol_definition_t definition = nw_framer_create_definition(
+        "com.vitorpamplona.quartz.socks5",
+        NW_FRAMER_CREATE_FLAGS_DEFAULT,
+        ^nw_framer_start_result_t(nw_framer_t framer) {
+            quartz_socks5_state *state = calloc(1, sizeof(quartz_socks5_state));
+            if (state == NULL) {
+                nw_framer_mark_failed_with_error(framer, ENOMEM);
+                return nw_framer_start_result_will_mark_ready;
+            }
+
+            nw_framer_set_cleanup_handler(framer, ^(nw_framer_t cleanup_framer) {
+                (void)cleanup_framer;
+                free(state);
+            });
+
+            // No upper-layer output exists before the handshake. The framer becomes a
+            // pass-through immediately before it marks the tunnel ready.
+            nw_framer_set_output_handler(
+                framer,
+                ^(nw_framer_t output_framer, nw_framer_message_t message, size_t length, bool complete) {
+                    (void)output_framer;
+                    (void)message;
+                    (void)length;
+                    (void)complete;
+                }
+            );
+
+            nw_framer_set_input_handler(framer, ^size_t(nw_framer_t input_framer) {
+                (void)target_host;
+                __block size_t needed = 1;
+                while (!state->ready && !state->failed) {
+                    __block bool advanced = false;
+                    if (state->stage == 0) {
+                        needed = 2;
+                        nw_framer_parse_input(
+                            input_framer, 2, 2, NULL,
+                            ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                if (length < 2) {
+                                    if (complete) quartz_nw_socks5_fail(input_framer, state, ECONNRESET);
+                                    return (size_t)0;
+                                }
+                                if (buffer[0] != 5 || buffer[1] != 0) {
+                                    quartz_nw_socks5_fail(input_framer, state, ENOPROTOOPT);
+                                    return (size_t)0;
+                                }
+
+                                uint8_t request[7 + 255];
+                                request[0] = 5;
+                                request[1] = 1;
+                                request[2] = 0;
+                                request[3] = 3;
+                                request[4] = (uint8_t)target_length;
+                                memcpy(request + 5, target_utf8, target_length);
+                                request[5 + target_length] = (uint8_t)(port >> 8);
+                                request[6 + target_length] = (uint8_t)(port & 0xff);
+                                nw_framer_write_output(input_framer, request, 7 + target_length);
+                                state->stage = 1;
+                                needed = 4;
+                                advanced = true;
+                                return (size_t)2;
+                            }
+                        );
+                    } else {
+                        nw_framer_parse_input(
+                            input_framer, 1, 7 + 255, NULL,
+                            ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                if (length < 4) {
+                                    needed = 4;
+                                    if (complete) quartz_nw_socks5_fail(input_framer, state, ECONNRESET);
+                                    return (size_t)0;
+                                }
+                                if (buffer[0] != 5 || buffer[2] != 0) {
+                                    quartz_nw_socks5_fail(input_framer, state, EPROTO);
+                                    return (size_t)0;
+                                }
+                                if (buffer[1] != 0) {
+                                    quartz_nw_socks5_fail(input_framer, state, ECONNREFUSED);
+                                    return (size_t)0;
+                                }
+
+                                size_t reply_length = 0;
+                                if (buffer[3] == 1) {
+                                    reply_length = 10;
+                                } else if (buffer[3] == 4) {
+                                    reply_length = 22;
+                                } else if (buffer[3] == 3) {
+                                    if (length < 5) {
+                                        needed = 5;
+                                        return (size_t)0;
+                                    }
+                                    reply_length = 7 + buffer[4];
+                                } else {
+                                    quartz_nw_socks5_fail(input_framer, state, EPROTO);
+                                    return (size_t)0;
+                                }
+                                if (length < reply_length) {
+                                    needed = reply_length;
+                                    if (complete) quartz_nw_socks5_fail(input_framer, state, ECONNRESET);
+                                    return (size_t)0;
+                                }
+
+                                state->ready = true;
+                                advanced = true;
+                                return reply_length;
+                            }
+                        );
+                    }
+                    if (!advanced) break;
+                }
+
+                if (state->ready && !state->failed) {
+                    if (tls_options != NULL &&
+                        !nw_framer_prepend_application_protocol(input_framer, tls_options)) {
+                        quartz_nw_socks5_fail(input_framer, state, EPROTONOSUPPORT);
+                    } else {
+                        nw_framer_pass_through_input(input_framer);
+                        nw_framer_pass_through_output(input_framer);
+                        nw_framer_mark_ready(input_framer);
+                    }
+                }
+                return needed;
+            });
+
+            const uint8_t greeting[] = { 5, 1, 0 };
+            nw_framer_write_output(framer, greeting, sizeof(greeting));
+            return nw_framer_start_result_will_mark_ready;
+        }
+    );
+    if (definition == NULL) return NULL;
+    return nw_framer_create_options(definition);
+}
+
+typedef void (^quartz_nw_socks5_server_target_handler_t)(const char *hostname, uint16_t port);
+
+typedef struct {
+    uint8_t stage;
+    uint8_t target_length;
+    size_t expected;
+    bool ready;
+    bool failed;
+} quartz_socks5_server_state;
+
+static inline void quartz_nw_socks5_server_fail(
+    nw_framer_t framer,
+    quartz_socks5_server_state *state,
+    int error_code
+) {
+    if (state->failed) return;
+    state->failed = true;
+    nw_framer_mark_failed_with_error(framer, error_code);
+}
+
+// Loopback test servers use the inverse handshake to place TLS above an established tunnel.
+static inline nw_protocol_options_t _Nullable quartz_nw_socks5_server_create_options(
+    nw_protocol_options_t _Nullable tls_options,
+    quartz_nw_socks5_server_target_handler_t _Nullable target_handler
+) {
+    nw_protocol_definition_t definition = nw_framer_create_definition(
+        "com.vitorpamplona.quartz.socks5-server",
+        NW_FRAMER_CREATE_FLAGS_DEFAULT,
+        ^nw_framer_start_result_t(nw_framer_t framer) {
+            quartz_socks5_server_state *state = calloc(1, sizeof(quartz_socks5_server_state));
+            if (state == NULL) {
+                nw_framer_mark_failed_with_error(framer, ENOMEM);
+                return nw_framer_start_result_will_mark_ready;
+            }
+
+            nw_framer_set_cleanup_handler(framer, ^(nw_framer_t cleanup_framer) {
+                (void)cleanup_framer;
+                free(state);
+            });
+            nw_framer_set_output_handler(
+                framer,
+                ^(nw_framer_t output_framer, nw_framer_message_t message, size_t length, bool complete) {
+                    (void)output_framer;
+                    (void)message;
+                    (void)length;
+                    (void)complete;
+                }
+            );
+
+            nw_framer_set_input_handler(framer, ^size_t(nw_framer_t input_framer) {
+                __block size_t needed = 1;
+                while (!state->ready && !state->failed) {
+                    __block bool advanced = false;
+                    if (state->stage == 0) {
+                            needed = 2;
+                            nw_framer_parse_input(
+                                input_framer, 2, 2, NULL,
+                                ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                    if (length < 2) {
+                                        if (complete) quartz_nw_socks5_server_fail(input_framer, state, ECONNRESET);
+                                        return (size_t)0;
+                                    }
+                                    if (buffer[0] != 5 || buffer[1] == 0) {
+                                        quartz_nw_socks5_server_fail(input_framer, state, ENOPROTOOPT);
+                                        return (size_t)0;
+                                    }
+                                    state->expected = buffer[1];
+                                    state->stage = 1;
+                                    needed = state->expected;
+                                    advanced = true;
+                                    return (size_t)2;
+                                }
+                            );
+                    } else if (state->stage == 1) {
+                            needed = state->expected;
+                            nw_framer_parse_input(
+                                input_framer, state->expected, state->expected, NULL,
+                                ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                    if (length < state->expected) {
+                                        if (complete) quartz_nw_socks5_server_fail(input_framer, state, ECONNRESET);
+                                        return (size_t)0;
+                                    }
+                                    if (memchr(buffer, 0, state->expected) == NULL) {
+                                        quartz_nw_socks5_server_fail(input_framer, state, EAUTH);
+                                        return (size_t)0;
+                                    }
+                                    const uint8_t method[] = { 5, 0 };
+                                    nw_framer_write_output(input_framer, method, sizeof(method));
+                                    state->stage = 2;
+                                    needed = 4;
+                                    advanced = true;
+                                    return state->expected;
+                                }
+                            );
+                    } else if (state->stage == 2) {
+                            needed = 4;
+                            nw_framer_parse_input(
+                                input_framer, 4, 4, NULL,
+                                ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                    if (length < 4) {
+                                        if (complete) quartz_nw_socks5_server_fail(input_framer, state, ECONNRESET);
+                                        return (size_t)0;
+                                    }
+                                    if (buffer[0] != 5 || buffer[1] != 1 || buffer[2] != 0 || buffer[3] != 3) {
+                                        quartz_nw_socks5_server_fail(input_framer, state, ENOPROTOOPT);
+                                        return (size_t)0;
+                                    }
+                                    state->stage = 3;
+                                    needed = 1;
+                                    advanced = true;
+                                    return (size_t)4;
+                                }
+                            );
+                    } else if (state->stage == 3) {
+                            needed = 1;
+                            nw_framer_parse_input(
+                                input_framer, 1, 1, NULL,
+                                ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                    if (length < 1) {
+                                        if (complete) quartz_nw_socks5_server_fail(input_framer, state, ECONNRESET);
+                                        return (size_t)0;
+                                    }
+                                    if (buffer[0] == 0) {
+                                        quartz_nw_socks5_server_fail(input_framer, state, EPROTO);
+                                        return (size_t)0;
+                                    }
+                                    state->target_length = buffer[0];
+                                    state->expected = (size_t)buffer[0] + 2;
+                                    state->stage = 4;
+                                    needed = state->expected;
+                                    advanced = true;
+                                    return (size_t)1;
+                                }
+                            );
+                    } else {
+                            needed = state->expected;
+                            nw_framer_parse_input(
+                                input_framer, state->expected, state->expected, NULL,
+                                ^size_t(uint8_t *buffer, size_t length, bool complete) {
+                                    if (length < state->expected) {
+                                        if (complete) quartz_nw_socks5_server_fail(input_framer, state, ECONNRESET);
+                                        return (size_t)0;
+                                    }
+                                    char target_host[256];
+                                    memcpy(target_host, buffer, state->target_length);
+                                    target_host[state->target_length] = '\0';
+                                    uint16_t target_port =
+                                        ((uint16_t)buffer[state->target_length] << 8) |
+                                        (uint16_t)buffer[state->target_length + 1];
+                                    if (target_handler != NULL) target_handler(target_host, target_port);
+                                    const uint8_t reply[] = { 5, 0, 0, 1, 0, 0, 0, 0, 0, 0 };
+                                    nw_framer_write_output(input_framer, reply, sizeof(reply));
+                                    state->ready = true;
+                                    advanced = true;
+                                    return state->expected;
+                                }
+                            );
+                    }
+                    if (!advanced) break;
+                }
+
+                if (state->ready && !state->failed) {
+                    if (tls_options != NULL &&
+                        !nw_framer_prepend_application_protocol(input_framer, tls_options)) {
+                        quartz_nw_socks5_server_fail(input_framer, state, EPROTONOSUPPORT);
+                    } else {
+                        nw_framer_pass_through_input(input_framer);
+                        nw_framer_pass_through_output(input_framer);
+                        nw_framer_mark_ready(input_framer);
+                    }
+                }
+                return needed;
+            });
+            return nw_framer_start_result_will_mark_ready;
+        }
+    );
+    if (definition == NULL) return NULL;
+    return nw_framer_create_options(definition);
+}
