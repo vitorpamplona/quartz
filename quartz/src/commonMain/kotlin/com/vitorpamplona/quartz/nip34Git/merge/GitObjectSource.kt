@@ -29,7 +29,7 @@ import com.vitorpamplona.quartz.nip34Git.git.GitObjectType
 import com.vitorpamplona.quartz.nip34Git.git.GitSmartHttpTransport
 import com.vitorpamplona.quartz.nip34Git.git.GitTreeEntry
 import com.vitorpamplona.quartz.nip34Git.git.Packfile
-import java.util.PriorityQueue
+import com.vitorpamplona.quartz.utils.BinaryHeap
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -179,10 +179,10 @@ class GitObjectSource(
         loadHistory(listOf(a, b))
         val inA = ancestors(a)
         val seen = HashSet<String>()
-        val frontier = PriorityQueue<GitCommit>(compareByDescending { it.authorTimeSec })
+        val frontier = BinaryHeap<GitCommit>(compareByDescending { it.authorTimeSec })
         commits[b]?.let { frontier.add(it) }
         while (frontier.isNotEmpty()) {
-            val commit = frontier.poll()
+            val commit = frontier.poll()!!
             if (!seen.add(commit.oid)) continue
             if (commit.oid in inA) return commit.oid
             commit.parents.forEach { parent -> commits[parent]?.let { frontier.add(it) } }

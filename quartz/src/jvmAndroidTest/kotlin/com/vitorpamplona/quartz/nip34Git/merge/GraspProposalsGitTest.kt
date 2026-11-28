@@ -24,6 +24,7 @@ import com.vitorpamplona.quartz.nip34Git.git.GitHttpBackendFixture
 import com.vitorpamplona.quartz.nip34Git.git.GitPerson
 import com.vitorpamplona.quartz.nip34Git.git.GitPushClient
 import com.vitorpamplona.quartz.nip34Git.git.GitSmartHttpTransport
+import com.vitorpamplona.quartz.nip34Git.git.OkHttpGitTransport
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -49,7 +50,7 @@ class GraspProposalsGitTest {
             git.git(work, "push", "-q", "origin", "HEAD:main")
             val main = git.git(work, "rev-parse", "HEAD")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val edit =
                 runBlocking {
                     GitObjectSource(transport, listOf(url)).commitChanges(
@@ -60,7 +61,7 @@ class GraspProposalsGitTest {
                     )
                 }
             val id = "e".repeat(64)
-            val results = runBlocking { GraspProposalPusher(GitPushClient({ git.client })).push(id, listOf(url), edit.commit, edit.objects) }
+            val results = runBlocking { GraspProposalPusher(GitPushClient(OkHttpGitTransport { git.client })).push(id, listOf(url), edit.commit, edit.objects) }
             assertNull(results[url])
             assertEquals(edit.commit, git.git(bare, "rev-parse", "refs/nostr/$id"))
             assertEquals("new", git.git(bare, "show", "refs/nostr/$id:src/a.txt"))
@@ -86,13 +87,13 @@ class GraspProposalsGitTest {
             git.git(work, "push", "-q", forkBare.path, "HEAD:refs/heads/feature")
             val tip = git.git(work, "rev-parse", "HEAD")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val target = GitObjectSource(transport, listOf(url))
             val fork = GitObjectSource(transport, listOf(forkUrl, url))
             val base = runBlocking { mergeBaseOf(target, main, fork, tip) }
             assertEquals(main, base)
             val id = "f".repeat(64)
-            val results = runBlocking { GraspProposalPusher(GitPushClient({ git.client })).push(id, listOf(url), tip, branchObjects = GitBranchObjects(tip, base!!, fork)) }
+            val results = runBlocking { GraspProposalPusher(GitPushClient(OkHttpGitTransport { git.client })).push(id, listOf(url), tip, branchObjects = GitBranchObjects(tip, base!!, fork)) }
             assertNull(results[url])
             assertEquals(tip, git.git(bare, "rev-parse", "refs/nostr/$id"))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
@@ -117,12 +118,12 @@ class GraspProposalsGitTest {
             git.git(work, "push", "-q", "origin", "HEAD:main")
             val main = git.git(work, "rev-parse", "HEAD")
 
-            val source = GitObjectSource(GitSmartHttpTransport { git.client }, listOf(url))
+            val source = GitObjectSource(GitSmartHttpTransport(OkHttpGitTransport { git.client }), listOf(url))
             val edit = runBlocking { source.commitChanges(main, mapOf(listOf("docs") to "now a file\n".encodeToByteArray()), me, "docs is a file") }
             // The edit needed the parent alone, not the history behind it.
             assertNull(source.known(first))
             val id = "f".repeat(64)
-            val results = runBlocking { GraspProposalPusher(GitPushClient({ git.client })).push(id, listOf(url), edit.commit, edit.objects) }
+            val results = runBlocking { GraspProposalPusher(GitPushClient(OkHttpGitTransport { git.client })).push(id, listOf(url), edit.commit, edit.objects) }
             assertNull(results[url])
             assertEquals("100644", git.git(bare, "ls-tree", "refs/nostr/$id", "docs").substringBefore(' '))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--strict"))

@@ -20,12 +20,12 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.util.Base64
+import kotlin.io.encoding.Base64
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Verifies the protocol-v2 parsers against real bytes captured from
@@ -33,7 +33,7 @@ import java.util.Base64
  * runs offline.
  */
 class GitProtocolV2Test {
-    private fun decode(b64: String): ByteArray = Base64.getDecoder().decode(b64)
+    private fun decode(b64: String): ByteArray = Base64.decode(b64)
 
     // GET /info/refs?service=git-upload-pack with Git-Protocol: version=2
     private val infoRefs =
@@ -53,18 +53,18 @@ class GitProtocolV2Test {
 
     @Test
     fun parsesCapabilities() {
-        val caps = GitUploadPackV2.parseCapabilities(PktLineCodec.parse(decode(infoRefs)))
+        val caps = GitUploadPack.parseCapabilities(PktLines.parse(decode(infoRefs)))
         assertEquals("sha1", caps.objectFormat)
         assertTrue(caps.supportsLsRefs)
         assertTrue(caps.supportsFetch)
-        assertTrue("server advertised filter", caps.supportsFilter)
-        assertTrue("server advertised shallow", caps.supportsShallow)
+        assertTrue(caps.supportsFilter, "server advertised filter")
+        assertTrue(caps.supportsShallow, "server advertised shallow")
         assertEquals("git/github-e0b58ade4980-Linux", caps.agent)
     }
 
     @Test
     fun parsesLsRefs() {
-        val refs = GitUploadPackV2.parseRefs(PktLineCodec.parse(decode(lsRefs)))
+        val refs = GitUploadPack.parseRefs(PktLines.parse(decode(lsRefs)))
         val head = refs.first { it.name == "HEAD" }
         assertEquals("7fd1a60b01f91b314f59955a4e4d4e80d8edf11d", head.oid)
         assertEquals("refs/heads/master", head.symrefTarget)
@@ -74,7 +74,7 @@ class GitProtocolV2Test {
 
     @Test
     fun demuxesAndParsesShallowPack() {
-        val pack = GitUploadPackV2.extractPack(PktLineCodec.parse(decode(fetchResp)))
+        val pack = GitUploadPack.extractPack(PktLines.parse(decode(fetchResp)))
         val objects = Packfile.parse(pack)
 
         // commit + root tree, blobs filtered out
@@ -98,7 +98,7 @@ class GitProtocolV2Test {
 
     @Test
     fun parsesSingleBlobFetch() {
-        val pack = GitUploadPackV2.extractPack(PktLineCodec.parse(decode(blobResp)))
+        val pack = GitUploadPack.extractPack(PktLines.parse(decode(blobResp)))
         val objects = Packfile.parse(pack)
         val blob = objects["980a0d5f19a64b4b30a87d4206aade58726b60e3"]
         assertNotNull(blob)

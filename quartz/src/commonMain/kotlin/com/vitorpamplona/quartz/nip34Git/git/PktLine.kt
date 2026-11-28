@@ -20,9 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import java.io.ByteArrayOutputStream
-import java.io.EOFException
-import java.io.InputStream
+import com.vitorpamplona.quartz.utils.ByteArrayOutputStream
+import com.vitorpamplona.quartz.utils.EofException
 
 /**
  * git `pkt-line` framing used by the smart-HTTP transport.
@@ -53,7 +52,8 @@ sealed interface PktLine {
     }
 }
 
-object PktLineCodec {
+/** Encodes and decodes [PktLine] frames. */
+object PktLines {
     /** Encodes a text payload as a single data frame (a trailing `\n` is the git convention). */
     fun dataLine(text: String): ByteArray = dataLine(text.encodeToByteArray())
 
@@ -114,13 +114,13 @@ object PktLineCodec {
 
     /**
      * Reads the next frame from [input] as it arrives, or null at the end of the stream. A frame
-     * cut off by the end of the stream is an [EOFException].
+     * cut off by the end of the stream is an exception (`java.io.EOFException` on JVM and Android).
      */
-    fun read(input: InputStream): PktLine? {
+    fun read(input: GitByteSource): PktLine? {
         val prefix = ByteArray(4)
         val got = readFully(input, prefix, 0, 4)
         if (got == 0) return null
-        if (got < 4) throw EOFException("truncated pkt-line length")
+        if (got < 4) throw EofException("truncated pkt-line length")
         return when (val len = parseHex4(prefix, 0)) {
             0 -> PktLine.Flush
             1 -> PktLine.Delim
@@ -128,7 +128,7 @@ object PktLineCodec {
             else -> {
                 require(len >= 4) { "invalid pkt-line length $len" }
                 val payload = ByteArray(len - 4)
-                if (readFully(input, payload, 0, payload.size) < payload.size) throw EOFException("truncated pkt-line: need ${payload.size} bytes")
+                if (readFully(input, payload, 0, payload.size) < payload.size) throw EofException("truncated pkt-line: need ${payload.size} bytes")
                 PktLine.Data(payload)
             }
         }
@@ -136,7 +136,7 @@ object PktLineCodec {
 
     /** Reads up to [len] bytes into [dest], stopping early only at the end of [input]; returns how many it read. */
     private fun readFully(
-        input: InputStream,
+        input: GitByteSource,
         dest: ByteArray,
         offset: Int,
         len: Int,

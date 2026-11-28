@@ -20,14 +20,10 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
+import com.vitorpamplona.quartz.utils.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.coroutines.executeAsync
-import java.io.ByteArrayOutputStream
 
 /** The id git uses for "no object": the old value of a ref being created, the new one of a deletion. */
 const val GIT_ZERO_OID = "0000000000000000000000000000000000000000"
@@ -121,9 +117,9 @@ object GitReceivePack {
         updates.forEachIndexed { index, update ->
             val command = "${update.oldOid} ${update.newOid} ${update.ref}"
             val line = if (index == 0 && capabilities.isNotEmpty()) command + "\u0000" + capabilities.joinToString(" ") else command
-            out.write(PktLineCodec.dataLine(line + "\n"))
+            out.write(PktLines.dataLine(line + "\n"))
         }
-        out.write(PktLineCodec.FLUSH)
+        out.write(PktLines.FLUSH)
         if (pack != null && updates.any { !it.isDelete }) out.write(pack)
         return out.toByteArray()
     }
@@ -156,7 +152,7 @@ object GitReceivePack {
                 val report = ByteArrayOutputStream()
                 val fatal = StringBuilder()
                 val progress = StringBuilder()
-                PktLineCodec.parse(body).forEach { line ->
+                PktLines.parse(body).forEach { line ->
                     if (line is PktLine.Data && line.payload.isNotEmpty()) {
                         when (line.payload[0].toInt() and 0xff) {
                             1 -> report.write(line.payload, 1, line.payload.size - 1)
@@ -167,9 +163,9 @@ object GitReceivePack {
                 }
                 remote = progress.split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
                 if (fatal.isNotEmpty()) return GitPushReport(fatal.toString().trim(), emptyList(), emptyMap(), remote)
-                PktLineCodec.parse(report.toByteArray())
+                PktLines.parse(report.toByteArray())
             } else {
-                PktLineCodec.parse(body)
+                PktLines.parse(body)
             }
 
         var unpackError: String? = "no report from the server"
@@ -198,31 +194,15 @@ object GitReceivePack {
 /**
  * Pushes to a git server over smart HTTP: reads its refs, then sends the ref updates and the
  * objects it lacks in one `git-receive-pack` request. A GRASP server decides from the repository's
- * signed state event (kind 30618); a private one also wants [authorization] (GRASP-08).
+ * signed state event (kind 30618); a private one also wants [authorization] (GRASP-08). [http]
+ * makes the requests; on JVM and Android the class also keeps its older OkHttp constructors.
  */
-class GitPushClient(
-    private val okHttpClient: (String) -> OkHttpClient,
-    private val agent: String = "quartz",
+expect class GitPushClient(
+    http: GitHttpTransport,
+    agent: String = "quartz",
+    authorization: GitHttpAuth? = null,
 ) {
-    /** The `Authorization` header source for a private repository ([GitHttpAuth]), or null when none needs one. */
-    private var authorization: GitHttpAuth? = null
-
-    constructor(okHttpClient: (String) -> OkHttpClient, agent: String, authorization: GitHttpAuth?) : this(okHttpClient, agent) {
-        this.authorization = authorization
-    }
-
-    suspend fun advertisement(cloneUrl: String): GitReceivePackAdvertisement =
-        withContext(Dispatchers.IO) {
-            val url = "${base(cloneUrl)}/info/refs?service=git-receive-pack"
-            val request =
-                Request
-                    .Builder()
-                    .url(url)
-                    .header("Accept", "*/*")
-                    .get()
-                    .build()
-            GitReceivePack.parseAdvertisement(PktLineCodec.parse(execute(cloneUrl, url, request)))
-        }
+    suspend fun advertisement(cloneUrl: String): GitReceivePackAdvertisement
 
     /**
      * Pushes [updates] with [objects] (whole objects; the caller sends what the server lacks).
@@ -234,52 +214,66 @@ class GitPushClient(
         updates: List<GitRefUpdate>,
         objects: Collection<GitObject>,
         advertisement: GitReceivePackAdvertisement? = null,
+    ): GitPushReport
+}
+
+/** What every [GitPushClient] does, over its [http]. */
+internal class GitReceivePackClient(
+    private val http: GitHttpTransport,
+    private val agent: String,
+    /** The `Authorization` header source for a private repository ([GitHttpAuth]), or null when none needs one. */
+    private val authorization: GitHttpAuth?,
+) {
+    suspend fun advertisement(cloneUrl: String): GitReceivePackAdvertisement =
+        withContext(Dispatchers.IO) {
+            val url = "${base(cloneUrl)}/info/refs?service=git-receive-pack"
+            GitReceivePack.parseAdvertisement(PktLines.parse(successful(url, http.get(url, authorized(cloneUrl, linkedMapOf("Accept" to "*/*"))))))
+        }
+
+    suspend fun push(
+        cloneUrl: String,
+        updates: List<GitRefUpdate>,
+        objects: Collection<GitObject>,
+        advertisement: GitReceivePackAdvertisement?,
     ): GitPushReport =
         withContext(Dispatchers.IO) {
             val advertised = advertisement ?: advertisement(cloneUrl)
             val capabilities = GitReceivePack.chooseCapabilities(advertised.capabilities, updates.size, agent)
             val body = GitReceivePack.request(updates, capabilities, PackfileWriter.write(objects))
             val url = "${base(cloneUrl)}/git-receive-pack"
-            val request =
-                Request
-                    .Builder()
-                    .url(url)
-                    .header("Accept", "application/x-git-receive-pack-result")
-                    .post(body.toRequestBody(RECEIVE_PACK_REQUEST))
-                    .build()
-            GitReceivePack.parseReport(execute(cloneUrl, url, request), sideband = "side-band-64k" in capabilities)
+            val headers = authorized(cloneUrl, linkedMapOf("Accept" to "application/x-git-receive-pack-result"))
+            GitReceivePack.parseReport(successful(url, http.post(url, headers, RECEIVE_PACK_REQUEST, body)), sideband = "side-band-64k" in capabilities)
         }
 
-    private suspend fun execute(
-        cloneUrl: String,
+    private fun successful(
         url: String,
-        request: Request,
-    ): ByteArray =
-        okHttpClient(url).newCall(authorized(cloneUrl, request)).executeAsync().use { response ->
-            if (!response.isSuccessful) {
-                val reason =
-                    runCatching { response.body.string() }
-                        .getOrNull()
-                        ?.take(300)
-                        ?.trim()
-                        .orEmpty()
-                throw GitHttpException("HTTP ${response.code} from $url" + if (reason.isNotEmpty()) ": $reason" else "", httpCode = response.code)
-            }
-            response.body.bytes()
+        response: GitHttpResponse,
+    ): ByteArray {
+        if (!response.isSuccessful) {
+            val reason =
+                runCatching { response.body.decodeToString() }
+                    .getOrNull()
+                    ?.take(300)
+                    ?.trim()
+                    .orEmpty()
+            throw GitHttpException("HTTP ${response.status} from $url" + if (reason.isNotEmpty()) ": $reason" else "", httpCode = response.status)
         }
+        return response.body
+    }
 
     private fun base(cloneUrl: String): String = cloneUrl.trim().trimEnd('/')
 
-    /** [request] with the repository's `Authorization` ([authorization]), when it needs one. */
+    /** [headers] with the repository's `Authorization` ([authorization]), when it needs one. */
     private suspend fun authorized(
         cloneUrl: String,
-        request: Request,
-    ): Request {
-        val header = authorization?.header(cloneUrl) ?: return request
-        return request.newBuilder().header("Authorization", header).build()
+        headers: LinkedHashMap<String, String>,
+    ): Map<String, String> {
+        val header = authorization?.header(cloneUrl) ?: return headers
+        headers["Authorization"] = header
+        return headers
     }
 
     companion object {
-        private val RECEIVE_PACK_REQUEST = "application/x-git-receive-pack-request".toMediaType()
+        private const val RECEIVE_PACK_REQUEST = "application/x-git-receive-pack-request"
     }
 }

@@ -20,9 +20,8 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import java.io.ByteArrayOutputStream
-import java.security.MessageDigest
-import java.util.zip.Deflater
+import com.vitorpamplona.quartz.utils.ByteArrayOutputStream
+import com.vitorpamplona.quartz.utils.Zlib
 import kotlin.math.abs
 
 /**
@@ -53,9 +52,9 @@ object GitObjectWriter {
         type: GitObjectType,
         data: ByteArray,
     ): String {
-        val digest = MessageDigest.getInstance("SHA-1")
+        val digest = GitSha1()
         digest.update("${type.header} ${data.size}".encodeToByteArray())
-        digest.update(0)
+        digest.update(0.toByte())
         digest.update(data)
         return digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
@@ -76,9 +75,9 @@ object GitObjectWriter {
                     .ifEmpty { "0" }
                     .encodeToByteArray(),
             )
-            out.write(' '.code)
+            out.write(' '.code.toByte())
             out.write(entry.name.encodeToByteArray())
-            out.write(0)
+            out.write(0.toByte())
             out.write(hexToBytes(entry.oid))
         }
         val data = out.toByteArray()
@@ -143,10 +142,10 @@ object PackfileWriter {
         writeUInt32(out, objects.size.toLong())
         objects.forEach { obj ->
             writeHeader(out, typeCode(obj.type), obj.data.size.toLong())
-            out.write(deflate(obj.data))
+            out.write(Zlib.deflate(obj.data))
         }
         val body = out.toByteArray()
-        val trailer = MessageDigest.getInstance("SHA-1").digest(body)
+        val trailer = GitSha1().apply { update(body) }.digest()
         return body + trailer
     }
 
@@ -167,37 +166,20 @@ object PackfileWriter {
         var rest = size ushr 4
         var byte = (type shl 4) or (size and 0x0f).toInt()
         while (rest != 0L) {
-            out.write(byte or 0x80)
+            out.write((byte or 0x80).toByte())
             byte = (rest and 0x7f).toInt()
             rest = rest ushr 7
         }
-        out.write(byte)
+        out.write(byte.toByte())
     }
 
     private fun writeUInt32(
         out: ByteArrayOutputStream,
         value: Long,
     ) {
-        out.write(((value ushr 24) and 0xff).toInt())
-        out.write(((value ushr 16) and 0xff).toInt())
-        out.write(((value ushr 8) and 0xff).toInt())
-        out.write((value and 0xff).toInt())
-    }
-
-    private fun deflate(data: ByteArray): ByteArray {
-        val deflater = Deflater()
-        try {
-            deflater.setInput(data)
-            deflater.finish()
-            val out = ByteArrayOutputStream(maxOf(64, data.size / 2))
-            val buffer = ByteArray(8192)
-            while (!deflater.finished()) {
-                val n = deflater.deflate(buffer)
-                out.write(buffer, 0, n)
-            }
-            return out.toByteArray()
-        } finally {
-            deflater.end()
-        }
+        out.write(((value ushr 24) and 0xff).toByte())
+        out.write(((value ushr 16) and 0xff).toByte())
+        out.write(((value ushr 8) and 0xff).toByte())
+        out.write((value and 0xff).toByte())
     }
 }
