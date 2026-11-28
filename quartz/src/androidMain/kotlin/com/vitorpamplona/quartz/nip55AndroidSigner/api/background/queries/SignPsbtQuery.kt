@@ -26,8 +26,8 @@ import com.vitorpamplona.quartz.nip01Core.core.HexKey
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignPsbtResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.getStringByName
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.query
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 
 /**
  * NIP-BC `sign_psbt` background (ContentResolver) query.
@@ -42,14 +42,18 @@ class SignPsbtQuery(
     val packageName: String,
     val contentResolver: ContentResolver,
 ) {
+    val streams = Nip55PayloadStreams(packageName, contentResolver)
+
     val uri = "content://$packageName.${CommandType.SIGN_PSBT}".toUri()
 
     fun query(psbtHex: String): SignerResult<SignPsbtResult> =
         contentResolver.query(
+            streams,
             uri,
-            arrayOf(psbtHex, loggedInUser),
+            psbtHex,
+            arrayOf(loggedInUser),
         ) { cursor ->
-            val signedPsbtHex = cursor.getStringByName("result")
+            val signedPsbtHex = streams.readColumn(cursor, "result", Nip55PayloadStreams.COLUMN_RESULT_URI)
             if (!signedPsbtHex.isNullOrBlank()) {
                 SignerResult.RequestAddressed.Successful(SignPsbtResult(signedPsbtHex))
             } else {

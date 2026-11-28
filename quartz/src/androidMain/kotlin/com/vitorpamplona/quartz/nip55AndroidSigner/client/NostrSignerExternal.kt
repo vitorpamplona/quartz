@@ -51,7 +51,7 @@ class NostrSignerExternal(
     override fun isWriteable(): Boolean = true
 
     val backgroundQuery = BackgroundRequestHandler(pubKey, packageName, contentResolver)
-    val foregroundQuery = ForegroundRequestHandler(pubKey, packageName)
+    val foregroundQuery = ForegroundRequestHandler(pubKey, packageName, contentResolver = contentResolver)
 
     /**
      * The background path is a synchronous ContentResolver query: a binder IPC into the

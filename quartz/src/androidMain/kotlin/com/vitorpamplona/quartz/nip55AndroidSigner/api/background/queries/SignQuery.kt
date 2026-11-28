@@ -28,9 +28,9 @@ import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
-import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.getStringByName
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.background.utils.query
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.isAnswerTo
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 import com.vitorpamplona.quartz.utils.EventFactory
 
 class SignQuery(
@@ -38,14 +38,20 @@ class SignQuery(
     val packageName: String,
     val contentResolver: ContentResolver,
 ) {
+    val streams = Nip55PayloadStreams(packageName, contentResolver)
+
     val uri = "content://$packageName.${CommandType.SIGN_EVENT}".toUri()
 
     fun query(unsignedEvent: Event): SignerResult<SignResult> =
         contentResolver.query(
+            streams,
             uri,
-            arrayOf(unsignedEvent.toJson(), unsignedEvent.pubKey, loggedInUser),
+            unsignedEvent.toJson(),
+            arrayOf(unsignedEvent.pubKey, loggedInUser),
+            // A staged event is big; the signature alone rebuilds it, so don't ask for it back.
+            signatureOnly = true,
         ) { cursor ->
-            val eventJson = cursor.getStringByName("event")
+            val eventJson = streams.readColumn(cursor, "event", Nip55PayloadStreams.COLUMN_EVENT_URI)
             if (!eventJson.isNullOrBlank()) {
                 if (eventJson.startsWith("{")) {
                     val event = Event.fromJsonOrNull(eventJson)
@@ -64,7 +70,7 @@ class SignQuery(
                     SignerResult.RequestAddressed.ReceivedButCouldNotParseEventFromResult(eventJson)
                 }
             } else {
-                val signature = cursor.getStringByName("result")
+                val signature = streams.readColumn(cursor, "result", Nip55PayloadStreams.COLUMN_RESULT_URI)
                 if (!signature.isNullOrBlank()) {
                     val event: Event =
                         EventFactory.create(
