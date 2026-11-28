@@ -130,6 +130,11 @@ kotlin {
         // Standalone simctl children cannot reach trustd (SecTrustEvaluateWithError fails
         // with OSStatus -26276). Run in the simulator's normal launchd session for TLS tests.
         standalone.set(false)
+        // CI boots one simulator and passes its UDID so the test task cannot select another.
+        val testSimulator = providers.gradleProperty("quartz.ios.testSimulator")
+        if (testSimulator.isPresent) {
+            device.set(testSimulator)
+        }
     }
 
     // Enable LLVM optimizations for the linuxX64 test binary only. Added for the
