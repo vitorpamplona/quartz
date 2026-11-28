@@ -183,7 +183,7 @@ class NamecoinNameResolver private constructor(
     /** Resolve a NIP-05-style identifier with a detailed, fail-closed outcome. */
     suspend fun resolveDetailed(identifier: String): NamecoinResolveOutcome {
         val parsed = parseIdentifier(identifier) ?: return NamecoinResolveOutcome.InvalidIdentifier(identifier)
-        return resolveWithTimeout(parsed)
+        return performLookupDetailed(parsed)
     }
 
     /**
@@ -206,7 +206,38 @@ class NamecoinNameResolver private constructor(
      */
     suspend fun resolveDomainDetailed(hostname: String): NamecoinResolveOutcome {
         val parsed = parseBitHostname(hostname) ?: return NamecoinResolveOutcome.InvalidIdentifier(hostname)
-        return resolveWithTimeout(parsed)
+        return performLookupDetailed(parsed)
+    }
+
+    /** Resolve a URL-derived .bit hostname to an nSite target, or null for absence or any failure. */
+    suspend fun resolveDomainNsite(hostname: String): NamecoinNsiteResult? = (resolveDomainNsiteDetailed(hostname) as? NamecoinNsiteResolveOutcome.Success)?.result
+
+    /**
+     * Resolve a URL-derived .bit hostname to its explicitly selected nSite target.
+     *
+     * This uses the same bounded import/map/delegate traversal as [resolveDomainDetailed]. Direct
+     * `nostr.nsite` pointers take exclusive precedence; malformed mappings never fall back to a
+     * legacy root or the top-level alias. Existing lookup failures are retained in
+     * [NamecoinNsiteResolveOutcome.NamecoinFailure]. Manifest retrieval, signature validation and
+     * exact-event hint enforcement remain the caller's relay-layer responsibilities.
+     */
+    suspend fun resolveDomainNsiteDetailed(hostname: String): NamecoinNsiteResolveOutcome {
+        val parsed =
+            parseBitHostname(hostname)
+                ?: return NamecoinNsiteResolveOutcome.NamecoinFailure(NamecoinResolveOutcome.InvalidIdentifier(hostname))
+
+        return when (val selected = selectRecordWithTimeout(parsed)) {
+            is NamecoinTraversalResult.Success ->
+                NamecoinNsiteMapper.map(
+                    value = selected.value,
+                    namecoinName = parsed.namecoinName,
+                    localPart = parsed.subdomainSelector.ifEmpty { "_" },
+                )
+
+            is NamecoinTraversalResult.Failure -> NamecoinNsiteResolveOutcome.NamecoinFailure(selected.outcome)
+            is NamecoinTraversalResult.SelectorNotFound ->
+                NamecoinNsiteResolveOutcome.NoNsiteMapping(parsed.namecoinName)
+        }
     }
 
     private enum class Namespace { DOMAIN, HOST, IDENTITY }
@@ -218,17 +249,20 @@ class NamecoinNameResolver private constructor(
         val subdomainSelector: String = "",
     )
 
-    private suspend fun resolveWithTimeout(parsed: ParsedIdentifier): NamecoinResolveOutcome =
-        withTimeoutOrNull(lookupTimeoutMs) { performLookupDetailed(parsed) }
-            ?: NamecoinResolveOutcome.Timeout
+    private suspend fun selectRecordWithTimeout(parsed: ParsedIdentifier): NamecoinTraversalResult =
+        withTimeoutOrNull(lookupTimeoutMs) { selectRecord(parsed) }
+            ?: NamecoinTraversalResult.Failure(NamecoinResolveOutcome.Timeout)
 
-    private suspend fun performLookupDetailed(parsed: ParsedIdentifier): NamecoinResolveOutcome {
+    private suspend fun selectRecord(parsed: ParsedIdentifier): NamecoinTraversalResult {
         val traversal =
             NamecoinImportResolver(resolutionLimits) { name ->
                 electrumxClient.nameShowWithFallback(name, serverListProvider())?.value
             }
+        return traversal.resolve(parsed.namecoinName, parsed.subdomainSelector)
+    }
 
-        val selected = traversal.resolve(parsed.namecoinName, parsed.subdomainSelector)
+    private suspend fun performLookupDetailed(parsed: ParsedIdentifier): NamecoinResolveOutcome {
+        val selected = selectRecordWithTimeout(parsed)
         val value =
             when (selected) {
                 is NamecoinTraversalResult.Success -> selected.value
