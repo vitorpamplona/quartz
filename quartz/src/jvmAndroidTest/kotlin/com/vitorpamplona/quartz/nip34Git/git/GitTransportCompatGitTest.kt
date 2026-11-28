@@ -79,4 +79,17 @@ class GitTransportCompatGitTest {
         // A frame cut short is still a java.io.EOFException, as it was.
         assertFailsWith<EOFException> { PktLineCodec.read(bytes.copyOf(6).inputStream()) }
     }
+
+    @Test
+    fun deprecatedPackStreamStillReportsAvailable() {
+        val response =
+            PktLineCodec.build {
+                write(PktLineCodec.dataLine("packfile\n"))
+                write(PktLineCodec.dataLine(byteArrayOf(1, 10, 11, 12)))
+            } + PktLineCodec.FLUSH
+        val stream = GitUploadPackV2.packStream(response.inputStream())
+        assertEquals(10, stream.read())
+        // The rest of the frame is in memory, as the old SidebandPackStream reported it.
+        assertEquals(2, stream.available())
+    }
 }

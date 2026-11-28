@@ -35,6 +35,9 @@ fun interface GitByteSource {
         length: Int,
     ): Int
 
+    /** How many bytes [read] can return now without blocking, as `InputStream.available` counts them; 0 when unknown. */
+    fun available(): Int = 0
+
     companion object {
         /** A source over [length] bytes of [bytes] from [offset]: a body read whole, served as a stream. */
         fun of(
@@ -43,19 +46,24 @@ fun interface GitByteSource {
             length: Int = bytes.size - offset,
         ): GitByteSource {
             require(offset >= 0 && length >= 0 && offset + length <= bytes.size) { "range out of bounds" }
-            var pos = offset
             val end = offset + length
-            return GitByteSource { dest, at, len ->
-                if (len == 0) {
-                    0
-                } else if (pos >= end) {
-                    -1
-                } else {
-                    val n = minOf(len, end - pos)
-                    bytes.copyInto(dest, at, pos, pos + n)
+            return object : GitByteSource {
+                private var pos = offset
+
+                override fun read(
+                    dest: ByteArray,
+                    offset: Int,
+                    length: Int,
+                ): Int {
+                    if (length == 0) return 0
+                    if (pos >= end) return -1
+                    val n = minOf(length, end - pos)
+                    bytes.copyInto(dest, offset, pos, pos + n)
                     pos += n
-                    n
+                    return n
                 }
+
+                override fun available(): Int = end - pos
             }
         }
     }

@@ -23,7 +23,18 @@ package com.vitorpamplona.quartz.nip34Git.git
 import java.io.InputStream
 
 /** [this] read as a [GitByteSource]. */
-internal fun InputStream.asGitByteSource(): GitByteSource = GitByteSource { dest, offset, length -> read(dest, offset, length) }
+internal fun InputStream.asGitByteSource(): GitByteSource {
+    val stream = this
+    return object : GitByteSource {
+        override fun read(
+            dest: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int = stream.read(dest, offset, length)
+
+        override fun available(): Int = stream.available()
+    }
+}
 
 /** [this] read as an [InputStream]; closing it calls [onClose]. */
 internal fun GitByteSource.asInputStream(onClose: () -> Unit = {}): InputStream = GitByteSourceInputStream(this, onClose)
@@ -50,6 +61,8 @@ private class GitByteSourceInputStream(
         if (len == 0) return 0
         return source.read(b, off, len)
     }
+
+    override fun available(): Int = source.available()
 
     override fun close() = onClose()
 }

@@ -25,6 +25,8 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitFileChange
 import com.vitorpamplona.quartz.nip34Git.patch.LineDiff
 import com.vitorpamplona.quartz.nip34Git.patch.ParsedPatch
 import com.vitorpamplona.quartz.utils.BinaryHeap
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -66,6 +68,13 @@ expect class GitHttpClient(
         depth: Int = 50,
     ): List<GitCommit>
 
+    /**
+     * Computes the diff a pull request introduces: the changes between
+     * [baseCommit] (or, when null, the server's HEAD) and [headCommit]. Fetches
+     * both commit trees, finds the changed files by oid, batch-fetches the
+     * differing blobs and runs a line diff on each. Returns a [ParsedPatch] ready
+     * for the same renderer the embedded-patch path uses.
+     */
     suspend fun computeDiff(
         cloneUrl: String,
         headCommit: String,
@@ -390,8 +399,13 @@ class GitRepoSnapshot(
     /** The tip commit object, parsed up-front so the UI can show it without another fetch. */
     val tipCommit: GitCommit? = null,
 ) {
+    // Read by any coroutine (hasBlob, readBlob's fast path, searchContents) while readBlob writes
+    // it: every access holds blobsLock. blobMutex only keeps two readers from fetching one blob.
     private val blobs = HashMap<String, ByteArray>(blobs)
+    private val blobsLock = PlatformLock()
     private val blobMutex = Mutex()
+
+    private fun cachedBlob(oid: String): ByteArray? = blobsLock.withLock { blobs[oid] }
 
     /** Entries at the repository root, folders first. */
     fun rootEntries(): List<GitTreeEntry> = sortForDisplay(trees[rootTreeOid].orEmpty())
@@ -530,7 +544,7 @@ class GitRepoSnapshot(
             val cap = limit - result.size
             val matches = HashMap<String, List<Pair<Int, String>>>()
             // What another reader of this snapshot already cached (read under its lock: blob() writes it).
-            val cached = blobMutex.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
+            val cached = blobsLock.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
             cached.forEach { (oid, data) -> matches[oid] = scan(data, cap) }
             val missing = batch.map { it.second }.filter { it !in cached }.distinct()
             if (missing.isNotEmpty()) {
@@ -574,13 +588,13 @@ class GitRepoSnapshot(
         }
     }
 
-    fun hasBlob(oid: String): Boolean = blobs.containsKey(oid)
+    fun hasBlob(oid: String): Boolean = blobsLock.withLock { blobs.containsKey(oid) }
 
     /** Returns the bytes of a blob, fetching (and caching) it if not already present. */
     suspend fun readBlob(oid: String): ByteArray {
-        blobs[oid]?.let { return it }
+        cachedBlob(oid)?.let { return it }
         return blobMutex.withLock {
-            blobs[oid]?.let { return it }
+            cachedBlob(oid)?.let { return it }
             val pack =
                 transport.fetchPack(
                     cloneUrl = cloneUrl,
@@ -592,7 +606,7 @@ class GitRepoSnapshot(
             val obj =
                 Packfile.parse(pack)[oid]
                     ?: throw GitHttpException("blob $oid missing from fetch response")
-            obj.data.also { blobs[oid] = it }
+            obj.data.also { data -> blobsLock.withLock { blobs[oid] = data } }
         }
     }
 

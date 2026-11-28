@@ -20,23 +20,21 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import com.vitorpamplona.crypto.digest.DigestInstance
+/**
+ * SHA-1, as git names objects. A pack reader hashes ranges of big buffers (each delta copy, each
+ * inflated chunk), so the range update must not copy: `MessageDigest` hashes a range in place on
+ * JVM and Android; crypto-kmp's digest has no range update, so native copies the range.
+ */
+internal expect class GitSha1() {
+    fun update(byte: Byte)
 
-/** SHA-1, as git names objects: the platform's digest (`MessageDigest` on JVM and Android). */
-internal class GitSha1 {
-    private val digest = DigestInstance("SHA-1")
-
-    fun update(byte: Byte) = digest.update(byte)
-
-    fun update(bytes: ByteArray) = digest.update(bytes)
+    fun update(bytes: ByteArray)
 
     fun update(
         bytes: ByteArray,
         offset: Int,
         length: Int,
-    ) {
-        if (offset == 0 && length == bytes.size) digest.update(bytes) else digest.update(bytes.copyOfRange(offset, offset + length))
-    }
+    )
 
-    fun digest(): ByteArray = digest.digest()
+    fun digest(): ByteArray
 }

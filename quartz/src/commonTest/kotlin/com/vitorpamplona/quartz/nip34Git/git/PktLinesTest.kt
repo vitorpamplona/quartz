@@ -78,4 +78,35 @@ class PktLinesTest {
         assertFails { PktLines.read(GitByteSource.of(cut)) }
         assertFails { PktLines.read(GitByteSource.of("00".encodeToByteArray())) }
     }
+
+    @Test
+    fun aSidebandSourceReportsWhatIsLeftOfItsFrame() {
+        val response =
+            PktLines.build {
+                write(PktLines.dataLine("packfile\n"))
+                write(PktLines.dataLine(byteArrayOf(1, 10, 11, 12)))
+                write(PktLines.dataLine(byteArrayOf(2) + "progress".encodeToByteArray()))
+                write(PktLines.dataLine(byteArrayOf(1, 13)))
+                write(PktLines.FLUSH)
+            }
+        val pack = GitUploadPack.packSource(GitByteSource.of(response))
+        val buf = ByteArray(8)
+
+        assertEquals(0, pack.available()) // nothing read yet: no frame in memory
+        assertEquals(1, pack.read(buf, 0, 1))
+        assertEquals(2, pack.available())
+        assertEquals(2, pack.read(buf, 1, 8))
+        assertEquals(0, pack.available())
+        assertEquals(1, pack.read(buf, 3, 8))
+        assertEquals(-1, pack.read(buf, 4, 8))
+        assertEquals(listOf<Byte>(10, 11, 12, 13), buf.copyOf(4).toList())
+    }
+
+    @Test
+    fun aByteArraySourceReportsWhatIsLeft() {
+        val source = GitByteSource.of(byteArrayOf(1, 2, 3, 4, 5), offset = 1, length = 3)
+        assertEquals(3, source.available())
+        assertEquals(2, source.read(ByteArray(2), 0, 2))
+        assertEquals(1, source.available())
+    }
 }

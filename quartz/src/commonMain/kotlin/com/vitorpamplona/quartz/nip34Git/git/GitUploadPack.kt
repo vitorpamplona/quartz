@@ -235,5 +235,8 @@ object GitUploadPack {
             pos += n
             return n
         }
+
+        /** What is left of the current sideband frame: it is already in memory. */
+        override fun available(): Int = frame.size - pos
     }
 }
