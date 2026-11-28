@@ -108,7 +108,7 @@ class Nip55PayloadStreamsTest {
     @Test
     fun stagedQueriesFlagTheHandle() {
         assertEquals(
-            "content://$signer.NIP44_DECRYPT?payload_in_uri=1&accept_result_uri=1",
+            "content://$signer.NIP44_DECRYPT?payload_in_uri=1&accept_result_uri=1&retain_payload=1",
             Nip55PayloadStreams.extendQueryUri("content://$signer.NIP44_DECRYPT", staged = true),
         )
     }
@@ -116,7 +116,7 @@ class Nip55PayloadStreamsTest {
     @Test
     fun stagedSignaturesAskForTheSignatureAlone() {
         assertEquals(
-            "content://$signer.SIGN_EVENT?payload_in_uri=1&accept_result_uri=1&return_type=signature",
+            "content://$signer.SIGN_EVENT?payload_in_uri=1&accept_result_uri=1&return_type=signature&retain_payload=1",
             Nip55PayloadStreams.extendQueryUri("content://$signer.SIGN_EVENT", staged = true, signatureOnly = true),
         )
     }

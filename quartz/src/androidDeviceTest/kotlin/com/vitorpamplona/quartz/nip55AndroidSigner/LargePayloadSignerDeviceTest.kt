@@ -25,9 +25,11 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.vitorpamplona.quartz.nip01Core.core.Event
+import com.vitorpamplona.quartz.nip01Core.crypto.EventHasher
 import com.vitorpamplona.quartz.nip01Core.crypto.verify
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.CommandType
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.PubKeyResult
+import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.SignerResult
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.payloads.Nip55PayloadStreams
 import com.vitorpamplona.quartz.nip55AndroidSigner.api.permission.Permission
@@ -35,14 +37,18 @@ import com.vitorpamplona.quartz.nip55AndroidSigner.client.ExternalSignerLogin
 import com.vitorpamplona.quartz.nip55AndroidSigner.client.NostrSignerExternal
 import com.vitorpamplona.quartz.utils.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -166,6 +172,55 @@ class LargePayloadSignerDeviceTest {
                     assertEquals(contents[i], event.content)
                 }
                 Log.i(tag) { "batch sign of ${contents.size} x 300000 chars in ${System.currentTimeMillis() - start} ms" }
+            }
+        }
+
+    /**
+     * A staged request that needs approval: the background query asks the signer to keep the
+     * payload (`retain_payload`), and the Intent passes the kept handle instead of staging the
+     * payload again. Needs someone to approve the sign_event on the signer, so it only runs with
+     * `-P…handoff=true`.
+     */
+    @Test
+    fun aRequestThatNeedsApprovalReusesTheRetainedPayload() =
+        runBlocking {
+            assumeTrue("pass handoff=true to run", InstrumentationRegistry.getArguments().getString("handoff") == "true")
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val context = instrumentation.targetContext
+            val signerPackage = InstrumentationRegistry.getArguments().getString("signer") ?: "com.greenart7c3.nostrsigner.debug"
+
+            ActivityScenario.launch(SignerHostActivity::class.java).use { scenario ->
+                val login = CompletableDeferred<SignerResult<PubKeyResult>>()
+                SignerHostActivity.onResult = { login.complete(ExternalSignerLogin.parseResult(it)) }
+                // No grant for the kind signed below, so it needs the approval screen.
+                val loginIntent = ExternalSignerLogin.createIntent(listOf(Permission(CommandType.SIGN_EVENT, 22242)), signerPackage)
+                scenario.onActivity { it.launch(loginIntent) }
+                val loginResult = withTimeout(180_000) { login.await() }
+                assertTrue(loginResult is SignerResult.RequestAddressed.Successful<PubKeyResult>, "login failed: $loginResult")
+                val pubKey = loginResult.result.pubkey
+
+                val signer = NostrSignerExternal(pubKey, signerPackage, context.contentResolver)
+                SignerHostActivity.onResult = { signer.newResponse(it) }
+                signer.registerForegroundLauncher { intent -> scenario.onActivity { it.launch(intent) } }
+
+                // A kind the other tests don't remember a grant for.
+                val kind = 9802
+                val content = "h".repeat(300_000)
+                val createdAt = 1_700_000_000L
+                val unsigned = Event(EventHasher.hashId(pubKey, createdAt, kind, emptyArray(), content), pubKey, createdAt, kind, emptyArray(), content, "")
+
+                assertNull(withContext(Dispatchers.IO) { signer.backgroundQuery.sign(unsigned) }, "the sign_event did not need approval")
+
+                val streams = Nip55PayloadStreams(signerPackage, context.contentResolver)
+                val retained = streams.takeRetained(unsigned.toJson())
+                assertNotNull(retained, "$signerPackage did not retain the staged payload for the Intent")
+                streams.keepForIntent(unsigned.toJson(), retained.toString())
+
+                val result = signer.foregroundQuery.sign(unsigned)
+                assertTrue(result is SignerResult.RequestAddressed.Successful<SignResult>, "the Intent failed: $result")
+                assertTrue(result.result.event.verify(), "signature does not verify")
+                assertEquals(content, result.result.event.content)
+                assertNull(streams.takeRetained(unsigned.toJson()), "the Intent did not take the retained handle")
             }
         }
 

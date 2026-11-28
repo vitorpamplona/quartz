@@ -106,6 +106,7 @@ class Nip55PayloadStreams(
     fun stage(payload: String): Uri = stage(payload.encodeToByteArray())
 
     fun stage(payload: ByteArray): Uri {
+        retained.forgetExpired(TimeUtils.now())
         val handle =
             try {
                 contentResolver.insert("content://$authority".toUri(), ContentValues())
@@ -179,14 +180,53 @@ class Nip55PayloadStreams(
 
     /**
      * Turns a `content://<signer>.<OPERATION>` query URI into its extended form: the staged
-     * payload flag when [staged], the result-handle opt-in, and `return_type=signature` when
-     * [signatureOnly].
+     * payload flag and the hand-off request (`retain_payload`) when [staged], the result-handle
+     * opt-in, and `return_type=signature` when [signatureOnly].
      */
     fun extendQueryUri(
         operation: Uri,
         staged: Boolean,
         signatureOnly: Boolean = false,
     ): Uri = extendQueryUri(operation.toString(), staged, signatureOnly).toUri()
+
+    /**
+     * Keeps [handle], which the signer returned as `retained_payload_uri` for [payload], so the
+     * Intent that follows can pass it instead of staging the payload again. Ignores anything
+     * that isn't one of this signer's handles, and returns whether it kept [handle].
+     *
+     * Each kept handle holds its payload in memory until [takeRetained] or [dropRetained] hands
+     * it out, it expires ([RETAINED_TTL_SECONDS], checked on every staging), or the signer has
+     * [MAX_RETAINED_PER_SIGNER] newer ones.
+     */
+    fun keepForIntent(
+        payload: String,
+        handle: String,
+    ): Boolean {
+        if (!isSignerPayloadUri(handle, packageName)) {
+            Log.w(TAG) { "Ignoring a retained payload handle that isn't one of $packageName's" }
+            return false
+        }
+        retained.keep(packageName, payload, handle.toUri(), TimeUtils.now()).forEach(::release)
+        return true
+    }
+
+    /**
+     * The handle the signer retained for [payload] after a background query, if it is still
+     * fresh. Each one is handed out once.
+     */
+    fun takeRetained(payload: String): Uri? {
+        val handle = retained.take(packageName, payload, TimeUtils.now()) ?: return null
+        Log.d(TAG) { "Reusing the payload $packageName retained for the Intent" }
+        return handle
+    }
+
+    /**
+     * Forgets the handle the signer retained for [payload], when no Intent will pass it, and
+     * releases it on the signer. Blocking: call it off the main thread.
+     */
+    fun dropRetained(payload: String) {
+        retained.take(packageName, payload, TimeUtils.now())?.let(::release)
+    }
 
     /**
      * Moves [intent]'s payload to [staged] when there is one, and opts into result handles.
@@ -247,6 +287,18 @@ class Nip55PayloadStreams(
         private const val READ_CHUNK_BYTES = 64 * 1024
 
         const val POSITIVE_PROBE_TTL_SECONDS = 600L
+
+        /** Under the signer's recommended 60 s handle TTL, so a kept handle is still alive. */
+        const val RETAINED_TTL_SECONDS = 45L
+
+        const val QUERY_PARAM_RETAIN_PAYLOAD = "retain_payload"
+        const val COLUMN_RETAINED_PAYLOAD_URI = "retained_payload_uri"
+
+        /** At most this many handles kept per signer; a newer one evicts the oldest. */
+        const val MAX_RETAINED_PER_SIGNER = 4
+
+        /** Handles signers retained after a background query, waiting for their Intent. */
+        private val retained = RetainedPayloads<Uri>(RETAINED_TTL_SECONDS, MAX_RETAINED_PER_SIGNER)
 
         private val supportedAt = ConcurrentHashMap<String, Long>()
         private val unsupportedAt = ConcurrentHashMap<String, Long>()
@@ -329,6 +381,7 @@ class Nip55PayloadStreams(
             if (staged) params.add("$QUERY_PARAM_PAYLOAD_IN_URI=1")
             params.add("$QUERY_PARAM_ACCEPT_RESULT_URI=1")
             if (signatureOnly) params.add("$QUERY_PARAM_RETURN_TYPE=$RETURN_TYPE_SIGNATURE")
+            if (staged) params.add("$QUERY_PARAM_RETAIN_PAYLOAD=1")
             val separator = if (operation.contains('?')) "&" else "?"
             return operation + separator + params.joinToString("&")
         }
