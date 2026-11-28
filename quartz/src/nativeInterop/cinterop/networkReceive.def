@@ -1,0 +1,27 @@
+# Network.framework receive adapter. Kotlin/Native 2.4 cannot import Apple's
+# block-valued default/final content context sentinels as NSObject parameters.
+# Keep those objects on the native side and expose only data, completion, and error.
+headers = Network/Network.h
+headerFilter = Network/Network.h
+language = Objective-C
+package = com.vitorpamplona.quartz.network
+compilerOpts = -framework Network
+linkerOpts = -framework Network
+---
+typedef void (^quartz_nw_receive_completion_t)(dispatch_data_t content, bool is_complete, nw_error_t error);
+
+static inline void quartz_nw_connection_receive(
+    nw_connection_t connection,
+    uint32_t minimum_incomplete_length,
+    uint32_t maximum_length,
+    quartz_nw_receive_completion_t completion
+) {
+    nw_connection_receive(
+        connection,
+        minimum_incomplete_length,
+        maximum_length,
+        ^(dispatch_data_t content, nw_content_context_t context, bool is_complete, nw_error_t error) {
+            completion(content, is_complete, error);
+        }
+    );
+}

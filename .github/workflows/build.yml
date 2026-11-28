@@ -177,6 +177,31 @@ jobs:
       - name: Cache Kotlin/Native toolchain
         uses: ./.github/actions/cache-konan
 
+      # Non-standalone tests need a normal simulator launchd session for trustd. Boot a device
+      # and pass its UDID to Kotlin so boot and test cannot select different simulators.
+      - name: Boot iOS simulator for tests
+        id: boot-simulator
+        run: |
+          device_id="$(xcrun simctl list devices available | python3 -c '
+          import re, sys
+          in_ios = False
+          for line in sys.stdin:
+              if line.startswith("-- "):
+                  in_ios = line.startswith("-- iOS ")
+              elif in_ios:
+                  match = re.search(r"[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}", line)
+                  if match:
+                      print(match.group(0))
+                      break
+          ')"
+          if [[ -z "$device_id" ]]; then
+            echo "No available iOS simulator found"
+            exit 1
+          fi
+          xcrun simctl boot "$device_id" || true
+          xcrun simctl bootstatus "$device_id" -b
+          echo "device_id=$device_id" >> "$GITHUB_OUTPUT"
+
       # iosSimulatorArm64Test runs the suite on the simulator, exercising secp256k1 and the
       # CommonCrypto-backed primitives on a real Apple toolchain. iosArm64 has no simulator to
       # run on; compiling its tests catches device-only drift.
@@ -184,6 +209,7 @@ jobs:
         run: |
           ./gradlew \
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            -Pquartz.ios.testSimulator="${{ steps.boot-simulator.outputs.device_id }}" \
             :quartz:iosSimulatorArm64Test \
             :quartz:compileTestKotlinIosArm64
 
