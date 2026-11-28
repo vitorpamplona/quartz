@@ -21,9 +21,11 @@
 package com.vitorpamplona.quartz.nip34Git.git
 
 import com.vitorpamplona.quartz.nip34Git.patch.LineDiff
+import com.vitorpamplona.quartz.utils.BinaryHeap
 import com.vitorpamplona.quartz.utils.Log
-import java.util.PriorityQueue
-import java.util.concurrent.ConcurrentHashMap
+import com.vitorpamplona.quartz.utils.concurrent.ConcurrentMap
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlin.concurrent.Volatile
 
 /** One version of a file in its history: the [commit] that changed it, and the file's blob then (null once deleted). */
@@ -67,17 +69,34 @@ class GitFileHistory(
         val committedAt: Map<String, Long>,
     ) {
         /** Raw tree objects by oid: only the trees along the paths read so far. */
-        val trees = ConcurrentHashMap<String, ByteArray>()
+        val trees = ConcurrentMap<String, ByteArray>()
 
         /** False once the server would not send trees by id: other paths take the whole-window fetch. */
         @Volatile
         var treesById = true
     }
 
-    private val windows =
-        object : LinkedHashMap<String, Window>(4, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Window>?) = size > MAX_WINDOWS
+    // The windows kept, least recently used first, at most MAX_WINDOWS: read and written under windowsLock.
+    private val windows = LinkedHashMap<String, Window>(4)
+    private val windowsLock = PlatformLock()
+
+    /** The window kept under [key], now the most recently used, or null. */
+    private fun cachedWindow(key: String): Window? =
+        windowsLock.withLock {
+            windows.remove(key)?.also { windows[key] = it }
         }
+
+    /** Keeps [window] under [key] as the most recently used, dropping the least recently used past [MAX_WINDOWS]. */
+    private fun keepWindow(
+        key: String,
+        window: Window,
+    ) {
+        windowsLock.withLock {
+            windows.remove(key)
+            windows[key] = window
+            while (windows.size > MAX_WINDOWS) windows.remove(windows.keys.first())
+        }
+    }
 
     /**
      * The commits that changed [path] (segments) within [depth] generations of [tip] (as git's
@@ -132,10 +151,10 @@ class GitFileHistory(
 
         val result = ArrayList<GitFileVersion>()
         val seen = HashSet<String>()
-        val frontier = PriorityQueue<GitCommit>(compareByDescending { committedAt[it.oid] ?: it.authorTimeSec })
+        val frontier = BinaryHeap<GitCommit>(compareByDescending { committedAt[it.oid] ?: it.authorTimeSec })
         commits[tip]?.let { frontier.add(it) }
         while (frontier.isNotEmpty()) {
-            val commit = frontier.poll()
+            val commit = frontier.poll()!!
             if (!seen.add(commit.oid)) continue
             val same = treesameParent(commit)
             // Unchanged from a parent: not part of the file's history, which runs on through that parent.
@@ -235,17 +254,17 @@ class GitFileHistory(
         depth: Int,
     ): Window {
         val key = "$cloneUrl\n$tip\n$depth"
-        var window = synchronized(windows) { windows[key] }
+        var window = cachedWindow(key)
         if (window == null && caps.supportsFilter) {
             window = windowOf(Packfile.parse(transport.fetchPack(cloneUrl, caps, listOf(tip), deepen = depth, filter = "tree:0")))
-            synchronized(windows) { windows[key] = window }
+            keepWindow(key, window)
         }
         if (window != null && window.treesById) {
             if (readPathTrees(cloneUrl, caps, window, path)) return window
             window.treesById = false
         }
         if (window != null && holdsPath(window, path)) return window
-        return fetchWholeWindow(cloneUrl, caps, tip, path, depth, window).also { whole -> synchronized(windows) { windows[key] = whole } }
+        return fetchWholeWindow(cloneUrl, caps, tip, path, depth, window).also { whole -> keepWindow(key, whole) }
     }
 
     private fun windowOf(objects: Map<String, GitObject>): Window {
@@ -275,7 +294,7 @@ class GitFileHistory(
         try {
             var level: Set<String> = window.commits.values.mapTo(HashSet()) { it.treeOid }
             for (index in path.indices) {
-                if (!fetchTrees(cloneUrl, caps, window, level.filter { !window.trees.containsKey(it) })) return false
+                if (!fetchTrees(cloneUrl, caps, window, level.filter { window.trees[it] == null })) return false
                 if (index == path.lastIndex) break
                 val next = HashSet<String>()
                 level.forEach { oid ->
@@ -314,7 +333,7 @@ class GitFileHistory(
                     if (obj.type == GitObjectType.TREE && obj.oid in wanted) window.trees[obj.oid] = obj.data
                 }
             }
-            val left = missing.filter { !window.trees.containsKey(it) }
+            val left = missing.filter { window.trees[it] == null }
             if (left.size == missing.size) {
                 Log.w(TAG) { "$cloneUrl left out ${left.size} wanted trees; fetching every tree of the window" }
                 return false
@@ -371,7 +390,7 @@ class GitFileHistory(
 
     /** The entry at [path] from the tree [root], a file and not a folder, or null where [trees] lacks a step. */
     private fun pathEntry(
-        trees: Map<String, ByteArray>,
+        trees: ConcurrentMap<String, ByteArray>,
         root: String,
         path: List<String>,
     ): GitTreeEntry? {

@@ -20,11 +20,12 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Test
-import java.util.Base64
+import com.vitorpamplona.quartz.utils.ByteArrayOutputStream
+import kotlin.io.encoding.Base64
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 
 class GitPackfileDeltaTest {
     // A real pack of two big.txt versions produced with:
@@ -37,7 +38,7 @@ class GitPackfileDeltaTest {
 
     @Test
     fun resolvesOfsDeltaAndComputesOids() {
-        val pack = Base64.getDecoder().decode(deltaPack)
+        val pack = Base64.decode(deltaPack)
         val objects = Packfile.parse(pack)
 
         val common = bigTxtCommon()
@@ -45,16 +46,32 @@ class GitPackfileDeltaTest {
         val expectedPrev = "line of text number 0\n" + common
 
         val head = objects["e873ccdfb69d504f8ce2d51255da3c530d191f21"]
-        assertNotNull("full base blob present", head)
+        assertNotNull(head, "full base blob present")
         assertEquals(GitObjectType.BLOB, head!!.type)
         assertEquals(expectedHead, head.data.decodeToString())
 
         val prev = objects["eb06ed9c0291ae7fd14aec388d470a1bff363f1e"]
-        assertNotNull("delta blob resolved", prev)
+        assertNotNull(prev, "delta blob resolved")
         assertEquals(GitObjectType.BLOB, prev!!.type)
         // The oid is recomputed from the reconstructed bytes, so a correct oid key
         // proves both the delta application and the SHA-1 hashing are right.
         assertEquals(expectedPrev, prev.data.decodeToString())
+    }
+
+    @Test
+    fun streamsTheOfsDeltaOneByteAtATime() {
+        val pack = Base64.decode(deltaPack)
+        val whole = GitByteSource.of(pack)
+        val oneByte = GitByteSource { dest, offset, length -> whole.read(dest, offset, minOf(1, length)) }
+        val objects = HashMap<String, GitObject>()
+        GitPackReader.read(oneByte) { objects[it.oid] = it }
+        assertEquals(setOf("e873ccdfb69d504f8ce2d51255da3c530d191f21", "eb06ed9c0291ae7fd14aec388d470a1bff363f1e"), objects.keys)
+        assertEquals("line of text number 0\n" + bigTxtCommon(), objects.getValue("eb06ed9c0291ae7fd14aec388d470a1bff363f1e").data.decodeToString())
+
+        // The base (6,327 bytes) over the limit is hashed on the way past, so it is named; the delta on it can't be rebuilt.
+        val skipped = ArrayList<Pair<String?, GitPackSkip>>()
+        GitPackReader.read(GitByteSource.of(pack), maxObjectBytes = 6320, onSkipped = { oid, why -> skipped.add(oid to why) }) { }
+        assertEquals(listOf("e873ccdfb69d504f8ce2d51255da3c530d191f21" to GitPackSkip.TOO_LARGE, null to GitPackSkip.MISSING_BASE), skipped)
     }
 
     @Test
@@ -86,12 +103,12 @@ class GitPackfileDeltaTest {
     @Test
     fun parsesTreeEntries() {
         // Build a tree payload: "100644 README\0<20 bytes>" + "40000 src\0<20 bytes>"
-        val out = java.io.ByteArrayOutputStream()
+        val out = ByteArrayOutputStream()
         out.write("100644 README".encodeToByteArray())
-        out.write(0)
+        out.write(0.toByte())
         out.write(hex("980a0d5f19a64b4b30a87d4206aade58726b60e3"))
         out.write("40000 src".encodeToByteArray())
-        out.write(0)
+        out.write(0.toByte())
         out.write(hex("b4eecafa9be2f2006ce1b709d6857b07069b4608"))
         val entries = GitObjectParser.parseTree(out.toByteArray())
 
@@ -116,9 +133,9 @@ class GitPackfileDeltaTest {
 
     @Test
     fun roundTripsPktLine() {
-        val frame = PktLineCodec.dataLine("want abc\n")
-        assertArrayEquals("000dwant abc\n".encodeToByteArray(), frame)
-        val parsed = PktLineCodec.parse(frame + PktLineCodec.FLUSH + PktLineCodec.DELIM)
+        val frame = PktLines.dataLine("want abc\n")
+        assertContentEquals("000dwant abc\n".encodeToByteArray(), frame)
+        val parsed = PktLines.parse(frame + PktLines.FLUSH + PktLines.DELIM)
         assertEquals(3, parsed.size)
         assertEquals("want abc", (parsed[0] as PktLine.Data).text())
         assertEquals(PktLine.Flush, parsed[1])

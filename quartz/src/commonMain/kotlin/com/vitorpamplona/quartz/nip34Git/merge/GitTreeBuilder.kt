@@ -156,11 +156,17 @@ class GitTreeBuilder(
         if (listOf(b, o, t).any { it.contains(0) }) return null
         // ISO-8859-1 maps each byte to one char and back, so a file in any encoding merges byte
         // for byte; UTF-8 decoding would turn every invalid byte into U+FFFD.
-        return when (val result = LineMerge.merge3(b.toString(Charsets.ISO_8859_1), o.toString(Charsets.ISO_8859_1), t.toString(Charsets.ISO_8859_1))) {
-            is LineMerge.Result.Merged -> keep(GitObjectWriter.blob(result.text.toByteArray(Charsets.ISO_8859_1))).oid
+        return when (val result = LineMerge.merge3(latin1(b), latin1(o), latin1(t))) {
+            is LineMerge.Result.Merged -> keep(GitObjectWriter.blob(latin1Bytes(result.text))).oid
             LineMerge.Result.Conflict -> null
         }
     }
+
+    /** [bytes] as ISO-8859-1: each byte one char of the same value. */
+    private fun latin1(bytes: ByteArray): String = CharArray(bytes.size) { (bytes[it].toInt() and 0xFF).toChar() }.concatToString()
+
+    /** [text] as ISO-8859-1, a char past U+00FF written `?` as the JVM's encoder does. */
+    private fun latin1Bytes(text: String): ByteArray = ByteArray(text.length) { text[it].code.let { c -> if (c <= 0xFF) c.toByte() else '?'.code.toByte() } }
 
     private fun same(
         a: GitTreeEntry?,

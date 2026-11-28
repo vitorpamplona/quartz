@@ -48,7 +48,7 @@ object GitMergeMessage {
         val prefix = "Merge #${rootId.take(8)}: "
         val cleanTitle = title.trim()
         val budget = SUBJECT_BUDGET - prefix.length
-        val truncated = cleanTitle.codePointCount(0, cleanTitle.length) > budget
+        val truncated = codePoints(cleanTitle) > budget
         val subject = if (truncated) cleanTitle.take(budget - 1).trimEnd() + "…" else cleanTitle
         return buildString {
             append(prefix).append(subject)
@@ -62,5 +62,16 @@ object GitMergeMessage {
                 append("\n\n").append(body)
             }
         }
+    }
+
+    /** [text]'s length in code points, as `String.codePointCount` counts them: a surrogate pair is one, a lone surrogate one. */
+    private fun codePoints(text: String): Int {
+        var count = 0
+        var i = 0
+        while (i < text.length) {
+            i += if (text[i].isHighSurrogate() && i + 1 < text.length && text[i + 1].isLowSurrogate()) 2 else 1
+            count++
+        }
+        return count
     }
 }

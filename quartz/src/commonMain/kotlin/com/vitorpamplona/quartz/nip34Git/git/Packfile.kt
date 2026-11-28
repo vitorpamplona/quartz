@@ -20,8 +20,7 @@
  */
 package com.vitorpamplona.quartz.nip34Git.git
 
-import java.security.MessageDigest
-import java.util.zip.Inflater
+import com.vitorpamplona.quartz.utils.ZlibInflater
 
 /**
  * Parser for a git version-2 packfile (`PACK` magic). Inflates each object,
@@ -163,9 +162,9 @@ object Packfile {
         type: GitObjectType,
         data: ByteArray,
     ): String {
-        val digest = MessageDigest.getInstance("SHA-1")
+        val digest = GitSha1()
         digest.update("${type.header} ${data.size}".encodeToByteArray())
-        digest.update(0)
+        digest.update(0.toByte())
         digest.update(data)
         return digest.digest().toHex()
     }
@@ -175,7 +174,7 @@ object Packfile {
         offset: Int,
         expectedSize: Int,
     ): Pair<ByteArray, Int> {
-        val inflater = Inflater()
+        val inflater = ZlibInflater()
         try {
             inflater.setInput(src, offset, src.size - offset)
             val out = ByteArray(expectedSize)
@@ -200,7 +199,7 @@ object Packfile {
             if (got != expectedSize) {
                 throw IllegalStateException("inflate short read: $got of $expectedSize")
             }
-            return out to inflater.bytesRead.toInt()
+            return out to inflater.bytesRead().toInt()
         } finally {
             inflater.end()
         }

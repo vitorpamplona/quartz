@@ -24,10 +24,11 @@ import com.vitorpamplona.quartz.nip34Git.patch.GitDiffFile
 import com.vitorpamplona.quartz.nip34Git.patch.GitFileChange
 import com.vitorpamplona.quartz.nip34Git.patch.LineDiff
 import com.vitorpamplona.quartz.nip34Git.patch.ParsedPatch
+import com.vitorpamplona.quartz.utils.BinaryHeap
+import com.vitorpamplona.quartz.utils.concurrent.PlatformLock
+import com.vitorpamplona.quartz.utils.concurrent.withLock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.OkHttpClient
-import java.util.PriorityQueue
 
 /**
  * High-level read-only browser for a git repository served over smart-HTTP.
@@ -35,21 +36,16 @@ import java.util.PriorityQueue
  * [open] downloads a shallow, blob-less snapshot of the default branch tip (one
  * request fetches the commit and every tree), returning a [GitRepoSnapshot] that
  * can walk directories offline and lazily fetch individual file blobs on demand.
+ *
+ * [http] makes the requests; requests to a private repository carry [authorization] (GRASP-08).
+ * On JVM and Android the class also keeps its older OkHttp constructors.
  */
-class GitHttpClient(
-    okHttpClient: (String) -> OkHttpClient,
+expect class GitHttpClient(
+    http: GitHttpTransport,
+    authorization: GitHttpAuth? = null,
 ) {
-    private var transport = GitSmartHttpTransport(okHttpClient)
-
-    /** A client whose requests to a private repository carry [authorization] (GRASP-08). */
-    constructor(okHttpClient: (String) -> OkHttpClient, authorization: GitHttpAuth?) : this(okHttpClient) {
-        transport = GitSmartHttpTransport(okHttpClient, authorization)
-        files = GitFileHistory(transport)
-    }
-
     /** A file's history and blame ([GitFileHistory]) over the same connections. */
-    var files = GitFileHistory(transport)
-        private set
+    val files: GitFileHistory
 
     /**
      * Connects to [cloneUrl] and loads the tree of [ref] (default: the server's
@@ -58,6 +54,41 @@ class GitHttpClient(
     suspend fun open(
         cloneUrl: String,
         ref: String? = null,
+    ): GitRepoSnapshot
+
+    /**
+     * Loads up to [depth] commits of history starting at [startCommit] (or the
+     * server's HEAD), most recent first. Uses a shallow `tree:0` fetch so only the
+     * commit objects come down — no trees or blobs. The shallow boundary caps how
+     * far back the log goes.
+     */
+    suspend fun loadHistory(
+        cloneUrl: String,
+        startCommit: String?,
+        depth: Int = 50,
+    ): List<GitCommit>
+
+    /**
+     * Computes the diff a pull request introduces: the changes between
+     * [baseCommit] (or, when null, the server's HEAD) and [headCommit]. Fetches
+     * both commit trees, finds the changed files by oid, batch-fetches the
+     * differing blobs and runs a line diff on each. Returns a [ParsedPatch] ready
+     * for the same renderer the embedded-patch path uses.
+     */
+    suspend fun computeDiff(
+        cloneUrl: String,
+        headCommit: String,
+        baseCommit: String?,
+    ): ParsedPatch
+}
+
+/** What every [GitHttpClient] does, over its [transport]. */
+internal class GitRepositoryReader(
+    private val transport: GitSmartHttpTransport,
+) {
+    suspend fun open(
+        cloneUrl: String,
+        ref: String?,
     ): GitRepoSnapshot {
         require(cloneUrl.startsWith("http://") || cloneUrl.startsWith("https://")) {
             "unsupported git transport (only http/https): $cloneUrl"
@@ -125,16 +156,10 @@ class GitHttpClient(
         )
     }
 
-    /**
-     * Loads up to [depth] commits of history starting at [startCommit] (or the
-     * server's HEAD), most recent first. Uses a shallow `tree:0` fetch so only the
-     * commit objects come down — no trees or blobs. The shallow boundary caps how
-     * far back the log goes.
-     */
     suspend fun loadHistory(
         cloneUrl: String,
         startCommit: String?,
-        depth: Int = 50,
+        depth: Int,
     ): List<GitCommit> {
         require(cloneUrl.startsWith("http://") || cloneUrl.startsWith("https://")) {
             "unsupported git transport (only http/https): $cloneUrl"
@@ -171,7 +196,7 @@ class GitHttpClient(
         // Walk parents most-recent-first (like `git log`), bounded by depth and the shallow set.
         val result = ArrayList<GitCommit>()
         val visited = HashSet<String>()
-        val frontier = PriorityQueue<GitCommit>(compareByDescending { it.authorTimeSec })
+        val frontier = BinaryHeap<GitCommit>(compareByDescending { it.authorTimeSec })
         commits[start]?.let {
             frontier.add(it)
             visited.add(start)
@@ -191,13 +216,6 @@ class GitHttpClient(
         return result
     }
 
-    /**
-     * Computes the diff a pull request introduces: the changes between
-     * [baseCommit] (or, when null, the server's HEAD) and [headCommit]. Fetches
-     * both commit trees, finds the changed files by oid, batch-fetches the
-     * differing blobs and runs a line diff on each. Returns a [ParsedPatch] ready
-     * for the same renderer the embedded-patch path uses.
-     */
     suspend fun computeDiff(
         cloneUrl: String,
         headCommit: String,
@@ -251,7 +269,7 @@ class GitHttpClient(
             val change: GitFileChange,
         )
         val changes = ArrayList<Change>()
-        for (path in (headFiles.keys + baseFiles.keys).toSortedSet()) {
+        for (path in (headFiles.keys + baseFiles.keys).sorted()) {
             val oldOid = baseFiles[path]
             val newOid = headFiles[path]
             when {
@@ -381,8 +399,13 @@ class GitRepoSnapshot(
     /** The tip commit object, parsed up-front so the UI can show it without another fetch. */
     val tipCommit: GitCommit? = null,
 ) {
+    // Read by any coroutine (hasBlob, readBlob's fast path, searchContents) while readBlob writes
+    // it: every access holds blobsLock. blobMutex only keeps two readers from fetching one blob.
     private val blobs = HashMap<String, ByteArray>(blobs)
+    private val blobsLock = PlatformLock()
     private val blobMutex = Mutex()
+
+    private fun cachedBlob(oid: String): ByteArray? = blobsLock.withLock { blobs[oid] }
 
     /** Entries at the repository root, folders first. */
     fun rootEntries(): List<GitTreeEntry> = sortForDisplay(trees[rootTreeOid].orEmpty())
@@ -470,7 +493,7 @@ class GitRepoSnapshot(
      * fetching the blobs [batchSize] at a time so a large repository is never held in memory
      * at once. Files whose names say they are binary ([GitBinaryFiles]) are not fetched; binary
      * files (a NUL byte) and files over [maxFileBytes] are skipped. Each batch is read from the
-     * response as it arrives ([PackfileStream]), and a file whose pack entry is over
+     * response as it arrives ([GitPackReader]), and a file whose pack entry is over
      * [maxFileBytes] is passed over without being held, so memory follows one file, not a batch.
      * Calls [onProgress] with the files read so far and the total, and stops at [limit] matches.
      */
@@ -521,7 +544,7 @@ class GitRepoSnapshot(
             val cap = limit - result.size
             val matches = HashMap<String, List<Pair<Int, String>>>()
             // What another reader of this snapshot already cached (read under its lock: blob() writes it).
-            val cached = blobMutex.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
+            val cached = blobsLock.withLock { batch.mapNotNull { (_, oid) -> blobs[oid]?.let { oid to it } }.toMap() }
             cached.forEach { (oid, data) -> matches[oid] = scan(data, cap) }
             val missing = batch.map { it.second }.filter { it !in cached }.distinct()
             if (missing.isNotEmpty()) {
@@ -553,8 +576,8 @@ class GitRepoSnapshot(
         tooLarge: MutableSet<String>,
         scan: (ByteArray) -> List<Pair<Int, String>>,
     ) {
-        transport.fetchPackStream(cloneUrl, caps, oids, deepen = null, filter = null) { pack ->
-            PackfileStream.read(
+        transport.fetchPackSource(cloneUrl, caps, oids, deepen = null, filter = null) { pack ->
+            GitPackReader.read(
                 pack,
                 maxObjectBytes = maxFileBytes.toLong(),
                 retainBytes = 4L * maxFileBytes,
@@ -565,13 +588,13 @@ class GitRepoSnapshot(
         }
     }
 
-    fun hasBlob(oid: String): Boolean = blobs.containsKey(oid)
+    fun hasBlob(oid: String): Boolean = blobsLock.withLock { blobs.containsKey(oid) }
 
     /** Returns the bytes of a blob, fetching (and caching) it if not already present. */
     suspend fun readBlob(oid: String): ByteArray {
-        blobs[oid]?.let { return it }
+        cachedBlob(oid)?.let { return it }
         return blobMutex.withLock {
-            blobs[oid]?.let { return it }
+            cachedBlob(oid)?.let { return it }
             val pack =
                 transport.fetchPack(
                     cloneUrl = cloneUrl,
@@ -583,7 +606,7 @@ class GitRepoSnapshot(
             val obj =
                 Packfile.parse(pack)[oid]
                     ?: throw GitHttpException("blob $oid missing from fetch response")
-            obj.data.also { blobs[oid] = it }
+            obj.data.also { data -> blobsLock.withLock { blobs[oid] = data } }
         }
     }
 

@@ -25,6 +25,7 @@ import com.vitorpamplona.quartz.nip34Git.git.GitPerson
 import com.vitorpamplona.quartz.nip34Git.git.GitPushClient
 import com.vitorpamplona.quartz.nip34Git.git.GitRefUpdate
 import com.vitorpamplona.quartz.nip34Git.git.GitSmartHttpTransport
+import com.vitorpamplona.quartz.nip34Git.git.OkHttpGitTransport
 import com.vitorpamplona.quartz.nip34Git.patch.GitPatchEvent
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -69,7 +70,7 @@ class GitMergePlannerGitTest {
 
             val main = git.git(work, "rev-parse", "main")
             val pr = git.git(work, "rev-parse", "pr")
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val source = GitObjectSource(transport, listOf(url))
             val plan = runBlocking { GitMergePlanner(source).planPullRequest(main, pr, GitObjectSource(transport, listOf(url)), maintainer, "Merge #12345678: pr") }
             (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
@@ -78,7 +79,7 @@ class GitMergePlannerGitTest {
             // Same tree as git's own merge of the two.
             assertEquals(git.git(work, "merge-tree", "--write-tree", main, pr), git.git(bare, "rev-parse", "--verify", "-q", "${ready.newTip}^{tree}").ifEmpty { treeOf(ready) })
 
-            val report = runBlocking { GitPushClient({ git.client }).push(url, listOf(GitRefUpdate("refs/heads/main", main, ready.newTip)), ready.objects) }
+            val report = runBlocking { GitPushClient(OkHttpGitTransport { git.client }).push(url, listOf(GitRefUpdate("refs/heads/main", main, ready.newTip)), ready.objects) }
             assertTrue(report.isSuccess, "push: ${report.unpackError} ${report.refErrors}")
             assertEquals("ONE\n2\n3\n4\nFIVE", git.git(bare, "show", "main:f.txt"))
             assertEquals("h", git.git(bare, "show", "main:dir/h.txt"))
@@ -117,7 +118,7 @@ class GitMergePlannerGitTest {
             git.git(work, "commit", "-q", "-am", "main")
             git.git(work, "push", "-q", "origin", "HEAD:main")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan =
                 runBlocking {
                     GitMergePlanner(GitObjectSource(transport, listOf(url)))
@@ -164,7 +165,7 @@ class GitMergePlannerGitTest {
                     patchText,
                     "0".repeat(128),
                 )
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPatches(base, listOf(patch), maintainer, "Merge #00000000: Change three") }
             (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
             val ready = assertIs<GitMergePlan.Ready>(plan)
@@ -218,7 +219,7 @@ class GitMergePlannerGitTest {
             val commit = git.git(work, "rev-parse", "HEAD")
             val patch = patchOf(git, work, base)
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPatches(base, listOf(patch), maintainer, "m") }
             (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
             val ready = assertIs<GitMergePlan.Ready>(plan)
@@ -251,7 +252,7 @@ class GitMergePlannerGitTest {
             git.git(work, "push", "-q", "origin", "HEAD:main")
             val main = git.git(work, "rev-parse", "HEAD")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPatches(main, listOf(patch), maintainer, "m") }
             (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
             assertEquals(listOf("new.txt"), assertIs<GitMergePlan.Conflicts>(plan).paths)
@@ -279,7 +280,7 @@ class GitMergePlannerGitTest {
             val main = git.git(work, "rev-parse", "main")
             val pr = git.git(work, "rev-parse", "pr")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan = runBlocking { GitMergePlanner(GitObjectSource(transport, listOf(url))).planPullRequest(main, pr, GitObjectSource(transport, listOf(url)), maintainer, "m") }
             (plan as? GitMergePlan.Failed)?.let { error(it.reason) }
             val ready = assertIs<GitMergePlan.Ready>(plan)
@@ -309,7 +310,7 @@ class GitMergePlannerGitTest {
             val main = git.git(work, "rev-parse", "main")
             val pr = git.git(work, "rev-parse", "pr")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan =
                 runBlocking {
                     GitMergePlanner(GitObjectSource(transport, listOf(url, forkUrl)))
@@ -321,7 +322,7 @@ class GitMergePlannerGitTest {
             val objects = runBlocking { ready.objects + branch.objects() }
             // Only the PR's own commit, tree and blob come from the fork, not its whole history.
             assertTrue(runBlocking { branch.objects() }.size <= 3, "fetched ${runBlocking { branch.objects() }.size} objects")
-            val report = runBlocking { GitPushClient({ git.client }).push(url, listOf(GitRefUpdate("refs/heads/main", main, ready.newTip)), objects) }
+            val report = runBlocking { GitPushClient(OkHttpGitTransport { git.client }).push(url, listOf(GitRefUpdate("refs/heads/main", main, ready.newTip)), objects) }
             assertTrue(report.isSuccess, report.describe())
             assertEquals("ONE\n2\nTHREE", git.git(bare, "show", "main:f.txt"))
             assertEquals("", git.git(bare, "fsck", "--no-progress", "--connectivity-only"))
@@ -352,7 +353,7 @@ class GitMergePlannerGitTest {
             val main = git.git(work, "rev-parse", "main")
             val pr = git.git(work, "rev-parse", "pr")
 
-            val transport = GitSmartHttpTransport { git.client }
+            val transport = GitSmartHttpTransport(OkHttpGitTransport { git.client })
             val plan =
                 runBlocking {
                     GitMergePlanner(GitObjectSource(transport, listOf(url)), historyDepth = 3)

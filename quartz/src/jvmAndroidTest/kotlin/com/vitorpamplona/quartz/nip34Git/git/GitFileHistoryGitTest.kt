@@ -81,7 +81,7 @@ class GitFileHistoryGitTest {
             commit(git, work, "dir/b.md", "no match\nanother NEEDLE\n", "b")
             git.git(work, "push", "-q", "origin", "HEAD:main")
 
-            val snapshot = runBlocking { GitHttpClient { git.client }.open(url) }
+            val snapshot = runBlocking { GitHttpClient(OkHttpGitTransport { git.client }).open(url) }
             val matches = runBlocking { snapshot.searchContents("needle", batchSize = 1) }
             assertEquals(setOf("a.kt:2", "dir/b.md:2"), matches.map { it.path.joinToString("/") + ":" + it.line }.toSet())
             assertTrue(matches.any { it.text == "println(\"Needle here\")" })
@@ -132,7 +132,7 @@ class GitFileHistoryGitTest {
             val tip = git.git(work, "rev-parse", "HEAD")
             git.git(work, "push", "-q", "origin", "HEAD:main")
 
-            val files = GitHttpClient { git.client }.files
+            val files = GitHttpClient(OkHttpGitTransport { git.client }).files
             val blame = runBlocking { files.blame(url, tip, listOf("f.txt")) }!!
             assertEquals(gitBlame(git, work, "f.txt"), blame.lines.map { blame.versions[it].commit.oid })
             assertFalse(blame.truncated)
@@ -160,7 +160,7 @@ class GitFileHistoryGitTest {
             val tip = git.git(work, "rev-parse", "HEAD")
             git.git(work, "push", "-q", "origin", "HEAD:main")
 
-            val history = runBlocking { GitHttpClient { git.client }.files.history(url, tip, listOf("f.txt")) }
+            val history = runBlocking { GitHttpClient(OkHttpGitTransport { git.client }).files.history(url, tip, listOf("f.txt")) }
             assertEquals(git.git(work, "log", "--format=%H", "--", "f.txt").lines(), history.map { it.commit.oid })
         }
 }
